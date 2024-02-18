@@ -8,7 +8,7 @@
 #include <fstream>
 #include <ratio>
 #include <string>
-
+#include <filesystem>
 #define CurrentTimeInProfiler std::chrono::high_resolution_clock::now()
 
 typedef std::chrono::time_point<std::chrono::high_resolution_clock> TimerType;
@@ -26,7 +26,7 @@ inline void write_current_time_to_file(const std::string & filename, double curr
     file.close();
 }
 
-inline   std::string getTimeRecordFolder() {
+inline std::string getTimeRecordFolder() {
     std::filesystem::path current_file_path = std::filesystem::canonical(__FILE__);
     std::filesystem::path current_file_directory = current_file_path.parent_path().parent_path().parent_path();
     std::string time_record_file_path = current_file_directory.string() +"/all_time_records/";

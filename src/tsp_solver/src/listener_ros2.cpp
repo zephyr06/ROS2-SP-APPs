@@ -18,6 +18,7 @@
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 #include "TSPSolver.h"
+#include "profiler.h"
 
 using std::placeholders::_1;
 
@@ -25,10 +26,10 @@ class MinimalSubscriber : public rclcpp::Node
 {
 public:
   MinimalSubscriber()
-  : Node("minimal_subscriber")
+  : Node("minimal_subscriber"),  start_time_(CurrentTimeInProfiler), target_profile_data_file_path_(getTimeRecordFolder()+"tsp_subscriber.txt")
   {
     subscription_ = this->create_subscription<std_msgs::msg::String>(
-      "topic", 10, std::bind(&MinimalSubscriber::topic_callback, this, _1));
+      "topic_tsp", 10, std::bind(&MinimalSubscriber::topic_callback, this, _1));
   }
 
 private:
@@ -36,8 +37,16 @@ private:
   {
     RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg.data.c_str());
     callTSP();
+    double current_time=getDuration(start_time_, CurrentTimeInProfiler);
+    std::string receive_message ="Receiving TSP message:"+msg.data;
+    write_current_time_to_file(target_profile_data_file_path_, current_time, receive_message);
   }
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
+
+
+  // data related to profiler
+  TimerType start_time_;
+  std::string target_profile_data_file_path_;
 };
 
 int main(int argc, char * argv[])
