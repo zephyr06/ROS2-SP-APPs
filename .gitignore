@@ -4,3 +4,5 @@
 /src/ros_tutorials/*
 _LS1_1*
 burma14_*
+.vscode/*
+src/ros_tutorials
