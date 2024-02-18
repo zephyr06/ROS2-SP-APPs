@@ -271,8 +271,3 @@ int callTSP()
 	}
 }
 
-
-int main(int argc, char* argv[]){
-	callTSP();
-	return 0;
-}
