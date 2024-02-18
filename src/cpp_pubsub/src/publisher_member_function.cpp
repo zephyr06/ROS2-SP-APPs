@@ -32,7 +32,7 @@ class MinimalPublisher : public rclcpp::Node
 {
 public:
   MinimalPublisher()
-  : Node("minimal_publisher"), start_time_(CurrentTimeInProfiler), count_(0), target_profile_data_file_path_(getTimeRecordFolder()+"publisher.txt")
+  : Node("minimal_publisher"), count_(0),  start_time_(CurrentTimeInProfiler), target_profile_data_file_path_(getTimeRecordFolder()+"publisher.txt")
   {
     publisher_ = this->create_publisher<std_msgs::msg::String>("topic_tsp", 10);
     timer_ = this->create_wall_timer(
@@ -55,11 +55,12 @@ private:
   }
 
   // data members
-  TimerType start_time_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
   size_t count_;
 
+  // data related to profiler
+  TimerType start_time_;
   std::string target_profile_data_file_path_;
 };
 
