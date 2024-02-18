@@ -17,8 +17,11 @@
 #include <memory>
 #include <string>
 
+#include <filesystem>
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
+
+#include "profiler.h"
 
 using namespace std::chrono_literals;
 
@@ -29,24 +32,35 @@ class MinimalPublisher : public rclcpp::Node
 {
 public:
   MinimalPublisher()
-  : Node("minimal_publisher"), count_(0)
+  : Node("minimal_publisher"), start_time_(CurrentTimeInProfiler), count_(0), target_profile_data_file_path_(getTimeRecordFolder()+"publisher.txt")
   {
-    publisher_ = this->create_publisher<std_msgs::msg::String>("topic", 10);
+    publisher_ = this->create_publisher<std_msgs::msg::String>("topic_tsp", 10);
     timer_ = this->create_wall_timer(
-      2000ms, std::bind(&MinimalPublisher::timer_callback, this));
+      500ms, std::bind(&MinimalPublisher::timer_callback, this));
+  
   }
+
 
 private:
   void timer_callback()
   {
     auto message = std_msgs::msg::String();
-    message.data = "Hello, world! " + std::to_string(count_++);
-    RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
+    message.data = "TSP " + std::to_string(count_++);
+    // RCLCPP_INFO(this->get_logger(), "Publishing TSP: '%s'", message.data.c_str(start_time_, CurrentTimeInProfiler));
+    
+    double current_time=getDuration(start_time_, CurrentTimeInProfiler);
+    write_current_time_to_file(target_profile_data_file_path_, current_time, "Publishing TSP "+message.data );
+    RCLCPP_INFO(this->get_logger(), "Publishing TSP: %f", current_time);
     publisher_->publish(message);
   }
+
+  // data members
+  TimerType start_time_;
   rclcpp::TimerBase::SharedPtr timer_;
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
   size_t count_;
+
+  std::string target_profile_data_file_path_;
 };
 
 int main(int argc, char * argv[])
