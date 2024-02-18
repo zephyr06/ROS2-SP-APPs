@@ -17,7 +17,7 @@
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
-// #include "TSPSolver.h"
+#include "TSPSolver.h"
 
 using std::placeholders::_1;
 
@@ -35,6 +35,7 @@ private:
   void topic_callback(const std_msgs::msg::String & msg) const
   {
     RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg.data.c_str());
+    callTSP();
   }
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
 };
