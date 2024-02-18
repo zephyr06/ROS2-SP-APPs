@@ -1,20 +1,22 @@
-#include"TSP.h"
-//Main function calling different methods to solve TSP
-//Print output into .sol and .trace file
-
-using namespace std;
-
+#include "TSPSolver.h"
+#include "iostream"
 ofstream output_sol,output_trace;
 
-int main(int argc, char* argv[])
+int callTSP()
 {	
 	string Methods []= {"Approx", "Greedy", "LS1","LS2","BnB"};
 	string filename1,filename2;
-	// char* argv[5];
-	// argv[1] = "../DATA/burma14.tsp";
-	// argv[2] = "1";
-	// argv[3] = "LS1";
-	// argv[4] = "3";
+	char* argv[5];
+	std::string PROJECT_PATH = std::string(PROJECT_ROOT_DIR) + "/";
+	std::cout<<"PROJECT_PATH:" <<PROJECT_PATH<<std::endl;
+	std::string data_file_path = PROJECT_PATH + "/DATA/burma14.tsp";
+	// char* data_char = data_file_path.c_str()
+	char *data_char = new char[data_file_path.length() + 1];
+	strcpy(data_char, data_file_path.c_str());
+	argv[1] = data_char;
+	argv[2] = "1";
+	argv[3] = "LS1";
+	argv[4] = "3";
 	int **distance;
 	int *d=new int;
 	int *o=new int;
@@ -269,3 +271,8 @@ int main(int argc, char* argv[])
 	}
 }
 
+
+int main(int argc, char* argv[]){
+	callTSP();
+	return 0;
+}
