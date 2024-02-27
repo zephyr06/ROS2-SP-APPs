@@ -42,7 +42,7 @@ file(GLOB SOURCES "src/Approx.cpp"
                   "src/TSPSolver.h"
                   "src/TSPSolver.cpp")
 # file (GLOB SOURCES "src/*.cpp" "src/*.h")
-add_executable(tsp_solver_listener src/listener_ros2.cpp ${SOURCES})
+add_executable(tsp_solver_listener src/listener_tsp.cpp ${SOURCES})
 ament_target_dependencies(tsp_solver_listener rclcpp std_msgs)
 
 add_executable(tsp_solver_executable "src/TSP_executable.cpp" ${SOURCES})
