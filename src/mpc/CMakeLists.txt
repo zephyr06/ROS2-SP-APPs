@@ -6,10 +6,8 @@ if(NOT CMAKE_C_STANDARD)
   set(CMAKE_C_STANDARD 99)
 endif()
 
-# Default to C++14
-if(NOT CMAKE_CXX_STANDARD)
-  set(CMAKE_CXX_STANDARD 14)
-endif()
+
+set (CMAKE_CXX_STANDARD 17)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -29,11 +27,16 @@ find_package(std_msgs REQUIRED)
 find_package(OsqpEigen)
 find_package(Eigen3)
 
+include_directories(${PROJECT_SOURCE_DIR}/../utils)
 include_directories(SYSTEM ${EIGEN3_INCLUDE_DIR})
 
 #MPCExample
 add_executable(MPCExample src/MPCExample.cpp)
 target_link_libraries(MPCExample OsqpEigen::OsqpEigen)
+
+add_executable(listener_mpc src/listener_mpc.cpp)
+target_link_libraries(listener_mpc OsqpEigen::OsqpEigen)
+ament_target_dependencies(listener_mpc  rclcpp std_msgs)
 
 # find_package(OsqpEigen REQUIRED)
 # find_package(Eigen3 3.1.0 REQUIRED)
@@ -49,6 +52,9 @@ target_link_libraries(MPCExample OsqpEigen::OsqpEigen)
 # add_executable(MPCExample src/example/src/MPCExample.cpp)
 # ament_target_dependencies(MPCExample OsqpEigen rclcpp std_msgs osqp ${EIGEN3_LIBS})
 
-install(TARGETS MPCExample DESTINATION lib/${PROJECT_NAME})
+install(TARGETS 
+        MPCExample 
+        listener_mpc 
+        DESTINATION lib/${PROJECT_NAME})
 
 ament_package()
