@@ -204,8 +204,8 @@ double getErrorNorm(const Eigen::Matrix<double, 12, 1>& x, const Eigen::Matrix<d
     return error.norm();
 }
 
-int main()
-{
+int mpc_main(){
+
     // set the preview window
     int mpcWindow = 20;
 
@@ -304,4 +304,8 @@ int main()
             return 1;
     }
     return 0;
+}
+int main()
+{
+    mpc_main();
 }
