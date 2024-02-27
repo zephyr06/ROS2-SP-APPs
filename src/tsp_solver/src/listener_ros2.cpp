@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <functional>
+// #include <functional>
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
@@ -29,16 +29,16 @@ public:
   : Node("minimal_subscriber"),  start_time_(CurrentTimeInProfiler), target_profile_data_file_path_(getTimeRecordFolder()+"tsp_subscriber.txt")
   {
     subscription_ = this->create_subscription<std_msgs::msg::String>(
-      "topic_tsp", 10, std::bind(&MinimalSubscriber::topic_callback, this, _1));
+      "topic_tsp", 1, std::bind(&MinimalSubscriber::topic_callback, this, _1));
   }
 
 private:
-  void topic_callback(const std_msgs::msg::String & msg) const
+  void topic_callback(const std_msgs::msg::String::SharedPtr msg) const
   {
-    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg.data.c_str());
+    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
     callTSP();
     double current_time=getDuration(start_time_, CurrentTimeInProfiler);
-    std::string receive_message ="Receiving TSP message:"+msg.data;
+    std::string receive_message ="Receiving TSP message:"+msg->data;
     write_current_time_to_file(target_profile_data_file_path_, current_time, receive_message);
   }
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;

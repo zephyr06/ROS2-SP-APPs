@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include <chrono>
-#include <functional>
+// #include <functional>
 #include <memory>
 #include <string>
 
@@ -34,7 +34,7 @@ public:
   MinimalPublisher()
   : Node("minimal_publisher"), count_(0),  start_time_(CurrentTimeInProfiler), target_profile_data_file_path_(getTimeRecordFolder()+"publisher.txt")
   {
-    publisher_ = this->create_publisher<std_msgs::msg::String>("topic_tsp", 10);
+    publisher_ = this->create_publisher<std_msgs::msg::String>("topic_tsp", 1);
     timer_ = this->create_wall_timer(
       500ms, std::bind(&MinimalPublisher::timer_callback, this));
   

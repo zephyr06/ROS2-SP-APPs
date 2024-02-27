@@ -12,12 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <functional>
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
-
 using std::placeholders::_1;
 
 class MinimalSubscriber : public rclcpp::Node
@@ -31,9 +29,9 @@ public:
   }
 
 private:
-  void topic_callback(const std_msgs::msg::String & msg) const
+  void topic_callback(const std_msgs::msg::String::SharedPtr msg) const
   {
-    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg.data.c_str());
+    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
   }
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
 };
