@@ -72,12 +72,11 @@ include_directories(
   ${Boost_INCLUDE_DIRS}
 )
 
-add_executable(dynaslam_demo src/dynaslam_demo.cpp)
 
+add_executable(dynaslam_demo src/dynaslam_demo.cpp)
 target_include_directories(dynaslam_demo PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
-
 target_link_libraries(dynaslam_demo 
   ${DYNASLAM_PROJ_DIR}/lib/libDynaSLAM.so
   ${OpenCV_LIBS}
@@ -89,7 +88,22 @@ target_link_libraries(dynaslam_demo
   ${Boost_LIBRARIES}
 )
 
-install(TARGETS dynaslam_demo
+add_executable(listener_slam src/listener_slam.cpp)
+target_include_directories(listener_slam PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(listener_slam 
+  ${DYNASLAM_PROJ_DIR}/lib/libDynaSLAM.so
+  ${OpenCV_LIBS}
+  ${EIGEN3_LIBS}
+  ${Pangolin_LIBRARIES}
+  ${DYNASLAM_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
+  ${DYNASLAM_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
+  /lib/aarch64-linux-gnu/libpython2.7.so
+  ${Boost_LIBRARIES}
+)
+
+install(TARGETS dynaslam_demo listener_slam
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
