@@ -20,9 +20,8 @@ endif()
 
 # find dependencies
 find_package(ament_cmake REQUIRED)
-# uncomment the following section in order to fill in
-# further dependencies manually.
-# find_package(<dependency> REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 
 add_executable(rrt_demo_withGUI src/rrt_demo_withGUI.cpp)
 target_include_directories(rrt_demo_withGUI PUBLIC
@@ -40,6 +39,7 @@ target_include_directories(rrt_demo_withoutGUI PUBLIC
   $<INSTALL_INTERFACE:include>)
 
 target_link_libraries(rrt_demo_withoutGUI sfml-graphics sfml-window sfml-system)
+
 
 
 # Add RRT-listener
