@@ -51,7 +51,7 @@ target_include_directories(rrt_listener PUBLIC
 target_link_libraries(rrt_listener sfml-graphics sfml-window sfml-system)
 
 
-install(TARGETS rrt_demo_withoutGUI DESTINATION lib/${PROJECT_NAME})
+install(TARGETS rrt_demo_withoutGUI rrt_listener DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
