@@ -1,13 +1,13 @@
 #pragma once
 #include "listener_base.h"
-#include "TSPSolver.h"
+#include "MPCUsage.h"
 class TSPApp : public AppBase
 {
 public:
-  TSPApp():AppBase("tsp"){}
+  TSPApp():AppBase("mpc"){}
   void run() override
   {
-    callTSP();
+    mpc_main();
   }
 
 };
