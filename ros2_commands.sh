@@ -9,4 +9,9 @@ source install/local_setup.bash
 colcon build 
 
 # Run the publiser node
-ros2 run cpp_pubsub talker
+ros2 run cpp_pubsub talker tsp 500
+ros2 run cpp_pubsub talker rrt 1000
+
+# Run the listener node
+ros2 run tsp_solver tsp_solver_listener
+ros2 run rrt_solver rrt_listener
