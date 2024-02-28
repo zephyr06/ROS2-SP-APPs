@@ -45,6 +45,9 @@ target_link_libraries(rrt_demo_withoutGUI sfml-graphics sfml-window sfml-system)
 # Add RRT-listener
 add_executable(rrt_listener src/listener_rrt.cpp ${SOURCES})
 ament_target_dependencies(rrt_listener rclcpp std_msgs)
+target_include_directories(rrt_listener PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
 target_link_libraries(rrt_listener sfml-graphics sfml-window sfml-system)
 
 
