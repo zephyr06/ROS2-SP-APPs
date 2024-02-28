@@ -9,7 +9,7 @@ public:
   }
   void run() override
   {
-    slam_wrapper.next();
+    slam_wrapper_.next();
   }
   DynaSLAMWrapperForROS2 slam_wrapper_;
 
