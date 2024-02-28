@@ -90,6 +90,7 @@ target_link_libraries(dynaslam_demo
 )
 
 add_executable(listener_slam src/listener_slam.cpp)
+ament_target_dependencies(listener_slam rclcpp std_msgs)
 target_include_directories(listener_slam PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
