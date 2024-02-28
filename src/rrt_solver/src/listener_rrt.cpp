@@ -1,6 +1,6 @@
 #pragma once
 #include "listener_base.h"
-#include "rrt_demo_withoutGUI.cpp"
+#include "rrt_solver/rrt_solver.h"
 class RRTApp : public AppBase
 {
 public:
