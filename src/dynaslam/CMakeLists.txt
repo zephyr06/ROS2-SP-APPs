@@ -60,6 +60,7 @@ endif()
 find_package(Eigen3 3.1.0 REQUIRED)
 find_package(Pangolin REQUIRED)
 
+include_directories(${PROJECT_SOURCE_DIR}/../utils)
 set(DYNASLAM_PROJ_DIR /home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM)
 include_directories(
   ${PROJECT_SOURCE_DIR}/include
