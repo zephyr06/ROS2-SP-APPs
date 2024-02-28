@@ -33,3 +33,5 @@ inline std::string getTimeRecordFolder() {
     std::cout<<time_record_file_path<<"\n";
     return time_record_file_path;
   }
+
+inline std::string getTopicName(std::string& app_name){return "topic_"+app_name;}
