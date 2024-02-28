@@ -21,30 +21,39 @@
 #include "profiler.h"
 
 using std::placeholders::_1;
-
-class MinimalSubscriber : public rclcpp::Node
+class AppBase
+{
+  AppBase(std::string app_name):app_name_(app_name){}
+  virtual void run(){;}
+  // data member
+  std::string app_name_;
+};
+template<typename AppBase>
+class SubscriberAppBase : public rclcpp::Node
 {
 public:
-  MinimalSubscriber()
-  : Node("minimal_subscriber"),  start_time_(CurrentTimeInProfiler), target_profile_data_file_path_(getTimeRecordFolder()+"tsp_subscriber.txt")
+  SubscriberAppBase()
+  : Node("minimal_subscriber"),  start_time_(CurrentTimeInProfiler), target_profile_data_file_path_(getTimeRecordFolder()+app_name_+"_subscriber.txt")
   {
     subscription_ = this->create_subscription<std_msgs::msg::String>(
-      "topic_tsp", 1, std::bind(&MinimalSubscriber::topic_callback, this, _1));
+      getTopicName(app_name_), 1, std::bind(&SubscriberAppBase::topic_callback, this, _1));
   }
 
 private:
   void topic_callback(const std_msgs::msg::String::SharedPtr msg) const
   {
     RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
-    callTSP();
+    // callTSP();
+    app_.run();
     double current_time=getDuration(start_time_, CurrentTimeInProfiler);
-    std::string receive_message ="Receiving TSP message:"+msg->data;
+    std::string receive_message ="Receiving "+app_name_+" message:"+msg->data;
     write_current_time_to_file(target_profile_data_file_path_, current_time, receive_message);
   }
   rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
 
-
   // data related to profiler
+  AppBase app_;
+  std::string app_name_;
   TimerType start_time_;
   std::string target_profile_data_file_path_;
 };
@@ -52,7 +61,7 @@ private:
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<MinimalSubscriber>());
+  rclcpp::spin(std::make_shared<SubscriberAppBase>());
   rclcpp::shutdown();
   return 0;
 }
