@@ -1,4 +1,4 @@
-Receiving rrt message:rrt 21::2.00073
-Receiving rrt message:rrt 22::2.51144
-Receiving rrt message:rrt 23::3.53611
-Receiving rrt message:rrt 24::5.30079
+Start time of subscriber: ::1709228249.995759964
+Receiving rrt message:rrt 12::1.2555060000000000109
+Receiving rrt message:rrt 13::3.9722409999999999108
+Receiving rrt message:rrt 15::4.4720259999999996126
