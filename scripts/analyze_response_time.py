@@ -85,8 +85,8 @@ def generate_response_time_file(task_name, project_root=PROJECT_ROOT):
 
 
 if __name__ == "__main__":
-    # task_name = ['rrt', 'mpc', 'tsp', 'slam']
-    task_name = ['rrt', 'mpc', 'tsp']
+    task_name = ['rrt', 'mpc', 'tsp', 'slam']
+    # task_name = ['rrt', 'mpc', 'tsp']
     clear_response_time_file(task_name)
     for task in task_name:
         generate_response_time_file(task)
