@@ -15,6 +15,10 @@ public:
   std::string app_name_;
 };
 
+double getCurrentTimeStamp(){
+    using namespace std::chrono;
+    return duration_cast<microseconds>(system_clock::now().time_since_epoch()).count() / 1000000.0;
+}
 
 template<typename AppBase>
 class SubscriberAppBase : public rclcpp::Node
@@ -25,6 +29,7 @@ public:
   {
     subscription_ = this->create_subscription<std_msgs::msg::String>(
       getTopicName(app_.app_name_), 1, std::bind(&SubscriberAppBase::topic_callback, this, _1));
+    write_current_time_to_file(target_profile_data_file_path_, getCurrentTimeStamp(), "Start time of subscriber: ");
   }
 
 private:
