@@ -23,7 +23,7 @@ inline void write_current_time_to_file(const std::string & filename, double curr
     file.open(filename, std::ios::app);
     // double time_now = std::chrono::duration_cast<std::chrono::microseconds>(time_to_write - start_time).count()/1e6;
     
-    file <<message<<"::" <<std::setprecision(15)<< current_time << std::endl;
+    file <<message<<"::" <<std::setprecision(20)<< current_time << std::endl;
     file.close();
 }
 
