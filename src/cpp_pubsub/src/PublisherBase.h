@@ -29,7 +29,7 @@ public:
     publisher_ = this->create_publisher<std_msgs::msg::String>(getTopicName(app_name_), 1);
     timer_ = this->create_wall_timer(
       period_, std::bind(&MinimalPublisher::timer_callback, this));
-  
+    write_current_time_to_file(target_profile_data_file_path_, getCurrentTimeStamp(), "Start time of publisher: ");
   }
 
 

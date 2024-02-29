@@ -22,7 +22,8 @@ inline void write_current_time_to_file(const std::string & filename, double curr
     std::ofstream file;
     file.open(filename, std::ios::app);
     // double time_now = std::chrono::duration_cast<std::chrono::microseconds>(time_to_write - start_time).count()/1e6;
-    file <<message<<"::" << current_time << std::endl;
+    
+    file <<message<<"::" <<std::setprecision(15)<< current_time << std::endl;
     file.close();
 }
 
@@ -32,6 +33,12 @@ inline std::string getTimeRecordFolder() {
     std::string time_record_file_path = current_file_directory.string() +"/all_time_records/";
     std::cout<<time_record_file_path<<"\n";
     return time_record_file_path;
-  }
+}
+
+
+double getCurrentTimeStamp(){
+    using namespace std::chrono;
+    return duration_cast<microseconds>(system_clock::now().time_since_epoch()).count() / 1000000.0;
+}
 
 inline std::string getTopicName(std::string& app_name){return "topic_"+app_name;}
