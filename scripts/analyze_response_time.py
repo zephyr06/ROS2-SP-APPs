@@ -1,5 +1,6 @@
 import os
 import re
+import statistics
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -79,10 +80,22 @@ def generate_response_time_file(task_name, project_root=PROJECT_ROOT):
                         response_time = float(time) + \
                             subscriber_time_base - \
                             (publisher_time_base+pair_pub[1])
-                        response_time_list.append(response_time)
+                        response_time_list.append(response_time*1000)
 
     write_response_time_file(task_name, response_time_list, project_root)
 
+
+def print_task_stat(task):
+    response_time_list = []
+    file_name = get_response_time_file(task, PROJECT_ROOT)
+    with open(file_name, 'r') as file:
+        # Read lines from the file and convert them to floats
+        response_time_list = [float(line.strip()) for line in file]
+    print(task)
+    print("Average:", statistics.mean(response_time_list))
+    print("std:", statistics.stdev(response_time_list))
+    print("Minimum:", min(response_time_list))
+    print("Maximum:", max(response_time_list),"\n")
 
 if __name__ == "__main__":
     task_name = ['rrt', 'mpc', 'tsp', 'slam']
@@ -90,3 +103,5 @@ if __name__ == "__main__":
     clear_response_time_file(task_name)
     for task in task_name:
         generate_response_time_file(task)
+        print_task_stat(task)
+    
