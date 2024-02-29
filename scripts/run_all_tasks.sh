@@ -1,5 +1,5 @@
 
-source install/local_setup.bash
+source /home/nvidia/workspace/sdcard/ROS2-SP-APPs/install/local_setup.bash
 
 
 python clear_all_time_records.py
