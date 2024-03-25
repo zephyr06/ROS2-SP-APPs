@@ -13,7 +13,7 @@ def generate_launch_description():
             package='cpp_pubsub',
             namespace='',
             executable='talker',
-            name='talker_tsp',
+            name='talker_mpc',
             arguments=["mpc", str(mpc_period)]
         ),
         Node(
