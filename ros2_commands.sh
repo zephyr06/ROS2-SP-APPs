@@ -11,6 +11,7 @@ colcon build
 # Run the publiser node
 ros2 run cpp_pubsub talker tsp 500
 ros2 run cpp_pubsub talker rrt 1000
+ros2 run cpp_pubsub talker mpc 1000
 
 # Run the listener node
 ros2 run tsp_solver tsp_solver_listener
