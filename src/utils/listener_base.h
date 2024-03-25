@@ -27,7 +27,8 @@ class SubscriberAppBase : public rclcpp::Node {
             getTimeRecordFolder() + app_.app_name_ + "_execution_time.txt") {
     subscription_ = this->create_subscription<std_msgs::msg::String>(
         getTopicName(app_.app_name_), 1,
-        std::bind(&SubscriberAppBase::topic_callback, this, _1));
+        std::bind(&SubscriberAppBase::topic_callback, this,
+                  std::placeholders::_1));
 
     write_current_time_to_file(target_profile_data_file_path_,
                                getCurrentTimeStamp(),
