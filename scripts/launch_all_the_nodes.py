@@ -4,8 +4,8 @@ from launch_ros.actions import Node
 
 mpc_period=500
 rrt_period=1000
-slam_period=2000
-tsp_period=1000
+slam_period=1000
+tsp_period=10000
 
 def generate_launch_description():
     return LaunchDescription([
