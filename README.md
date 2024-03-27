@@ -3,7 +3,7 @@
 ### Dependencies
 - ROS2 Foxy
 - C++ 20
-- Other dependencies for each ROS2 package
+- Other dependencies for each ROS2 package inside the `/src` folder
 
 ### How to launch the software stack
 1. Build the packages: `colcon build`
