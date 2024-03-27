@@ -17,7 +17,7 @@ mpc_period=20
 rrt_period=1000
 slam_period=1000
 tsp_period=10000
-scheduler_period = 20000
+scheduler_period = 60000
 
 # Update periods from the task_characteristics.yaml
 for task in tasks_data['tasks']:

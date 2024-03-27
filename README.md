@@ -7,8 +7,9 @@
 
 ### How to launch the software stack
 1. Build the packages: `colcon build`
-2. Source the overlay: `source install/setup.bash`
-3. Go inside `scripts` folder, and launch all node by: `./run_all_tasks.sh`
+2. Get root privilege: `sudo -s`
+3. Source the overlay: `source install/setup.bash`
+4. Go inside `scripts` folder, and launch all node by: `./run_all_tasks.sh`
 
 ### Task configurations
 Configurations of the tasks (application nodes) are stored inside two YAML files: `/all_time_records/task_characteristics.yaml` and `/src/real_time_manager/configs/local_cpu_and_priority.yaml`. All real-time nodes should acquire task set info from these two files. **Only** modify these files before you launch the ROS2 stack.
