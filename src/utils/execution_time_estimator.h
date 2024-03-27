@@ -20,6 +20,8 @@ public:
     void updateTaskExecutionTimeDistributions(int max_data_count = 50)
     {
         std::vector<std::string> node_vec{"tsp", "mpc", "rrt", "slam"};
+        std::vector<int> periods{10000, 20, 1000, 1000};
+        int time_scale_multiplier = 1000;
         YAML::Node statitics_node;
 
         for (int i = 0; i < node_vec.size(); i++)
@@ -40,7 +42,11 @@ public:
             while (std::getline(file, line))
             {
                 double number = extractNumber(line);
-                data.push_back(number);
+                if (number <= 0)
+                    continue;
+                
+
+                data.push_back(number * time_scale_multiplier);
             }
 
             // Close the file
@@ -69,22 +75,20 @@ public:
             yaml_node["execution_time_sigma"] = std_dev;
             yaml_node["execution_time_min"] = min_val;
             yaml_node["execution_time_max"] = max_val;
-            yaml_node["period"] = max_val;
-            yaml_node["deadline"] = max_val;
+            yaml_node["period"] = periods[i];
+            yaml_node["deadline"] = periods[i];
 
             std::string my_str = node_name;
             transform(my_str.begin(), my_str.end(), my_str.begin(), ::toupper);
             yaml_node["name"] = my_str;
 
-            statitics_node["Tasks"].push_back(yaml_node);
+            statitics_node["tasks"].push_back(yaml_node);
         }
 
         // Output YAML node to a file
-        std::ofstream output_file(getTimeRecordFolder() + "execution_time_statistics.yaml");
+        std::ofstream output_file(getTimeRecordFolder() + "task_characteristics.yaml");
         output_file << statitics_node;
         output_file.close();
-
-        std::cout << "Results have been written to output.yaml" << std::endl;
 
         return;
     }
@@ -112,5 +116,10 @@ private:
 
         min_val = *std::min_element(data.begin(), data.end());
         max_val = *std::max_element(data.begin(), data.end());
+
+        mean = (int) mean;
+        std_dev = (int) std_dev;
+        min_val = (int) min_val;
+        max_val = (int) max_val;
     }
 };

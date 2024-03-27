@@ -11,7 +11,9 @@ int main()
     // rt_manager.setCPUAffinityAndPriority(); 
     
     std::filesystem::path current_file_path = std::filesystem::canonical(__FILE__);
-    std::filesystem::path current_file_directory = current_file_path.parent_path();
-    std::string local_file = current_file_directory.string() + "/configs/local_cpu_and_priority.yaml";
-    rt_manager.setCPUAffinityAndPriority(local_file); // or we can provide a local file for manual test
+    std::filesystem::path parent_file_directory = current_file_path.parent_path().parent_path();
+    std::string local_config_yaml = parent_file_directory.string() + "/configs/local_cpu_and_priority.yaml";
+
+    // std::cout<< local_config_yaml;
+    rt_manager.setCPUAffinityAndPriority(local_config_yaml); // or we can provide a local file for manual test
 }

@@ -55,17 +55,17 @@ public:
 
         int max_priority = 0;         // the talker will have the largest priority
         bool has_fifo_policy = false; // if no FIFO policy, then the talker will use CFS, otherwise the talker will be FIFO with the largest priority
-        for (int i = 0; i < data["Tasks"].size(); i++)
+        for (int i = 0; i < data["tasks"].size(); i++)
         {
             // task name
-            std::string name = data["Tasks"][i]["name"].as<std::string>();
+            std::string name = data["tasks"][i]["name"].as<std::string>();
             task_names.push_back(executable_name_map[name]);
 
             // task cpu list
-            cpu_lists.push_back(data["Tasks"][i]["cpu_lists"].as<std::vector<int>>());
+            cpu_lists.push_back(data["tasks"][i]["cpu_lists"].as<std::vector<int>>());
 
             // task policy
-            std::string scheduling_policy = data["Tasks"][i]["scheduling_policy"].as<std::string>();
+            std::string scheduling_policy = data["tasks"][i]["scheduling_policy"].as<std::string>();
             if (scheduling_policy == "SCHED_FIFO")
             {
                 scheduling_policies.push_back(1); // 1 is for SCHED_FIFO
@@ -83,7 +83,7 @@ public:
             }
 
             // task priority
-            int priority = data["Tasks"][i]["priority"].as<int>();
+            int priority = data["tasks"][i]["priority"].as<int>();
             if (scheduling_policy == "SCHED_OTHER")
             {
                 priorities.push_back(0); // SCHED_OTHER or CFS, only support priority level of 0
@@ -123,7 +123,7 @@ public:
         setCPUAffinityAndPriority(task_names, cpu_lists, scheduling_policies, priorities);
     }
 
-    void setCPUAffinityAndPriority(std::vector<std::string> task_names = {"talker"},    // all task names
+    void setCPUAffinityAndPriority(std::vector<std::string> task_names = {"talker"},    // all task names, if use this function, "talker" should be included as well
                                    std::vector<std::vector<int>> cpu_lists = {{0}},     // CPU cores you want to assign
                                    std::vector<int> scheduling_policies = {SCHED_FIFO}, // desired scheduling policy
                                    std::vector<int> priorities = {10})

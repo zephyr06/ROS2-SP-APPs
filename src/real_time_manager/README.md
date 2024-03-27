@@ -28,7 +28,7 @@ yaml-cpp
 ## Example YAML files
 - output of execution time statistics
 ```
-Tasks:
+tasks:
   - id: 0
     execution_time_mu: 1.00295837504
     execution_time_sigma: 0.005780039026146719
@@ -65,7 +65,7 @@ Tasks:
 
 - input files for cpu affinities and priorities
 ```
-Tasks:
+tasks:
   - id: 0
     name: TSP
     cpu_lists: [1,2]

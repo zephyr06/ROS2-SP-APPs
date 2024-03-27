@@ -25,10 +25,10 @@ void UpdatePriorityAssignments(std::string tasks_yaml,
         std::string app_name = it->first.as<std::string>();
         int priority = it->second.as<int>();
         // cout << app_name << ", " << priority << "\n";
-        for (YAML::Node::iterator it_task = tasks["Tasks"].begin();
-             it_task != tasks["Tasks"].end(); ++it_task) {
+        for (YAML::Node::iterator it_task = tasks["tasks"].begin();
+             it_task != tasks["tasks"].end(); ++it_task) {
             if (app_name == it_task->operator[]("name").as<std::string>()) {
-                it_task->operator[]("priority") = priority;
+                it_task->operator[]("priority") = priority + 1;
                 break;
             }
         }

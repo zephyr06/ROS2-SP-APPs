@@ -19,7 +19,7 @@ slam_period=1000
 tsp_period=10000
 
 # Update periods from the task_characteristics.yaml
-for task in tasks_data['Tasks']:
+for task in tasks_data['tasks']:
     period = task['period']
     if task['name'] == 'MPC':
         mpc_period = period
