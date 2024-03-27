@@ -10,6 +10,10 @@ public:
     SchedulerApp() : AppBase("scheduler") {}
     void run() override
     {
+        // no execution at the first instance
+        if (cnt_++ == 0)
+            return;
+
         std::filesystem::path current_file_path = std::filesystem::canonical(__FILE__);
         std::filesystem::path parent_file_directory = current_file_path.parent_path().parent_path();
         std::string local_config_yaml = parent_file_directory.string() + "/configs/local_cpu_and_priority.yaml";
@@ -46,6 +50,7 @@ public:
 
     ExecutionTimeEstimator et_estimator_;
     RealTimeManager rt_manager_;
+    int cnt_ = 0;
 };
 
 int main(int argc, char *argv[])

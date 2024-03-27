@@ -19,8 +19,24 @@ public:
 
     void updateTaskExecutionTimeDistributions(int max_data_count = 50)
     {
-        std::vector<std::string> node_vec{"tsp", "mpc", "rrt", "slam"};
-        std::vector<int> periods{10000, 20, 1000, 1000};
+        std::vector<std::string> node_vec{"TSP", "MPC", "RRT", "SLAM"};
+        std::vector<int> periods{10000, 20, 1000, 1000}; // this is default period, used only when the task_characteristics.yaml doesn't provide infos
+        std::vector<int> deadlines{10000, 20, 1000, 1000};
+
+        // update period and deadlines
+        std::string task_characteristics_yaml = getTimeRecordFolder() + "task_characteristics.yaml";
+        YAML::Node tasks = YAML::LoadFile(task_characteristics_yaml);
+        for (YAML::Node::iterator it_task = tasks["tasks"].begin(); it_task != tasks["tasks"].end(); ++it_task)
+        {
+            auto app_name = it_task->operator[]("name").as<std::string>();
+            for (int i = 0; i < node_vec.size(); i++) {
+                if (node_vec[i] == app_name) {
+                    periods[i] = it_task->operator[]("period").as<int>();
+                    deadlines[i] = it_task->operator[]("deadline").as<int>();
+                }
+            }
+        }
+
         int time_scale_multiplier = 1000;
         YAML::Node statitics_node;
 
@@ -28,6 +44,7 @@ public:
         {
             auto node_name = node_vec[i];
             // Open the file
+            transform(node_name.begin(), node_name.end(), node_name.begin(), ::tolower);
             std::string filename = getTimeRecordFolder() + node_name + "_execution_time.txt";
             std::ifstream file(filename);
             if (!file.is_open())
@@ -44,7 +61,6 @@ public:
                 double number = extractNumber(line);
                 if (number <= 0)
                     continue;
-                
 
                 data.push_back(number * time_scale_multiplier);
             }
@@ -76,7 +92,7 @@ public:
             yaml_node["execution_time_min"] = min_val;
             yaml_node["execution_time_max"] = max_val;
             yaml_node["period"] = periods[i];
-            yaml_node["deadline"] = periods[i];
+            yaml_node["deadline"] = deadlines[i];
 
             std::string my_str = node_name;
             transform(my_str.begin(), my_str.end(), my_str.begin(), ::toupper);
@@ -117,9 +133,9 @@ private:
         min_val = *std::min_element(data.begin(), data.end());
         max_val = *std::max_element(data.begin(), data.end());
 
-        mean = (int) mean;
-        std_dev = (int) std_dev;
-        min_val = (int) min_val;
-        max_val = (int) max_val;
+        mean = (int)mean;
+        std_dev = (int)std_dev;
+        min_val = (int)min_val;
+        max_val = (int)max_val;
     }
 };
