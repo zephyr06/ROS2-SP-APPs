@@ -7,6 +7,8 @@ if(NOT CMAKE_C_STANDARD)
 endif()
 
 set (CMAKE_CXX_STANDARD 20)
+set(CMAKE_BUILD_TYPE Release)
+
 include_directories(${PROJECT_SOURCE_DIR}/../utils)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -38,7 +40,16 @@ target_include_directories(update_priority_assignments PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(update_priority_assignments yaml-cpp)
 
-install(TARGETS et_statistics set_cpu_and_priority update_priority_assignments DESTINATION lib/${PROJECT_NAME})
+
+add_executable(listener_scheduler src/listener_scheduler.cpp)
+ament_target_dependencies(listener_scheduler rclcpp std_msgs)
+target_include_directories(listener_scheduler PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(listener_scheduler yaml-cpp)
+
+install(TARGETS et_statistics set_cpu_and_priority update_priority_assignments listener_scheduler 
+  DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
