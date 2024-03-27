@@ -1,11 +1,34 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
+import yaml
+import os
 
+current_file_path = os.path.abspath(__file__)
+parent_directory = os.path.dirname(os.path.dirname(current_file_path))
+task_characteristics_yaml = parent_directory + '/all_time_records/task_characteristics.yaml'
+
+print(task_characteristics_yaml)
+
+# Read YAML file
+with open(task_characteristics_yaml, 'r') as file:
+    tasks_data = yaml.safe_load(file)
 
 mpc_period=20
 rrt_period=1000
 slam_period=1000
 tsp_period=10000
+
+# Update periods from the task_characteristics.yaml
+for task in tasks_data['Tasks']:
+    period = task['period']
+    if task['name'] == 'MPC':
+        mpc_period = period
+    elif task['name'] == 'RRT':
+        rrt_period = period
+    elif task['name'] == 'SLAM':
+        slam_period = period
+    elif task['name'] == 'TSP:':
+        tsp_period = period
 
 def generate_launch_description():
     return LaunchDescription([

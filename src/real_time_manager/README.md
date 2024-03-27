@@ -7,7 +7,7 @@ yaml-cpp
 - et_statistics: 
     - Estimate the execution time distribution for all four nodes {"tsp", "mpc", "rrt", "slam"} in the all_time_records folder.
     - Input argument "max_data_count" (optional, default is 50): only calculate distributions for the latest max_data_count entry.
-    - Output file: all_time_records/execution_time_statistics.yaml.
+    - Output file: all_time_records/task_characteristics.yaml.
 - set_cpu_and_priority:
     - set cpu affinity and priority
     - Need sudo priority!!! any node using the `RealTimeManager` class will need priorities, otherwise it won't work.
