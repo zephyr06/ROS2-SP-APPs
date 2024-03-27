@@ -17,6 +17,7 @@ mpc_period=20
 rrt_period=1000
 slam_period=1000
 tsp_period=10000
+scheduler_period = 20000
 
 # Update periods from the task_characteristics.yaml
 for task in tasks_data['tasks']:
@@ -60,6 +61,13 @@ def generate_launch_description():
             name='talker_tsp',
             arguments=["tsp", str(tsp_period)]
         ),
+        Node(
+            package='cpp_pubsub',
+            namespace='',
+            executable='talker',
+            name='talker_scheduler',
+            arguments=["scheduler", str(scheduler_period)]
+        ),
         #  *************** Listeners ********************
         Node(
             package='mpc',
@@ -84,5 +92,11 @@ def generate_launch_description():
             name='tsp_solver',
             namespace='',
             executable='tsp_solver_listener'
+        ),
+        Node(
+            package='real_time_manager',
+            name='listener_scheduler',
+            namespace='',
+            executable='listener_scheduler'
         ),
     ])
