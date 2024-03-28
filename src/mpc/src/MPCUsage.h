@@ -184,7 +184,7 @@ double getErrorNorm(const Eigen::Matrix<double, 12, 1>& x,
 // TODO: turn off print information, make it into a class
 int mpc_main() {
   // set the preview window
-  int mpcWindow = 20;
+  int mpcWindow = 10;
 
   // allocate the dynamics matrices
   Eigen::Matrix<double, 12, 12> a;
@@ -252,7 +252,7 @@ int mpc_main() {
   Eigen::VectorXd QPSolution;
 
   // number of iteration steps
-  int numberOfSteps = 50;
+  int numberOfSteps = 10;
 
   for (int i = 0; i < numberOfSteps; i++) {
     // solve the QP problem
