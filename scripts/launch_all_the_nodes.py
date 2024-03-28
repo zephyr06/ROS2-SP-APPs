@@ -13,7 +13,7 @@ print(task_characteristics_yaml)
 with open(task_characteristics_yaml, 'r') as file:
     tasks_data = yaml.safe_load(file)
 
-mpc_period=20
+mpc_period=50
 rrt_period=1000
 slam_period=1000
 tsp_period=10000
@@ -93,7 +93,13 @@ def generate_launch_description():
             namespace='',
             executable='tsp_solver_listener'
         ),
-        Node(
+        # Node(
+        #     package='real_time_manager',
+        #     name='listener_scheduler_fixed_priority',
+        #     namespace='',
+        #     executable='listener_scheduler_fixed_priority'
+        # ),
+         Node(
             package='real_time_manager',
             name='listener_scheduler',
             namespace='',
