@@ -48,7 +48,16 @@ target_include_directories(listener_scheduler PUBLIC
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(listener_scheduler yaml-cpp)
 
-install(TARGETS et_statistics set_cpu_and_priority update_priority_assignments listener_scheduler 
+
+add_executable(listener_scheduler_fixed_priority src/listener_scheduler_fixed_priority.cpp)
+ament_target_dependencies(listener_scheduler_fixed_priority rclcpp std_msgs)
+target_include_directories(listener_scheduler_fixed_priority PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(listener_scheduler_fixed_priority yaml-cpp)
+
+
+install(TARGETS et_statistics set_cpu_and_priority update_priority_assignments listener_scheduler listener_scheduler_fixed_priority
   DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
