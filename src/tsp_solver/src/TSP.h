@@ -56,6 +56,9 @@ int *greedy_algo(int **distance, int dim);
 struct Tabu{
 	int **cycle;
 	int value;
+	void clear() {
+		delete[] cycle;
+	}
 };
 
 int Exchange3opt(int **distance, int dim, int **path);
