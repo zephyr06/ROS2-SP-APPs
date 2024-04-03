@@ -1,7 +1,7 @@
 tasks:
   - id: 0
     name: TSP
-    cpu_lists: [1]
+    cpu_lists: [2]
     scheduling_policy: SCHED_OTHER
     priority: 0
   - id: 1

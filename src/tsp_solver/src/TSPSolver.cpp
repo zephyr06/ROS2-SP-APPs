@@ -30,7 +30,7 @@ int callTSP()
 	int i;
 	int pathlength = 0;
 	double gap;
-	
+
 	if(Methods[0].compare(argv[3])==0)
 	{
 		cout << "Method:" << "Approximation"<<endl;
@@ -157,6 +157,17 @@ int callTSP()
 		cout << endl << "Output file created!" << endl;
 		output_sol.close();
 		output_trace.close();
+
+		delete[] data_char;
+		for (int t = 0; t < dim; t++) {
+			delete[] distance[t];
+		}
+		delete[] path;
+		delete[] distance;
+		delete d;
+		delete o;
+		delete[] initial;
+
 		return 0;
 	}
 	

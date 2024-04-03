@@ -198,6 +198,8 @@ int perturb(int **path,int dim,unsigned seed)
 		path[edge[3]-edge[1]+n]=pos[edge[0]+n];
 	for(n=1;n<=dim-edge[3]+edge[0]-1;n++)
 		path[edge[3]-edge[0]+n]=pos[(edge[3]+n)%dim];
+	
+	delete[] edge;
 
 	return 0;
 }
@@ -249,6 +251,8 @@ int **HC(int **distance, int dim, int *initial, double cutoff, unsigned seed)
 						cout<< (clock()-start)/(float) CLOCKS_PER_SEC << " " << pathlength <<endl;
 						output_trace << (clock()-start)/(float) CLOCKS_PER_SEC << " " << pathlength <<endl;
 					}
+					temp->clear();
+					delete temp;
 					continue;
 				}
 				else if(temp->value<pathlength&&pathlength<2*v)
@@ -290,8 +294,12 @@ int **HC(int **distance, int dim, int *initial, double cutoff, unsigned seed)
 			perturb(path,dim,seed);
 		}
 	}
-	while(T.size()>1)
+	while(T.size()>1) {
+		temp = T.top();
 		T.pop();
+		temp->clear();
+		delete temp;
+	}
 	temp=T.top();
 	return temp->cycle;
 }
