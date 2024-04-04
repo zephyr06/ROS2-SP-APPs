@@ -12,10 +12,10 @@
     ```
 ### How to launch the software stack
 1. Go to SP_Metric_Opt package and build the SP_Metric_Opt package in release mode: [SP_Metric_Opt Build and Run](https://github.com/zephyr06/SP_Metric_Opt?tab=readme-ov-file#build-and-run)
-1. Inside the workspace of this ROS2 Foxy packages: `colcon build`
-2. Get root privilege: `sudo -s`
-3. Source the overlay: `source install/setup.bash`
-4. Go inside `scripts` folder, and launch all node by: `./run_all_tasks.sh`
+1. Inside the workspace of this repo, build ROS2 Foxy packages: `colcon build`
+1. Get root privilege: `sudo -s`
+1. Source the overlay: `source install/setup.bash`
+1. Go inside `scripts` folder, and launch all node by: `./run_all_tasks.sh`
 
 ### Task configurations
 Configurations of the tasks (application nodes) are stored inside two YAML files: `/all_time_records/task_characteristics.yaml` and `/src/real_time_manager/configs/local_cpu_and_priority.yaml`. All real-time nodes should acquire task set info from these two files. **Only** modify these files before you launch the ROS2 stack.
