@@ -2,6 +2,44 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 import yaml
 import os
+import argparse
+
+# Options: CFS, RM, optimizer_BF, optimizer_Incremental
+scheduler = "optimizer_BF"
+
+if scheduler == "optimizer_BF":
+    node_scheduler = Node(
+            package='real_time_manager',
+            name='listener_scheduler',
+            namespace='',
+            executable='listener_scheduler'
+        )
+elif scheduler =="CFS":
+    node_scheduler =  Node(
+        package='real_time_manager',
+        name='local_fixed_cpu_and_priority_CFS',
+        namespace='',
+        executable='local_fixed_cpu_and_priority_CFS'
+    )
+elif scheduler == "RM":
+    node_scheduler =  Node(
+        package='real_time_manager',
+        name='local_fixed_cpu_and_priority',
+        namespace='',
+        executable='local_fixed_cpu_and_priority'
+    )
+elif scheduler == "optimizer_BF":
+    # TODO:!!!
+    # node_scheduler = Node(
+    #         package='real_time_manager',
+    #         name='listener_scheduler',
+    #         namespace='',
+    #         executable='listener_scheduler'
+    #     )
+    print("Need to add API!!")
+
+
+
 
 current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(os.path.dirname(current_file_path))
@@ -99,10 +137,11 @@ def generate_launch_description():
         #     namespace='',
         #     executable='listener_scheduler_fixed_priority'
         # ),
-        Node(
-            package='real_time_manager',
-            name='listener_scheduler',
-            namespace='',
-            executable='listener_scheduler'
-        ),
+        # Node(
+        #     package='real_time_manager',
+        #     name='listener_scheduler',
+        #     namespace='',
+        #     executable='listener_scheduler'
+        # ),
+        node_scheduler
     ])
