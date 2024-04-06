@@ -19,12 +19,16 @@ int main(int argc, char *argv[]) {
         .default_value(std::string("TaskData/test_robotics_v3.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/test_robotics_v1.yaml");
+            "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
     program.add_argument("--output_file_path")
         .default_value(std::string("TaskData/pa_res_test_robotics_v1.yaml"))
         .help(
             "the relative path of the file that saves priority assignment "
-            "results. Example: TaskData/pa_res_test_robotics_v1.yaml");
+            "results. Example: TaskData/pa_res_test_robotics_v1.yaml. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
 
     try {
         program.parse_args(argc, argv);
@@ -40,6 +44,8 @@ int main(int argc, char *argv[]) {
 
     string output_file_path = GlobalVariables::PROJECT_PATH +
                               program.get<std::string>("--output_file_path");
+    if (output_file_path[0] != '/')
+        output_file_path = GlobalVariables::PROJECT_PATH + output_file_path;
 
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
     // dag_tasks.tasks[0].priority = 3;
