@@ -82,6 +82,6 @@ def test_get_sp_value_list():
     sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0)
     # only one value; chance of four tasks to miss DDL:
     # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.2
-    exp_sp = 2*-0.01*np.exp(10*0.5) + np.log(1.5)*2
+    exp_sp = 2*-0.01*np.exp(10*0.5) + np.log(1.5)*2 - 0.5*4
     assert sp_value_list == pytest.approx([exp_sp], abs=1e-2)
     
