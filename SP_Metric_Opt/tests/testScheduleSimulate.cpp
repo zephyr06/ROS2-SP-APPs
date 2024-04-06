@@ -16,7 +16,7 @@ using namespace GlobalVariables;
 class TaskSetForTest_scheduling_v1 : public ::testing::Test {
    public:
     void SetUp() override {
-        std::string file_name = "test_n3_v18";
+        std::string file_name = "test_robotics_v10";
         std::string path =
             GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
         dag_tasks = ReadDAG_Tasks(path);
