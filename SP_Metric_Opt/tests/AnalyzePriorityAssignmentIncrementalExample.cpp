@@ -7,6 +7,7 @@
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/argparse.hpp"
 #include "sources/Utils/profilier.h"
+#include "sources/Utils/readwrite.h"
 
 using namespace std;
 using namespace SP_OPT_PA;
@@ -16,7 +17,7 @@ int main(int argc, char *argv[]) {
 
     argparse::ArgumentParser program("program name");
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v3.yaml"))
+        .default_value(std::string("TaskData/test_robotics_v6.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
@@ -46,17 +47,28 @@ int main(int argc, char *argv[]) {
     output_file_path = RelativePathToAbsolutePath(output_file_path);
 
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
-    SP_Parameters sp_parameters = SP_Parameters(dag_tasks);
+    SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
+
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
+
     // read a DAG and optimize it for the first time
-    PriorityVec pa_opt = opt.Optimize(dag_tasks);
-    // to perform incremental optimization, do not create a new OptimizePA_Incre
-    // class, but instead use the same OptimizePA_Incre class to run
-    // optimization
-    for (int i = 0; i < 5; i++) pa_opt = opt.Optimize(dag_tasks);
+    PriorityVec pa_opt = opt.OptimizeFromScratch(
+        GlobalVariables::Layer_Node_During_Incremental_Optimization);
 
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
-    PrintPriorityVec(dag_tasks.tasks, pa_opt);
-    WritePriorityAssignments(output_file_path, pa_opt, time_taken);
+    // PrintPriorityVec(dag_tasks.tasks, pa_opt);
+    WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
+                             time_taken);
+
+    // to perform incremental optimization for 5 more times
+    for (int i = 0; i < 5; i++) {
+        // read the updated DAG
+        dag_tasks = ReadDAG_Tasks(file_path);
+        pa_opt = opt.OptimizeIncre(dag_tasks);
+        time_taken = GetTimeTaken(start_time, finish_time);
+        // PrintPriorityVec(dag_tasks.tasks, pa_opt);
+        WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
+                                 time_taken);
+    }
 }

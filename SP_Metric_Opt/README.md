@@ -22,7 +22,7 @@ make -j4
 ## Run the brute-force scheduler
 You can run the brute-force scheduler by passing the path of task set configuration files and specifying the output file path
 ```
-./tests/AnalyzePriorityAssignment --file_path TaskData/test_robotics_v3.yaml --output_file_path TaskData/pa_res_test_robotics_v1.txt
+./tests/AnalyzePriorityAssignment --file_path TaskData/test_robotics_v6.yaml --output_file_path TaskData/pa_res_test_robotics_v1.txt
 ```
 You can also specify the absolute path:
 ```
@@ -47,4 +47,4 @@ Please modify the parameters provided in the main function in `/Visualize_SP_Met
 
 
 # Modify the task set and SP metric coefficients
-You can modify the yaml file which describes the task set settings. Time units are in microseconds. An example yaml file is provided in `/TaskData/test_robotics_v3`.
+You can modify the yaml file which describes the task set settings. Time units are in microseconds. An example yaml file is provided in `/TaskData/test_robotics_v6.yaml`.

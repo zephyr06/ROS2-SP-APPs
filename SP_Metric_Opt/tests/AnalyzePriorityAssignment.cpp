@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
 
     argparse::ArgumentParser program("program name");
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v3.yaml"))
+        .default_value(std::string("TaskData/test_robotics_v6.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
@@ -47,13 +47,11 @@ int main(int argc, char *argv[]) {
     output_file_path = RelativePathToAbsolutePath(output_file_path);
 
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
-    dag_tasks.tasks[0].priority = 0;
-    dag_tasks.tasks[1].priority = 1;
-    dag_tasks.tasks[2].priority = 2;
-    dag_tasks.tasks[3].priority = 3;
-    SP_Parameters sp_parameters = SP_Parameters(dag_tasks);
+    SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
+
+    // Perform optimization
     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
-    PrintPriorityVec(dag_tasks.tasks, pa_opt);
+    // PrintPriorityVec(dag_tasks.tasks, pa_opt);
 
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);

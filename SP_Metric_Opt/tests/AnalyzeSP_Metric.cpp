@@ -51,7 +51,7 @@ int main(int argc, char *argv[]) {
             "as /root/usr/slam.txt ");
 
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v3.yaml"))
+        .default_value(std::string("TaskData/test_robotics_v6.yaml"))
         .help(
             "the relative path of the yaml file that saves information about"
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
