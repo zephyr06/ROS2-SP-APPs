@@ -7,11 +7,11 @@ import seaborn as sns
 # tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
 # task_set_config = os.path.join(
-#     PROJECT_PATH, "Visualize_SP_Metric/data_for_test2/task_characteristics.yaml")
+#     OPT_SP_PROJECT_PATH, "Visualize_SP_Metric/data_for_test2/task_characteristics.yaml")
 # app_name2period = get_app2period(task_set_config)
 
 # data_folder_path = os.path.join(
-#     PROJECT_PATH, "Visualize_SP_Metric", "data_for_test2")
+#     OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test2")
 
 # tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
 # sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0)
@@ -48,7 +48,7 @@ def calculate_pmf(data):
 #         print(data)
 #         plt.show()
 
-path = os.path.join(PROJECT_PATH, 'Visualize_SP_Metric/data/temp/SLAM_response_time_120_1120.txt')
+path = os.path.join(OPT_SP_PROJECT_PATH, 'Visualize_SP_Metric/data/temp/SLAM_response_time_120_1120.txt')
 # visualize_txt_data_in_file(path)
 data = datafromtxtfile(path)
 

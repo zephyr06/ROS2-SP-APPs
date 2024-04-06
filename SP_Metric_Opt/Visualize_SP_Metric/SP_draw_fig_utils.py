@@ -4,8 +4,8 @@ import yaml
 import subprocess
 from datetime import datetime
 
-PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-print(PROJECT_PATH)
+OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print(OPT_SP_PROJECT_PATH)
 # All time in seconds
 
 def verify_task_set_config(path):
@@ -128,10 +128,10 @@ def get_task_set_info(tasks_name_list, app_name2period, data_folder_path):
 
 def get_response_time_file_name(task_name, start_time, end_time):
     file_name = task_name + "_response_time_" + str(start_time) + "_" + str(end_time) + ".txt"
-    return os.path.join(PROJECT_PATH, "Visualize_SP_Metric", "data", "temp", file_name)
+    return os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "temp", file_name)
 
 def get_SP_analyze_executable_file_path():
-    path = os.path.join(PROJECT_PATH, "release", "tests", "AnalyzeSP_Metric")
+    path = os.path.join(OPT_SP_PROJECT_PATH, "release", "tests", "AnalyzeSP_Metric")
     verify_task_set_config(path)
     return path
 
@@ -145,7 +145,7 @@ def get_sp_value(output_str):
 def get_sp_value_file_name():
     current_time = datetime.now()
     time_string = current_time.strftime("%m-%d %H:%M:%S")  # Example format, adjust as needed
-    return os.path.join(PROJECT_PATH, "Visualize_SP_Metric", "data", "temp", "sp_value"+time_string+ ".txt")
+    return os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "temp", "sp_value"+time_string+ ".txt")
 
 def write_sp_value_to_file(sp_value_list, file_name):
     with open(file_name, 'w') as file:

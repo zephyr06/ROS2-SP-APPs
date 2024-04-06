@@ -6,9 +6,9 @@ if __name__=="__main__":
     # the path of the folder which generates the profiling data in ROS2 workspace
     data_folder_paths = {
         # "FIFO": os.path.join(
-        # PROJECT_PATH, "Visualize_SP_Metric", "data"),
-        "CFS": os.path.join(PROJECT_PATH,"Visualize_SP_Metric/data/all_time_records_CFS/all_time_records"),
-        "FIFO": os.path.join(PROJECT_PATH,"Visualize_SP_Metric/data/all_time_records_FIFO_Dyn/all_time_records"),
+        # OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data"),
+        "CFS": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data/all_time_records_CFS/all_time_records"),
+        "FIFO": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data/all_time_records_FIFO_Dyn/all_time_records"),
         }
     
     # TODO: add weights!!!
@@ -18,7 +18,7 @@ if __name__=="__main__":
     # TODO: add readme file to the root folder
     # TODO: SLAM adjust ET?
     task_set_config = os.path.join(
-        PROJECT_PATH, "TaskData/task_characteristics.yaml")
+        OPT_SP_PROJECT_PATH, "TaskData/task_characteristics.yaml")
     verify_task_set_config(task_set_config)
     app_name2period = get_app2period(task_set_config)
     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']

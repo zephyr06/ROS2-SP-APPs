@@ -4,7 +4,7 @@ from SP_draw_fig_utils import *
 
 def test_read_period():
     task_set_config = os.path.join(
-        PROJECT_PATH, "TaskData/test_robotics_v4.yaml")
+        OPT_SP_PROJECT_PATH, "TaskData/test_robotics_v4.yaml")
     verify_task_set_config(task_set_config)
     app_name2period = get_app2period(task_set_config)
     # assert app_name2period['TSP'] == 1.0
@@ -15,7 +15,7 @@ def test_read_period():
 def test_load_publish_data():
     task = TaskInfo('MPC', 1.0)
     data_folder_path = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
     task.load_publish_data(data_folder_path)
     assert task.publisher_offset == pytest.approx(1711401393.7642669678)
     assert task.publisher_index2data[0] == pytest.approx(0.61328400)
@@ -27,7 +27,7 @@ def test_load_publish_data():
 def test_get_response_time():
     task = TaskInfo('MPC', 1.0)
     data_folder_path = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
     task.load_publish_data(data_folder_path)
     task.load_subscribe_data(data_folder_path)
     response_time_index2data = task.get_response_time_index2data()
@@ -37,7 +37,7 @@ def test_get_response_time():
 def test_get_invalid_response_time():
     task = TaskInfo('RRT', 1.0)
     data_folder_path = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
     task.load_publish_data(data_folder_path)
     task.load_subscribe_data(data_folder_path)
     response_time_index2data = task.get_response_time_index2data()
@@ -47,7 +47,7 @@ def test_get_invalid_response_time():
 def test_publisher_index2actual_time():
     task = TaskInfo('MPC', 1.0)
     data_folder_path = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
     task.load_publish_data(data_folder_path)
     assert task.publisher_index2actual_time(0) == pytest.approx(1711401393.7642669678)
     assert task.publisher_index2actual_time(100) == pytest.approx(1711401393.7642669678 + 100 * 1.0)
@@ -56,11 +56,11 @@ def test_normalize_offsets():
     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
     task_set_config = os.path.join(
-        PROJECT_PATH, "TaskData/test_robotics_v4.yaml")
+        OPT_SP_PROJECT_PATH, "TaskData/test_robotics_v4.yaml")
     app_name2period = get_app2period(task_set_config)
 
     data_folder_path = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test")
     
     tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
     assert tasks_name_to_info['SLAM'].publisher_offset == pytest.approx(0.0, abs=1e-4)
@@ -72,11 +72,11 @@ def test_get_sp_value_list():
     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
     task_set_config = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric/data_for_test2/task_characteristics.yaml")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric/data_for_test2/task_characteristics.yaml")
     app_name2period = get_app2period(task_set_config)
 
     data_folder_path = os.path.join(
-        PROJECT_PATH, "Visualize_SP_Metric", "data_for_test2")
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test2")
     
     tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
     sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0)
