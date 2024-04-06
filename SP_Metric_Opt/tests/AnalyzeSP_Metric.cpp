@@ -83,7 +83,7 @@ int main(int argc, char *argv[]) {
 
     file_path_ref = GlobalVariables::PROJECT_PATH + file_path_ref;
 
-    int granularity = 10;
+    int granularity = GlobalVariables::Granularity;
     DAG_Model dag_tasks =
         ReadDAG_Tasks(file_path_ref);  // only read the tasks without worrying
                                        // about the execution time distribution
