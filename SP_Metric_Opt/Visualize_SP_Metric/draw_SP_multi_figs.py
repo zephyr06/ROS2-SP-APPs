@@ -18,7 +18,7 @@ if __name__=="__main__":
     # TODO: add readme file to the root folder
     # TODO: SLAM adjust ET?
     task_set_config = os.path.join(
-        OPT_SP_PROJECT_PATH, "TaskData/task_characteristics.yaml")
+        os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
     verify_task_set_config(task_set_config)
     app_name2period = get_app2period(task_set_config)
     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
