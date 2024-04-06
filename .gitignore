@@ -12,10 +12,8 @@ SP_Metric_Opt/TaskData/periodic-set-*
 SP_Metric_Opt/TaskData/*/periodic-set-*
 SP_Metric_Opt/TaskData/dagTasks/*
 SP_Metric_Opt/TaskData/*/dag-set*
-SP_Metric_Opt/TaskData/
-SP_Metric_Opt/TaskData/
+# SP_Metric_Opt/TaskData/
 *.vscode*
-SP_Metric_Opt/TaskData/
 *.idea*
 */Visualize_SP_Metric/data/temp/*
 
