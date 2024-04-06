@@ -42,6 +42,15 @@ TEST(read, DAG) {
     EXPECT_EQ(1000, dag_tasks.chains_deadlines_[0]);
 }
 TEST(ReadSP_Parameters, V1) {
+    std::string file_name = "test_robotics_v3";
+    string path =
+        GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+    SP_Parameters sp_par = ReadSP_Parameters(path);
+
+    EXPECT_EQ(1, sp_par.weights_path[0]);
+    EXPECT_EQ(0.5, sp_par.thresholds_path[0]);
+}
+TEST(ReadSP_Parameters, V2) {
     std::string file_name = "test_robotics_v5";
     string path =
         GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";

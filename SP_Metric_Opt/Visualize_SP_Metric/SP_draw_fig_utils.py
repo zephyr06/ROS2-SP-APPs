@@ -4,7 +4,8 @@ import yaml
 import subprocess
 from datetime import datetime
 
-PROJECT_PATH = "/home/zephyr/Programming/SP_Metric_Opt"
+PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+print(PROJECT_PATH)
 # All time in seconds
 
 def verify_task_set_config(path):
@@ -136,7 +137,10 @@ def get_SP_analyze_executable_file_path():
 
 def get_sp_value(output_str):
     """output str format: SP-Metric: -2.40811"""
-    return float(output_str.split(" ")[1])
+    output_split = output_str.split(" ")
+    if len(output_split) < 2:
+        raise Exception("Error: SP-Metric not found in the output string: "+output_str)
+    return float(output_split[1])
 
 def get_sp_value_file_name():
     current_time = datetime.now()
