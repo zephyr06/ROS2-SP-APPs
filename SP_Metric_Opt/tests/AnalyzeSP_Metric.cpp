@@ -67,29 +67,23 @@ int main(int argc, char *argv[]) {
     }
 
     string slam_path = program.get<std::string>("--slam_path");
-    if (slam_path[0] != '/')
-        slam_path = GlobalVariables::PROJECT_PATH +
-                    program.get<std::string>("--slam_path");
 
     string rrt_path = program.get<std::string>("--rrt_path");
-    if (rrt_path[0] != '/')
-        rrt_path = GlobalVariables::PROJECT_PATH + rrt_path;
 
     string mpc_path = program.get<std::string>("--mpc_path");
-    if (mpc_path[0] != '/')
-        mpc_path = GlobalVariables::PROJECT_PATH + mpc_path;
 
     string tsp_path = program.get<std::string>("--tsp_path");
-    if (tsp_path[0] != '/')
-        tsp_path = GlobalVariables::PROJECT_PATH + tsp_path;
 
     string chain0_path = program.get<std::string>("--chain0_path");
-    if (chain0_path[0] != '/')
-        chain0_path = GlobalVariables::PROJECT_PATH + chain0_path;
 
     string file_path_ref = program.get<std::string>("--file_path");
-    if (file_path_ref[0] != '/')
-        file_path_ref = GlobalVariables::PROJECT_PATH + file_path_ref;
+
+    slam_path = RelativePathToAbsolutePath(slam_path);
+    rrt_path = RelativePathToAbsolutePath(rrt_path);
+    mpc_path = RelativePathToAbsolutePath(mpc_path);
+    tsp_path = RelativePathToAbsolutePath(tsp_path);
+    chain0_path = RelativePathToAbsolutePath(chain0_path);
+    file_path_ref = RelativePathToAbsolutePath(file_path_ref);
 
     int granularity = GlobalVariables::Granularity;
     DAG_Model dag_tasks =

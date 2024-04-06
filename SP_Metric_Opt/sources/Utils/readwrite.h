@@ -4,33 +4,16 @@
 #include <string>
 #include <vector>
 
+#include "sources/Utils/Parameters.h"
 #include "sources/Utils/testMy.h"
 
 namespace SP_OPT_PA {
-std::vector<double> ReadTxtFile(std::string path) {
-    // std::string path = GlobalVariables::PROJECT_PATH + folder_path
-    //                     + kernel_name + ".txt";
-    std::ifstream inputFile(path);
+std::vector<double> ReadTxtFile(std::string path);
 
-    if (!inputFile.is_open()) {
-        std::cout << "Invalid input path: " << path << "\n";
-        CoutError("Failed to open the file.");
+inline std::string RelativePathToAbsolutePath(std::string path) {
+    if (path[0] != '/') {
+        path = GlobalVariables::PROJECT_PATH + path;
     }
-
-    std::vector<double> data;
-    std::string line;
-
-    while (std::getline(inputFile, line)) {
-        std::istringstream iss(line);
-        double value;
-
-        while (iss >> value) {
-            data.push_back(value);
-        }
-    }
-
-    inputFile.close();
-
-    return data;
+    return path;
 }
 }  // namespace SP_OPT_PA

@@ -7,6 +7,7 @@
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/argparse.hpp"
 #include "sources/Utils/profilier.h"
+#include "sources/Utils/readwrite.h"
 
 using namespace std;
 using namespace SP_OPT_PA;
@@ -39,19 +40,13 @@ int main(int argc, char *argv[]) {
     }
 
     string file_path = program.get<std::string>("--file_path");
-    if (file_path[0] != '/')
-        file_path = GlobalVariables::PROJECT_PATH + file_path;
+    file_path = RelativePathToAbsolutePath(file_path);
 
     string output_file_path = GlobalVariables::PROJECT_PATH +
                               program.get<std::string>("--output_file_path");
-    if (output_file_path[0] != '/')
-        output_file_path = GlobalVariables::PROJECT_PATH + output_file_path;
+    output_file_path = RelativePathToAbsolutePath(output_file_path);
 
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
-    // dag_tasks.tasks[0].priority = 3;
-    // dag_tasks.tasks[1].priority = 2;
-    // dag_tasks.tasks[2].priority = 0;
-    // dag_tasks.tasks[3].priority = 1;
     dag_tasks.tasks[0].priority = 0;
     dag_tasks.tasks[1].priority = 1;
     dag_tasks.tasks[2].priority = 2;
