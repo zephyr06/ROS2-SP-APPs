@@ -18,33 +18,45 @@ int main(int argc, char *argv[]) {
         .default_value(std::string("TaskData/AnalyzeSP_Metric/slam.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/slam.txt");
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/slam.txt. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
     program.add_argument("--rrt_path")
         .default_value(std::string("TaskData/AnalyzeSP_Metric/rrt.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/rrt.txt");
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/rrt.txt. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
     program.add_argument("--mpc_path")
         .default_value(std::string("TaskData/AnalyzeSP_Metric/mpc.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/mpc.txt");
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/mpc.txt. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
     program.add_argument("--tsp_path")
         .default_value(std::string("TaskData/AnalyzeSP_Metric/tsp.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/tsp.txt");
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/tsp.txt. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
     program.add_argument("--chain0_path")
         .default_value(std::string("TaskData/AnalyzeSP_Metric/chain0.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/chain0.txt");
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/chain0.txt. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
 
     program.add_argument("--file_path")
         .default_value(std::string("TaskData/test_robotics_v3.yaml"))
         .help(
             "the relative path of the yaml file that saves information about"
-            "the tasks. Example: TaskData/test_robotics_v1.yaml");
+            "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
 
     try {
         program.parse_args(argc, argv);
