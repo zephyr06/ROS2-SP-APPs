@@ -48,3 +48,7 @@ Please modify the parameters provided in the main function in `/Visualize_SP_Met
 
 # Modify the task set and SP metric coefficients
 You can modify the yaml file which describes the task set settings. Time units are in microseconds. An example yaml file is provided in `/TaskData/test_robotics_v6.yaml`.
+
+# TODO
+- Check SLAM code to see if it's possible to speed it up
+- Figure out if it is okay to incorporate more about core assignments into experiments

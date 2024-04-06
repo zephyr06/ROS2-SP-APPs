@@ -11,7 +11,6 @@ if __name__=="__main__":
         "FIFO": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data/all_time_records_FIFO_Dyn/all_time_records"),
         }
     
-    # TODO: SLAM adjust ET?
     task_set_config = os.path.join(
         os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
     verify_task_set_config(task_set_config)
