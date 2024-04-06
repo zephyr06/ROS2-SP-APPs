@@ -11,11 +11,6 @@ if __name__=="__main__":
         "FIFO": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data/all_time_records_FIFO_Dyn/all_time_records"),
         }
     
-    # TODO: add weights!!!
-    # TODO: make the task set yaml file dependence more explicit, especially when calling the executable in AnalyzeSP
-    # used to provide period parameters
-    # TODO: always read yaml file in ROS2 REPO/all_time_records/task_characteristics.yaml
-    # TODO: add readme file to the root folder
     # TODO: SLAM adjust ET?
     task_set_config = os.path.join(
         os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
