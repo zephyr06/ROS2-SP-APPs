@@ -18,31 +18,33 @@ mkdir release
 cd release
 cmake -DCMAKE_BUILD_TYPE=RELEASE ..
 make -j4
+```
+## Run the brute-force scheduler
+You can run the brute-force scheduler by passing the path of task set configuration files and specifying the output file path
+```
 ./tests/AnalyzePriorityAssignment --file_path TaskData/test_robotics_v3.yaml --output_file_path TaskData/pa_res_test_robotics_v1.txt
 ```
-After running the commmand above, the priority assignment results will be saved in `TaskData/pa_res_test_robotics_v1.txt`
-
-
-
-# Read the priority assignment results in bash scripts
-There is one script `TaskData/read_vec.sh`, which reads the priority assignment results into an array.
-
-
-
-# Modify the task set 
-You can always directly modify the yaml file manually for some test purposes. Besides, you can also use the following command to modify it in a bash environment.
+You can also specify the absolute path:
 ```
-cd release
-./tests/EditYamlFile --task_id 0 --parameter_name execution_time_mu --value 1.23 --file_path TaskData/test_robotics_v1.yaml
+./tests/AnalyzePriorityAssignment --file_path /home/zephyr/Programming/task_characteristics.yaml --output_file_path /home/zephyr/Programming/pa_res_test_robotics_v1.txt
 ```
-Although you cannot modify chains using the script above, I think this should not be nececssary during the run-time.
+
+## Run the incremental scheduler
+Please check the example provided in `/tests/AnalyzePriorityAssignmentIncrementalExample.cpp`.
+
+## Read the priority assignment results
+Priority assignment results are saved and explained in the output file generated after running the scheduler, for example, `/TaskData/pa_res_test_robotics_v1.yaml`
 
 
 
-# Modify coefficients related to SP Metric
-Go to the file `sources/Safety_Performance_Metric/Parameters.h`, and modify the constructor functions
+# Visualize the SP metric
+```
+cd SP_Metric_Opt/Visualize_SP_Metric
+python draw_SP_multi_figs.py
+```
+Please modify the parameters provided in the main function in `/Visualize_SP_Metric/draw_SP_multi_figs.py` based on the provided comments.
 
 
 
-# Modify optimizaion settings
-Go to the file `sources/parameters.yaml`, and modify the granularity parameter.
+# Modify the task set and SP metric coefficients
+You can modify the yaml file which describes the task set settings. Time units are in microseconds. An example yaml file is provided in `/TaskData/test_robotics_v3`.
