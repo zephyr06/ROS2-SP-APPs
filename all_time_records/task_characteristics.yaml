@@ -31,3 +31,6 @@ tasks:
     period: 1000
     deadline: 1000
     name: SLAM
+    sp_threshold: 0.5
+    sp_Weight: 1
+    deadline: 10000
