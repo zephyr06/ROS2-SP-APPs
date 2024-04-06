@@ -5,7 +5,7 @@ import subprocess
 from datetime import datetime
 
 OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-print(OPT_SP_PROJECT_PATH)
+# print(OPT_SP_PROJECT_PATH)
 # All time in seconds
 
 def verify_task_set_config(path):
@@ -160,7 +160,10 @@ def draw_sp_value_plot(sp_value_list, horizon_granularity):
     plt.ylabel("SP-Metric")
     plt.show()
 
-def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time):
+def get_args_for_task_set_config(task_set_abs_path):
+    return f"--file_path {task_set_abs_path}"
+
+def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path):
     run_out_of_data=False
     sp_value_list=[]
     for start_time in range(discard_early_time, horizon, horizon_granularity):
@@ -179,6 +182,7 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
             command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_path " + file_name
         if run_out_of_data:
             break
+        command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)
         # print(command_in_terminal_to_analyze_taskset_sp)
         result = subprocess.run(command_in_terminal_to_analyze_taskset_sp, shell=True, capture_output=True, text=True)
         # print(result.stdout)

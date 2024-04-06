@@ -31,7 +31,7 @@ if __name__=="__main__":
 
     for method_name, data_folder_path in data_folder_paths.items():
         tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
-        sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time)
+        sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path=task_set_config)
         x_axis = [i for i in range(0, len(sp_value_list)*horizon_granularity, horizon_granularity)]
         plt.plot(x_axis, sp_value_list, label = method_name)
         print(f"SP-Metric for {method_name}: {sum(sp_value_list)/len(sp_value_list)}")

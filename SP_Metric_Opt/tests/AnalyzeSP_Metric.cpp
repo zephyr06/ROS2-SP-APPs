@@ -12,6 +12,7 @@ using namespace std;
 using namespace SP_OPT_PA;
 
 int main(int argc, char *argv[]) {
+    // TODO add explanation for global path
     argparse::ArgumentParser program("program name");
     program.add_argument("--slam_path")
         .default_value(std::string("TaskData/AnalyzeSP_Metric/slam.txt"))
@@ -39,16 +40,11 @@ int main(int argc, char *argv[]) {
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/AnalyzeSP_Metric/chain0.txt");
 
-    // program.add_argument("--file_path")
-    //     .default_value(std::string("TaskData/test_robotics_v1.yaml"))
-    //     .help(
-    //         "the relative path of the yaml file that saves information about
-    //         " "the tasks. Example: TaskData/test_robotics_v1.yaml");
-    // program.add_argument("--output_file_path")
-    //     .default_value(std::string("TaskData/pa_res_test_robotics_v1.txt"))
-    //     .help(
-    //         "the relative path of the file that saves priority assignment "
-    //         "results. Example: TaskData/pa_res_test_robotics_v1.txt");
+    program.add_argument("--file_path")
+        .default_value(std::string("TaskData/test_robotics_v3.yaml"))
+        .help(
+            "the relative path of the yaml file that saves information about"
+            "the tasks. Example: TaskData/test_robotics_v1.yaml");
 
     try {
         program.parse_args(argc, argv);
@@ -79,9 +75,9 @@ int main(int argc, char *argv[]) {
     if (chain0_path[0] != '/')
         chain0_path = GlobalVariables::PROJECT_PATH + chain0_path;
 
-    string file_path_ref = "TaskData/test_robotics_v3.yaml";
-
-    file_path_ref = GlobalVariables::PROJECT_PATH + file_path_ref;
+    string file_path_ref = program.get<std::string>("--file_path");
+    if (file_path_ref[0] != '/')
+        file_path_ref = GlobalVariables::PROJECT_PATH + file_path_ref;
 
     int granularity = GlobalVariables::Granularity;
     DAG_Model dag_tasks =
