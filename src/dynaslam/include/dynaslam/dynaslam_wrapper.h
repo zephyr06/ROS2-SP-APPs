@@ -172,6 +172,10 @@ public:
             usleep((T-ttrack)*1e6);
 
         image_idx++;
+
+
+        p_SLAM->SaveTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/CameraTrajectory.txt");
+        p_SLAM->SaveKeyFrameTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/KeyFrameTrajectory.txt");
     }
 
     void exit() {
@@ -190,8 +194,8 @@ public:
         cout << "mean tracking time: " << totaltime/nImages << endl;
 
         // Save camera trajectory
-        p_SLAM->SaveTrajectoryTUM("CameraTrajectory.txt");
-        p_SLAM->SaveKeyFrameTrajectoryTUM("KeyFrameTrajectory.txt");
+        p_SLAM->SaveTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/CameraTrajectory.txt");
+        p_SLAM->SaveKeyFrameTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/KeyFrameTrajectory.txt");
 
         return;
     }
