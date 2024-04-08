@@ -36,7 +36,7 @@ TEST_F(TaskSetForTest_2tasks, RTA) {
         Value_Proba(9, 0.105),  Value_Proba(10, 0.025), Value_Proba(12, 0.0018),
         Value_Proba(13, 0.0012)};
     FiniteDist rta1_expected(dist_vec1);
-    vector<FiniteDist> rtas_actual = ProbabilisticRTA_TaskSet(tasks);
+    vector<FiniteDist> rtas_actual = ProbabilisticRTA_TaskSet_SingleCore(tasks);
     EXPECT_EQ(2, rtas_actual.size());
     EXPECT_EQ(rta0_expected, rtas_actual[0]);
 
@@ -61,13 +61,14 @@ TEST_F(TaskSetForTest_2tasks, RTA_change_priority) {
     tasks[0] = tasks[1];
     tasks[1] = temp;
 
-    vector<FiniteDist> rtas_actual = ProbabilisticRTA_TaskSet(tasks);
+    vector<FiniteDist> rtas_actual = ProbabilisticRTA_TaskSet_SingleCore(tasks);
     EXPECT_EQ(2, rtas_actual.size());
     EXPECT_EQ(rta0_expected, rtas_actual[1]);
     EXPECT_TRUE(rta1_expected == rtas_actual[0]);
 }
+
 TEST_F(TaskSetForTest_2tasks, GetDDL_MissProbability) {
-    std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
+    std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet_SingleCore(tasks);
 
     std::vector<Value_Proba> dist_vec0 = {
         Value_Proba(1, 0.6), Value_Proba(2, 0.3), Value_Proba(3, 0.1)};
@@ -78,7 +79,7 @@ TEST_F(TaskSetForTest_2tasks, GetDDL_MissProbability) {
         Value_Proba(9, 0.105),  Value_Proba(10, 0.025), Value_Proba(12, 0.0018),
         Value_Proba(13, 0.0012)};
     FiniteDist rta1_expected(dist_vec1);
-    vector<FiniteDist> rtas_actual = ProbabilisticRTA_TaskSet(tasks);
+    vector<FiniteDist> rtas_actual = ProbabilisticRTA_TaskSet_SingleCore(tasks);
     EXPECT_NEAR(0.0012, GetDDL_MissProbability(rtas[1], 12), 1e-6);
 }
 
@@ -104,25 +105,26 @@ TEST_F(TaskSetForTest_2tasks, GetDDL_MissProbability_v4) {
     EXPECT_NEAR(1.0, GetDDL_MissProbability(dists, 4), 1e-3);
     EXPECT_NEAR(0.66666666, GetDDL_MissProbability(dists, 5), 1e-3);
 }
-class TaskSetForTest_4tasks : public ::testing::Test {
+class TaskSetv9 : public ::testing::Test {
    public:
     void SetUp() override {
         string file_path =
-            GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v3.yaml";
+            GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v9.yaml";
         dag_tasks = ReadDAG_Tasks(file_path);
     }
 
     // data members
     DAG_Model dag_tasks;
 };
-// TEST_F(TaskSetForTest_4tasks, GetDDL_MissProbability) {
-//     dag_tasks.tasks[0].priority = 1;
-//     dag_tasks.tasks[1].priority = 0;
-//     dag_tasks.tasks[2].priority = 2;
-//     dag_tasks.tasks[3].priority = 3;
+TEST_F(TaskSetv9, RTA_w_processor_assignment) {
+    std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(dag_tasks.tasks);
+    // RT distribution from 200 to 200
+    EXPECT_NEAR(0.0, GetDDL_MissProbability(rtas[0], 200), 1e-6);
+    EXPECT_NEAR(1.0, GetDDL_MissProbability(rtas[0], 199), 1e-6);
 
-//     std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(dag_tasks.tasks);
-// }
+    // RT distribution from 200 to 600
+    EXPECT_NEAR(0.5, GetDDL_MissProbability(rtas[1], 400), 1e-6);
+}
 int main(int argc, char **argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

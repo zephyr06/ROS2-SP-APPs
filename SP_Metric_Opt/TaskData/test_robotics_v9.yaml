@@ -6,6 +6,7 @@ tasks:
     execution_time_max: 200
     period: 500
     deadline: 500
+    processorId: 1
     name: TSP
     sp_threshold: 0.5
     sp_Weight: 0.5
@@ -16,6 +17,7 @@ tasks:
     execution_time_max: 600
     period: 1000
     deadline: 1000
+    processorId: 0
     name: SLAM
     sp_threshold: 0.5
     sp_Weight: 200

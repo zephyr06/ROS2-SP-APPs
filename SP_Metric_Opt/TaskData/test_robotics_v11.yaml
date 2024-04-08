@@ -17,7 +17,7 @@ tasks:
     execution_time_max: 13
     period: 20
     deadline: 20
-    processorId: 0
+    processorId: 1
     name: MPC
     sp_threshold: 0.5
     sp_Weight: 1
@@ -28,7 +28,7 @@ tasks:
     execution_time_max: 4558
     period: 2000
     deadline: 2000
-    processorId: 0
+    processorId: 1
     name: RRT
     sp_threshold: 0.5
     sp_Weight: 1
