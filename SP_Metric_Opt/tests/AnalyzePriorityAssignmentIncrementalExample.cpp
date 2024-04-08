@@ -42,8 +42,7 @@ int main(int argc, char *argv[]) {
     string file_path = program.get<std::string>("--file_path");
     file_path = RelativePathToAbsolutePath(file_path);
 
-    string output_file_path = GlobalVariables::PROJECT_PATH +
-                              program.get<std::string>("--output_file_path");
+    string output_file_path = program.get<std::string>("--output_file_path");
     output_file_path = RelativePathToAbsolutePath(output_file_path);
 
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
