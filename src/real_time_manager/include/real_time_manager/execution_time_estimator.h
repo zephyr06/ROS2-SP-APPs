@@ -29,7 +29,7 @@ public:
         for (YAML::Node::iterator it_task = tasks["tasks"].begin(); it_task != tasks["tasks"].end(); ++it_task)
         {
             auto app_name = it_task->operator[]("name").as<std::string>();
-            for (int i = 0; i < node_vec.size(); i++) {
+            for (std::size_t i = 0; i < node_vec.size(); i++) {
                 if (node_vec[i] == app_name) {
                     periods[i] = it_task->operator[]("period").as<int>();
                     deadlines[i] = it_task->operator[]("deadline").as<int>();
@@ -40,7 +40,7 @@ public:
         int time_scale_multiplier = 1000;
         YAML::Node statitics_node;
 
-        for (int i = 0; i < node_vec.size(); i++)
+        for (std::size_t i = 0; i < node_vec.size(); i++)
         {
             auto node_name = node_vec[i];
             // Open the file
@@ -75,7 +75,7 @@ public:
             }
 
             // Only keep the lastest max_data_count entries
-            if (data.size() > max_data_count)
+            if ((int)data.size() > max_data_count)
             {
                 data.erase(data.begin(), data.end() - max_data_count);
             }

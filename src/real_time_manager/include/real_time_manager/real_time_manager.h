@@ -55,7 +55,7 @@ public:
 
         int max_priority = 0;         // the talker will have the largest priority
         bool has_fifo_policy = false; // if no FIFO policy, then the talker will use CFS, otherwise the talker will be FIFO with the largest priority
-        for (int i = 0; i < data["tasks"].size(); i++)
+        for (std::size_t i = 0; i < data["tasks"].size(); i++)
         {
             // task name
             std::string name = data["tasks"][i]["name"].as<std::string>();
@@ -112,7 +112,7 @@ public:
             priorities.push_back(0);
         }
 
-        for (int i = 0; i < task_names.size(); i++)
+        for (std::size_t i = 0; i < task_names.size(); i++)
         {
             std::cout << task_names[i] << ":   policy:" << scheduling_policies[i] << ",   priority:" << priorities[i] << "\n        cpu lists:";
             for (auto cpu : cpu_lists[i])
@@ -135,7 +135,7 @@ public:
             return;
         }
 
-        for (int i = 0; i < task_names.size(); i++)
+        for (std::size_t i = 0; i < task_names.size(); i++)
             setCPUandScheduling(task_names[i], cpu_lists[i], scheduling_policies[i], priorities[i]);
     }
 

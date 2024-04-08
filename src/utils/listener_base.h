@@ -34,6 +34,9 @@ class SubscriberAppBase : public rclcpp::Node {
                                getCurrentTimeStamp(),
                                "Start time of subscriber: ");
   }
+  SubscriberAppBase(int argc, char *argv[]): SubscriberAppBase() {
+    app_ = AppBase(argc, argv);
+  }
 
  private:
   void topic_callback(const std_msgs::msg::String::SharedPtr msg) {
