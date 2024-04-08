@@ -63,6 +63,72 @@ TEST_F(TaskSetForTest_2tasks, Optimize_bf) {
     EXPECT_EQ(5, tasks[pa_opt[0]].period);
     EXPECT_EQ(12, tasks[pa_opt[1]].period);
 }
+class TaskSetv11 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        string file_path =
+            GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v11.yaml";
+        dag_tasks = ReadDAG_Tasks(file_path);
+        sp_parameters = ReadSP_Parameters(file_path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetv11, Optimize_bf) {
+    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    // PrintPriorityVec(dag_tasks.tasks, pa_opt);
+    // EXPECT_EQ(5, dag_tasks.tasks[pa_opt[0]].period);
+    // EXPECT_EQ(12, dag_tasks.tasks[pa_opt[1]].period);
+    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[0]].name);
+    EXPECT_EQ("MPC", dag_tasks.tasks[pa_opt[1]].name);
+    EXPECT_EQ("RRT", dag_tasks.tasks[pa_opt[2]].name);
+    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
+}
+class TaskSetv12 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        string file_path =
+            GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v12.yaml";
+        dag_tasks = ReadDAG_Tasks(file_path);
+        sp_parameters = ReadSP_Parameters(file_path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetv12, Optimize_bf) {
+    SP_Parameters sp_parameters(dag_tasks.tasks);
+    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    EXPECT_EQ("MPC", dag_tasks.tasks[pa_opt[0]].name);
+    EXPECT_EQ("RRT", dag_tasks.tasks[pa_opt[1]].name);
+    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[2]].name);
+    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[3]].name);
+}
+class TaskSetv13 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        string file_path =
+            GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v13.yaml";
+        dag_tasks = ReadDAG_Tasks(file_path);
+        sp_parameters = ReadSP_Parameters(file_path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetv13, Optimize_bf) {
+    SP_Parameters sp_parameters(dag_tasks.tasks);
+    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[0]].name);
+    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
+}
 // TEST_F(TaskSetForTest_2tasks, Optimize_incre) {
 //     Task task_t = tasks[0];
 //     tasks[0] = tasks[1];
