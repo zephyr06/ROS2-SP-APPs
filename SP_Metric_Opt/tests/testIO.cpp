@@ -81,6 +81,13 @@ TEST(write, DAG) {
               tasks[3].execution_time_dist.size());
     EXPECT_EQ(0.052, tasks[3].execution_time_dist[0].value);
 }
+TEST(read, processorId) {
+    std::string file_name = "test_robotics_v11";
+    string path =
+        GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+    DAG_Model dag_tasks = ReadDAG_Tasks(path);
+    EXPECT_EQ(0, dag_tasks.tasks[0].processorId);
+}
 // TEST(TranslatePriorityVec, PA_VEC_v1) {
 //     PriorityVec pa = {0, 1, 2, 3};
 //     std::vector<int> translated_pa_val = {40, 30, 20, 10};
