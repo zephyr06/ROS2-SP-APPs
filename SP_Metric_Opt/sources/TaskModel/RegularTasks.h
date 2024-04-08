@@ -33,7 +33,6 @@ class Task {
           name(name) {
         if (name == "")
             name = "Task_" + std::to_string(id);
-        processorId = 0;
         executionTime = -1;
     }
 
@@ -72,9 +71,10 @@ class Task {
     int period;  // must be integer for the system simulation to work; if not
                  // integer, must be scaled to be so;
     double deadline;
-    double priority;   // smaller value mean higher priority
-    std::string name;  // optional
-    int processorId;
+    double priority;       // smaller value mean higher priority
+    std::string name;      // optional
+    int processorId = -1;  // -1 means not assigned to any processor, or all
+                           // assigned to one single processor by default
 
    private:
     double executionTime;

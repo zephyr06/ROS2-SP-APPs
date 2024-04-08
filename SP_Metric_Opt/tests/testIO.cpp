@@ -27,6 +27,9 @@ TEST(read_write, task_sets) {
     EXPECT_EQ(10, tasks[0].period);
     EXPECT_EQ(5, tasks[3].execution_time_dist.size());
     EXPECT_EQ(0.052, tasks[3].execution_time_dist[0].value);
+    for (uint i = 0; i < tasks.size(); i++) {
+        EXPECT_EQ(-1, tasks[3].processorId);
+    }
 }
 
 TEST(read, DAG) {
@@ -38,7 +41,7 @@ TEST(read, DAG) {
     EXPECT_EQ(3, dag_tasks.chains_[0].size());
     EXPECT_EQ(0, dag_tasks.chains_[0][0]);
     EXPECT_EQ(2, dag_tasks.chains_[1].size());
-    EXPECT_EQ(0, dag_tasks.tasks[0].processorId);
+    EXPECT_EQ(-1, dag_tasks.tasks[0].processorId);
     EXPECT_EQ(1000, dag_tasks.chains_deadlines_[0]);
 }
 TEST(ReadSP_Parameters, V1) {
