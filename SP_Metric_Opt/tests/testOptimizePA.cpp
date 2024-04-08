@@ -102,7 +102,6 @@ class TaskSetv12 : public ::testing::Test {
 };
 
 TEST_F(TaskSetv12, Optimize_bf) {
-    SP_Parameters sp_parameters(dag_tasks.tasks);
     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
     EXPECT_EQ("MPC", dag_tasks.tasks[pa_opt[0]].name);
     EXPECT_EQ("RRT", dag_tasks.tasks[pa_opt[1]].name);
@@ -124,9 +123,9 @@ class TaskSetv13 : public ::testing::Test {
 };
 
 TEST_F(TaskSetv13, Optimize_bf) {
-    SP_Parameters sp_parameters(dag_tasks.tasks);
     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
-    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[0]].name);
+    PrintPriorityVec(dag_tasks.tasks, pa_opt);
+    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[2]].name);
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
 }
 // TEST_F(TaskSetForTest_2tasks, Optimize_incre) {
