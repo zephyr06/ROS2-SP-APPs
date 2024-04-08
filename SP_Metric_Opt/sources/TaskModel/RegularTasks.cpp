@@ -36,20 +36,6 @@ long long int HyperPeriod(const TaskSet &tasks) {
     }
 }
 
-ProcessorTaskSet ExtractProcessorTaskSet(const TaskSet &tasks) {
-    int N = tasks.size();
-    ProcessorTaskSet processorTasks;
-    for (int i = 0; i < N; i++) {
-        if (processorTasks.find(tasks.at(i).processorId) ==
-            processorTasks.end()) {
-            std::vector<int> ttt{tasks.at(i).id};
-            processorTasks[tasks.at(i).processorId] = ttt;
-        } else {
-            processorTasks[tasks.at(i).processorId].push_back(tasks.at(i).id);
-        }
-    }
-    return processorTasks;
-}
 TaskSet ReadTaskSet(std::string path, int granulairty) {
     if (!(std::filesystem::exists(path)))
         CoutError(path + " not exist!");

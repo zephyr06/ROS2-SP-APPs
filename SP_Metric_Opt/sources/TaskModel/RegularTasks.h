@@ -12,8 +12,6 @@
 #include "sources/Utils/colormod.h"
 #include "sources/Utils/testMy.h"
 
-typedef std::map<int, std::vector<int>> ProcessorTaskSet;
-
 namespace SP_OPT_PA {
 
 inline bool CompareStringNoCase(const std::string& s1, const std::string s2) {
@@ -103,13 +101,7 @@ TaskSet ReadTaskSet(std::string path,
                     int granulairty = GlobalVariables::Granularity);
 
 void AssignTaskSetPriorityById(TaskSet& tasks);
-/**
- * @brief
- *
- * @param tasks
- * @return ProcessorTaskSet map type! processorId tostd::vector<task ID>
- */
-ProcessorTaskSet ExtractProcessorTaskSet(const TaskSet& tasks);
+
 class TaskSetInfoDerived {
    public:
     TaskSetInfoDerived() {}
@@ -126,7 +118,6 @@ class TaskSetInfoDerived {
             variableDimension += size;
             length += sizeOfVariables[i];
         }
-        processorTaskSet = ExtractProcessorTaskSet(tasks);
         RecordTaskPosition();
     }
 
@@ -149,7 +140,6 @@ class TaskSetInfoDerived {
     LLint variableDimension;
     LLint hyper_period;
     LLint length;
-    ProcessorTaskSet processorTaskSet;
     std::unordered_map<int, int> task_id2position_;
 
     TaskSet tasks;
