@@ -34,7 +34,7 @@ public:
         std::filesystem::path package_directory = current_file_path.parent_path().parent_path();
         std::string local_config_yaml = package_directory.string() + "/configs/local_cpu_and_priority.yaml";
         std::string priority_yaml = package_directory.parent_path().parent_path().string() +
-                                    "/SP_Metric_Opt/TaskData/pa_res_test_robotics_v1.yaml";
+                                    "/SP_Metric_Opt/TaskData/pa_result.yaml";
         std::string task_characteristics_yaml = getTimeRecordFolder() + "task_characteristics.yaml";
 
         if (scheduler_ == "CFS")
@@ -58,6 +58,8 @@ public:
             std::string cmd = package_directory.parent_path().parent_path().string() + "/SP_Metric_Opt/release";
             cmd += "/tests/AnalyzePriorityAssignment --file_path ";
             cmd += task_characteristics_yaml;
+            cmd += " --output_file_path ";
+            cmd += priority_yaml;
             std::cout << "cmd is:" << cmd << std::endl;
             const char *scheduler_command = cmd.c_str();
             // Execute the command

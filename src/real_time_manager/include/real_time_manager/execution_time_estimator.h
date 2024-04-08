@@ -19,30 +19,17 @@ public:
 
     void updateTaskExecutionTimeDistributions(int max_data_count = 50)
     {
-        std::vector<std::string> node_vec{"TSP", "MPC", "RRT", "SLAM"};
-        std::vector<int> periods{10000, 20, 1000, 1000}; // this is default period, used only when the task_characteristics.yaml doesn't provide infos
-        std::vector<int> deadlines{10000, 20, 1000, 1000};
-
         // update period and deadlines
         std::string task_characteristics_yaml = getTimeRecordFolder() + "task_characteristics.yaml";
         YAML::Node tasks = YAML::LoadFile(task_characteristics_yaml);
-        for (YAML::Node::iterator it_task = tasks["tasks"].begin(); it_task != tasks["tasks"].end(); ++it_task)
-        {
-            auto app_name = it_task->operator[]("name").as<std::string>();
-            for (std::size_t i = 0; i < node_vec.size(); i++) {
-                if (node_vec[i] == app_name) {
-                    periods[i] = it_task->operator[]("period").as<int>();
-                    deadlines[i] = it_task->operator[]("deadline").as<int>();
-                }
-            }
-        }
 
         int time_scale_multiplier = 1000;
         YAML::Node statitics_node;
 
-        for (std::size_t i = 0; i < node_vec.size(); i++)
+        for (YAML::Node::iterator it_task = tasks["tasks"].begin(); it_task != tasks["tasks"].end(); ++it_task)
         {
-            auto node_name = node_vec[i];
+            auto node_name = it_task->operator[]("name").as<std::string>();
+
             // Open the file
             transform(node_name.begin(), node_name.end(), node_name.begin(), ::tolower);
             std::string filename = getTimeRecordFolder() + node_name + "_execution_time.txt";
@@ -84,26 +71,16 @@ public:
             double mean, std_dev, min_val, max_val;
             calculateStatistics(data, mean, std_dev, min_val, max_val);
 
-            // Output results to YAML file
-            YAML::Node yaml_node;
-            yaml_node["id"] = i;
-            yaml_node["execution_time_mu"] = mean;
-            yaml_node["execution_time_sigma"] = std_dev;
-            yaml_node["execution_time_min"] = min_val;
-            yaml_node["execution_time_max"] = max_val;
-            yaml_node["period"] = periods[i];
-            yaml_node["deadline"] = deadlines[i];
-
-            std::string my_str = node_name;
-            transform(my_str.begin(), my_str.end(), my_str.begin(), ::toupper);
-            yaml_node["name"] = my_str;
-
-            statitics_node["tasks"].push_back(yaml_node);
+            // Modify YAML file
+            it_task->operator[]("execution_time_mu") = mean;
+            it_task->operator[]("execution_time_sigma") = std_dev;
+            it_task->operator[]("execution_time_min") = min_val;
+            it_task->operator[]("execution_time_max") = max_val;
         }
 
         // Output YAML node to a file
         std::ofstream output_file(getTimeRecordFolder() + "task_characteristics.yaml");
-        output_file << statitics_node;
+        output_file << tasks;
         output_file.close();
 
         return;
