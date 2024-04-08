@@ -9,6 +9,7 @@ endif()
 set (CMAKE_CXX_STANDARD 20)
 set(CMAKE_BUILD_TYPE Release)
 
+include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_SOURCE_DIR}/../utils)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")

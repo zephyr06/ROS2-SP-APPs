@@ -133,10 +133,6 @@ private:
         min_val = *std::min_element(data.begin(), data.end());
         max_val = *std::max_element(data.begin(), data.end());
 
-        // mean = (int)mean;
-        // std_dev = (int)std_dev;
-        // min_val = (int)min_val;
-        // max_val = (int)max_val;
         double min_threshold = 1e-3;
         mean = std::max(mean, min_threshold);
         std_dev = std::max(std_dev, min_threshold);
