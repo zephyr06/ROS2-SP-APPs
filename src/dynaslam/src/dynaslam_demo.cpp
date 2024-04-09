@@ -8,16 +8,17 @@ int main() {
     slam_wrapper.init();
 
     // call this in the call_back function
+    for(int i=0;i<100;i++)
     slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
-    slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
+    // slam_wrapper.next();
 
     // exit the wrapper
     slam_wrapper.exit();
