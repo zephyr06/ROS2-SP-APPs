@@ -62,9 +62,9 @@ public:
             task_names.push_back(executable_name_map[name]);
 
             // task cpu list
-            cpu_lists.push_back(data["tasks"][i]["cpu_lists"].as<std::vector<int>>());
-            for (int i = 0; i < cpu_lists.back().size(); i++) { // add +1 pffset to save the core 0 for ROS2 talkers
-                cpu_lists[cpu_lists.size()-1][i]++;
+            cpu_lists.push_back({data["tasks"][i]["processorId"].as<int>()});
+            for (int k = 0; k < cpu_lists.back().size(); k++) { // add +1 pffset to save the core 0 for ROS2 talkers
+                cpu_lists[cpu_lists.size()-1][k]++;
             }
 
             // task policy
