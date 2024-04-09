@@ -4,6 +4,10 @@
 yaml-cpp
 
 ## Nodes
+- listener_scheduler:
+    - The periodic scheduler task that will reschedule the system based the scheduler period.
+    - Needs an input argument to define the scheduler, supported schedulers are: CFS, RM, optimizerBF, optimizerIncremental
+    - For example: `ros2 run real_time_manager listener_schduler CFS`
 - et_statistics: 
     - Estimate the execution time distribution for all four nodes {"tsp", "mpc", "rrt", "slam"} in the all_time_records folder.
     - Input argument "max_data_count" (optional, default is 50): only calculate distributions for the latest max_data_count entry.
@@ -30,37 +34,49 @@ yaml-cpp
 ```
 tasks:
   - id: 0
-    execution_time_mu: 1.00295837504
-    execution_time_sigma: 0.005780039026146719
-    execution_time_min: 1.00098448
-    execution_time_max: 1.031703328
-    period: 1.031703328
-    deadline: 1.031703328
+    execution_time_mu: 10002.48852672
+    execution_time_sigma: 3.133693975359407
+    execution_time_min: 10000.973792
+    execution_time_max: 10013.790912
+    period: 10000
+    deadline: 10000
+    processorId: 0
     name: TSP
+    sp_threshold: 0.5
+    sp_Weight: 1
   - id: 1
-    execution_time_mu: 0.06105002047999999
-    execution_time_sigma: 0.01247929785365278
-    execution_time_min: 0
-    execution_time_max: 0.066399712
-    period: 0.066399712
-    deadline: 0.066399712
+    execution_time_mu: 58.14528960000001
+    execution_time_sigma: 6.527760905237979
+    execution_time_min: 12.756704
+    execution_time_max: 60.698368
+    period: 20
+    deadline: 20
+    processorId: 1
     name: MPC
+    sp_threshold: 0.5
+    sp_Weight: 1
   - id: 2
-    execution_time_mu: 1.4963107392
-    execution_time_sigma: 0.8355111899446598
-    execution_time_min: 0.3993056
-    execution_time_max: 4.558432544
-    period: 4.558432544
-    deadline: 4.558432544
+    execution_time_mu: 1128.0019616
+    execution_time_sigma: 678.2485558057352
+    execution_time_min: 204.776896
+    execution_time_max: 3270.125888
+    period: 2000
+    deadline: 2000
+    processorId: 1
     name: RRT
+    sp_threshold: 0.5
+    sp_Weight: 1
   - id: 3
-    execution_time_mu: 3.290805757440001
-    execution_time_sigma: 4.336259460639159
-    execution_time_min: 1.174386528
-    execution_time_max: 17.979726016
-    period: 17.979726016
-    deadline: 17.979726016
+    execution_time_mu: 60781.24272831999
+    execution_time_sigma: 383724.0403412285
+    execution_time_min: 538.48128
+    execution_time_max: 2745169.19824
+    period: 1000
+    deadline: 1000
+    processorId: 0
     name: SLAM
+    sp_threshold: 0.5
+    sp_Weight: 1
 ```
 
 - input files for cpu affinities and priorities
@@ -68,22 +84,22 @@ tasks:
 tasks:
   - id: 0
     name: TSP
-    cpu_lists: [1,2]
+    processorId: 0
     scheduling_policy: SCHED_FIFO
     priority: 2
   - id: 1
     name: MPC
-    cpu_lists: [1]
+    processorId: 1
     scheduling_policy: SCHED_FIFO
     priority: 4
   - id: 2
     name: RRT
-    cpu_lists: [1]
+    processorId: 1
     scheduling_policy: SCHED_FIFO
     priority: 3
   - id: 3
     name: SLAM
-    cpu_lists: [1]
+    processorId: 0
     scheduling_policy: SCHED_FIFO
     priority: 1
 ```

@@ -31,14 +31,17 @@ Configurations of the tasks (application nodes) are stored inside two YAML files
     - execution_time_max: maximum value of the execution time
     - period:
     - deadline:
+    - processorId:
     - name:
+    - sp_threshold: 0.5
+    - sp_Weight: 
 
 - `/src/real_time_manager/configs/local_cpu_and_priority.yaml`
 
     Include following member, 
     - id:
     - name:
-    - cpu_lists: a vector of the assigned cpus, need at least one cpu
+    - processorId: the cpu core to which the task is assigned
     - scheduling_policy: supported scheduling_policy: `SCHED_OTHER`, `SCHED_FIFO`
     - priority: 
         - Supported priority range:

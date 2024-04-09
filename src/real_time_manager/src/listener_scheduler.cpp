@@ -18,7 +18,7 @@ public:
         }
         if (scheduler_ != "CFS" && scheduler_ != "RM" && scheduler_ != "optimizerBF" && scheduler_ != "optimizerIncremental")
         {
-            std::cerr << "Error: Unknown scheduler: " << scheduler_  << ". Supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental\n";
+            std::cerr << "Error: Unknown scheduler: " << scheduler_ << ". Supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental\n";
             std::cerr << "Exiting scheduler node.\n";
             std::exit(EXIT_FAILURE);
         }
@@ -40,14 +40,16 @@ public:
         if (scheduler_ == "CFS")
         {
             std::string local_fixed_cpu_and_priority_yaml_CFS = package_directory.string() + "/configs/local_fixed_cpu_and_priority_CFS.yaml";
+            UpdateProcessorAssignmentsFromYamlFile(local_fixed_cpu_and_priority_yaml_CFS, task_characteristics_yaml);
             rt_manager_.setCPUAffinityAndPriority(local_fixed_cpu_and_priority_yaml_CFS);
         }
         else if (scheduler_ == "RM")
         {
             std::string local_fixed_cpu_and_priority_yaml_RM = package_directory.string() + "/configs/local_fixed_cpu_and_priority_RM.yaml";
+            UpdateProcessorAssignmentsFromYamlFile(local_fixed_cpu_and_priority_yaml_RM, task_characteristics_yaml);
             rt_manager_.setCPUAffinityAndPriority(local_fixed_cpu_and_priority_yaml_RM);
         }
-        else if (scheduler_ == "optimizerBF" || scheduler_ == "optimizerIncremental") 
+        else if (scheduler_ == "optimizerBF" || scheduler_ == "optimizerIncremental")
         { // todo: implement the "optimizerIncremental"
 
             // Update execution time statitics
@@ -74,6 +76,7 @@ public:
 
             // update priorities from the scheduler to local config yaml
             UpdatePriorityAssignments(local_config_yaml, priority_yaml);
+            UpdateProcessorAssignmentsFromYamlFile(local_config_yaml, task_characteristics_yaml);
 
             // apply the new priority assignments
             rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
