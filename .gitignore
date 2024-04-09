@@ -15,6 +15,6 @@ SP_Metric_Opt/TaskData/*/dag-set*
 # SP_Metric_Opt/TaskData/
 *.vscode*
 *.idea*
-*/Visualize_SP_Metric/data/temp/*
+*/Visualize_SP_Metric/data/temp/*.txt
 
 
