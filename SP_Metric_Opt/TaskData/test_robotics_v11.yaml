@@ -9,7 +9,7 @@ tasks:
     processorId: 0
     name: TSP
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
   - id: 1
     execution_time_mu: 10
     execution_time_sigma: 1
@@ -20,7 +20,7 @@ tasks:
     processorId: 1
     name: MPC
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
   - id: 2
     execution_time_mu: 1496
     execution_time_sigma: 835
@@ -31,7 +31,7 @@ tasks:
     processorId: 1
     name: RRT
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
   - id: 3
     execution_time_mu: 3290
     execution_time_sigma: 4336
@@ -42,12 +42,12 @@ tasks:
     processorId: 0
     name: SLAM
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
 chain0:
   nodes:
     - 0
     - 1
     - 2
   sp_threshold: 0.5
-  sp_Weight: 1
+  sp_weight: 1
   deadline: 1000

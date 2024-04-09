@@ -33,6 +33,6 @@ chains:
       - 1
       - 2
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
     deadline: 1000
   

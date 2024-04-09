@@ -9,7 +9,7 @@ tasks:
     processorId: 1
     name: TSP
     sp_threshold: 0.5
-    sp_Weight: 0.5
+    sp_weight: 0.5
   - id: 1
     execution_time_mu: 400
     execution_time_sigma: 100
@@ -20,4 +20,4 @@ tasks:
     processorId: 0
     name: SLAM
     sp_threshold: 0.5
-    sp_Weight: 200
+    sp_weight: 200

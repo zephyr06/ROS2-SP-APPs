@@ -8,7 +8,7 @@ tasks:
     deadline: 10000
     name: TSP
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
   - id: 1
     execution_time_mu: 10
     execution_time_sigma: 1
@@ -18,7 +18,7 @@ tasks:
     deadline: 20
     name: MPC
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
   - id: 2
     execution_time_mu: 1496
     execution_time_sigma: 835
@@ -28,7 +28,7 @@ tasks:
     deadline: 2000
     name: RRT
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
   - id: 3
     execution_time_mu: 3290
     execution_time_sigma: 4336
@@ -38,7 +38,7 @@ tasks:
     deadline: 1000
     name: SLAM
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
 chains:
   chain0:
     nodes:
@@ -46,5 +46,5 @@ chains:
       - 1
       - 2
     sp_threshold: 0.5
-    sp_Weight: 1
+    sp_weight: 1
     deadline: 1000

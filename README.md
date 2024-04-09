@@ -34,7 +34,7 @@ Configurations of the tasks (application nodes) are stored inside two YAML files
     - processorId:
     - name:
     - sp_threshold: 0.5
-    - sp_Weight: 
+    - sp_weight: 
 
 - `/src/real_time_manager/configs/local_cpu_and_priority.yaml`
 

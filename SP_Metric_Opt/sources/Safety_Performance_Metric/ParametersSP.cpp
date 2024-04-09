@@ -22,9 +22,9 @@ SP_Parameters ReadSP_Parameters(const std::string& path) {
         } else {
             parameters.thresholds_node[task_id] = 0.5;
         }
-        if (tasksNode[i]["sp_Weight"]) {
+        if (tasksNode[i]["sp_weight"]) {
             parameters.weights_node[task_id] =
-                tasksNode[i]["sp_Weight"].as<double>();
+                tasksNode[i]["sp_weight"].as<double>();
         } else {
             parameters.weights_node[task_id] = 1;
         }
@@ -40,9 +40,9 @@ SP_Parameters ReadSP_Parameters(const std::string& path) {
             } else {
                 parameters.thresholds_path[chain_id] = 0.5;
             }
-            if (chainsNode[i]["sp_Weight"]) {
+            if (chainsNode[i]["sp_weight"]) {
                 parameters.weights_path[chain_id] =
-                    chainsNode[i]["sp_Weight"].as<double>();
+                    chainsNode[i]["sp_weight"].as<double>();
             } else {
                 parameters.weights_path[chain_id] = 1;
             }

@@ -39,12 +39,12 @@ chains:
         - 2
         - 1
       sp_threshold: 0.5
-      sp_Weight: 1
+      sp_weight: 1
       deadline: 10000
   - chain0:
       nodes:
         - 2
         - 1
       sp_threshold: 0.5
-      sp_Weight: 1
+      sp_weight: 1
       deadline: 10000
