@@ -24,9 +24,9 @@ print(task_characteristics_yaml)
 with open(task_characteristics_yaml, 'r') as file:
     tasks_data = yaml.safe_load(file)
 
-mpc_period = 50
-rrt_period = 1000
-slam_period = 1000
+mpc_period = 20
+rrt_period = 2000
+slam_period = 2000
 tsp_period = 10000
 scheduler_period = 60000
 
@@ -39,9 +39,8 @@ for task in tasks_data['tasks']:
         rrt_period = period
     elif task['name'] == 'SLAM':
         slam_period = period
-    elif task['name'] == 'TSP:':
+    elif task['name'] == 'TSP':
         tsp_period = period
-
 
 def generate_launch_description():
     return LaunchDescription([

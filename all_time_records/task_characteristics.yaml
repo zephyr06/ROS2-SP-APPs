@@ -37,8 +37,8 @@ tasks:
     execution_time_sigma: 383724.0403412285
     execution_time_min: 538.48128
     execution_time_max: 2745169.19824
-    period: 1000
-    deadline: 1000
+    period: 2000
+    deadline: 2000
     processorId: 0
     name: SLAM
     sp_threshold: 0.5
