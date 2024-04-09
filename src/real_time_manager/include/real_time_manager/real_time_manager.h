@@ -63,8 +63,8 @@ public:
 
             // task cpu list
             cpu_lists.push_back({data["tasks"][i]["processorId"].as<int>()});
-            for (int k = 0; k < cpu_lists.back().size(); k++) { // add +1 pffset to save the core 0 for ROS2 talkers
-                cpu_lists[cpu_lists.size()-1][k]++;
+            for (int k = 0; k < cpu_lists.back().size(); k++) { // add +2 offset to save the core 0 for talkers, core 1 for ros2 launch
+                cpu_lists[cpu_lists.size()-1][k] += 2;
             }
 
             // task policy
@@ -104,13 +104,21 @@ public:
         // add the talker task
         task_names.push_back("talker");
         cpu_lists.push_back({0});
+        // add the ros2 launch task
+        task_names.push_back("\"ros2 launch\"");
+        cpu_lists.push_back({1});
+
         if (has_fifo_policy)
         {
+            scheduling_policies.push_back(1);
+            priorities.push_back(std::min(99, max_priority + 5));
             scheduling_policies.push_back(1);
             priorities.push_back(std::min(99, max_priority + 5));
         }
         else
         {
+            scheduling_policies.push_back(0);
+            priorities.push_back(0);
             scheduling_policies.push_back(0);
             priorities.push_back(0);
         }
@@ -161,7 +169,7 @@ private:
 
     std::vector<pid_t> getProcessPids(const std::string &task_name)
     {
-        std::string cmd_pidof = "pidof " + task_name;
+        std::string cmd_pidof = "pgrep -f " + task_name;
         std::string pidList = exec(cmd_pidof.c_str());
         std::istringstream iss(pidList);
         std::vector<pid_t> pids;
