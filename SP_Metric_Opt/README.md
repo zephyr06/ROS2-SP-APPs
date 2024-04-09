@@ -23,7 +23,7 @@ make -j4
 ## Modify task sets and configurations
 Check and follow the yaml file such as `TaskData/test_robotics_v13.yaml`. Something more to notice when modifying the yaml file:
 - The task id must be integers and continuous, such as 0, 1, 2, 3, ...
-- All the time units are in microseconds
+- All the time units are in milliseconds within the yaml file
 - The `processorId` attribute could only be a single integer; lists are not supported
 - `sp_threshold` refers to the acceptable probability to miss deadline
 - `sp_weight` refers to the importance of one task; 0 means no influence at all, bigger number means higher influence during scheduling and optimization
