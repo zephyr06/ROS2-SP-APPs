@@ -51,11 +51,14 @@ def read_xyz_from_slam_dict(time_stamp_target, slam_data_dict, dict_key_list):
             raise Exception("The target time stamp is smaller than the smallest time stamp in the slam data.")
         
         time_stamp_smaller = dict_key_list[index_smaller_than_target]
-        if index_smaller_than_target == len(slam_data_dict) - 1:
-            raise Exception("The target time stamp is larger than the largest time stamp in the slam data.")
+        if index_smaller_than_target < len(slam_data_dict) - 1:
+            time_stamp_larger = dict_key_list[index_smaller_than_target+1]
+        else:
+            if len(dict_key_list) < 2:
+                raise Exception("The slam data must have at least two time stamps!")
+            time_stamp_smaller = dict_key_list[-2]
+            time_stamp_larger = dict_key_list[-1]
         
-
-        time_stamp_larger = dict_key_list[index_smaller_than_target+1]
         x = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].x, slam_data_dict[time_stamp_larger].x, time_stamp_target)
         y = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].y, slam_data_dict[time_stamp_larger].y, time_stamp_target)
         z = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].z, slam_data_dict[time_stamp_larger].z, time_stamp_target)
@@ -70,12 +73,13 @@ def mean_squared_error(predictions, targets):
     
     return mse
 
-def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps):
+def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps, horizon_max_len):
     error_list =[]
     ground_truth_keys = list(ground_truth_dict.keys())
     actual_data_keys = list(actual_data_dict.keys())
     time_stamp_min = min(ground_truth_keys)
     time_stamp_max = max(ground_truth_keys)
+    time_stamp_max = min(time_stamp_max, time_stamp_min + horizon_max_len)
     for time_stamp in time_stamps:
         if  time_stamp_min <= time_stamp  and time_stamp <= time_stamp_max:
             ground_truth_data = read_xyz_from_slam_dict(time_stamp, ground_truth_dict, ground_truth_keys)  
@@ -87,9 +91,16 @@ def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps)
 
 if __name__ == "__main__":
 
-    association_file_path = os.path.join(os.path.dirname(OPT_SP_PROJECT_PATH),"SP_Scheduler_Stack/YOLO-DynaSLAM/Examples/RGB-D/associations/fr3_walking_xyz.txt")
+    association_file_path = os.path.join(os.path.dirname(os.path.dirname(OPT_SP_PROJECT_PATH)),"SP_Scheduler_Stack/YOLO-DynaSLAM/Examples/RGB-D/associations/fr3_walking_xyz.txt")
 
     ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
 
-    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
+    # slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_cfs.txt")
+
+    time_stamps = read_time_stamps_from_association(association_file_path)
+    slam_dict = read_slam_data(slam_output_file_path)
+    ground_truth_dict = read_slam_data(ground_truth_file_path)
+    trajectory_error = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps, horizon_max_len = 10)
+    print("MSE trajectory error: ", trajectory_error)
 

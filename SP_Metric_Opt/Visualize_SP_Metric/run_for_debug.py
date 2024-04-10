@@ -2,55 +2,18 @@
 from SP_draw_fig_utils import *
 import numpy as np
 from collections import Counter
-import seaborn as sns
+import pytest
+from calculate_slam_error import *
 
-# tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
+association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
 
-# task_set_config = os.path.join(
-#     OPT_SP_PROJECT_PATH, "Visualize_SP_Metric/data_for_test2/task_characteristics.yaml")
-# app_name2period = get_app2period(task_set_config)
+ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
 
-# data_folder_path = os.path.join(
-#     OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test2")
+slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
 
-# tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
-# sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0)
-# print(sp_value_list)
-def datafromtxtfile(file_path):
-    with open(file_path, 'r') as file:
-        data = file.readlines()
-        data = [[float(x)] for x in data]
-        data = np.array(data)
-        data = [x for x in data if x < 1e8]
-        data.sort()
-        return data
-
-def calculate_pmf(data):
-    data_length = len(data)
-    frequency_counts = Counter(data)
-    pmf = {value: count / data_length for value, count in frequency_counts.items()}
-    return pmf
-
-
-# def visualize_txt_data_in_file(file_path):
-#     with open(file_path, 'r') as file:
-#         data = file.readlines()
-#         data = [[float(x)] for x in data]
-#         data = np.array(data)
-#         data = [x for x in data if x<1e8]
-#         # sns.displot(data, kde=True)
-#         # plt.title("Distribution Plot")
-#         # plt.xlabel("Values")
-#         # plt.ylabel("Density")
-#         # plt.scatter(range(len(data)), data)
-#         # plt.hist(data, bins=10)
-#         data.sort()
-#         print(data)
-#         plt.show()
-
-path = os.path.join(OPT_SP_PROJECT_PATH, 'Visualize_SP_Metric/data/temp/SLAM_response_time_120_1120.txt')
-# visualize_txt_data_in_file(path)
-data = datafromtxtfile(path)
-
-pmf = calculate_pmf(data)
-print("Probability Mass Function (PMF):", pmf)
+time_stamps = read_time_stamps_from_association(association_file_path)
+time_stamps = time_stamps[0:3]
+slam_dict = read_slam_data(slam_output_file_path)
+ground_truth_dict = read_slam_data(ground_truth_file_path)
+error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps)
+assert error_list == pytest.approx(2.415e-5, abs=1e-7)
