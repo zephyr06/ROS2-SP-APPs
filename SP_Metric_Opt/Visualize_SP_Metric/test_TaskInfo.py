@@ -127,4 +127,13 @@ def test_read_xyz_from_slam_dict():
     assert y3 == pytest.approx(y2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
     assert z3 == pytest.approx(z2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
 
-    
+def test_calculate_trajectory_error():
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric","data", "CameraTrajectory_bf.txt")
+    slam_dict = read_slam_data(slam_output_file_path)
+    ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
+    ground_truth_dict = read_slam_data(ground_truth_file_path)
+    time_stamp_min = 1341846313.64
+    time_stamp_max = 1341846313.70
+    error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamp_min, time_stamp_max)
+    assert error_list == pytest.approx(2.415e-5, abs =1e-7)
+

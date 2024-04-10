@@ -18,8 +18,12 @@ def read_slam_data(file_path):
     slam_data_dict = {}
     with open(file_path, "r") as f:
         for line in f:
+            if(line[0] == "#"):
+                continue
             line = line.strip().split()
-            slam_data_dict[float(line[0])] = SLAMData(float(line[0]), float(line[1]), float(line[2]), float(line[3]), [float(x) for x in line[4:]])
+            if len(slam_data_dict) == 0:
+                base_x, base_y, base_z = float(line[1]), float(line[2]), float(line[3])
+            slam_data_dict[float(line[0])] = SLAMData(float(line[0]), float(line[1])-base_x, float(line[2])-base_y, float(line[3])-base_z, [float(x) for x in line[4:]])
     return slam_data_dict
 
 def read_time_stamps_from_association(file_path):
@@ -56,6 +60,25 @@ def read_xyz_from_slam_dict(time_stamp_target, slam_data_dict, dict_key_list):
         y = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].y, slam_data_dict[time_stamp_larger].y, time_stamp_target)
         z = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].z, slam_data_dict[time_stamp_larger].z, time_stamp_target)
         return x, y, z
+
+def mean_squared_error(predictions, targets):
+    # Calculate the squared errors
+    squared_errors = [(p - t) ** 2 for p, t in zip(predictions, targets)]
+    
+    # Calculate the mean squared error
+    mse = sum(squared_errors) / len(predictions)
+    
+    return mse
+
+def calculate_trajectory_error(slam_data_dict, ground_truth_dict, time_stamp_min, time_stamp_max):
+    error_list =[]
+    ground_truth_keys = list(ground_truth_dict.keys())
+    for time_stamp, slam_data in slam_data_dict.items():
+        if  time_stamp_min <= time_stamp  and time_stamp <= time_stamp_max:
+            ground_truth_data = read_xyz_from_slam_dict(time_stamp, ground_truth_dict, ground_truth_keys)  
+            actual_data = (slam_data.x, slam_data.y, slam_data.z)
+            error_list.append(mean_squared_error(actual_data, ground_truth_data))
+    return sum(error_list)/len(error_list)
 
 if __name__ == "__main__":
 
