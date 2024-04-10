@@ -32,8 +32,8 @@ def read_time_stamps_from_association(file_path):
         for line in f:
             elements = line.split()
             time_stamps.append(float(elements[0]))
-            if len(elements) >= 3:
-                time_stamps.append(float(elements[2]))
+            # if len(elements) >= 3:
+            #     time_stamps.append(float(elements[2]))
     time_stamps.sort()
     return time_stamps
 
@@ -70,15 +70,20 @@ def mean_squared_error(predictions, targets):
     
     return mse
 
-def calculate_trajectory_error(slam_data_dict, ground_truth_dict, time_stamp_min, time_stamp_max):
+def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps):
     error_list =[]
     ground_truth_keys = list(ground_truth_dict.keys())
-    for time_stamp, slam_data in slam_data_dict.items():
+    actual_data_keys = list(actual_data_dict.keys())
+    time_stamp_min = min(ground_truth_keys)
+    time_stamp_max = max(ground_truth_keys)
+    for time_stamp in time_stamps:
         if  time_stamp_min <= time_stamp  and time_stamp <= time_stamp_max:
             ground_truth_data = read_xyz_from_slam_dict(time_stamp, ground_truth_dict, ground_truth_keys)  
-            actual_data = (slam_data.x, slam_data.y, slam_data.z)
+            actual_data =  read_xyz_from_slam_dict(time_stamp, actual_data_dict, actual_data_keys)
             error_list.append(mean_squared_error(actual_data, ground_truth_data))
     return sum(error_list)/len(error_list)
+
+
 
 if __name__ == "__main__":
 
@@ -86,5 +91,5 @@ if __name__ == "__main__":
 
     ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
 
-    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_cfs.txt")
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
 
