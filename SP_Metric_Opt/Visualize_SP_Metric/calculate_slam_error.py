@@ -73,18 +73,22 @@ def mean_squared_error(predictions, targets):
     
     return mse
 
-def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps, horizon_max_len):
+def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps, ref_interval_start_time, ref_interval_finish_time):
     error_list =[]
     ground_truth_keys = list(ground_truth_dict.keys())
     actual_data_keys = list(actual_data_dict.keys())
     time_stamp_min = min(ground_truth_keys)
     time_stamp_max = max(ground_truth_keys)
-    time_stamp_max = min(time_stamp_max, time_stamp_min + horizon_max_len)
+    time_stamp_min = max(time_stamp_min,time_stamp_min + ref_interval_start_time)
+    time_stamp_max = min(time_stamp_max, time_stamp_min + ref_interval_finish_time)
     for time_stamp in time_stamps:
         if  time_stamp_min <= time_stamp  and time_stamp <= time_stamp_max:
             ground_truth_data = read_xyz_from_slam_dict(time_stamp, ground_truth_dict, ground_truth_keys)  
             actual_data =  read_xyz_from_slam_dict(time_stamp, actual_data_dict, actual_data_keys)
             error_list.append(mean_squared_error(actual_data, ground_truth_data))
+    if len(error_list) == 0:
+        # raise Exception("No time stamps are in the interval")
+        return 0
     return sum(error_list)/len(error_list)
 
 
@@ -101,6 +105,6 @@ if __name__ == "__main__":
     time_stamps = read_time_stamps_from_association(association_file_path)
     slam_dict = read_slam_data(slam_output_file_path)
     ground_truth_dict = read_slam_data(ground_truth_file_path)
-    trajectory_error = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps, horizon_max_len = 10)
+    trajectory_error = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps,ref_interval_start_time=0, ref_interval_finish_time = 10)
     print("MSE trajectory error: ", trajectory_error)
 

@@ -127,15 +127,14 @@ def test_read_xyz_from_slam_dict():
     assert y3 == pytest.approx(y2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
     assert z3 == pytest.approx(z2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
 
-# def test_calculate_trajectory_error():
-#     slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric","data", "CameraTrajectory_bf.txt")
-#     slam_dict = read_slam_data(slam_output_file_path)
-#     ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
-#     ground_truth_dict = read_slam_data(ground_truth_file_path)
-#     time_stamp_min = 1341846313.64
-#     time_stamp_max = 1341846313.70
-#     error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamp_min, time_stamp_max)
-#     assert error_list == pytest.approx(2.415e-5, abs =1e-7)
+    time_stamp4, x4, y4, z4 = 1341846325.450747, 0.198163196, 0.014465467, 0.140189826
+    time_stamp5, x5, y5, z5 = 1341846325.485954, 0.201328710, 0.013628194, 0.137425780
+    time_stamp6 = 1341846326.0
+    x6, y6, z6 = read_xyz_from_slam_dict(time_stamp6, slam_dict, dict_key_list)
+    assert x6 == pytest.approx(x4 + (x5-x4)/(time_stamp5-time_stamp4)*(time_stamp6-time_stamp4))
+    assert y6 == pytest.approx(y4 + (y5-y4)/(time_stamp5-time_stamp4)*(time_stamp6-time_stamp4))
+    assert z6 == pytest.approx(z4 + (z5-z4)/(time_stamp5-time_stamp4)*(time_stamp6-time_stamp4))
+
 
 def test_calculate_trajectory_error2():
     association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
@@ -147,8 +146,11 @@ def test_calculate_trajectory_error2():
     time_stamps = time_stamps[0:3]
     slam_dict = read_slam_data(slam_output_file_path)
     ground_truth_dict = read_slam_data(ground_truth_file_path)
-    error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps)
+    error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps,ref_interval_start_time=0, ref_interval_finish_time=1e9)
     assert error_list == pytest.approx(2.415e-5, abs =1e-7)
+
+    error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps,ref_interval_start_time=0.0164, ref_interval_finish_time=1e9)
+    assert error_list == pytest.approx(1.9884e-5, abs =1e-7)
 
 
 
