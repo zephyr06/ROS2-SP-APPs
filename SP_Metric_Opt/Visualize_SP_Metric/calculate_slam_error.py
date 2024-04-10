@@ -22,9 +22,16 @@ def read_slam_data(file_path):
             slam_data_dict[float(line[0])] = SLAMData(float(line[0]), float(line[1]), float(line[2]), float(line[3]), [float(x) for x in line[4:]])
     return slam_data_dict
 
-# Example usage:
-slam_data = SLAMData(0.0, 1.0, 2.0, 3.0, [0.707, 0.0, 0.0, 0.707])
-print(slam_data)
+def read_time_stamps_from_association(file_path):
+    time_stamps = []
+    with open(file_path, "r") as f:
+        for line in f:
+            elements = line.split()
+            time_stamps.append(float(elements[0]))
+            if len(elements) >= 3:
+                time_stamps.append(float(elements[2]))
+    time_stamps.sort()
+    return time_stamps
 
 if __name__ == "__main__":
 

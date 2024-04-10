@@ -96,4 +96,10 @@ def test_read_slam_data():
     assert slam_dict[1341846315.161941].x == pytest.approx(-0.468015879)
     assert slam_dict[1341846315.161941].y == pytest.approx(0.175357431)
     assert slam_dict[1341846315.161941].z == pytest.approx(0.004894138)
-     
+
+def test_read_time_stamps_from_association():
+    file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
+    time_stamps = read_time_stamps_from_association(file_path)
+    assert time_stamps[0] == pytest.approx(1341846313.592026)
+    assert time_stamps[1] == pytest.approx(1341846313.592088)
+    assert time_stamps[2] == pytest.approx(1341846313.654184)
