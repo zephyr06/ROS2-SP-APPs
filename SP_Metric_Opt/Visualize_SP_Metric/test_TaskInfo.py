@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from SP_draw_fig_utils import *
+from calculate_slam_error import *
 
 def test_read_period():
     task_set_config = os.path.join(
@@ -79,9 +80,20 @@ def test_get_sp_value_list():
         OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test2")
     
     tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
-    sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0)
+    sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0, task_set_config)
     # only one value; chance of four tasks to miss DDL:
     # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.2
     exp_sp = 2*-0.01*np.exp(10*0.5) + np.log(1.5)*2 - 0.5*4
     assert sp_value_list == pytest.approx([exp_sp], abs=1e-2)
-    
+
+def test_read_slam_data():
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric","data", "CameraTrajectory_cfs.txt")
+    slam_dict = read_slam_data(slam_output_file_path)
+    assert slam_dict[1341846313.592026].x == pytest.approx(0.0)
+    assert slam_dict[1341846313.592026].y == pytest.approx(0.0)
+    assert slam_dict[1341846313.592026].z == pytest.approx(0.0)
+
+    assert slam_dict[1341846315.161941].x == pytest.approx(-0.468015879)
+    assert slam_dict[1341846315.161941].y == pytest.approx(0.175357431)
+    assert slam_dict[1341846315.161941].z == pytest.approx(0.004894138)
+     
