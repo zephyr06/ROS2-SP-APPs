@@ -103,3 +103,28 @@ def test_read_time_stamps_from_association():
     assert time_stamps[0] == pytest.approx(1341846313.592026)
     assert time_stamps[1] == pytest.approx(1341846313.592088)
     assert time_stamps[2] == pytest.approx(1341846313.654184)
+
+def test_read_xyz_from_slam_dict():
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric","data", "CameraTrajectory_bf.txt")
+    slam_dict = read_slam_data(slam_output_file_path)
+    dict_key_list = list(slam_dict.keys())
+    
+    time_stamp1 = 1341846313.592026
+    x1, y1, z1 = read_xyz_from_slam_dict(time_stamp1, slam_dict, dict_key_list)
+    assert x1 == pytest.approx(0)
+    assert y1 == pytest.approx(0)
+    assert z1 == pytest.approx(0)
+
+    time_stamp2 = 1341846313.654184
+    x2, y2, z2 = read_xyz_from_slam_dict(time_stamp2, slam_dict, dict_key_list)
+    assert x2 == pytest.approx(0.011087629)
+    assert y2 == pytest.approx(-0.001503026)
+    assert z2 == pytest.approx(-0.003074664)
+
+    time_stamp3 = 1341846313.6
+    x3, y3, z3 = read_xyz_from_slam_dict(time_stamp3, slam_dict, dict_key_list)
+    assert x3 == pytest.approx(x2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
+    assert y3 == pytest.approx(y2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
+    assert z3 == pytest.approx(z2*(time_stamp3-time_stamp1)/(time_stamp2-time_stamp1))
+
+    

@@ -1,5 +1,5 @@
 import os
-
+import bisect
 from SP_draw_fig_utils import OPT_SP_PROJECT_PATH
 
 class SLAMData:
@@ -33,11 +33,35 @@ def read_time_stamps_from_association(file_path):
     time_stamps.sort()
     return time_stamps
 
+
+
+def interpolate(x1, x2, y1, y2, x_target):
+    return y1 + (y2 - y1) / (x2 - x1) * (x_target - x1)
+
+def read_xyz_from_slam_dict(time_stamp_target, slam_data_dict, dict_key_list):
+    if time_stamp_target in slam_data_dict:
+        return slam_data_dict[time_stamp_target].x, slam_data_dict[time_stamp_target].y, slam_data_dict[time_stamp_target].z
+    else:
+        index_smaller_than_target = bisect.bisect_left(dict_key_list, time_stamp_target)-1
+        if index_smaller_than_target < 0:
+            raise Exception("The target time stamp is smaller than the smallest time stamp in the slam data.")
+        
+        time_stamp_smaller = dict_key_list[index_smaller_than_target]
+        if index_smaller_than_target == len(slam_data_dict) - 1:
+            raise Exception("The target time stamp is larger than the largest time stamp in the slam data.")
+        
+
+        time_stamp_larger = dict_key_list[index_smaller_than_target+1]
+        x = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].x, slam_data_dict[time_stamp_larger].x, time_stamp_target)
+        y = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].y, slam_data_dict[time_stamp_larger].y, time_stamp_target)
+        z = interpolate(time_stamp_smaller, time_stamp_larger, slam_data_dict[time_stamp_smaller].z, slam_data_dict[time_stamp_larger].z, time_stamp_target)
+        return x, y, z
+
 if __name__ == "__main__":
 
     association_file_path = os.path.join(os.path.dirname(OPT_SP_PROJECT_PATH),"SP_Scheduler_Stack/YOLO-DynaSLAM/Examples/RGB-D/associations/fr3_walking_xyz.txt")
 
     ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
 
-    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric","data", "CameraTrajectory_cfs.txt")
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_cfs.txt")
 
