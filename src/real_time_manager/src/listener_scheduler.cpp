@@ -24,7 +24,7 @@ public:
         }
         std::cout << "Using scheduler: " << scheduler_ << ".\n";
     }
-    void run() override
+    void run(int msg_cnt) override
     {
         // no execution at the first instance
         if (cnt_++ == 0)

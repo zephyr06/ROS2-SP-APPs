@@ -3,7 +3,7 @@
 class TSPApp : public AppBase {
  public:
   TSPApp() : AppBase("tsp") {}
-  void run() override { callTSP(); }
+  void run(int msg_cnt) override { callTSP(); }
 };
 int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);

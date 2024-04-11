@@ -4,7 +4,7 @@
 class RRTApp : public AppBase {
  public:
   RRTApp() : AppBase("rrt") {}
-  void run() override { rrtsolver_.solveWithoutUI(); }
+  void run(int msg_cnt) override { rrtsolver_.solveWithoutUI(); }
   RRTSolver rrtsolver_;
 };
 

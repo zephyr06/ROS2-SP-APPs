@@ -4,7 +4,7 @@
 class SLAMApp : public AppBase {
  public:
   SLAMApp() : AppBase("slam") { slam_wrapper_.init(); }
-  void run() override { slam_wrapper_.next(); }
+  void run(int msg_cnt) override { slam_wrapper_.next(int msg_cnt); }
   DynaSLAMWrapperForROS2 slam_wrapper_;
 };
 int main(int argc, char* argv[]) {

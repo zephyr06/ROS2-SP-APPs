@@ -4,7 +4,7 @@
 class MPCApp : public AppBase {
  public:
   MPCApp() : AppBase("mpc") {}
-  void run() override { mpc_main(); }
+  void run(int msg_cnt) override { mpc_main(); }
 };
 int main(int argc, char* argv[]) {
   rclcpp::init(argc, argv);

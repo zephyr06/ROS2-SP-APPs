@@ -101,10 +101,12 @@ public:
         image_idx = 0;
 
     }
-    void next() {
-        if (image_idx > 800) {
-            image_idx = 0;
+    void next(int msg_cnt) {
+        if (msg_cnt > 820) {
+            std::cerr<<"SLAM: exceeding the maximum number frame of data!!! Processing the last frame 820...\n";
         }
+        image_idx = std::min(820, msg_cnt);
+
         cout << image_idx << endl;
         // Read image and depthmap from file
         imRGB = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/rgbd_dataset_freiburg3_walking_xyz/")+"/"+vstrImageFilenamesRGB[image_idx],CV_LOAD_IMAGE_UNCHANGED);

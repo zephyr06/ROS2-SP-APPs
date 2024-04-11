@@ -10,7 +10,7 @@ using std::placeholders::_1;
 class AppBase {
  public:
   AppBase(std::string app_name) : app_name_(app_name) {}
-  virtual void run() { ; }
+  virtual void run(int msg_cnt) { ; }
   // data member
   std::string app_name_;
 };
@@ -40,10 +40,9 @@ class SubscriberAppBase : public rclcpp::Node {
 
  private:
   void topic_callback(const std_msgs::msg::String::SharedPtr msg) {
-    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
-    // callTSP();
+    // RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
     exe_profiler_.start();
-    app_.run();
+    app_.run(std::stoi(msg->data.substr(msg->data.find(' ')+1)));
     exe_profiler_.end();
     double current_time = getDuration(start_time_, CurrentTimeInProfiler);
     double app_exe_time = exe_profiler_.get_exe_time();  // actual CPU time
