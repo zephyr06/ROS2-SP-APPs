@@ -21,7 +21,7 @@ if __name__ == "__main__":
     discard_early_time = 0  # 20 seconds
 
 
-
+    # TODO: add more tests!!!
     for method_name, trajectory_file_path in slam_trajectory_paths.items():
         actual_data_dict = read_slam_data(trajectory_file_path)
         slam_trajectory_error_list = get_trajectory_error_list(horizon, horizon_granularity, discard_early_time, actual_data_dict, ground_truth_dict, time_stamps)
