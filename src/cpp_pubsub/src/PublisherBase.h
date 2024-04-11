@@ -42,7 +42,7 @@ private:
     
     double current_time=getDuration(start_time_, CurrentTimeInProfiler);
     write_current_time_to_file(target_profile_data_file_path_, current_time, "Publishing " + app_name_+" "+message.data );
-    RCLCPP_INFO(this->get_logger(), "Publishing " + app_name_ + ": %f", current_time);
+    // RCLCPP_INFO(this->get_logger(), "Publishing " + app_name_ + ": %f", current_time);
     publisher_->publish(message);
   }
 

@@ -231,7 +231,7 @@ int mpc_main() {
   OsqpEigen::Solver solver;
 
   // settings
-  // solver.settings()->setVerbosity(false);
+  solver.settings()->setVerbosity(false);
   solver.settings()->setWarmStart(true);
 
   // set the initial data of the QP solver
