@@ -33,6 +33,7 @@ class SubscriberAppBase : public rclcpp::Node {
     write_current_time_to_file(target_profile_data_file_path_,
                                getCurrentTimeStamp(),
                                "Start time of subscriber: ");
+    next_ROS2_info_time_ = 10;
   }
   SubscriberAppBase(int argc, char *argv[]): SubscriberAppBase() {
     app_ = AppBase(argc, argv);
@@ -40,11 +41,15 @@ class SubscriberAppBase : public rclcpp::Node {
 
  private:
   void topic_callback(const std_msgs::msg::String::SharedPtr msg) {
-    // RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg->data.c_str());
+    
     exe_profiler_.start();
     app_.run(std::stoi(msg->data.substr(msg->data.find(' ')+1)));
     exe_profiler_.end();
     double current_time = getDuration(start_time_, CurrentTimeInProfiler);
+    if (current_time >next_ROS2_info_time_) {
+      RCLCPP_INFO(this->get_logger(), "I processed '%s' at time %lf", msg->data.c_str(), current_time); 
+      next_ROS2_info_time_ += 10;
+    }
     double app_exe_time = exe_profiler_.get_exe_time();  // actual CPU time
     std::string receive_message_subscriber =
         "Receiving " + app_.app_name_ + " message:" + msg->data;
@@ -60,6 +65,7 @@ class SubscriberAppBase : public rclcpp::Node {
   // data related to profiler
   AppBase app_;
   TimerType start_time_;
+  double next_ROS2_info_time_;
   std::string target_profile_data_file_path_;
   ExecutionTimeProfiler exe_profiler_;
   std::string execution_time_profile_data_file_path_;
