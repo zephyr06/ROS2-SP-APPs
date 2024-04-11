@@ -13,22 +13,23 @@ if __name__ == "__main__":
     slam_trajectory_paths = {
         "CFS": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data", "CameraTrajectory_cfs.txt"),
         "FIFO": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data", "CameraTrajectory_bf.txt"),
+        "RM": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data", "CameraTrajectory_rm.txt"),
         }
 
-    horizon_granularity = 1  # 1 seconds
-    horizon = 2000  # 2000 seconds 
-    discard_early_time = 0  # 0 seconds
+    frame_granularity = 5 # draw a point every 5 frames
+    total_frame = 2000  # 2000 frames at msot, actual frame depends on the provided data
+    discard_early_frame = 0  # discard first 0 frames
 
 
     # TODO: add more tests!!!
     for method_name, trajectory_file_path in slam_trajectory_paths.items():
         actual_data_dict = read_slam_data(trajectory_file_path)
-        slam_trajectory_error_list = get_trajectory_error_list(horizon, horizon_granularity, discard_early_time, actual_data_dict, ground_truth_dict, time_stamps)
-        x_axis = [i for i in range(0, len(slam_trajectory_error_list)*horizon_granularity, horizon_granularity)]
+        slam_trajectory_error_list = get_trajectory_error_list(total_frame, frame_granularity, discard_early_frame, actual_data_dict, ground_truth_dict, time_stamps)
+        x_axis = [i for i in range(0, len(slam_trajectory_error_list)*frame_granularity, frame_granularity)]
         plt.plot(x_axis, slam_trajectory_error_list, label = method_name)
         print(f"SLAM Trajectory MSE for {method_name}: {sum(slam_trajectory_error_list)/len(slam_trajectory_error_list)}")
 
     plt.legend(slam_trajectory_paths.keys())
-    plt.xlabel("Time (s)")
+    plt.xlabel("Frame indexes")
     plt.ylabel("SLAM Trajectory MSE")
     plt.show()

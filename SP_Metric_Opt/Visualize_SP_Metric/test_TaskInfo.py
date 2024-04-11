@@ -139,7 +139,6 @@ def test_read_xyz_from_slam_dict():
 def test_calculate_trajectory_error2():
     association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
     ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
-
     slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
 
     time_stamps = read_time_stamps_from_association(association_file_path)
@@ -151,6 +150,18 @@ def test_calculate_trajectory_error2():
 
     error_list = calculate_trajectory_error(slam_dict, ground_truth_dict, time_stamps,ref_interval_start_time=0.0164, ref_interval_finish_time=1e9)
     assert error_list == pytest.approx(1.9884e-5, abs =1e-7)
+
+def test_get_trajectory_error_list():
+    association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
+    ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
+    slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
+
+    time_stamps = read_time_stamps_from_association(association_file_path)
+    slam_dict = read_slam_data(slam_output_file_path)
+    ground_truth_dict = read_slam_data(ground_truth_file_path)
+    slam_trajectory_error_list = get_trajectory_error_list(2, 1, 0, slam_dict, ground_truth_dict, time_stamps)
+    assert len(slam_trajectory_error_list) == 2
+    assert slam_trajectory_error_list[1] == pytest.approx(1.9884e-5, abs =1e-7)
 
 
 

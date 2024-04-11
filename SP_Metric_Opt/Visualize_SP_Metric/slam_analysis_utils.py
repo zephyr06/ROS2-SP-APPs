@@ -79,8 +79,9 @@ def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps,
     actual_data_keys = list(actual_data_dict.keys())
     time_stamp_min = min(ground_truth_keys)
     time_stamp_max = max(ground_truth_keys)
-    time_stamp_min = max(time_stamp_min,time_stamp_min + ref_interval_start_time)
+
     time_stamp_max = min(time_stamp_max, time_stamp_min + ref_interval_finish_time)
+    time_stamp_min = max(time_stamp_min, time_stamp_min + ref_interval_start_time)
     for time_stamp in time_stamps:
         if  time_stamp_min <= time_stamp  and time_stamp <= time_stamp_max:
             ground_truth_data = read_xyz_from_slam_dict(time_stamp, ground_truth_dict, ground_truth_keys)  
@@ -92,13 +93,14 @@ def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps,
     return sum(error_list)/len(error_list)
 
 
-def get_trajectory_error_list(horizon, horizon_granularity, discard_early_time, actual_data_dict, ground_truth_dict, time_stamps):
+def get_trajectory_error_list(total_frame_count, frame_granularity, discard_early_frame_count, actual_data_dict, ground_truth_dict, time_stamps, reference_period_in_dict=0.0333):
     trajectory_error_list = []
     actual_data_max_finish_time = max(actual_data_dict.keys())-min(actual_data_dict.keys())
-    for start_time in range(discard_early_time, horizon, horizon_granularity):
+    for frame_count in range(discard_early_frame_count, total_frame_count, frame_granularity):
+        start_time = frame_count * reference_period_in_dict
         if start_time > actual_data_max_finish_time:
             break
-        end_time = start_time + horizon_granularity
+        end_time = (frame_count + frame_granularity) * reference_period_in_dict
 
         error_cur = calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps, start_time, end_time)
         trajectory_error_list.append(error_cur)
