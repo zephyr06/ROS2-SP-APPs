@@ -11,7 +11,7 @@ tasks:
     priority: 5
   - id: 2
     name: RRT
-    processorId: 1
+    processorId: 0
     scheduling_policy: SCHED_FIFO
     priority: 2
   - id: 3

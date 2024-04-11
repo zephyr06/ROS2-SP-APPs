@@ -26,9 +26,9 @@ tasks:
     execution_time_sigma: 951.05338594034708
     execution_time_min: 210.874112
     execution_time_max: 6308.2372160000004
-    period: 2000
-    deadline: 2000
-    processorId: 1
+    period: 3000
+    deadline: 3000
+    processorId: 0
     name: RRT
     sp_threshold: 0.5
     sp_weight: 1
@@ -42,4 +42,4 @@ tasks:
     processorId: 0
     name: SLAM
     sp_threshold: 0.5
-    sp_weight: 1
+    sp_weight: 2

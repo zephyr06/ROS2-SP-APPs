@@ -24,7 +24,7 @@ if __name__=="__main__":
 
     horizon_granularity = 10  # 10 seconds
     horizon = 2000  # 100 seconds
-    discard_early_time = 120  # 20 seconds
+    discard_early_time = 20  # 20 seconds
 
 
 
