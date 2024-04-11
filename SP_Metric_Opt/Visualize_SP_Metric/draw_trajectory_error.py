@@ -9,16 +9,15 @@ if __name__ == "__main__":
     time_stamps = read_time_stamps_from_association(association_file_path)
     ground_truth_dict = read_slam_data(ground_truth_file_path)
 
+    # These files are generated after running the computation tasks
     slam_trajectory_paths = {
-        # "FIFO": os.path.join(
-        # OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data"),
         "CFS": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data", "CameraTrajectory_cfs.txt"),
         "FIFO": os.path.join(OPT_SP_PROJECT_PATH,"Visualize_SP_Metric/data", "CameraTrajectory_bf.txt"),
         }
 
-    horizon_granularity = 1  # 10 seconds
-    horizon = 2000  # 100 seconds
-    discard_early_time = 0  # 20 seconds
+    horizon_granularity = 1  # 1 seconds
+    horizon = 2000  # 2000 seconds 
+    discard_early_time = 0  # 0 seconds
 
 
     # TODO: add more tests!!!

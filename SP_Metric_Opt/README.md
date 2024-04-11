@@ -48,12 +48,20 @@ Priority assignment results are saved and explained in the output file generated
 
 
 
-# Visualize the SP metric
+# Result Visualization
+## Visualize the SP metric
 ```
 cd SP_Metric_Opt/Visualize_SP_Metric
 python draw_SP_multi_figs.py
 ```
 Please modify the parameters provided in the main function in `/Visualize_SP_Metric/draw_SP_multi_figs.py` based on the provided comments.
+## Visualize the MSE of SLAM trajectories
+```
+cd SP_Metric_Opt/Visualize_SP_Metric
+python draw_trajectory_error.py
+```
+Please modify the parameters provided in the main function in `/Visualize_SP_Metric/draw_trajectory_error.py` based on the provided comments. 
+One issue: the time units of the obtained figure is based on the TUM dataset rather than the actual time unit in the real-world.
 
 
 
