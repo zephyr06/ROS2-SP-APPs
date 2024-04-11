@@ -1,9 +1,9 @@
 tasks:
   - id: 0
-    execution_time_mu: 3004.4232520000005
-    execution_time_sigma: 8.6002229506292966
-    execution_time_min: 3000.8684799999996
-    execution_time_max: 3034.073856
+    execution_time_mu: 3002.8666834285714
+    execution_time_sigma: 2.9397882308931798
+    execution_time_min: 3000.9881919999998
+    execution_time_max: 3008.6959999999999
     period: 10000
     deadline: 10000
     processorId: 0
@@ -11,10 +11,10 @@ tasks:
     sp_threshold: 0.5
     sp_weight: 1
   - id: 1
-    execution_time_mu: 6.7781996800000011
-    execution_time_sigma: 0.091564172346381673
-    execution_time_min: 6.6626880000000002
-    execution_time_max: 7.1657279999999997
+    execution_time_mu: 6.3180652799999999
+    execution_time_sigma: 0.30515094249547797
+    execution_time_min: 6.015968
+    execution_time_max: 7.327712
     period: 20
     deadline: 20
     processorId: 1
@@ -22,21 +22,21 @@ tasks:
     sp_threshold: 0.5
     sp_weight: 1
   - id: 2
-    execution_time_mu: 1348.35383232
-    execution_time_sigma: 951.05338594034708
-    execution_time_min: 210.874112
-    execution_time_max: 6308.2372160000004
+    execution_time_mu: 1226.7180719999999
+    execution_time_sigma: 766.05056359811044
+    execution_time_min: 346.384096
+    execution_time_max: 4235.6999999999998
     period: 3000
     deadline: 3000
-    processorId: 0
+    processorId: 1
     name: RRT
     sp_threshold: 0.5
     sp_weight: 1
   - id: 3
-    execution_time_mu: 5003.4111807999998
-    execution_time_sigma: 5412.0523765547568
-    execution_time_min: 592.68166399999996
-    execution_time_max: 20270.225087999999
+    execution_time_mu: 2713.4543167999996
+    execution_time_sigma: 3590.252655052107
+    execution_time_min: 531.81478400000003
+    execution_time_max: 16393.618112
     period: 2000
     deadline: 2000
     processorId: 0

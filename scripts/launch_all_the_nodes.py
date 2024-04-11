@@ -9,7 +9,7 @@ node_scheduler = Node(
     package='real_time_manager',
     name='listener_scheduler',
     executable='listener_scheduler',
-    output="screen",
+    # output="screen",
     arguments=[LaunchConfiguration('scheduler')] # Options: CFS, RM, optimizerBF, optimizerIncremental
 )
 
