@@ -3,7 +3,7 @@ from SP_draw_fig_utils import *
 import numpy as np
 from collections import Counter
 import pytest
-from calculate_slam_error import *
+from slam_analysis_utils import *
 
 association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
 

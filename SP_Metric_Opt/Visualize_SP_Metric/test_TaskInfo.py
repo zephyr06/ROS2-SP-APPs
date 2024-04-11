@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 from SP_draw_fig_utils import *
-from calculate_slam_error import *
+from slam_analysis_utils import *
 
 def test_read_period():
     task_set_config = os.path.join(

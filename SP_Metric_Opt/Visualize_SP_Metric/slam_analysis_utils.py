@@ -92,6 +92,18 @@ def calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps,
     return sum(error_list)/len(error_list)
 
 
+def get_trajectory_error_list(horizon, horizon_granularity, discard_early_time, actual_data_dict, ground_truth_dict, time_stamps):
+    trajectory_error_list = []
+    actual_data_max_finish_time = max(actual_data_dict.keys())-min(actual_data_dict.keys())
+    for start_time in range(discard_early_time, horizon, horizon_granularity):
+        if start_time > actual_data_max_finish_time:
+            break
+        end_time = start_time + horizon_granularity
+
+        error_cur = calculate_trajectory_error(actual_data_dict, ground_truth_dict, time_stamps, start_time, end_time)
+        trajectory_error_list.append(error_cur)
+    return trajectory_error_list
+
 
 if __name__ == "__main__":
 
