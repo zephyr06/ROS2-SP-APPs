@@ -54,3 +54,6 @@ Configurations of the tasks (application nodes) are stored inside two YAML files
     ```
     export ROS_LOG_DIR=/home/nvidia/workspace/sdcard/.ros/log
     ```
+
+1. If `chrt` coudn't change priority:
+    - execute: `sysctl -w kernel.sched_rt_runtime_us=-1`
