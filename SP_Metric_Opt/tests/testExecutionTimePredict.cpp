@@ -15,7 +15,7 @@ TEST(extractIndex, V1) {
     EXPECT_EQ(64, extractIndex(line));
     EXPECT_EQ(0.91871564800000005135, extractNumber(line));
 }
-TEST(BasicExample, v1) {
+TEST(ReadExtTimeData, v1) {
     std::string slam_ext_file =
         GlobalVariables::PROJECT_PATH +
         "/TaskData/AnalyzeSP_Metric/slam_execution_time.txt";
@@ -32,7 +32,7 @@ TEST(BasicExample, v1) {
     EXPECT_EQ(miss_count_actual, miss_count_exp);
 }
 
-TEST(BasicExample, v2) {
+TEST(ReadExtTimeData, v2) {
     std::string slam_ext_file =
         GlobalVariables::PROJECT_PATH +
         "/TaskData/AnalyzeSP_Metric/slam_execution_time2.txt";
@@ -46,6 +46,19 @@ TEST(BasicExample, v2) {
         ReadExtTimeData(slam_ext_file, 5);
     EXPECT_EQ(exe_data_actual, execution_times_exp);
     EXPECT_EQ(miss_count_actual, miss_count_exp);
+}
+TEST(FillMissValue, V1) {
+    std::string slam_ext_file =
+        GlobalVariables::PROJECT_PATH +
+        "/TaskData/AnalyzeSP_Metric/slam_execution_time.txt";
+
+    std::vector<double> exe_data_actual;
+    double miss_count_actual;
+    std::tie(exe_data_actual, miss_count_actual) =
+        ReadExtTimeData(slam_ext_file, 5);
+    FillMissValue(exe_data_actual, miss_count_actual, 10);
+    EXPECT_EQ(7, exe_data_actual.size());
+    EXPECT_EQ(10, exe_data_actual.back());
 }
 
 int main(int argc, char **argv) {

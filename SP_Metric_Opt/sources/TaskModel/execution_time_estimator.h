@@ -71,3 +71,10 @@ std::pair<std::vector<double>, int> ReadExtTimeData(std::string file_name,
     }
     return {data, miss_count};
 }
+
+void FillMissValue(std::vector<double> &data, int miss_count, int miss_val) {
+    data.reserve(data.size() + miss_count);
+    for (int i = 0; i < miss_count; i++) {
+        data.push_back(miss_val);
+    }
+}
