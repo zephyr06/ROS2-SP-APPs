@@ -10,6 +10,8 @@ def get_ext_list(file_name):
     return ext_list
 
 if __name__ == "__main__":
-    file_name = os.path.join(os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "slam_execution_time.txt")
+    # file_name = os.path.join(os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "slam_execution_time.txt")
+    file_name = os.path.join(os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "slam_execution_time_bf_copy.txt")
+    
     ext_list = get_ext_list(file_name)
     print("Average execution time: ", sum(ext_list)/len(ext_list))
