@@ -10,7 +10,8 @@ using std::placeholders::_1;
 class AppBase {
  public:
   AppBase(std::string app_name) : app_name_(app_name) {}
-  virtual void run(int msg_cnt) { ; }
+  // function arguments msg_cnt not used for now
+  virtual void run(int ) { ; }
   // data member
   std::string app_name_;
 };

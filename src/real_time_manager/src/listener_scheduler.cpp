@@ -25,7 +25,8 @@ class SchedulerApp : public AppBase {
         }
         std::cout << "Using scheduler: " << scheduler_ << ".\n";
     }
-    void run(int msg_cnt) override {
+    // function arguments msg_cnt not used for now
+    void run(int ) override {
         // no execution at the first instance
         if (cnt_++ == 0) return;
 
@@ -64,8 +65,8 @@ class SchedulerApp : public AppBase {
                        "optimizerIncremental") {  // todo: implement the
                                                   // "optimizerIncremental"
 
-            // Update execution time statitics
-            et_estimator_.updateTaskExecutionTimeDistributions(10);
+            // Update execution time statitics, use last 10 data records, replace the missed values with 2T seconds
+            et_estimator_.updateTaskExecutionTimeDistributions(10, 2*3);
 
             // Perform schedule
             // Scheduler command to be executed
