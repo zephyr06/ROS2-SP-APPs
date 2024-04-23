@@ -44,7 +44,8 @@ std::vector<std::string> GetAllLines(std::string file_name) {
     return lines;
 }
 
-// return a vector of execution time data and the miss value rate
+// return a vector of execution time data and the miss value rate, units are
+// seconds!!!
 std::pair<std::vector<double>, int> ReadExtTimeData(std::string file_name,
                                                     int last_data_count) {
     std::vector<std::string> lines = GetAllLines(file_name);
@@ -76,5 +77,11 @@ void FillMissValue(std::vector<double> &data, int miss_count, int miss_val) {
     data.reserve(data.size() + miss_count);
     for (int i = 0; i < miss_count; i++) {
         data.push_back(miss_val);
+    }
+}
+
+void ScaleVector(std::vector<double> &data, double scale) {
+    for (double &d : data) {
+        d *= scale;
     }
 }

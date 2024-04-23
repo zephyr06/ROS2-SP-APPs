@@ -44,5 +44,9 @@ class OptimimizePA_Base {
 double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
                                  const SP_Parameters& sp_parameters,
                                  const PriorityVec& priority_assignment);
+
 void PrintPA_IfDebugMode(const PriorityVec& pa, double sp_eval);
+
+YAML::Node PriorityAssignmentToYaml(const TaskSet& tasks,
+                                    const PriorityVec& priority_assignment);
 }  // namespace SP_OPT_PA

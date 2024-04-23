@@ -49,6 +49,8 @@ class ExecutionTimeEstimator {
             std::tie(data, miss_count_actual) =
                 ReadExtTimeData(filename, max_data_count);
             FillMissValue(data, miss_count_actual, fill_miss_ext_value);
+            ScaleVector(
+                data, 1000.0);  // transform units from seconds to milliseconds
             // Close the file
             file.close();
 

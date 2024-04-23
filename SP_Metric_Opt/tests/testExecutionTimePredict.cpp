@@ -60,6 +60,19 @@ TEST(FillMissValue, V1) {
     EXPECT_EQ(7, exe_data_actual.size());
     EXPECT_EQ(10, exe_data_actual.back());
 }
+TEST(ScaleVector, V1) {
+    std::string slam_ext_file =
+        GlobalVariables::PROJECT_PATH +
+        "/TaskData/AnalyzeSP_Metric/slam_execution_time.txt";
+
+    std::vector<double> exe_data_actual;
+    double miss_count_actual;
+    std::tie(exe_data_actual, miss_count_actual) =
+        ReadExtTimeData(slam_ext_file, 5);
+    FillMissValue(exe_data_actual, miss_count_actual, 10);
+    ScaleVector(exe_data_actual, 1000);
+    EXPECT_EQ(10 * 1000, exe_data_actual.back());
+}
 
 int main(int argc, char **argv) {
     // ::testing::InitGoogleTest(&argc, argv);

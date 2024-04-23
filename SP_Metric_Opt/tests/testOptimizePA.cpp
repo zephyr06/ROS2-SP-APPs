@@ -2,6 +2,7 @@
 
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_BF.h"
+#include "sources/Optimization/OptimizeSP_Base.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
 #include "sources/Utils/Parameters.h"
 
@@ -128,6 +129,27 @@ TEST_F(TaskSetv13, Optimize_bf) {
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[2]].name);
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
 }
+class TaskSetv14 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        string file_path =
+            GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v14.yaml";
+        dag_tasks = ReadDAG_Tasks(file_path);
+        sp_parameters = ReadSP_Parameters(file_path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+// TEST_F(TaskSetv14, Optimize_bf) {
+//     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+//     PrintPriorityVec(dag_tasks.tasks, pa_opt);
+//     YAML::Node yaml_nodes = PriorityAssignmentToYaml(dag_tasks.tasks,
+//     pa_opt); EXPECT_THAT(yaml_nodes["TSP"].as<int>(),
+//                 testing::Le(yaml_nodes["SLAM"].as<int>()));
+// }
 // TEST_F(TaskSetForTest_2tasks, Optimize_incre) {
 //     Task task_t = tasks[0];
 //     tasks[0] = tasks[1];
