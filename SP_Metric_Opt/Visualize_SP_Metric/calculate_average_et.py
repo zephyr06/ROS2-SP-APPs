@@ -1,0 +1,15 @@
+from SP_draw_fig_utils import OPT_SP_PROJECT_PATH
+import os
+
+def get_ext_list(file_name):
+    ext_list = []
+    with open(file_name, 'r') as f:
+        for line in f:
+            ext_str = line.split("::")[1][:-1]  
+            ext_list.append(float(ext_str))
+    return ext_list
+
+if __name__ == "__main__":
+    file_name = os.path.join(os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "slam_execution_time.txt")
+    ext_list = get_ext_list(file_name)
+    print("Average execution time: ", sum(ext_list)/len(ext_list))
