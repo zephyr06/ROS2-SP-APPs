@@ -63,7 +63,7 @@ public:
 
             // task cpu list
             cpu_lists.push_back({data["tasks"][i]["processorId"].as<int>()});
-            for (int k = 0; k < cpu_lists.back().size(); k++) { // add +2 offset to save the core 0 for talkers, core 1 for ros2 launch
+            for (uint k = 0; k < cpu_lists.back().size(); k++) { // add +2 offset to save the core 0 for talkers, core 1 for ros2 launch
                 cpu_lists[cpu_lists.size()-1][k] += 2;
             }
 

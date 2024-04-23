@@ -3,5 +3,5 @@
 int main(){
     ExecutionTimeEstimator et_estimator;
     
-    et_estimator.updateTaskExecutionTimeDistributions(50);
+    et_estimator.updateTaskExecutionTimeDistributions(50,10);
 }

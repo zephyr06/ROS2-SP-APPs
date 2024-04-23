@@ -25,7 +25,7 @@ class ExecutionTimeEstimator {
             getTimeRecordFolder() + "task_characteristics.yaml";
         YAML::Node tasks = YAML::LoadFile(task_characteristics_yaml);
 
-        int time_scale_multiplier = 1000;
+        // int time_scale_multiplier = 1000;
         YAML::Node statitics_node;
 
         for (YAML::Node::iterator it_task = tasks["tasks"].begin();
