@@ -48,7 +48,7 @@ class ExecutionTimeEstimator {
             double miss_count_actual;
             std::tie(data, miss_count_actual) =
                 ReadExtTimeData(filename, max_data_count);
-            FillMissValue(data, miss_count_actual, fill_miss_ext_value);
+            // FillMissValue(data, miss_count_actual, fill_miss_ext_value);
             ScaleVector(
                 data, 1000.0);  // transform units from seconds to milliseconds
             // Close the file
@@ -60,9 +60,9 @@ class ExecutionTimeEstimator {
             }
 
             // Only keep the lastest max_data_count entries
-            if ((int)data.size() > max_data_count) {
-                data.erase(data.begin(), data.end() - max_data_count);
-            }
+            // if ((int)data.size() > max_data_count) {
+            //     data.erase(data.begin(), data.end() - max_data_count);
+            // }
 
             // Calculate statistics
             double mean, std_dev, min_val, max_val;
