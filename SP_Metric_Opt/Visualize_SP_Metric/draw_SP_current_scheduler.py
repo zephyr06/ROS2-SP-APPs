@@ -23,8 +23,8 @@ if __name__=="__main__":
     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
     horizon_granularity = 10  # 10 seconds
-    horizon = 2000  # 100 seconds
-    discard_early_time = 20  # 20 seconds
+    horizon = 1000  #  seconds
+    discard_early_time = 120  # 20 seconds
 
 
 
@@ -41,7 +41,7 @@ if __name__=="__main__":
     plt.tight_layout()
     
     plt.savefig(os.path.join(
-        os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "current_scheduler_SP.pdf"), format='pdf')
+        os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "current_scheduler_SP.pdf"), format='pdf')
     
     plt.show(block=False)
-    plt.pause(3)
+    plt.pause(10)

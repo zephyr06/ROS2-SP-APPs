@@ -22,6 +22,9 @@ python clear_all_time_records.py
 # launch the ROS2 stack with specified schduler
 ros2 launch launch_all_the_nodes.py scheduler:=$1
 
+cd ../SP_Metric_Opt/release
+make -j8
+cd ../../scripts
 ### post-execution operations, plot SP for the single scheudler, and backup data
 python3 ../SP_Metric_Opt/Visualize_SP_Metric/draw_SP_current_scheduler.py $1
 

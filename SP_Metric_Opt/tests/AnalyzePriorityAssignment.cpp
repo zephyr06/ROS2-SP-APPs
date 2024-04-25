@@ -56,4 +56,6 @@ int main(int argc, char *argv[]) {
     double time_taken = GetTimeTaken(start_time, finish_time);
     WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                              time_taken);
+    if(GlobalVariables::debugMode==1)
+        PrintTimer();
 }

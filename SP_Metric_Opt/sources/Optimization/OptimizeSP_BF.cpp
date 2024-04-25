@@ -8,6 +8,8 @@ void OptimizePA_BF::IterateAllPAs(
     if (ifTimeout(start_time_))
         return;
     if (start == N) {
+        if(priority_assignment[0]!=1)
+            return;
         // TaskSet tasks_eval =
         //     UpdateTaskSetPriorities(dag_tasks_.tasks, priority_assignment);
         // DAG_Model dag_tasks_eval = dag_tasks_;
@@ -36,6 +38,8 @@ void OptimizePA_BF::IterateAllPAs(
 }
 
 PriorityVec OptimizePA_BF::Optimize() {
+    if(GlobalVariables::debugMode==1)
+        BeginTimer("OptimizeBF_All");
     double initial_sp = ObtainSP_DAG(dag_tasks_, sp_parameters_);
     PriorityVec pa = {};
     std::unordered_set<int> tasks_assigned_priority;
@@ -45,6 +49,8 @@ PriorityVec OptimizePA_BF::Optimize() {
 
     std::cout << "Initial SP is: " << initial_sp << "\n";
     std::cout << "Optimal SP is: " << opt_sp_ << "\n";
+    if(GlobalVariables::debugMode==1)
+        EndTimer("OptimizeBF_All");
     return opt_pa_;
 }
 
