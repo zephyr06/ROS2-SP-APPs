@@ -47,6 +47,9 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
 
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters) {
+
+    if(GlobalVariables::debugMode==1)
+        BeginTimer("ObtainSP_DAG");
     double sp_overall = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 
     std::vector<FiniteDist> reaction_time_dists =
@@ -61,6 +64,9 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
                               sp_parameters.thresholds_path.at(chain_id)) *
                       sp_parameters.weights_path.at(chain_id);
     }
+
+    if(GlobalVariables::debugMode==1)
+        EndTimer("ObtainSP_DAG");
     return sp_overall;
 }
 
