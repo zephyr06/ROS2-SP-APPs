@@ -63,8 +63,8 @@ public:
 
             // task cpu list
             cpu_lists.push_back({data["tasks"][i]["processorId"].as<int>()});
-            for (uint k = 0; k < cpu_lists.back().size(); k++) { // add +2 offset to save the core 0 for talkers, core 1 for ros2 launch
-                cpu_lists[cpu_lists.size()-1][k] += 2;
+            for (uint k = 0; k < cpu_lists.back().size(); k++) { // add +3 offset to save the core 0 for talkers, core 1 for ros2 launch, core 2 for listener_scheduler
+                cpu_lists[cpu_lists.size()-1][k] += 3;
             }
 
             // task policy
@@ -107,6 +107,10 @@ public:
         // add the ros2 launch task
         task_names.push_back("\"ros2 launch\"");
         cpu_lists.push_back({1});
+        // add the scheduler task
+        task_names.push_back("listener_scheduler");
+        cpu_lists.push_back({2});
+
 
         if (has_fifo_policy)
         {
