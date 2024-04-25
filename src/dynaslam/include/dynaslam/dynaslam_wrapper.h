@@ -51,7 +51,10 @@ void LoadImages(const string &strAssociationFilename, vector<string> &vstrImageF
         }
     }
 }
-
+// fr3_walking_xyz, freiburg1_desk
+std::string dataset_name_association_file = "freiburg1_desk";
+// rgbd_dataset_freiburg3_walking_xyz, rgbd_dataset_freiburg1_desk, 
+std::string dataset_name_rgbd = "rgbd_dataset_freiburg1_desk"; 
 class DynaSLAMWrapperForROS2 {
 public:
     DynaSLAMWrapperForROS2() {};
@@ -63,7 +66,7 @@ public:
         vTimestamps.clear();
 
         // Retrieve paths to images
-        strAssociationFilename = "/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM/Examples/RGB-D/associations/fr3_walking_xyz.txt";
+        strAssociationFilename = "/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM/Examples/RGB-D/associations/"+dataset_name_association_file+".txt";
         LoadImages(strAssociationFilename, vstrImageFilenamesRGB, vstrImageFilenamesD, vTimestamps);// Check consistency in the number of images and depthmaps
         
         nImages = vstrImageFilenamesRGB.size();
@@ -109,15 +112,15 @@ public:
 
         cout << image_idx << endl;
         // Read image and depthmap from file
-        imRGB = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/rgbd_dataset_freiburg3_walking_xyz/")+"/"+vstrImageFilenamesRGB[image_idx],CV_LOAD_IMAGE_UNCHANGED);
-        imD = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/rgbd_dataset_freiburg3_walking_xyz/")+"/"+vstrImageFilenamesD[image_idx],CV_LOAD_IMAGE_UNCHANGED);
+        imRGB = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"+dataset_name_rgbd+"/")+"/"+vstrImageFilenamesRGB[image_idx],CV_LOAD_IMAGE_UNCHANGED);
+        imD = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"+dataset_name_rgbd+"/")+"/"+vstrImageFilenamesD[image_idx],CV_LOAD_IMAGE_UNCHANGED);
 
         double tframe = vTimestamps[image_idx];
 
         if(imRGB.empty())
         {
             cerr << endl << "Failed to load image at: "
-                 << string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/rgbd_dataset_freiburg3_walking_xyz/") << "/" << vstrImageFilenamesRGB[image_idx] << endl;
+                 << string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"+dataset_name_rgbd+"/") << "/" << vstrImageFilenamesRGB[image_idx] << endl;
             return;
         }
 
