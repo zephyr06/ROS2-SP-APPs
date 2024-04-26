@@ -50,12 +50,13 @@ int main(int argc, char *argv[]) {
 
     // Perform optimization
     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
-    // PrintPriorityVec(dag_tasks.tasks, pa_opt);
 
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
     WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                              time_taken);
-    if(GlobalVariables::debugMode==1)
+    if (GlobalVariables::debugMode == 1) {
+        PrintPriorityVec(dag_tasks.tasks, pa_opt);
         PrintTimer();
+    }
 }
