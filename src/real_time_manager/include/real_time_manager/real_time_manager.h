@@ -118,9 +118,13 @@ public:
             priorities.push_back(std::min(99, max_priority + 5));
             scheduling_policies.push_back(1);
             priorities.push_back(std::min(99, max_priority + 5));
+            scheduling_policies.push_back(1);
+            priorities.push_back(std::min(99, max_priority + 5));
         }
         else
         {
+            scheduling_policies.push_back(0);
+            priorities.push_back(0);
             scheduling_policies.push_back(0);
             priorities.push_back(0);
             scheduling_policies.push_back(0);
