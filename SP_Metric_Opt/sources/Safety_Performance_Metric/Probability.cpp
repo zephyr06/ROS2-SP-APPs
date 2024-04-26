@@ -110,6 +110,8 @@ bool FiniteDist::AddOnePreemption(const FiniteDist& execution_time_dist,
         tail.Convolve(execution_time_dist);
         head.Coalesce(tail);
         UpdateDistribution(head.distribution);
+        CompressDistribution(GlobalVariables::Granularity * 2,
+                             GlobalVariables::Dist_compress_threshold);
         return true;
     }
 }
