@@ -8,8 +8,8 @@ void OptimizePA_BF::IterateAllPAs(
     if (ifTimeout(start_time_))
         return;
     if (start == N) {
-        if(priority_assignment[0]!=1)
-            return;
+        // if(priority_assignment[0]!=1)
+        //     return;
         // TaskSet tasks_eval =
         //     UpdateTaskSetPriorities(dag_tasks_.tasks, priority_assignment);
         // DAG_Model dag_tasks_eval = dag_tasks_;
