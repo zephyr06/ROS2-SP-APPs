@@ -39,78 +39,50 @@ TEST(FiniteDist, V1) {
     EXPECT_EQ(6, finite_dis[1].value);
     EXPECT_NEAR(3.167e-5 - 2.866e-7, finite_dis[1].probability, 1e-6);
 }
-// start_index and end_index are inclusive
-void CompressVector(std::vector<Value_Proba>& vec, int start_index,
-                    int end_index, int size_after_compres) {
-    int element_counts_before_merge = end_index - start_index + 1;
-    if (element_counts_before_merge <= size_after_compres) return;
-
-    int size_per_merge =
-        ceil(double(element_counts_before_merge) / size_after_compres);
-    std::vector<Value_Proba> new_vec;
-    new_vec.reserve(size_after_compres);
-    double sum = 0;
-    int count = 0;
-    for (int i = start_index; i <= end_index; i++) {
-        sum += vec[i].probability;
-        count++;
-        if (count == size_per_merge) {
-            new_vec.push_back(Value_Proba(vec[i].value, sum));
-            sum = 0;
-            count = 0;
-        }
-    }
-    if (count > 0) {
-        new_vec.push_back(Value_Proba(vec[end_index].value, sum));
-    }
-    vec.erase(vec.begin() + start_index, vec.begin() + end_index + 1);
-    vec.insert(vec.begin() + start_index, new_vec.begin(), new_vec.end());
-}
-TEST(CompressVector, V1) {
+TEST(CompressDistributionVector, V1) {
     std::vector<Value_Proba> dist_vec1 = {
         Value_Proba(3, 0.4),   Value_Proba(4, 0.4),   Value_Proba(5, 0.19),
         Value_Proba(6, 0.001), Value_Proba(7, 0.008), Value_Proba(8, 0.001)};
-    CompressVector(dist_vec1, 3, 5, 1);
+    CompressDistributionVector(dist_vec1, 3, 5, 1);
     EXPECT_EQ(4, dist_vec1.size());
     EXPECT_EQ(8, dist_vec1[3].value);
     EXPECT_NEAR(0.01, dist_vec1[3].probability, 1e-6);
 }
-TEST(CompressVector, V2) {
+TEST(CompressDistributionVector, V2) {
     std::vector<Value_Proba> dist_vec1 = {
         Value_Proba(3, 0.4),   Value_Proba(4, 0.4),   Value_Proba(5, 0.19),
         Value_Proba(6, 0.001), Value_Proba(7, 0.008), Value_Proba(8, 0.001)};
-    CompressVector(dist_vec1, 3, 5, 2);
+    CompressDistributionVector(dist_vec1, 3, 5, 2);
     EXPECT_EQ(5, dist_vec1.size());
     EXPECT_EQ(7, dist_vec1[3].value);
     EXPECT_NEAR(0.009, dist_vec1[3].probability, 1e-6);
     EXPECT_EQ(8, dist_vec1[4].value);
     EXPECT_NEAR(0.001, dist_vec1[4].probability, 1e-6);
 }
-// void FiniteDist::CompressDistribution(size_t max_size, double
-// compress_threshold){
-//     if (distribution.size() <= max_size) return;
-//     int compress_index_since =0;
-//     for (size_t i = 0; i < distribution.size(); i++) {
-//         if (distribution[i].probability < compress_threshold) {
-//             compress_index_since = i;
-//             break;
-//         }
-//     }
-//     if (sum > 0) {
-//         new_distribution.push_back(Value_Proba(0, sum));
-//     }
-//     distribution = new_distribution;
 
-// }
-// TEST(FiniteDist, Compress) {
-//     std::vector<Value_Proba> dist_vec1 = {
-//         Value_Proba(3, 0.1), Value_Proba(4, 0.2), Value_Proba(5, 0.2),
-//         Value_Proba(6, 0.2), Value_Proba(7, 0.3),
-//     };
-//     FiniteDist dist1(dist_vec1);
-//     dist1.Compress(2);
-//     EXPECT_EQ(2, dist1.size());
-// }
+TEST(FiniteDist, CompressDistribution_v2) {
+    std::vector<Value_Proba> dist_vec1 = {
+        Value_Proba(3, 0.1), Value_Proba(4, 0.2), Value_Proba(5, 0.2),
+        Value_Proba(6, 0.2), Value_Proba(7, 0.3),
+    };
+    FiniteDist dist1(dist_vec1);
+    dist1.CompressDistribution(2, 0.5);
+    EXPECT_EQ(2, dist1.size());
+    EXPECT_EQ(5, dist1.distribution[0].value);
+    EXPECT_NEAR(0.5, dist1.distribution[0].probability, 1e-6);
+
+    EXPECT_EQ(7, dist1.distribution[1].value);
+    EXPECT_NEAR(0.5, dist1.distribution[1].probability, 1e-6);
+}
+TEST(FiniteDist, CompressDistribution) {
+    std::vector<Value_Proba> dist_vec1 = {
+        Value_Proba(3, 0.1), Value_Proba(4, 0.2), Value_Proba(5, 0.2),
+        Value_Proba(6, 0.2), Value_Proba(7, 0.3),
+    };
+    FiniteDist dist1(dist_vec1);
+    dist1.CompressDistribution(2, 0.01);
+    EXPECT_EQ(5, dist1.size());
+}
 TEST(FiniteDist, Coalesce_v1) {
     std::vector<Value_Proba> dist_vec1 = {Value_Proba(3, 0.1),
                                           Value_Proba(7, 0.9)};

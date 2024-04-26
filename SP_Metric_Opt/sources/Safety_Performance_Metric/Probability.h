@@ -21,8 +21,7 @@ class GaussianDist : public ProbabilityDistributionBase {
    public:
     GaussianDist() {}
     GaussianDist(double mu, double sigma) : mu(mu), sigma(sigma) {
-        if (abs(sigma) < 1e-6)
-            CoutError("Invalid sigma value!");
+        if (abs(sigma) < 1e-6) CoutError("Invalid sigma value!");
     }
 
     inline double CDF(double x) const {
@@ -61,6 +60,10 @@ struct Value_Proba {
 inline bool ifDiff(double a, double b, double tolerance) {
     return std::abs(a - b) > tolerance;
 }
+
+// start_index and end_index are inclusive
+void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
+                                int end_index, int size_after_compres);
 
 // stores a probability mass function, i.e., value-probability pair
 // this should be the major way to describe probability distribution
@@ -144,17 +147,13 @@ class FiniteDist : public ProbabilityDistributionBase {
     }
 
     bool operator==(const FiniteDist& other) const {
-        if (distribution.size() != other.distribution.size())
-            return false;
+        if (distribution.size() != other.distribution.size()) return false;
         double tolerance = 1e-5;
         for (uint i = 0; i < distribution.size(); i++) {
-            if (distribution[i] != other.distribution[i])
-                return false;
+            if (distribution[i] != other.distribution[i]) return false;
         }
-        if (ifDiff(min_time, other.min_time, tolerance))
-            return false;
-        if (ifDiff(max_time, other.max_time, tolerance))
-            return false;
+        if (ifDiff(min_time, other.min_time, tolerance)) return false;
+        if (ifDiff(max_time, other.max_time, tolerance)) return false;
         return true;
     }
     bool operator!=(const FiniteDist& other) const {
@@ -162,6 +161,8 @@ class FiniteDist : public ProbabilityDistributionBase {
     }
 
     double CDF(double x) const;
+
+    void CompressDistribution(size_t max_size, double compress_threshold);
 
     // data members
     // saves the probability that x<= value, this is probability mass function
