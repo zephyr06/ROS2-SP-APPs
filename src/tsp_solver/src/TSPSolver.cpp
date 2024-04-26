@@ -14,7 +14,7 @@ int callTSP()
 	char *data_char = new char[data_file_path.length() + 1];
 	strcpy(data_char, data_file_path.c_str());
 	argv[1] = data_char;
-	argv[2] = "3"; // time limit in seconds
+	argv[2] = "1.5"; // time limit in seconds
 	argv[3] = "LS1";
 	argv[4] = "3";
 	int **distance;
