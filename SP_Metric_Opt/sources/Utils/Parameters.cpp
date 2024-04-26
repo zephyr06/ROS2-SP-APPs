@@ -15,5 +15,6 @@ int printRTA = loaded_doc["printRTA"].as<int>();
 int Granularity = loaded_doc["Granularity"].as<int>();
 int Layer_Node_During_Incremental_Optimization =
     loaded_doc["Layer_Node_During_Incremental_Optimization"].as<int>();
-
+double Dist_compress_threshold =
+    loaded_doc["Dist_compress_threshold"].as<double>();
 }  // namespace GlobalVariables
