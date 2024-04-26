@@ -39,7 +39,50 @@ TEST(FiniteDist, V1) {
     EXPECT_EQ(6, finite_dis[1].value);
     EXPECT_NEAR(3.167e-5 - 2.866e-7, finite_dis[1].probability, 1e-6);
 }
+TEST(CompressDistributionVector, V1) {
+    std::vector<Value_Proba> dist_vec1 = {
+        Value_Proba(3, 0.4),   Value_Proba(4, 0.4),   Value_Proba(5, 0.19),
+        Value_Proba(6, 0.001), Value_Proba(7, 0.008), Value_Proba(8, 0.001)};
+    CompressDistributionVector(dist_vec1, 3, 5, 1);
+    EXPECT_EQ(4, dist_vec1.size());
+    EXPECT_EQ(8, dist_vec1[3].value);
+    EXPECT_NEAR(0.01, dist_vec1[3].probability, 1e-6);
+}
+TEST(CompressDistributionVector, V2) {
+    std::vector<Value_Proba> dist_vec1 = {
+        Value_Proba(3, 0.4),   Value_Proba(4, 0.4),   Value_Proba(5, 0.19),
+        Value_Proba(6, 0.001), Value_Proba(7, 0.008), Value_Proba(8, 0.001)};
+    CompressDistributionVector(dist_vec1, 3, 5, 2);
+    EXPECT_EQ(5, dist_vec1.size());
+    EXPECT_EQ(7, dist_vec1[3].value);
+    EXPECT_NEAR(0.009, dist_vec1[3].probability, 1e-6);
+    EXPECT_EQ(8, dist_vec1[4].value);
+    EXPECT_NEAR(0.001, dist_vec1[4].probability, 1e-6);
+}
 
+TEST(FiniteDist, CompressDistribution_v2) {
+    std::vector<Value_Proba> dist_vec1 = {
+        Value_Proba(3, 0.1), Value_Proba(4, 0.2), Value_Proba(5, 0.2),
+        Value_Proba(6, 0.2), Value_Proba(7, 0.3),
+    };
+    FiniteDist dist1(dist_vec1);
+    dist1.CompressDistribution(2, 0.5);
+    EXPECT_EQ(2, dist1.size());
+    EXPECT_EQ(5, dist1.distribution[0].value);
+    EXPECT_NEAR(0.5, dist1.distribution[0].probability, 1e-6);
+
+    EXPECT_EQ(7, dist1.distribution[1].value);
+    EXPECT_NEAR(0.5, dist1.distribution[1].probability, 1e-6);
+}
+TEST(FiniteDist, CompressDistribution) {
+    std::vector<Value_Proba> dist_vec1 = {
+        Value_Proba(3, 0.1), Value_Proba(4, 0.2), Value_Proba(5, 0.2),
+        Value_Proba(6, 0.2), Value_Proba(7, 0.3),
+    };
+    FiniteDist dist1(dist_vec1);
+    dist1.CompressDistribution(2, 0.01);
+    EXPECT_EQ(5, dist1.size());
+}
 TEST(FiniteDist, Coalesce_v1) {
     std::vector<Value_Proba> dist_vec1 = {Value_Proba(3, 0.1),
                                           Value_Proba(7, 0.9)};
@@ -252,7 +295,7 @@ TEST(FiniteDist, AnalyzeFiniteDist_v2) {
     EXPECT_NEAR(0.7, finite_dist.CDF(7.75), 1e-3);
     EXPECT_NEAR(1, finite_dist.CDF(10), 1e-3);
 }
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
     return RUN_ALL_TESTS();

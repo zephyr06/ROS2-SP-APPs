@@ -16,4 +16,5 @@ extern int printRTA;
 
 extern int Granularity;
 extern int Layer_Node_During_Incremental_Optimization;
+extern double Dist_compress_threshold;
 }  // namespace GlobalVariables

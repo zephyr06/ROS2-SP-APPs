@@ -19,3 +19,8 @@ ros2 run tsp_solver tsp_solver_listener
 ros2 run rrt_solver rrt_listener
 ros2 run mpc listener_mpc
 ros2 run dynaslam listener_slam
+
+# download data via terminal
+scp -r nvidia@192.168.1.29:~/workspace/sdcard/ROS2-SP-APPs/all_time_records /home/zephyr/Programming/SP_Metric_Opt/Visualize_SP_Metric/data/all_time_records_FIFO_Dyn
+# ssh
+ssh nvidia@192.168.1.29

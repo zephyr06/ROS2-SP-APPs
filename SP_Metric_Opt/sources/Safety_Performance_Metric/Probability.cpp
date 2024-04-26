@@ -14,8 +14,7 @@ FiniteDist::FiniteDist(const GaussianDist& gauss_dist, double min_val,
                        double max_val, int granularity)
     : min_time(min_val), max_time(max_val) {
     distribution.reserve(granularity);
-    if (granularity < 1)
-        CoutError("Invalid granularity!");
+    if (granularity < 1) CoutError("Invalid granularity!");
 
     double step = (max_val - min_val) / (double(granularity) - 1);
     distribution.push_back(Value_Proba(min_val, gauss_dist.CDF(min_val)));
@@ -111,6 +110,8 @@ bool FiniteDist::AddOnePreemption(const FiniteDist& execution_time_dist,
         tail.Convolve(execution_time_dist);
         head.Coalesce(tail);
         UpdateDistribution(head.distribution);
+        CompressDistribution(GlobalVariables::Granularity * 2,
+                             GlobalVariables::Dist_compress_threshold);
         return true;
     }
 }
@@ -220,5 +221,51 @@ double FiniteDist::CDF(double x) const {
             break;
     }
     return cdf;
+}
+
+// start_index and end_index are inclusive
+void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
+                                int end_index, int size_after_compres) {
+    int element_counts_before_merge = end_index - start_index + 1;
+    if (element_counts_before_merge <= size_after_compres) return;
+
+    int size_per_merge =
+        ceil(double(element_counts_before_merge) / size_after_compres);
+    std::vector<Value_Proba> new_vec;
+    new_vec.reserve(size_after_compres);
+    double sum = 0;
+    int count = 0;
+    for (int i = start_index; i <= end_index; i++) {
+        sum += vec[i].probability;
+        count++;
+        if (count == size_per_merge) {
+            new_vec.push_back(Value_Proba(vec[i].value, sum));
+            sum = 0;
+            count = 0;
+        }
+    }
+    if (count > 0) {
+        new_vec.push_back(Value_Proba(vec[end_index].value, sum));
+    }
+    vec.erase(vec.begin() + start_index, vec.begin() + end_index + 1);
+    vec.insert(vec.begin() + start_index, new_vec.begin(), new_vec.end());
+}
+
+void FiniteDist::CompressDistribution(size_t max_size,
+                                      double compress_threshold) {
+    if (distribution.size() <= max_size) return;
+    int compress_index_since = distribution.size();
+    for (size_t i = 0; i < distribution.size(); i++) {
+        if (distribution[i].probability < compress_threshold) {
+            compress_index_since = i;
+            break;
+        }
+    }
+
+    if (compress_index_since == distribution.size()) return;
+
+    CompressDistributionVector(distribution, compress_index_since,
+                               distribution.size() - 1,
+                               max_size - compress_index_since);
 }
 }  // namespace SP_OPT_PA
