@@ -5,6 +5,11 @@
 #include <boost/date_time.hpp>
 #include <iomanip>
 #include <iostream>
+
+class PeriodicReleaser {
+    void release(double period_ms) {}
+};
+
 namespace bpt = boost::posix_time;
 namespace asio = boost::asio;
 void busySpinForSeconds(int ms) {
@@ -16,7 +21,7 @@ void busySpinForSeconds(int ms) {
     }
 }
 int i = 0;
-void f() {
+void fun() {
     std::cout << "Called at " << bpt::microsec_clock::local_time().time_of_day()
               << '\n';
     // sleep(1.5);
@@ -29,7 +34,7 @@ void f() {
 
 void caller(const boost::system::error_code&, asio::deadline_timer& t,
             int& count) {
-    f();
+    fun();
     t.expires_at(t.expires_at() + bpt::seconds(1));
     if (++count < 100)
         t.async_wait(boost::bind(caller, asio::placeholders::error,
