@@ -17,9 +17,12 @@ int callTSP() {
     char *data_char = new char[data_file_path.length() + 1];
     strcpy(data_char, data_file_path.c_str());
     argv[1] = data_char;
-    argv[2] = "1.5";  // time limit in seconds
-    argv[3] = "LS1";
-    argv[4] = "3";
+    char time_limit_str[] = "1.5";
+    argv[2] = time_limit_str;  // time limit in seconds
+    char arg3[] = "LS1";
+    argv[3] = arg3;
+    char arg4[] = "3";
+    argv[4] = arg4;
     int **distance;
     int *d = new int;
     int *o = new int;
@@ -277,4 +280,5 @@ int callTSP() {
         output_trace.close();
         return 0;
     }
+    return 0;
 }

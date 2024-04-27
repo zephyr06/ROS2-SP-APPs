@@ -1,13 +1,16 @@
 #include "TSPSolver.h"
-#include "listener_base.h"
+#include "sources/UtilsForROS2/Publisher.h"
+
 class TSPApp : public AppBase {
- public:
-  TSPApp() : AppBase("tsp") {}
-  void run(int msg_cnt) override { callTSP(); }
+   public:
+    TSPApp() : AppBase("tsp") {}
+    void run(int msg_cnt) override { callTSP(); }
 };
+
+// TODO: read period
 int main(int argc, char* argv[]) {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<SubscriberAppBase<TSPApp>>());
-  rclcpp::shutdown();
-  return 0;
+    AppTest app;
+    PeriodicReleaser<AppTest> releaser(1000, 5, app);
+    releaser.release();
+    return 0;
 }
