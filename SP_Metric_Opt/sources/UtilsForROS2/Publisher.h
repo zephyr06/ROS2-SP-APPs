@@ -10,38 +10,7 @@
 
 #include "sources/Utils/profilier.h"
 #include "sources/UtilsForROS2/AppBase.h"
-#include "sources/UtilsForROS2/execution_time_profiler.h"
-#include "sources/UtilsForROS2/profile_and_record_time.h"
-
-struct Recorder {
-    Recorder(std::string app_name)
-        : app_name_(app_name),
-          publisher_file_path_(getTimeRecordFolder() + app_name_ +
-                               "_publisher.txt"),
-          listener_file_path_(getTimeRecordFolder() + app_name_ +
-                              "_subscriber.txt"),
-          execution_time_file_path_(getTimeRecordFolder() + app_name_ +
-                                    "_execution_time.txt") {}
-    inline void write_execution_time(double ext_time, int index) {
-        write_current_time_to_file(execution_time_file_path_, ext_time,
-                                   "Execution time: " + app_name_ +
-                                       " message:: " + std::to_string(index));
-    }
-    inline void write_publish_time(double time, int index) {
-        write_current_time_to_file(publisher_file_path_, time,
-                                   "Publishing time: " + app_name_ +
-                                       " message:: " + std::to_string(index));
-    }
-    inline void write_receive_time(double time, int index) {
-        write_current_time_to_file(listener_file_path_, time,
-                                   "Receiving time: " + app_name_ +
-                                       " message:: " + std::to_string(index));
-    }
-    std::string app_name_;
-    std::string publisher_file_path_;
-    std::string listener_file_path_;
-    std::string execution_time_file_path_;
-};
+#include "sources/UtilsForROS2/Recorder.h"
 
 template <typename AppBase>
 class PeriodicReleaser {
@@ -51,7 +20,10 @@ class PeriodicReleaser {
           period_ms_(period_ms),
           release_total_(release_total),
           release_index_(0),
-          recorder_(app_.app_name_) {}
+          recorder_(app_.app_name_) {
+        recorder_.write_initial_publish_time();
+        recorder_.write_initial_receive_time();
+    }
 
     void run_app_and_record_time() {
         recorder_.write_publish_time(getCurrentTimeStamp(), release_index_);
