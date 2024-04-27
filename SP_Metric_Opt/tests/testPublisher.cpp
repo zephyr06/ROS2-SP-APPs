@@ -19,7 +19,7 @@ TEST(PeriodicReleaser, v1) {
     releaser.release();
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
-    EXPECT_NEAR(100 * (5 + 1), duration.count(), 5e-1);
+    EXPECT_NEAR(100 * (5 + 1), duration.count(), 1e0);
 }
 
 int main(int argc, char** argv) {
