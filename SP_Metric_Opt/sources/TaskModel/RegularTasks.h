@@ -73,6 +73,7 @@ class Task {
     std::string name;      // optional
     int processorId = -1;  // -1 means not assigned to any processor, or all
                            // assigned to one single processor by default
+    double total_running_time;
 
    private:
     double executionTime;

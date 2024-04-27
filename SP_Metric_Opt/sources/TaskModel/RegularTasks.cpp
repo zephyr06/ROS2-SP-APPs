@@ -62,6 +62,9 @@ TaskSet ReadTaskSet(std::string path, int granulairty) {
                   tasksNode[i]["name"].as<std::string>());
         if (tasksNode[i]["processorId"])
             task.processorId = tasksNode[i]["processorId"].as<int>();
+        if (tasksNode[i]["total_running_time"])
+            task.total_running_time =
+                tasksNode[i]["total_running_time"].as<double>();
         task.setExecGaussian(
             GaussianDist(tasksNode[i]["execution_time_mu"].as<double>(),
                          tasksNode[i]["execution_time_sigma"].as<double>()));
