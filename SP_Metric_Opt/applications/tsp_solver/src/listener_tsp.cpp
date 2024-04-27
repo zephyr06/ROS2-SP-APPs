@@ -18,8 +18,8 @@ int main(int argc, char* argv[]) {
     assert(dag_tasks.tasks[0].name == "TSP");
     double period = dag_tasks.tasks[0].period;
     int count = dag_tasks.tasks[0].total_running_time / period;
-    AppTest app;
-    PeriodicReleaser<AppTest> releaser(period, count, app);
+    TSPApp app;
+    PeriodicReleaser<TSPApp> releaser(period, count, app);
     releaser.release();
     return 0;
 }
