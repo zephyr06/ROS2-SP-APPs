@@ -14,6 +14,21 @@
 #include "sources/UtilsForROS2/profile_and_record_time.h"
 using namespace std;
 using namespace SP_OPT_PA;
+
+
+class AppTest : public AppBase {
+   public:
+    AppTest() : AppBase("AppTest") {}
+    void run(int) override { std::cout << "Run one time!\n"; }
+};
+
+class AppLongRun: public AppBase {
+   public:
+    AppTest() : AppBase("AppLongRun") {}
+    void run(int) override { busySpinForSeconds(1000);
+    std::cout << "Run one time!\n"; }
+};
+
 TEST(PeriodicReleaser, v1) {
     AppTest app;
     PeriodicReleaser<AppTest> releaser(100, 5, app);
@@ -28,6 +43,16 @@ TEST(read_tassks, time_limit) {
         GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v16.yaml";
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
     EXPECT_EQ(3000, dag_tasks.tasks[0].total_running_time);
+}
+
+TEST(AppLongRun, overload) {
+    AppTest app;
+    PeriodicReleaser<AppTest> releaser(100, 5, app);
+    auto start = std::chrono::high_resolution_clock::now();
+    releaser.release();
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> duration = end - start;
+    EXPECT_NEAR(100 * (5 + 1), duration.count(), 1e0);
 }
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);

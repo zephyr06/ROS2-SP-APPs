@@ -28,7 +28,7 @@ class PeriodicReleaser {
     void run_app_and_record_time() {
         recorder_.write_publish_time(getCurrentTimeStamp(), release_index_);
         exe_profiler_.start();
-        app_.run(0);
+        app_.run(release_index_);
         exe_profiler_.end();
         recorder_.write_receive_time(getCurrentTimeStamp(), release_index_);
         recorder_.write_execution_time(exe_profiler_.get_exe_time(),
@@ -75,9 +75,3 @@ void busySpinForSeconds(int ms) {
         // Busy spin
     }
 }
-
-class AppTest : public AppBase {
-   public:
-    AppTest() : AppBase("AppTest") {}
-    void run(int) override { std::cout << "Run one time!\n"; }
-};
