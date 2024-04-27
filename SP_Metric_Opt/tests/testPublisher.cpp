@@ -8,6 +8,8 @@
 
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Utils/profilier.h"
+#include "sources/UtilsForROS2/execution_time_profiler.h"
+#include "sources/UtilsForROS2/profile_and_record_time.h"
 
 class AppBase {
    public:
@@ -18,6 +20,35 @@ class AppBase {
     // data member
     std::string app_name_;
 };
+struct Recorder {
+    Recorder(std::string app_name)
+        : app_name_(app_name),
+          publisher_file_path_(getTimeRecordFolder() + app_name_ +
+                               "_publisher.txt"),
+          listener_file_path_(getTimeRecordFolder() + app_name_ +
+                              "_subscriber.txt"),
+          execution_time_file_path_(getTimeRecordFolder() + app_name_ +
+                                    "_execution_time.txt") {}
+    inline void write_execution_time(double ext_time, int index) {
+        write_current_time_to_file(execution_time_file_path_, ext_time,
+                                   "Execution time: " + app_name_ +
+                                       " message:: " + std::to_string(index));
+    }
+    inline void write_publish_time(double time, int index) {
+        write_current_time_to_file(publisher_file_path_, time,
+                                   "Publishing time: " + app_name_ +
+                                       " message:: " + std::to_string(index));
+    }
+    inline void write_receive_time(double time, int index) {
+        write_current_time_to_file(listener_file_path_, time,
+                                   "Receiving time: " + app_name_ +
+                                       " message:: " + std::to_string(index));
+    }
+    std::string app_name_;
+    std::string publisher_file_path_;
+    std::string listener_file_path_;
+    std::string execution_time_file_path_;
+};
 
 template <typename AppBase>
 class PeriodicReleaser {
@@ -25,14 +56,26 @@ class PeriodicReleaser {
     PeriodicReleaser(int period_ms, int release_total, const AppBase& app)
         : app_(app),
           period_ms_(period_ms),
-          release_total_left_(release_total) {}
+          release_total_(release_total),
+          release_index_(0),
+          recorder_(app_.app_name_) {}
+
+    void run_app_and_record_time() {
+        recorder_.write_publish_time(getCurrentTimeStamp(), release_index_);
+        exe_profiler_.start();
+        app_.run(0);
+        exe_profiler_.end();
+        recorder_.write_receive_time(getCurrentTimeStamp(), release_index_);
+        recorder_.write_execution_time(exe_profiler_.get_exe_time(),
+                                       release_index_);
+    }
 
     void caller(const boost::system::error_code&,
                 boost::asio::deadline_timer& t) {
-        if (release_total_left_ == 0)
+        if (release_total_ == release_index_)
             return;
-        app_.run(0);
-        release_total_left_--;
+        run_app_and_record_time();
+        release_index_++;
         t.expires_at(t.expires_at() +
                      boost::posix_time::milliseconds(period_ms_));
         // if (++count < 100)
@@ -53,7 +96,10 @@ class PeriodicReleaser {
 
     AppBase app_;
     int period_ms_;
-    int release_total_left_;
+    int release_total_;
+    int release_index_;
+    Recorder recorder_;
+    ExecutionTimeProfiler exe_profiler_;
 };
 
 void busySpinForSeconds(int ms) {
