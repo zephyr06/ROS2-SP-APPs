@@ -1,14 +1,17 @@
 #include <cstdlib>
 
-#include "listener_base.h"
+#include "sources/TaskModel/DAG_Model.h"
+#include "sources/Utils/Parameters.h"
+#include "sources/UtilsForROS2/Publisher.h"
+
 #include "real_time_manager/execution_time_estimator.h"
 #include "real_time_manager/real_time_manager.h"
 #include "real_time_manager/update_priority_assignment.h"
 
 class SchedulerApp : public AppBase {
    public:
-    SchedulerApp() : AppBase("scheduler") {}
-    SchedulerApp(int argc, char *argv[]) : AppBase("scheduler") {
+    SchedulerApp() : AppBase("SCHEDULER") {}
+    SchedulerApp(int argc, char *argv[]) : AppBase("SCHEDULER") {
         // supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental
         scheduler_ = "optimizerBF";
         if (argc >= 2) {
@@ -105,8 +108,16 @@ class SchedulerApp : public AppBase {
 };
 
 int main(int argc, char *argv[]) {
-    rclcpp::init(argc, argv);
-    rclcpp::spin(std::make_shared<SubscriberAppBase<SchedulerApp>>(argc, argv));
-    rclcpp::shutdown();
+    
+    SP_OPT_PA::DAG_Model dag_tasks = SP_OPT_PA::ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH +
+        "../all_time_records/task_characteristics.yaml");
+    if(argc<3)
+        std::cerr<<"Wrong arg format: example usage ./scheduler_runner optimizerBF 30000 The last argument is period of the scheduler in miliseconds\n";
+    int period = std::stoi(argv[2]);
+    int count = dag_tasks.tasks[0].total_running_time / period;
+    SchedulerApp app;
+    PeriodicReleaser<SchedulerApp> releaser(period, count, app);
+    releaser.release();
     return 0;
 }

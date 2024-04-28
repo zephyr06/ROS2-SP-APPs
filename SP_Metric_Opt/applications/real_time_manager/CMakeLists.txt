@@ -25,10 +25,10 @@ target_include_directories(update_priority_assignments PUBLIC
 target_link_libraries(update_priority_assignments ${CONVENIENCE_LIB_NAME})
 
 
-# add_executable(listener_scheduler src/listener_scheduler.cpp)
-# target_include_directories(listener_scheduler PUBLIC
-#   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-#   $<INSTALL_INTERFACE:include>)
-# target_link_libraries(listener_scheduler ${CONVENIENCE_LIB_NAME})
+add_executable(listener_scheduler src/listener_scheduler.cpp)
+target_include_directories(listener_scheduler PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+target_link_libraries(listener_scheduler ${CONVENIENCE_LIB_NAME})
 
 
