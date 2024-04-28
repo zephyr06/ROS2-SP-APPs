@@ -52,9 +52,9 @@ void LoadImages(const string &strAssociationFilename, vector<string> &vstrImageF
     }
 }
 // fr3_walking_xyz, freiburg1_desk
-std::string dataset_name_association_file = "freiburg1_desk";
+std::string dataset_name_association_file = "fr3_walking_xyz";
 // rgbd_dataset_freiburg3_walking_xyz, rgbd_dataset_freiburg1_desk, 
-std::string dataset_name_rgbd = "rgbd_dataset_freiburg1_desk"; 
+std::string dataset_name_rgbd = "rgbd_dataset_freiburg3_walking_xyz"; 
 class DynaSLAMWrapperForROS2 {
 public:
     DynaSLAMWrapperForROS2() {};
