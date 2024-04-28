@@ -7,7 +7,7 @@
 #include "sources/UtilsForROS2/Publisher.h"
 class MPCApp : public AppBase {
    public:
-    MPCApp() : AppBase("mpc") {}
+    MPCApp() : AppBase("MPC") {}
     void run(int) override { mpc_main(); }
 };
 

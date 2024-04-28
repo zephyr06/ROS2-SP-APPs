@@ -7,7 +7,7 @@
 
 class TSPApp : public AppBase {
    public:
-    TSPApp() : AppBase("tsp") {}
+    TSPApp() : AppBase("TSP") {}
     void run(int) override { callTSP(); }
 };
 
