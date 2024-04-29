@@ -34,11 +34,11 @@ def get_app2period(task_set_config):
 
 
 def get_publisher_file_path(folder_path, task_name):
-    return os.path.join(folder_path, "publisher_" + task_name.lower() + ".txt")
+    return os.path.join(folder_path,  task_name.upper() + "_publisher" + ".txt")
 
 
 def get_subscription_file_path(folder_path, task_name):
-    return os.path.join(folder_path, task_name.lower() + "_subscriber.txt")
+    return os.path.join(folder_path, task_name.upper() + "_subscriber.txt")
 
 
 def get_index_to_data_map(file_path):
