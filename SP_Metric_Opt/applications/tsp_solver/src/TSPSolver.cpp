@@ -4,6 +4,8 @@
 ofstream output_sol, output_trace;
 
 int callTSP() {
+    std::cout << "Following cout related to TSP will be disabled\n";
+    std::cout.setstate(std::ios_base::failbit);
     string Methods[] = {"Approx", "Greedy", "LS1", "LS2", "BnB"};
     string filename1, filename2;
     char *argv[5];

@@ -1,15 +1,19 @@
 
-#include "rrt_solver/rrt_solver.h"
 #include <cassert>
 
+#include "rrt_solver/rrt_solver.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/UtilsForROS2/Publisher.h"
 class RRTApp : public AppBase {
- public:
-  RRTApp() : AppBase("RRT") {}
-  void run(int msg_cnt) override { rrtsolver_.solveWithoutUI(); }
-  RRTSolver rrtsolver_;
+   public:
+    RRTApp() : AppBase("RRT") {}
+    void run(int msg_cnt) override {
+        std::cout << "Following cout related to RRT will be disabled\n";
+        std::cout.setstate(std::ios_base::failbit);
+        rrtsolver_.solveWithoutUI();
+    }
+    RRTSolver rrtsolver_;
 };
 
 int main(int argc, char* argv[]) {
