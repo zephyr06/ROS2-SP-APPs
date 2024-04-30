@@ -3,7 +3,7 @@ tasks:
     name: TSP
     processorId: 0
     scheduling_policy: SCHED_FIFO
-    priority: 2
+    priority: 4
   - id: 1
     name: MPC
     processorId: 1
@@ -18,4 +18,4 @@ tasks:
     name: SLAM
     processorId: 0
     scheduling_policy: SCHED_FIFO
-    priority: 4
+    priority: 2
