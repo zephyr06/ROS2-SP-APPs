@@ -164,23 +164,24 @@ def get_args_for_task_set_config(task_set_abs_path):
     return f"--file_path {task_set_abs_path}"
 
 def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path):
-    run_out_of_data=False
+    
     sp_value_list=[]
     for start_time in range(discard_early_time, horizon, horizon_granularity):
         end_time = start_time + horizon_granularity
         command_in_terminal_to_analyze_taskset_sp = get_SP_analyze_executable_file_path()
+        no_data_count=0
         for task_name in tasks_name_list:
             response_time_within_range = tasks_name_to_info[task_name].get_response_time_within_range(
                 start_time, end_time)
             if len(response_time_within_range) == 0:
-                run_out_of_data=True
-                break
+                response_time_within_range=[1e9]
+                no_data_count+=1
             file_name = get_response_time_file_name(task_name, start_time, end_time)
             with open(file_name, 'w') as file:
                 for response_time in response_time_within_range:
                     file.write(str(response_time*1000) + "\n")
             command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_path " + file_name
-        if run_out_of_data:
+        if no_data_count>=0.75*len(tasks_name_list):
             break
         command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)
         # print(command_in_terminal_to_analyze_taskset_sp)

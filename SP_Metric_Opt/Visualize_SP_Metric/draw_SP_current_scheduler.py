@@ -22,8 +22,8 @@ if __name__=="__main__":
     app_name2period = get_app2period(task_set_config)
     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
-    horizon_granularity = 10  # 10 seconds
-    horizon = 1000  #  seconds
+    horizon_granularity = 30  # 10 seconds
+    horizon = 300  #  seconds
     discard_early_time = 60  # at least 10 seconds
 
 
