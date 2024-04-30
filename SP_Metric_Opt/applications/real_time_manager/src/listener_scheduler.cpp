@@ -36,12 +36,15 @@ class SchedulerApp : public AppBase {
         std::filesystem::path current_file_path =
             std::filesystem::canonical(__FILE__);
         std::filesystem::path package_directory =
-            current_file_path.parent_path().parent_path();
+            current_file_path.parent_path().parent_path(); // ROS2-SP-APPS/SP_Metric_Opt/real_time_manager
         std::string local_config_yaml =
             package_directory.string() + "/configs/local_cpu_and_priority.yaml";
+        std::string sp_opt_folder_path = package_directory.parent_path().parent_path().string();
+        if(sp_opt_folder_path.substr(sp_opt_folder_path.size()-13,13)!="SP_Metric_Opt")
+            std::cerr<<"Path configuraiton is wrong, mostly because some files' location chagned!\n";
+
         std::string priority_yaml =
-            package_directory.parent_path().parent_path().string() +
-            "/SP_Metric_Opt/TaskData/pa_result.yaml";
+            sp_opt_folder_path + "/TaskData/pa_result.yaml";
         std::string task_characteristics_yaml =
             getTimeRecordFolder() + "task_characteristics.yaml";
 
@@ -74,8 +77,7 @@ class SchedulerApp : public AppBase {
             // Perform schedule
             // Scheduler command to be executed
             std::string cmd =
-                package_directory.parent_path().parent_path().string() +
-                "/SP_Metric_Opt/release";
+                sp_opt_folder_path+"/release";
             cmd += "/tests/AnalyzePriorityAssignment --file_path ";
             cmd += task_characteristics_yaml;
             cmd += " --output_file_path ";
