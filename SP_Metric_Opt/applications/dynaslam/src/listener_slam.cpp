@@ -11,6 +11,9 @@ class SLAMApp : public AppBase {
  public:
   SLAMApp() : AppBase("SLAM") { slam_wrapper_.init(); }
   void run(int msg_cnt) override { slam_wrapper_.next(msg_cnt); }
+  ~SLAMApp(){
+      slam_wrapper_.exit();
+  }
   DynaSLAMWrapperForROS2 slam_wrapper_;
 };
 
