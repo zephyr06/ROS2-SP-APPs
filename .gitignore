@@ -21,3 +21,4 @@ SP_Metric_Opt/Visualize_SP_Metric/*.bin
 SP_Metric_Opt/TaskData/pa_res_test_robotics_v1.yaml
 all_time_records/*.txt
 all_time_records/*.pdf
+SP_Metric_Opt/TaskData/pa_result.yaml
