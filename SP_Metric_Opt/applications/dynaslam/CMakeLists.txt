@@ -35,10 +35,11 @@ find_package(Pangolin REQUIRED)
 
 include_directories(${PROJECT_SOURCE_DIR}/../utils)
 set(DYNASLAM_PROJ_DIR /home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM)
+set(ORBASLAM2_PROJ_DIR /home/nvidia/workspace/sdcard/ORB_SLAM2)
 include_directories(
   ${PROJECT_SOURCE_DIR}/include
-  ${DYNASLAM_PROJ_DIR}
-  ${DYNASLAM_PROJ_DIR}/include
+  ${ORBASLAM2_PROJ_DIR}
+  ${ORBASLAM2_PROJ_DIR}/include
   ${EIGEN3_INCLUDE_DIR}
   ${Pangolin_INCLUDE_DIRS}
   /usr/include/python2.7/
@@ -52,12 +53,13 @@ target_include_directories(dynaslam_demo PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(dynaslam_demo 
-  ${DYNASLAM_PROJ_DIR}/lib/libDynaSLAM.so
+  # ${DYNASLAM_PROJ_DIR}/lib/libDynaSLAM.so
+  ${ORBASLAM2_PROJ_DIR}/lib/libORB_SLAM2.so
   ${OpenCV_LIBS}
   ${EIGEN3_LIBS}
   ${Pangolin_LIBRARIES}
-  ${DYNASLAM_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
-  ${DYNASLAM_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
+  ${ORBASLAM2_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
+  ${ORBASLAM2_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
   /lib/aarch64-linux-gnu/libpython2.7.so
   ${Boost_LIBRARIES}
 )
@@ -68,12 +70,13 @@ target_include_directories(listener_slam PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>)
 target_link_libraries(listener_slam 
-  ${DYNASLAM_PROJ_DIR}/lib/libDynaSLAM.so
+  # ${DYNASLAM_PROJ_DIR}/lib/libDynaSLAM.so
+  ${ORBASLAM2_PROJ_DIR}/lib/libORB_SLAM2.so
   ${OpenCV_LIBS}
   ${EIGEN3_LIBS}
   ${Pangolin_LIBRARIES}
-  ${DYNASLAM_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
-  ${DYNASLAM_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
+  ${ORBASLAM2_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
+  ${ORBASLAM2_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
   /lib/aarch64-linux-gnu/libpython2.7.so
   ${Boost_LIBRARIES}
 )

@@ -16,10 +16,10 @@
 #include<opencv2/core/core.hpp>
 #include<memory>
 
-#include "Geometry.h"
-#include "MaskNet.h"
+// #include "Geometry.h"
+// #include "MaskNet.h"
 #include <System.h>
-#include "yolo.h"
+// #include "yolo.h"
 
 #define COMPILEDWITHC11
 
@@ -52,9 +52,12 @@ void LoadImages(const string &strAssociationFilename, vector<string> &vstrImageF
     }
 }
 // fr3_walking_xyz, freiburg1_desk
-std::string dataset_name_association_file = "fr3_walking_xyz";
 // rgbd_dataset_freiburg3_walking_xyz, rgbd_dataset_freiburg1_desk, 
-std::string dataset_name_rgbd = "rgbd_dataset_freiburg3_walking_xyz"; 
+// std::string dataset_name_association_file = "fr3_walking_xyz";
+// std::string dataset_name_rgbd = "rgbd_dataset_freiburg3_walking_xyz"; 
+std::string dataset_name_association_file = "freiburg1_desk";
+std::string dataset_name_rgbd = "rgbd_dataset_freiburg1_desk"; 
+
 class DynaSLAMWrapperForROS2 {
 public:
     DynaSLAMWrapperForROS2() {};
@@ -143,10 +146,13 @@ public:
         }
         */
         if (argc == 6 || argc == 7)
-            mask = yolo->Segmentation(imRGB);
+            // mask = yolo->Segmentation(imRGB);
+            cerr<<"YOLO is not supported!\n";
         // Pass the image to the SLAM system
-        if (argc == 7){p_SLAM->TrackRGBD(imRGB,imD,mask,tframe,imRGBOut,imDOut,maskOut);}
-        else {p_SLAM->TrackRGBD(imRGB,imD,mask,tframe);}
+        // if (argc == 7){p_SLAM->TrackRGBD(imRGB,imD,mask,tframe,imRGBOut,imDOut,maskOut);}
+        // else {
+            p_SLAM->TrackRGBD(imRGB,imD,tframe);
+        // }
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
@@ -213,7 +219,7 @@ public:
     vector<double> vTimestamps;
     string strAssociationFilename;
     int nImages;
-    yolov3::yolov3Segment* yolo;
+    // yolov3::yolov3Segment* yolo;
 
     // Create SLAM system. It initializes all system threads and gets ready to process frames.
     // string strVocFile = "/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM/Vocabulary/ORBvoc.txt";
