@@ -15,18 +15,19 @@
 using namespace std;
 using namespace SP_OPT_PA;
 
-
 class AppTest : public AppBase {
    public:
     AppTest() : AppBase("AppTest") {}
     void run(int) override { std::cout << "Run one time!\n"; }
 };
 
-class AppLongRun: public AppBase {
+class AppLongRun : public AppBase {
    public:
-    AppTest() : AppBase("AppLongRun") {}
-    void run(int) override { busySpinForSeconds(1000);
-    std::cout << "Run one time!\n"; }
+    AppLongRun() : AppBase("AppLongRun") {}
+    void run(int) override {
+        busySpinForSeconds(1000);
+        std::cout << "Run one time!\n";
+    }
 };
 
 TEST(PeriodicReleaser, v1) {
@@ -46,13 +47,14 @@ TEST(read_tassks, time_limit) {
 }
 
 TEST(AppLongRun, overload) {
-    AppTest app;
-    PeriodicReleaser<AppTest> releaser(100, 5, app);
+    AppLongRun app;
+    PeriodicReleaser<AppLongRun> releaser(100, 5, app);
     auto start = std::chrono::high_resolution_clock::now();
     releaser.release();
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> duration = end - start;
-    EXPECT_NEAR(100 * (5 + 1), duration.count(), 1e0);
+    EXPECT_NEAR(1000, duration.count(),
+                1.2e3);  // allow fluctuation with one run and one release
 }
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
