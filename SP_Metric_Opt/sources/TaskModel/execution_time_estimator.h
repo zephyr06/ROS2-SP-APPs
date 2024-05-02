@@ -33,7 +33,7 @@ double extractIndex(const std::string &line) {
 std::vector<std::string> GetAllLines(std::string file_name) {
     std::ifstream file(file_name);
     if (!file.is_open()) {
-        std::cerr << "Error opening file" << std::endl;
+        std::cerr << "\n\n\n\n\nError opening file: "+file_name+"\n\n\n\n\n" << std::endl;
     }
     std::vector<std::string> lines;
     std::string line;

@@ -39,7 +39,7 @@ class ExecutionTimeEstimator {
                 getTimeRecordFolder() + node_name + "_execution_time.txt";
             std::ifstream file(filename);
             if (!file.is_open()) {
-                std::cerr << "Error opening file" << std::endl;
+                std::cerr << "\n\n\n\n\nError opening file: "+filename+"\n\n\n\n\n" << std::endl;
                 return;
             }
 
