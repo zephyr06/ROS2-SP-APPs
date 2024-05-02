@@ -34,7 +34,7 @@ class ExecutionTimeEstimator {
 
             // Open the file
             transform(node_name.begin(), node_name.end(), node_name.begin(),
-                      ::tolower);
+                      ::toupper);
             std::string filename =
                 getTimeRecordFolder() + node_name + "_execution_time.txt";
             std::ifstream file(filename);
