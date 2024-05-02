@@ -73,6 +73,7 @@ class SchedulerApp : public AppBase {
 
             // Update execution time statitics, use last 10 data records, replace the missed values with 2T seconds
             et_estimator_.updateTaskExecutionTimeDistributions(10, 2*3);
+            std::cout<<"Updated execution time\n";
 
             // Perform schedule
             // Scheduler command to be executed

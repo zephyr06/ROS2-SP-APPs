@@ -8,13 +8,24 @@
 #include "sources/UtilsForROS2/Publisher.h"
 
 class SLAMApp : public AppBase {
- public:
-  SLAMApp() : AppBase("SLAM") { slam_wrapper_.init(); }
-  void run(int msg_cnt) override { slam_wrapper_.next(msg_cnt); }
-  ~SLAMApp(){
-      slam_wrapper_.exit();
-  }
-  DynaSLAMWrapperForROS2 slam_wrapper_;
+    public:
+        SLAMApp() : AppBase("SLAM") { 
+            slam_wrapper_.init(); 
+            std::cout << "Following cout related to SLAM except index will be disabled\n";
+        }
+
+        void run(int msg_cnt) override { 
+            std::cout<<"SLAM analyzes frame index: "<<msg_cnt<<"\n";
+            std::cout.setstate(std::ios_base::failbit);
+            slam_wrapper_.next(msg_cnt); 
+            std::cout.clear();
+        }
+    
+        ~SLAMApp(){
+            slam_wrapper_.exit();
+        }
+        
+        DynaSLAMWrapperForROS2 slam_wrapper_;
 };
 
 
