@@ -16,7 +16,7 @@ num_iterations=10
 for ((i=1; i<=$num_iterations; i++))
 do
     ./start_system.sh $1
-    # You can put any commands or operations you want to execute in each iteration here
+    sleep 60 # sleep 60 seconds
 done
 
 echo "Loop finished"
