@@ -8,7 +8,7 @@ Dist_compress_threshold: 0.01
 Layer_Node_During_Incremental_Optimization: 2
 
 # ************** for debug purposes
-debugMode: 1
+debugMode: 0
 printRTA: 0
 
 
