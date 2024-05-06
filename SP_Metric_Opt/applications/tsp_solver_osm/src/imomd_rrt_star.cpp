@@ -35,6 +35,7 @@
  *******************************************************************************/
 #include "imomd_rrt_star/imomd_rrt_star.h"
 
+#include <filesystem>
 #include <iostream>
 
 ImomdRRT::ImomdRRT(
@@ -212,24 +213,22 @@ ImomdRRT::ImomdRRT(
     // Logging data
     start_time_ = bipedlab::timing::getCurrentTime();
     if (setting_.log_data) {
+        std::string date = bipedlab::utils::getTimeNDate();
+        namespace fs = std::filesystem;
+        std::string file_absolute_path =
+            fs::absolute(fs::path(__FILE__)).parent_path().string();
+        std::string output_file_path = file_absolute_path + "/../experiments/" +
+                                       date + "_command_history.csv";
         try {
-            std::string date = bipedlab::utils::getTimeNDate();
-            std::string path = bipedlab::utils::getCurrentDirectory();
-
-            command_csv_.open(std::string(path) + "/experiments/IMOMD_" + date +
-                              "_command_history.csv");
+            command_csv_.open(output_file_path);
 
             // Header
             command_csv_ << "CPU_time"
                          << "path_cost"
                          << "tree_size" << endrow;
         } catch (const std::exception& ex) {
-            std::string date = bipedlab::utils::getTimeNDate();
-            std::string path = bipedlab::utils::getCurrentDirectory();
             std::cout << "Error when recording the output results at the path: "
-                      << std::string(path) + "/experiments/IMOMD_" + date +
-                             "_command_history.csv"
-                      << std::endl;
+                      << output_file_path << std::endl;
             std::cout << "Exception was thrown: " << ex.what() << std::endl;
         }
     }
@@ -977,11 +976,12 @@ void ImomdRRT::logData_() {
     size_t precision = 4;
 
     if (setting_.log_data) {
-        std::cout << bipedlab::utils::toStringWithPrecision(cpu_time, precision)
-                  << bipedlab::utils::toStringWithPrecision(shortest_path_cost_,
-                                                            precision)
-                  << bipedlab::utils::toStringWithPrecision(tree_size,
-                                                            precision)
-                  << endrow;
+        command_csv_ << bipedlab::utils::toStringWithPrecision(cpu_time,
+                                                               precision)
+                     << bipedlab::utils::toStringWithPrecision(
+                            shortest_path_cost_, precision)
+                     << bipedlab::utils::toStringWithPrecision(tree_size,
+                                                               precision)
+                     << endrow;
     }
 }
