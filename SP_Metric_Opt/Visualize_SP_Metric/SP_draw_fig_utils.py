@@ -220,3 +220,17 @@ def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizo
     
     plt.show(block=False)
     plt.pause(10)
+    plt.close()
+
+# def compute_avg_SP_from_multi_run(data_folder_paths, discard_early_time, horizon_granularity, horizon):
+#     task_set_config = os.path.join(
+#         os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
+#     verify_task_set_config(task_set_config)
+#     app_name2period = get_app2period(task_set_config)
+#     tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
+#     sp_value_list_list = []
+#     for method_name, data_folder_path in data_folder_paths.items():
+#         tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
+#         sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path=task_set_config)
+#         sp_value_list_list.append(sp_value_list)
+#     return sp_value_list_list
