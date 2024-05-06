@@ -2,6 +2,7 @@
 
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_BF.h"
+#include "sources/Optimization/OptimizeSP_Base.h"
 #include "sources/Safety_Performance_Metric/ParametersSP.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/TaskModel/RegularTasks.h"
@@ -113,6 +114,14 @@ TEST(read_taskset, analyze_time_perf_paris) {
     EXPECT_EQ(0.5, res[0].performance);
     EXPECT_EQ(939.5, res[9].time_limit);
     EXPECT_EQ(1, res[9].performance);
+}
+TEST(WriteTimeLimitToYamlOSM, V1) {
+    WriteTimeLimitToYamlOSM(100);
+    std::string path =
+        GlobalVariables::PROJECT_PATH +
+        "applications/tsp_solver_osm/config/algorithm_config.yaml";
+    YAML::Node config = YAML::LoadFile(path);
+    EXPECT_EQ(0.1, config["general"]["max_time"].as<double>());
 }
 // TEST(TranslatePriorityVec, PA_VEC_v1) {
 //     PriorityVec pa = {0, 1, 2, 3};
