@@ -90,6 +90,11 @@ TaskSet ReadTaskSet(std::string path, int granulairty) {
             task.timePerformancePairs = AnalyzeTimePerfPair(
                 tasksNode[i]["performance_records_time"].as<std::string>(),
                 tasksNode[i]["performance_records_perf"].as<std::string>());
+            sort(task.timePerformancePairs.begin(),
+                 task.timePerformancePairs.end(),
+                 [](const TimePerfPair &a, const TimePerfPair &b) {
+                     return a.time_limit < b.time_limit;
+                 });
         }
         task.setExecGaussian(
             GaussianDist(tasksNode[i]["execution_time_mu"].as<double>(),

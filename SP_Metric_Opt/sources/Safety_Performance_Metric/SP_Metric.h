@@ -30,12 +30,21 @@ inline double SP_Func(double violate_probability, double threshold) {
         return PenaltyFunc(violate_probability, threshold) - 0.5;
 }
 
+inline double interpolate(double x, double x1, double y1, double x2,
+                          double y2) {
+    return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
+}
+
+// timePerformancePairs is required to be sorted by time
+double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
+                   double time_limit);
+
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters);
 
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters);
-                    
+
 // assume the order of all the vectors are matched!!!
 double ObtainSP_DAG_From_Dists(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,

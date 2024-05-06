@@ -1,5 +1,7 @@
 // #include <gtest/gtest.h>
 
+#include <algorithm>
+
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 #include "sources/Utils/Parameters.h"
@@ -147,6 +149,33 @@ class TaskSetForTest_robotics_v8 : public ::testing::Test {
     SP_Parameters sp_parameters;
     int N = dag_tasks.tasks.size();
 };
+
+class TaskSetForTest_robotics_v18 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v18";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
+TEST_F(TaskSetForTest_robotics_v18, calcluate_perf_term) {
+    std::vector<TimePerfPair> timePerformancePairs = {
+        TimePerfPair(0, 0), TimePerfPair(1, 1), TimePerfPair(2, 2),
+        TimePerfPair(3, 3), TimePerfPair(4, 4), TimePerfPair(5, 5)};
+    EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, -1));
+    EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, 0));
+    EXPECT_EQ(0.5, GetPerfTerm(timePerformancePairs, 0.5));
+    EXPECT_EQ(1, GetPerfTerm(timePerformancePairs, 1));
+    EXPECT_EQ(5, GetPerfTerm(timePerformancePairs, 6));
+}
 // TEST_F(TaskSetForTest_robotics_v8, SP_Calculation) {
 //     double sp_actual = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 //     double sp_expected = log(1 + 0.5) + log(1 + 0.5 - 0.0012) + 1.5 * 2;
@@ -210,7 +239,7 @@ TEST_F(TaskSetForTest_robotics_v1, read_sp) {}
 // cout << "SP-Metric: " << sp_metric_val << "\n";
 // EXPECT_THAT(sp_metric_val, testing::Le(-5.9));
 // }
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
     return RUN_ALL_TESTS();

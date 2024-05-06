@@ -13,6 +13,30 @@ double ObtainSP(const FiniteDist& dist, double deadline,
     return SP_Func(ddl_miss_chance, ddl_miss_threshold) * weight;
 }
 
+// timePerformancePairs is required to be sorted by time
+double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
+                   double time_limit) {
+    // Find the two time-performance pairs that surround the given time limit
+    auto it = std::upper_bound(timePerformancePairs.begin(),
+                               timePerformancePairs.end(), time_limit,
+                               [](double time, const TimePerfPair& pair) {
+                                   return time < pair.time_limit;
+                               });
+
+    if (it == timePerformancePairs.begin()) {
+        // The given time limit is smaller than the smallest time in the pairs
+        return 0.0;
+    } else if (it == timePerformancePairs.end()) {
+        // The given time limit is larger than the largest time in the pairs
+        return timePerformancePairs.back().performance;
+    } else {
+        // The given time limit is between two time-performance pairs
+        auto prevPair = std::prev(it);
+        return interpolate(time_limit, prevPair->time_limit,
+                           prevPair->performance, it->time_limit,
+                           it->performance);
+    }
+}
 // double ObtainSP(const std::vector<FiniteDist>& dists,
 //                 const std::vector<double>& deadline,
 //                 const std::unordered_map<int, double>& ddl_miss_thresholds,
@@ -47,9 +71,7 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
 
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters) {
-
-    if(GlobalVariables::debugMode==1)
-        BeginTimer("ObtainSP_DAG");
+    if (GlobalVariables::debugMode == 1) BeginTimer("ObtainSP_DAG");
     double sp_overall = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 
     std::vector<FiniteDist> reaction_time_dists =
@@ -65,8 +87,7 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
                       sp_parameters.weights_path.at(chain_id);
     }
 
-    if(GlobalVariables::debugMode==1)
-        EndTimer("ObtainSP_DAG");
+    if (GlobalVariables::debugMode == 1) EndTimer("ObtainSP_DAG");
     return sp_overall;
 }
 
