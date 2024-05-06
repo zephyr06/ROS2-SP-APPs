@@ -88,6 +88,32 @@ TEST(read, processorId) {
     DAG_Model dag_tasks = ReadDAG_Tasks(path);
     EXPECT_EQ(0, dag_tasks.tasks[0].processorId);
 }
+TEST(read, analyze_time_perf_paris) {
+    std::string performance_records_time =
+        "47.2 101.2 164.3 342.5 404.8 473.8 537.1 717.8 771.8 939.5";
+    std::string performance_records_perf =
+        "0.         0.78223968 0.85387062 0.94300589 0.98258149 "
+        "0.9861591 0.99704945 0.99911459 0.99978866 1.";
+    std::vector<TimePerfPair> res =
+        AnalyzeTimePerfPair(performance_records_time, performance_records_perf);
+    EXPECT_EQ(10, res.size());
+    EXPECT_EQ(47.2, res[0].time_limit);
+    EXPECT_EQ(0, res[0].performance);
+    EXPECT_EQ(939.5, res[9].time_limit);
+    EXPECT_EQ(1, res[9].performance);
+}
+TEST(read_taskset, analyze_time_perf_paris) {
+    std::string file_name = "test_robotics_v17";
+    string path =
+        GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+    DAG_Model dag_tasks = ReadDAG_Tasks(path);
+    std::vector<TimePerfPair> res = dag_tasks.tasks[0].timePerformancePairs;
+    EXPECT_EQ(10, res.size());
+    EXPECT_EQ(47.2, res[0].time_limit);
+    EXPECT_EQ(0, res[0].performance);
+    EXPECT_EQ(939.5, res[9].time_limit);
+    EXPECT_EQ(1, res[9].performance);
+}
 // TEST(TranslatePriorityVec, PA_VEC_v1) {
 //     PriorityVec pa = {0, 1, 2, 3};
 //     std::vector<int> translated_pa_val = {40, 30, 20, 10};
@@ -98,7 +124,7 @@ TEST(read, processorId) {
 //     std::vector<int> translated_pa_val = {20, 10, 30, 40};
 //     EXPECT_EQ(translated_pa_val, TranslatePriorityVec(pa));
 // }
-int main(int argc, char **argv) {
+int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
     return RUN_ALL_TESTS();

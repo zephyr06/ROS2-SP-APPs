@@ -17,6 +17,17 @@ namespace SP_OPT_PA {
 inline bool CompareStringNoCase(const std::string& s1, const std::string s2) {
     return strcasecmp(s1.c_str(), s2.c_str()) == 0;
 }
+struct TimePerfPair {
+    TimePerfPair(double t, double p) : time_limit(t), performance(p) {}
+    double time_limit;  // units are ms
+    double performance;
+};
+
+std::vector<double> str_seq2vector(const std::string& strs);
+
+std::vector<TimePerfPair> AnalyzeTimePerfPair(const std::string& time_strs,
+                                              const std::string& perf_strs);
+
 class Task {
    public:
     // Task() {}
@@ -29,8 +40,7 @@ class Task {
           deadline(ddl),
           priority(priority),
           name(name) {
-        if (name == "")
-            name = "Task_" + std::to_string(id);
+        if (name == "") name = "Task_" + std::to_string(id);
         executionTime = -1;
     }
 
@@ -74,6 +84,7 @@ class Task {
     int processorId = -1;  // -1 means not assigned to any processor, or all
                            // assigned to one single processor by default
     double total_running_time;
+    std::vector<TimePerfPair> timePerformancePairs;
 
    private:
     double executionTime;
