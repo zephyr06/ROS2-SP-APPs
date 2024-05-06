@@ -206,6 +206,43 @@ class TaskSetv14 : public ::testing::Test {
 //     EXPECT_TRUE(diff_rec[1]);
 // }
 
+class TaskSetForTest_robotics_v18 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v18";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
+TEST(ResOptResult, update_pa) {
+    PriorityVec pa = {0, 1, 2, 3};
+    ResOptResult res_opt;
+    res_opt.UpdatePriorityVec(pa);
+    EXPECT_EQ(4, res_opt.id2priority.size());
+    EXPECT_EQ(4, res_opt.id2priority[0]);
+    EXPECT_EQ(3, res_opt.id2priority[1]);
+    EXPECT_EQ(2, res_opt.id2priority[2]);
+    EXPECT_EQ(1, res_opt.id2priority[3]);
+}
+// TEST_F(TaskSetForTest_robotics_v18, calcluate_perf_term) {
+//     std::vector<TimePerfPair> timePerformancePairs = {
+//         TimePerfPair(0, 0), TimePerfPair(1, 1), TimePerfPair(2, 2),
+//         TimePerfPair(3, 3), TimePerfPair(4, 4), TimePerfPair(5, 5)};
+//     EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, -1));
+//     EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, 0));
+//     EXPECT_EQ(0.5, GetPerfTerm(timePerformancePairs, 0.5));
+//     EXPECT_EQ(1, GetPerfTerm(timePerformancePairs, 1));
+//     EXPECT_EQ(5, GetPerfTerm(timePerformancePairs, 6));
+// }
+
 int main(int argc, char **argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
