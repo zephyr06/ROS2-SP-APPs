@@ -214,9 +214,15 @@ class TaskSetv14 : public ::testing::Test {
 SP_Parameters AddWeightsFromTimeLimits(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<double> time_limit_for_task) {
-    // SP_Parameters sp_parameters_cur = sp_parameters;
-    CoutError("Finish the function!");
-    return sp_parameters;
+    SP_Parameters sp_parameters_upd = sp_parameters;
+    for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
+        if (time_limit_for_task[i] != -1) {
+            double update = GetPerfTerm(dag_tasks.tasks[i].timePerformancePairs,
+                                        time_limit_for_task[i]);
+            sp_parameters_upd.weights_node[i] *= update;
+        }
+    }
+    return sp_parameters_upd;
 }
 
 class OptimizePA_with_TimeLimitsStatus {
@@ -304,7 +310,20 @@ class TaskSetForTest_robotics_v18 : public ::testing::Test {
     SP_Parameters sp_parameters;
     int N = dag_tasks.tasks.size();
 };
+TEST_F(TaskSetForTest_robotics_v18, AddWeightsFromTimeLimits) {
+    vector<double> time_limit_option_for_each_task = {1000, -1, -1, -1};
+    SP_Parameters sp_parameters_cur = AddWeightsFromTimeLimits(
+        dag_tasks, sp_parameters, time_limit_option_for_each_task);
+    EXPECT_EQ(1, sp_parameters_cur.weights_node[0]);
 
+    time_limit_option_for_each_task = {400, -1, -1, -1};
+    sp_parameters_cur = AddWeightsFromTimeLimits(
+        dag_tasks, sp_parameters, time_limit_option_for_each_task);
+    EXPECT_EQ(0.5, sp_parameters_cur.weights_node[0]);
+    EXPECT_EQ(1, sp_parameters_cur.weights_node[1]);
+    EXPECT_EQ(1, sp_parameters_cur.weights_node[2]);
+    EXPECT_EQ(2, sp_parameters_cur.weights_node[3]);
+}
 // TEST(ResourceOptResult, update_pa) {
 //     BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
 //     ResourceOptResult res_opt =
