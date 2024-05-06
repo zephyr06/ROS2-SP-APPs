@@ -19,7 +19,7 @@ struct ResourceOptResult {
         }
     }
     void SaveTimeLimits(const TaskSet& tasks,
-                         std::vector<double>& time_limits) {
+                        std::vector<double>& time_limits) {
         for (int i = 0; i < static_cast<int>(tasks.size()); i++) {
             id2time_limit[tasks[i].id] = time_limits[i];
         }
@@ -70,4 +70,7 @@ void PrintPA_IfDebugMode(const PriorityVec& pa, double sp_eval);
 
 YAML::Node PriorityAssignmentToYaml(const TaskSet& tasks,
                                     const PriorityVec& priority_assignment);
+
+void WriteTimeLimitToYamlOSM(double time_limit_ms);
+
 }  // namespace SP_OPT_PA
