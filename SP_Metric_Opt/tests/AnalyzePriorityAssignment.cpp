@@ -49,13 +49,15 @@ int main(int argc, char *argv[]) {
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
 
     // Perform optimization
-    PriorityVec pa_opt =
-        OptimizePA_BruteForce(dag_tasks, sp_parameters).priority_vec;
-
+    ResourceOptResult res = OptimizePA_BruteForce(dag_tasks, sp_parameters);
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
+
+    PriorityVec pa_opt = res.priority_vec;
     WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                              time_taken);
+    WriteTimeLimitToYamlOSM(
+        res.id2time_limit[0]);  // only write TSP's time limit
     if (GlobalVariables::debugMode == 1) {
         PrintPriorityVec(dag_tasks.tasks, pa_opt);
         PrintTimer();
