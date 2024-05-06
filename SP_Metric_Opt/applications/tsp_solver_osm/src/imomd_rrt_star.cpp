@@ -224,6 +224,12 @@ ImomdRRT::ImomdRRT(
                          << "path_cost"
                          << "tree_size" << endrow;
         } catch (const std::exception& ex) {
+            std::string date = bipedlab::utils::getTimeNDate();
+            std::string path = bipedlab::utils::getCurrentDirectory();
+            std::cout << "Error when recording the output results at the path: "
+                      << std::string(path) + "/experiments/IMOMD_" + date +
+                             "_command_history.csv"
+                      << std::endl;
             std::cout << "Exception was thrown: " << ex.what() << std::endl;
         }
     }
