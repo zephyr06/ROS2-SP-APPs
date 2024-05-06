@@ -18,6 +18,12 @@ struct ResourceOptResult {
             id2priority[id] = pa.size() - i;
         }
     }
+    void SaveTimeLimits(const TaskSet& tasks,
+                         std::vector<double>& time_limits) {
+        for (int i = 0; i < static_cast<int>(tasks.size()); i++) {
+            id2time_limit[tasks[i].id] = time_limits[i];
+        }
+    }
     std::unordered_map<int, int>
         id2priority;  // large priority values mean high priority
     std::unordered_map<int, double> id2time_limit;
