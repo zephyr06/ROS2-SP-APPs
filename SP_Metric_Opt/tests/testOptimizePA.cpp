@@ -351,6 +351,28 @@ TEST_F(TaskSetForTest_robotics_v18, optimize) {
         BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
     EXPECT_EQ(1000, res_opt.id2time_limit[0]);
 }
+
+class TaskSetForTest_robotics_v19 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v19";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+TEST_F(TaskSetForTest_robotics_v19, optimize) {
+    ResourceOptResult res_opt =
+        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+    PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
+    EXPECT_EQ(400, res_opt.id2time_limit[0]);
+}
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
