@@ -49,7 +49,8 @@ int main(int argc, char *argv[]) {
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
 
     // Perform optimization
-    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    PriorityVec pa_opt =
+        OptimizePA_BruteForce(dag_tasks, sp_parameters).priority_vec;
 
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);

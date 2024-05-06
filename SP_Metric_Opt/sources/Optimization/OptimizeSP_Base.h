@@ -10,8 +10,9 @@ bool ifTimeout(TimerType start_time);
 // task id sequence; small index have higher priority
 typedef std::vector<int> PriorityVec;
 
-struct ResOptResult {
+struct ResourceOptResult {
     void UpdatePriorityVec(const PriorityVec& pa) {
+        priority_vec = pa;
         for (uint i = 0; i < pa.size(); i++) {
             int id = pa[i];
             id2priority[id] = pa.size() - i;
@@ -21,6 +22,7 @@ struct ResOptResult {
         id2priority;  // large priority values mean high priority
     std::unordered_map<int, double> id2time_limit;
     double sp_opt;
+    PriorityVec priority_vec;  // for some old tests only
 };
 
 TaskSet UpdateTaskSetPriorities(const TaskSet& tasks,

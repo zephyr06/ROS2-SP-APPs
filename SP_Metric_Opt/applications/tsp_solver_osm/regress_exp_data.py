@@ -20,7 +20,7 @@ print("CPU time:")
 print(np.array(X['CPU_time']))
 
 # Normalize path cost
-scaler = MinMaxScaler(feature_range=(0, 1))
+scaler = MinMaxScaler(feature_range=(0.5, 1))
 y_normalized = scaler.fit_transform(data['path_cost'].values.reshape(-1, 1))
 print("Normalized performance:")
 print(np.array(y_normalized).flatten())
