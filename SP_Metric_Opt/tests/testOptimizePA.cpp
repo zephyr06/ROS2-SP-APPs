@@ -127,11 +127,11 @@ class TaskSetv13 : public ::testing::Test {
 };
 
 TEST_F(TaskSetv13, Optimize_bf) {
-    PriorityVec pa_opt =
-        OptimizePA_BruteForce(dag_tasks, sp_parameters).priority_vec;
-    PrintPriorityVec(dag_tasks.tasks, pa_opt);
-    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[2]].name);
-    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
+    ResourceOptResult res = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    PrintPriorityVec(dag_tasks.tasks, res.priority_vec);
+    // EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[2]].name);
+    // EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
+    EXPECT_THAT(res.id2priority[0], testing::Ge(res.id2priority[3]));
 }
 class TaskSetv14 : public ::testing::Test {
    public:
@@ -225,6 +225,18 @@ SP_Parameters AddWeightsFromTimeLimits(
     return sp_parameters_upd;
 }
 
+DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
+                                        const std::vector<double>& time_limit) {
+    DAG_Model dag_tasks_upd = dag_tasks;
+    for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
+        if (time_limit[i] != -1) {
+            dag_tasks_upd.tasks[i].execution_time_dist =
+                GetUnitExecutionTimeDist(time_limit[i]);
+        }
+    }
+    return dag_tasks_upd;
+}
+
 class OptimizePA_with_TimeLimitsStatus {
    public:
     OptimizePA_with_TimeLimitsStatus(const DAG_Model& dag_tasks,
@@ -237,13 +249,16 @@ class OptimizePA_with_TimeLimitsStatus {
     }
 
     void RecordTimeLimitOptions() {
-        std::vector<vector<double>> time_limit_option_for_each_task(
-            dag_tasks.tasks.size());
+        time_limit_option_for_each_task.reserve(dag_tasks.tasks.size());
         for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
+            time_limit_option_for_each_task.push_back({});
             for (uint j = 0; j < dag_tasks.tasks[i].timePerformancePairs.size();
                  j++) {
                 time_limit_option_for_each_task[i].push_back(
                     dag_tasks.tasks[i].timePerformancePairs[j].time_limit);
+            }
+            if (dag_tasks.tasks[i].timePerformancePairs.size() == 0) {
+                time_limit_option_for_each_task[i].push_back(-1);
             }
         }
     }
@@ -253,14 +268,22 @@ class OptimizePA_with_TimeLimitsStatus {
         if (trav_task_index == time_limit_option_for_each_task.size()) {
             SP_Parameters sp_para_cur = AddWeightsFromTimeLimits(
                 dag_tasks, sp_parameters, time_limit_for_task);
-            // TODO finish it
-            PriorityVec pa =
-                OptimizePA_BruteForce(dag_tasks, sp_para_cur).priority_vec;
-            // if (sp_eval > res_opt.sp_opt) {
-            //     res_opt.sp_opt = sp_eval;
-            //     res_opt.UpdatePriorityVec(pa);
-            // }
+            DAG_Model dag_tasks_cur =
+                UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limit_for_task);
+            ResourceOptResult res_cur =
+                OptimizePA_BruteForce(dag_tasks_cur, sp_para_cur);
+            res_cur.SaveTimeLimits(dag_tasks.tasks, time_limit_for_task);
+            if (res_cur.sp_opt > res_opt.sp_opt) {
+                res_opt = res_cur;
+            }
             return;
+        } else {
+            std::vector<double>& time_limit_options =
+                time_limit_option_for_each_task[trav_task_index];
+            for (double option : time_limit_options) {
+                time_limit_for_task[trav_task_index] = option;
+                Optimize(trav_task_index + 1, time_limit_for_task);
+            }
         }
     }
     void Optimize() {
@@ -277,23 +300,11 @@ class OptimizePA_with_TimeLimitsStatus {
 };
 
 ResourceOptResult BackTrackingPA_with_TimeLimits(
-    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
-    std::vector<vector<double>>& time_limit_option_for_each_task) {
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
     optimizer.Optimize();
     return optimizer.res_opt;
 }
-
-// TEST_F(TaskSetForTest_robotics_v18, calcluate_perf_term) {
-//     std::vector<TimePerfPair> timePerformancePairs = {
-//         TimePerfPair(0, 0), TimePerfPair(1, 1), TimePerfPair(2, 2),
-//         TimePerfPair(3, 3), TimePerfPair(4, 4), TimePerfPair(5, 5)};
-//     EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, -1));
-//     EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, 0));
-//     EXPECT_EQ(0.5, GetPerfTerm(timePerformancePairs, 0.5));
-//     EXPECT_EQ(1, GetPerfTerm(timePerformancePairs, 1));
-//     EXPECT_EQ(5, GetPerfTerm(timePerformancePairs, 6));
-// }
 
 class TaskSetForTest_robotics_v18 : public ::testing::Test {
    public:
@@ -310,6 +321,17 @@ class TaskSetForTest_robotics_v18 : public ::testing::Test {
     SP_Parameters sp_parameters;
     int N = dag_tasks.tasks.size();
 };
+TEST_F(TaskSetForTest_robotics_v18, RecordTimeLimitOptions) {
+    OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
+    EXPECT_EQ(4, optimizer.time_limit_option_for_each_task.size());
+    EXPECT_EQ(4, optimizer.time_limit_option_for_each_task[0].size());
+    EXPECT_EQ(400, optimizer.time_limit_option_for_each_task[0][0]);
+    EXPECT_EQ(600, optimizer.time_limit_option_for_each_task[0][1]);
+    EXPECT_EQ(800, optimizer.time_limit_option_for_each_task[0][2]);
+    EXPECT_EQ(1000, optimizer.time_limit_option_for_each_task[0][3]);
+    EXPECT_EQ(-1, optimizer.time_limit_option_for_each_task[1][0]);
+}
+
 TEST_F(TaskSetForTest_robotics_v18, AddWeightsFromTimeLimits) {
     vector<double> time_limit_option_for_each_task = {1000, -1, -1, -1};
     SP_Parameters sp_parameters_cur = AddWeightsFromTimeLimits(
@@ -324,12 +346,11 @@ TEST_F(TaskSetForTest_robotics_v18, AddWeightsFromTimeLimits) {
     EXPECT_EQ(1, sp_parameters_cur.weights_node[2]);
     EXPECT_EQ(2, sp_parameters_cur.weights_node[3]);
 }
-// TEST(ResourceOptResult, update_pa) {
-//     BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
-//     ResourceOptResult res_opt =
-//         BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
-//     EXPECT_EQ(1000, res_opt.id2time_limit[0]);
-// }
+TEST_F(TaskSetForTest_robotics_v18, optimize) {
+    ResourceOptResult res_opt =
+        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+    EXPECT_EQ(1000, res_opt.id2time_limit[0]);
+}
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

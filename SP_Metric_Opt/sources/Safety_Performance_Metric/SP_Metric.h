@@ -9,6 +9,10 @@ namespace SP_OPT_PA {
 
 std::vector<double> GetChainsDDL(const DAG_Model& dag_tasks);
 
+inline double interpolate(double x, double x1, double y1, double x2,
+                          double y2) {
+    return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
+}
 // double ObtainSP(const std::vector<FiniteDist>& dists,
 //                 const std::vector<double>& deadline,
 //                 const std::vector<double>& ddl_miss_thresholds,
@@ -23,16 +27,17 @@ inline double PenaltyFunc(double violate_probability, double threshold) {
 inline double RewardFunc(double violate_probability, double threshold) {
     return log((threshold - violate_probability) + 1);
 }
-inline double SP_Func(double violate_probability, double threshold) {
-    if (threshold >= violate_probability)
-        return RewardFunc(violate_probability, threshold) - 0.5;
-    else
-        return PenaltyFunc(violate_probability, threshold) - 0.5;
-}
 
-inline double interpolate(double x, double x1, double y1, double x2,
-                          double y2) {
-    return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
+inline double SP_Func(double violate_probability, double threshold) {
+    double min_val, max_val, val;
+    min_val = PenaltyFunc(1, threshold);
+    max_val = RewardFunc(0, threshold);
+    if (threshold >= violate_probability) {
+        val = RewardFunc(violate_probability, threshold);
+    } else {
+        val = PenaltyFunc(violate_probability, threshold);
+    }
+    return interpolate(val, min_val, 0, max_val, 1);
 }
 
 // timePerformancePairs is required to be sorted by time
