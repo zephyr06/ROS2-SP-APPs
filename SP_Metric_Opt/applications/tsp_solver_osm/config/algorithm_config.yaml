@@ -15,7 +15,7 @@ destinations:
   target_id: 560
 map:
   type: 1
-  path: /home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/applications/tsp_solver_osm/osm_data/
+  path: osm_data
   name: sanf.osm
 rtsp_settings:
   shortcut: 1
