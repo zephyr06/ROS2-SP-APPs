@@ -15,11 +15,11 @@ using namespace SP_OPT_PA;
 int main(int argc, char *argv[]) {
     // TODO add explanation for global path
     argparse::ArgumentParser program("program name");
-    program.add_argument("--slam_path")
-        .default_value(std::string("TaskData/AnalyzeSP_Metric/slam.txt"))
+    program.add_argument("--tsp_path")
+        .default_value(std::string("TaskData/AnalyzeSP_Metric/tsp.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/slam.txt. It is "
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/tsp.txt. It is "
             "also okay to directly pass global path that starts with '/', such "
             "as /root/usr/slam.txt ");
     program.add_argument("--rrt_path")
@@ -36,11 +36,11 @@ int main(int argc, char *argv[]) {
             "the tasks. Example: TaskData/AnalyzeSP_Metric/mpc.txt. It is "
             "also okay to directly pass global path that starts with '/', such "
             "as /root/usr/slam.txt ");
-    program.add_argument("--tsp_path")
-        .default_value(std::string("TaskData/AnalyzeSP_Metric/tsp.txt"))
+    program.add_argument("--slam_path")
+        .default_value(std::string("TaskData/AnalyzeSP_Metric/slam.txt"))
         .help(
             "the relative path of the yaml file that saves information about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/tsp.txt. It is "
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/slam.txt. It is "
             "also okay to directly pass global path that starts with '/', such "
             "as /root/usr/slam.txt ");
     program.add_argument("--chain0_path")

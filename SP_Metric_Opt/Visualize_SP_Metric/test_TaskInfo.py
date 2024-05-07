@@ -3,6 +3,11 @@ import numpy as np
 from SP_draw_fig_utils import *
 from slam_analysis_utils import *
 
+def interpolate_sp_for_test(x):
+    minval = -1.484
+    maxval = 0.405465
+    return (x - minval) / (maxval - minval)
+
 def test_read_period():
     task_set_config = os.path.join(
         OPT_SP_PROJECT_PATH, "TaskData/test_robotics_v4.yaml")
@@ -83,7 +88,7 @@ def test_get_sp_value_list():
     sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0, task_set_config)
     # only one value; chance of four tasks to miss DDL:
     # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.2
-    exp_sp = 2*-0.01*np.exp(10*0.5) + np.log(1.5)*2 - 0.5*4
+    exp_sp = (1+1)*interpolate_sp_for_test(-0.01*np.exp(10*0.5)) + interpolate_sp_for_test(np.log(1.5))*(0.5333+1)
     assert sp_value_list == pytest.approx([exp_sp], abs=1e-2)
 
 def test_read_slam_data():
