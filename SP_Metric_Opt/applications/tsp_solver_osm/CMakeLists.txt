@@ -14,3 +14,6 @@ file(GLOB SOURCES_TSP "src/imomd_rrt_star.cpp"
 
 add_executable(tsp_solver_executable_osm "main.cpp" ${SOURCES_TSP})
 target_link_libraries(tsp_solver_executable_osm ${CONVENIENCE_LIB_NAME})
+
+add_executable(tsp_solver_listener "tsp_listener.cpp" ${SOURCES_TSP})
+target_link_libraries(tsp_solver_listener ${CONVENIENCE_LIB_NAME})
