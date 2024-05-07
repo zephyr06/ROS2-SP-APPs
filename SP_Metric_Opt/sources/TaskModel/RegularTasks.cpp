@@ -5,10 +5,32 @@
 #include <filesystem>
 namespace SP_OPT_PA {
 
+std::vector<double> str_seq2vector(const std::string &strs) {
+    std::vector<double> res;
+    res.reserve(strs.size());
+    std::istringstream iss(strs);
+    double number;
+    // Read doubles from the stringstream and push them into the vector
+    while (iss >> number) {
+        res.push_back(number);
+    }
+    return res;
+}
+std::vector<TimePerfPair> AnalyzeTimePerfPair(const std::string &time_strs,
+                                              const std::string &perf_strs) {
+    std::vector<double> time_records = str_seq2vector(time_strs);
+    std::vector<double> perf_records = str_seq2vector(perf_strs);
+    std::vector<TimePerfPair> res;
+    res.reserve(time_records.size());
+    for (uint i = 0; i < time_records.size(); i++) {
+        res.push_back(TimePerfPair(time_records[i], perf_records[i]));
+    }
+    return res;
+}
+
 // Recursive function to return gcd of a and b
 long long gcd(long long int a, long long int b) {
-    if (b == 0)
-        return a;
+    if (b == 0) return a;
     return gcd(b, a % b);
 }
 
@@ -37,8 +59,7 @@ long long int HyperPeriod(const TaskSet &tasks) {
 }
 
 TaskSet ReadTaskSet(std::string path, int granulairty) {
-    if (!(std::filesystem::exists(path)))
-        CoutError(path + " not exist!");
+    if (!(std::filesystem::exists(path))) CoutError(path + " not exist!");
     YAML::Node config = YAML::LoadFile(path);
     YAML::Node tasksNode;
     if (config["tasks"]) {
@@ -65,6 +86,16 @@ TaskSet ReadTaskSet(std::string path, int granulairty) {
         if (tasksNode[i]["total_running_time"])
             task.total_running_time =
                 tasksNode[i]["total_running_time"].as<double>();
+        if (tasksNode[i]["performance_records_time"]) {
+            task.timePerformancePairs = AnalyzeTimePerfPair(
+                tasksNode[i]["performance_records_time"].as<std::string>(),
+                tasksNode[i]["performance_records_perf"].as<std::string>());
+            sort(task.timePerformancePairs.begin(),
+                 task.timePerformancePairs.end(),
+                 [](const TimePerfPair &a, const TimePerfPair &b) {
+                     return a.time_limit < b.time_limit;
+                 });
+        }
         task.setExecGaussian(
             GaussianDist(tasksNode[i]["execution_time_mu"].as<double>(),
                          tasksNode[i]["execution_time_sigma"].as<double>()));

@@ -173,4 +173,8 @@ class FiniteDist : public ProbabilityDistributionBase {
     double max_time;
 };
 
+inline FiniteDist GetUnitExecutionTimeDist(double time_limit) {
+    std::vector<Value_Proba> v_p = {{time_limit, 1.0}};
+    return FiniteDist(v_p);
+}
 }  // namespace SP_OPT_PA

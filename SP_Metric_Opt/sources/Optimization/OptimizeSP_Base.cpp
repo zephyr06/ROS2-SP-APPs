@@ -104,4 +104,15 @@ void PrintPA_IfDebugMode(const PriorityVec& priority_assignment,
         std::cout << sp_eval << "\n";
     }
 }
+
+void WriteTimeLimitToYamlOSM(double time_limit_ms) {
+    std::string path =
+        GlobalVariables::PROJECT_PATH +
+        "applications/tsp_solver_osm/config/algorithm_config.yaml";
+    YAML::Node config = YAML::LoadFile(path);
+    config["general"]["max_time"] = time_limit_ms / 1000.0;
+    std::ofstream fout(path);
+    fout << config;
+    fout.close();
+}
 }  // namespace SP_OPT_PA

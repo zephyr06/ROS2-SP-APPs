@@ -232,6 +232,10 @@ void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
     int size_per_merge =
         ceil(double(element_counts_before_merge) / size_after_compres);
     std::vector<Value_Proba> new_vec;
+    if (size_after_compres < 0)
+        CoutError(
+            "Error in CompressDistributionVector: size_after_compres is "
+            "negative");
     new_vec.reserve(size_after_compres);
     double sum = 0;
     int count = 0;
@@ -264,8 +268,8 @@ void FiniteDist::CompressDistribution(size_t max_size,
 
     if (compress_index_since == distribution.size()) return;
 
-    CompressDistributionVector(distribution, compress_index_since,
-                               distribution.size() - 1,
-                               max_size - compress_index_since);
+    CompressDistributionVector(
+        distribution, compress_index_since, distribution.size() - 1,
+        std::max(static_cast<int>(max_size) - compress_index_since, 1));
 }
 }  // namespace SP_OPT_PA

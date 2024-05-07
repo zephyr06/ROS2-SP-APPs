@@ -12,7 +12,7 @@ TEST(BasicExample, v1) {
     for (int k = 0; k < 5; k++) {
         ext_profiler.start();
         int a = 1;
-        for (int i = 0; i < 1e9; i++) {
+        for (int i = 0; i < 1e8; i++) {
             a++;
             a++;
             int b = a * 2;
