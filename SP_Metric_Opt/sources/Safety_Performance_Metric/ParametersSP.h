@@ -19,6 +19,9 @@ struct SP_Parameters {
             weights_path[i] = 1;
         }
     }
+    void update_node_weight(int id, double multiplier) {
+        weights_node[id] *= multiplier;
+    }
 
     void reserve(size_t size) {
         thresholds_node.reserve(size);

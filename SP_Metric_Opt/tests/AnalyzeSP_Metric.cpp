@@ -1,5 +1,6 @@
 #include <yaml-cpp/yaml.h>
 
+#include <cassert>
 #include <iostream>
 
 #include "sources/Optimization/OptimizeSP_BF.h"
@@ -49,9 +50,17 @@ int main(int argc, char *argv[]) {
             "the tasks. Example: TaskData/AnalyzeSP_Metric/chain0.txt. It is "
             "also okay to directly pass global path that starts with '/', such "
             "as /root/usr/slam.txt ");
+    program.add_argument("--tsp_ext_path")
+        .default_value(std::string("TaskData/AnalyzeSP_Metric/tsp_ext.txt"))
+        .help(
+            "the relative path of the yaml file that saves execution time data "
+            "about "
+            "the tasks. Example: TaskData/AnalyzeSP_Metric/tsp_ext.txt. It is "
+            "also okay to directly pass global path that starts with '/', such "
+            "as /root/usr/slam.txt ");
 
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v6.yaml"))
+        .default_value(std::string("TaskData/test_robotics_v19.yaml"))
         .help(
             "the relative path of the yaml file that saves information about"
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
@@ -73,6 +82,7 @@ int main(int argc, char *argv[]) {
     string mpc_path = program.get<std::string>("--mpc_path");
 
     string tsp_path = program.get<std::string>("--tsp_path");
+    string tsp_ext_path = program.get<std::string>("--tsp_ext_path");
 
     string chain0_path = program.get<std::string>("--chain0_path");
 
@@ -82,6 +92,7 @@ int main(int argc, char *argv[]) {
     rrt_path = RelativePathToAbsolutePath(rrt_path);
     mpc_path = RelativePathToAbsolutePath(mpc_path);
     tsp_path = RelativePathToAbsolutePath(tsp_path);
+    tsp_ext_path = RelativePathToAbsolutePath(tsp_ext_path);
     chain0_path = RelativePathToAbsolutePath(chain0_path);
     file_path_ref = RelativePathToAbsolutePath(file_path_ref);
 
@@ -91,6 +102,10 @@ int main(int argc, char *argv[]) {
                                        // about the execution time distribution
 
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path_ref);
+    assert(dag_tasks.tasks[0].name == "TSP");
+    double tsp_weight = GetAvgTaskPerfTerm(
+        tsp_ext_path, dag_tasks.tasks[0].timePerformancePairs);
+    sp_parameters.update_node_weight(0, tsp_weight);
     std::vector<FiniteDist> node_rts_dists;
     // std::string folder_path="TaskData/AnalyzeSP_Metric/";
     node_rts_dists.push_back(FiniteDist(ReadTxtFile(tsp_path), granularity));

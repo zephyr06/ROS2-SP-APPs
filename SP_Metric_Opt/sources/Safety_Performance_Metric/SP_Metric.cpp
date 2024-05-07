@@ -140,6 +140,10 @@ double GetTaskPerfTerm(
 
 double GetAvgTaskPerfTerm(std::string& ext_file_path,
                           std::vector<TimePerfPair> timePerformancePairs) {
+    if (timePerformancePairs.size() == 0) {
+        CoutError("timePerformancePairs is empty!");
+        return 1.0;
+    }
     std::vector<double> ext_times = ReadTxtFile(ext_file_path);
     int n = ext_times.size();
     double avg_perf_coeff = 0;
