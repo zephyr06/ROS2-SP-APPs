@@ -96,6 +96,7 @@ int main() {
         // Get OSM file
         std::string map_path =
             bipedlab::yaml_utils::convertToStr(tree["map"]["path"].val());
+        map_path = tsp_osm_project_path + map_path + "/";
         std::string map_file =
             bipedlab::yaml_utils::convertToStr(tree["map"]["name"].val());
 
