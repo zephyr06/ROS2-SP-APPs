@@ -12,7 +12,7 @@ if [ $1 != "RM" ] && [ $1 != "CFS" ] && [ $1 != "optimizerBF" ] && [ $1 != "opti
 fi
 
 echo "Set TSP's initial time limit as 0.2s"
-python3 set_tsp_time_limit.py --time_limit 0.2
+python3 set_tsp_max_time.py --time_limit 0.2
 
 PROJECT_ROOT="/home/nvidia/workspace/sdcard/ROS2-SP-APPs"
 ### prepare for nodes execution
