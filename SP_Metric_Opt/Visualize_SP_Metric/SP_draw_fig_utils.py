@@ -215,7 +215,7 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
         if no_data_count>=0.75*len(tasks_name_list):
             break
         command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)
-        print(command_in_terminal_to_analyze_taskset_sp)
+        # print(command_in_terminal_to_analyze_taskset_sp)
         result = subprocess.run(command_in_terminal_to_analyze_taskset_sp, shell=True, capture_output=True, text=True)
         # print(result.stdout)
         sp_value = get_sp_value(result.stdout)
