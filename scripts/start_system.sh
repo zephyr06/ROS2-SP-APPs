@@ -10,6 +10,10 @@ if [ $1 != "RM" ] && [ $1 != "CFS" ] && [ $1 != "optimizerBF" ] && [ $1 != "opti
     echo "Exiting the script ..."
     exit 0
 fi
+
+echo "Set TSP's initial time limit as 0.2s"
+python3 set_tsp_time_limit.py --time_limit 0.2
+
 PROJECT_ROOT="/home/nvidia/workspace/sdcard/ROS2-SP-APPs"
 ### prepare for nodes execution
 export LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64:$LD_LIBRARY_PATH:/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM/lib:/usr/local/lib
