@@ -9,7 +9,7 @@ from sklearn.linear_model import LogisticRegression
 from scipy.optimize import curve_fit
 
 # Read the CSV file
-data = pd.read_csv("experiments/2024-07-05-20-19-37_command_history.csv", sep=';')
+data = pd.read_csv("experiments/2024-08-05-19-14-03_command_history.csv", sep=';')
 
 # Extract CPU time and path cost
 data[['CPU_time']] = data[['CPU_time']] * 1000.0
