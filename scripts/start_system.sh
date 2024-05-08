@@ -26,7 +26,7 @@ cd applications
 ./mpc/listener_mpc &
 ./rrt_solver/rrt_listener &
 ./tsp_solver_osm/tsp_solver_listener &
-./real_time_manager/listener_scheduler $1 30000)
+./real_time_manager/listener_scheduler $1 15000)
 
 
 cd $PROJECT_ROOT/SP_Metric_Opt/release
