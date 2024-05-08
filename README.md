@@ -57,3 +57,6 @@ Configurations of the tasks (application nodes) are stored inside two YAML files
 
 1. If `chrt` coudn't change priority:
     - execute: `sysctl -w kernel.sched_rt_runtime_us=-1`
+
+# Tips in improving reproducibility
+- SLAM often (not always) takes much longer time to run for the first time after boosting the machine; after running it for one time, following runs usually are much faster. Since it is difficult to accurately reproduce the first run each time we do experiments, probably just use the following runs for measurement.
