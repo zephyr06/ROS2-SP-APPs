@@ -35,4 +35,7 @@
  *******************************************************************************/
 #include "tsp_osm_main_utils.h"
 
-int main() { run_tsp_osm(); }
+int main() {
+    run_tsp_osm();
+    exit(0);
+}
