@@ -44,6 +44,13 @@ inline double SP_Func(double violate_probability, double threshold) {
 double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
                    double time_limit);
 
+double GetTaskPerfTerm(
+    double ext_time_single,
+    const std::vector<TimePerfPair>& timePerformancePairs_Sorted) ;
+    
+double GetAvgTaskPerfTerm(std::string& ext_file_path,
+                          std::vector<TimePerfPair> timePerformancePairs);
+
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters);
 

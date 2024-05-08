@@ -251,6 +251,43 @@ TEST_F(TaskSetForTest_robotics_v1, read_sp) {}
 // cout << "SP-Metric: " << sp_metric_val << "\n";
 // EXPECT_THAT(sp_metric_val, testing::Le(-5.9));
 // }
+
+class TaskSetForTest_robotics_v19 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v19";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
+TEST_F(TaskSetForTest_robotics_v19, GetTaskPerfTerm) {
+    std::string ext_file_path =
+        GlobalVariables::PROJECT_PATH + "TaskData/AnalyzeSP_Metric/tsp_ext.txt";
+    std::vector<TimePerfPair> time_perf_pairs =
+        dag_tasks.tasks[0].timePerformancePairs;
+
+    EXPECT_EQ(0.5, GetTaskPerfTerm(0, time_perf_pairs));
+    EXPECT_EQ(0.5, GetTaskPerfTerm(400, time_perf_pairs));
+    EXPECT_EQ(0.5, GetTaskPerfTerm(500, time_perf_pairs));
+    EXPECT_EQ(0.8, GetTaskPerfTerm(999, time_perf_pairs));
+    EXPECT_EQ(1, GetTaskPerfTerm(1001, time_perf_pairs));
+}
+TEST_F(TaskSetForTest_robotics_v19, GetAvgTaskPerfTerm) {
+    std::string ext_file_path =
+        GlobalVariables::PROJECT_PATH + "TaskData/AnalyzeSP_Metric/tsp_ext.txt";
+    std::vector<TimePerfPair> time_perf_pairs =
+        dag_tasks.tasks[0].timePerformancePairs;
+
+    EXPECT_EQ(1.6 / 3, GetAvgTaskPerfTerm(ext_file_path, time_perf_pairs));
+}
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

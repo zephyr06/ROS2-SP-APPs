@@ -106,6 +106,10 @@ void PrintPA_IfDebugMode(const PriorityVec& priority_assignment,
 }
 
 void WriteTimeLimitToYamlOSM(double time_limit_ms) {
+    if (time_limit_ms < 0) {  // not valid input
+        CoutWarning("Not valid input for WriteTimeLimitToYamlOSM\n");
+        return;
+    }
     std::string path =
         GlobalVariables::PROJECT_PATH +
         "applications/tsp_solver_osm/config/algorithm_config.yaml";

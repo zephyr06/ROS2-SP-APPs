@@ -40,6 +40,8 @@ def get_publisher_file_path(folder_path, task_name):
 def get_subscription_file_path(folder_path, task_name):
     return os.path.join(folder_path, task_name.upper() + "_subscriber.txt")
 
+def get_execution_time_file_path(folder_path, task_name):
+    return os.path.join(folder_path, task_name.upper() + "_execution_time.txt")
 
 def get_index_to_data_map(file_path):
     verify_task_set_config(file_path)
@@ -71,6 +73,7 @@ class TaskInfo:
         self.subscriber_offset = 0
         self.skipped_instance_response_time = 1e9
         self.response_time_index2data={}
+        self.execution_time_index2data = {}
 
     def load_publish_data(self, data_folder_path):
         file_path = get_publisher_file_path(data_folder_path, self.name)
@@ -81,6 +84,11 @@ class TaskInfo:
         file_path = get_subscription_file_path(data_folder_path, self.name)
         self.subscriber_offset, self.subscriber_index2data = get_index_to_data_map(
             file_path)
+        
+    # TODO: test it!
+    def load_execution_time_data(self, data_folder_path):
+        file_path = get_execution_time_file_path(data_folder_path, self.name)
+        _, self.execution_time_index2data = get_index_to_data_map(file_path)
 
     def get_response_time_index2data(self):
         if len(self.response_time_index2data) == 0:
@@ -104,6 +112,14 @@ class TaskInfo:
             if release_time >= start_time and release_time < end_time:
                 response_time_within_range.append(response_time_index2data[index]) 
         return response_time_within_range
+    
+    def get_execution_time_within_range(self, start_time, end_time):
+        execution_time_within_range = []
+        for index in self.publisher_index2data:
+            release_time = self.publisher_index2actual_time(index)
+            if release_time >= start_time and release_time < end_time and index in self.execution_time_index2data:
+                execution_time_within_range.append(self.execution_time_index2data[index]) 
+        return execution_time_within_range
 
 
 def normalize_offsets(tasks_name_to_info):
@@ -128,6 +144,10 @@ def get_task_set_info(tasks_name_list, app_name2period, data_folder_path):
 
 def get_response_time_file_name(task_name, start_time, end_time):
     file_name = task_name + "_response_time_" + str(start_time) + "_" + str(end_time) + ".txt"
+    return os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "temp", file_name)
+
+def get_execution_time_file_name(task_name, start_time, end_time):
+    file_name = task_name + "_execution_time_" + str(start_time) + "_" + str(end_time) + ".txt"
     return os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "temp", file_name)
 
 def get_SP_analyze_executable_file_path():
@@ -163,6 +183,12 @@ def draw_sp_value_plot(sp_value_list, horizon_granularity):
 def get_args_for_task_set_config(task_set_abs_path):
     return f"--file_path {task_set_abs_path}"
 
+def write_data_list_to_file(data_list, file_name, data_scale):
+    with open(file_name, 'w') as file:
+        for data in data_list:
+            file.write(str(data*data_scale) + "\n")
+    file.close()
+
 def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path):
     
     sp_value_list=[]
@@ -177,14 +203,19 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
                 response_time_within_range=[1e9]
                 no_data_count+=1
             file_name = get_response_time_file_name(task_name, start_time, end_time)
-            with open(file_name, 'w') as file:
-                for response_time in response_time_within_range:
-                    file.write(str(response_time*1000) + "\n")
+            write_data_list_to_file(response_time_within_range, file_name, 1e3)
             command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_path " + file_name
+        
+        task_name = "TSP" 
+        execution_time_within_range = tasks_name_to_info[task_name].get_execution_time_within_range(
+            start_time, end_time)
+        file_name = get_execution_time_file_name(task_name, start_time, end_time)
+        write_data_list_to_file(execution_time_within_range, file_name, 1e3)
+        # command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_ext_path " + file_name
         if no_data_count>=0.75*len(tasks_name_list):
             break
         command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)
-        # print(command_in_terminal_to_analyze_taskset_sp)
+        print(command_in_terminal_to_analyze_taskset_sp)
         result = subprocess.run(command_in_terminal_to_analyze_taskset_sp, shell=True, capture_output=True, text=True)
         # print(result.stdout)
         sp_value = get_sp_value(result.stdout)
