@@ -25,7 +25,7 @@ cd applications
 (./dynaslam/listener_slam &
 ./mpc/listener_mpc &
 ./rrt_solver/rrt_listener &
-./tsp_solver/tsp_solver_listener &
+./tsp_solver_osm/tsp_solver_listener &
 ./real_time_manager/listener_scheduler $1 30000)
 
 
@@ -45,6 +45,6 @@ tar -czf ${backup_file_name}.tar.gz ${backup_file_name}
 
 cp ${backup_file_name}.tar.gz ../Experiments/MultiRun/$1/
 mv ${backup_file_name}.tar.gz ../Experiments/$1/
-cp ${backup_file_name}/all_time_records_$1/current_scheduler_SP.pdf ../Experiments/$1/current_scheduler_SP_$1_${current_time}.pdf
+# cp ${backup_file_name}/all_time_records_$1/current_scheduler_SP.pdf ../Experiments/$1/current_scheduler_SP_$1_${current_time}.pdf
 rm ${backup_file_name} -r
 
