@@ -48,8 +48,13 @@ def get_index_to_data_map(file_path):
     index_to_data = {}
     with open(file_path, 'r') as file:
         lines = file.readlines()
-        offset = float(lines[0].split("::")[1][:-1])
-        for i in range(1, len(lines)):
+        i_start=1
+        if "Start time" in lines[0]:
+            offset = float(lines[0].split("::")[1][:-1])
+        else:
+            offset = 0
+            i_start = 0
+        for i in range(i_start, len(lines)):
             line = lines[i]
             if len(line)==0:
                 continue
@@ -84,11 +89,13 @@ class TaskInfo:
         file_path = get_subscription_file_path(data_folder_path, self.name)
         self.subscriber_offset, self.subscriber_index2data = get_index_to_data_map(
             file_path)
-        
-    # TODO: test it!
+
     def load_execution_time_data(self, data_folder_path):
         file_path = get_execution_time_file_path(data_folder_path, self.name)
-        _, self.execution_time_index2data = get_index_to_data_map(file_path)
+        if os.path.exists(file_path):
+            _, self.execution_time_index2data = get_index_to_data_map(file_path)
+        else:
+            print(file_path + "does not exist!")
 
     def get_response_time_index2data(self):
         if len(self.response_time_index2data) == 0:
@@ -116,7 +123,7 @@ class TaskInfo:
     def get_execution_time_within_range(self, start_time, end_time):
         execution_time_within_range = []
         for index in self.publisher_index2data:
-            release_time = self.publisher_index2actual_time(index)
+            release_time = self.publisher_index2actual_time(index) - self.publisher_offset
             if release_time >= start_time and release_time < end_time and index in self.execution_time_index2data:
                 execution_time_within_range.append(self.execution_time_index2data[index]) 
         return execution_time_within_range
@@ -140,6 +147,8 @@ def get_task_set_info(tasks_name_list, app_name2period, data_folder_path):
         tasks_name_to_info[task] = task_info
         tasks_name_to_info[task].load_publish_data(data_folder_path)
         tasks_name_to_info[task].load_subscribe_data(data_folder_path)
+    if 'TSP' in tasks_name_list:
+        tasks_name_to_info['TSP'].load_execution_time_data(data_folder_path)
     return normalize_offsets(tasks_name_to_info)
 
 def get_response_time_file_name(task_name, start_time, end_time):
@@ -206,12 +215,12 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
             write_data_list_to_file(response_time_within_range, file_name, 1e3)
             command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_path " + file_name
         
-        task_name = "TSP" 
+        task_name = "TSP"
         execution_time_within_range = tasks_name_to_info[task_name].get_execution_time_within_range(
             start_time, end_time)
         file_name = get_execution_time_file_name(task_name, start_time, end_time)
         write_data_list_to_file(execution_time_within_range, file_name, 1e3)
-        # command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_ext_path " + file_name
+        command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_ext_path " + file_name
         if no_data_count>=0.75*len(tasks_name_list):
             break
         command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)

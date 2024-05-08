@@ -1,0 +1,10 @@
+Execution time: TSP message:: 0::2.205434592000000027
+Execution time: TSP message:: 1::1.9851838399999999218
+Execution time: TSP message:: 2::2.0693138879999999347
+Execution time: TSP message:: 3::2.0508162560000000596
+Execution time: TSP message:: 4::2.1038175040000002269
+Execution time: TSP message:: 5::2.7135392640000000064
+Execution time: TSP message:: 6::2.0918117760000001226
+Execution time: TSP message:: 7::2.046091232000000204
+Execution time: TSP message:: 8::1.9171669760000000782
+Execution time: TSP message:: 9::2.0270283519999998667

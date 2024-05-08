@@ -21,6 +21,6 @@ ros2 run mpc listener_mpc
 ros2 run dynaslam listener_slam
 
 # download data via terminal
-scp -r nvidia@192.168.1.29:~/workspace/sdcard/ROS2-SP-APPs/all_time_records /home/zephyr/Programming/SP_Metric_Opt/Visualize_SP_Metric/data/all_time_records_FIFO_Dyn
+scp -r nvidia@192.168.1.29:~/workspace/sdcard/ROS2-SP-APPs/all_time_records /home/zephyr/Programming/ROS2-SP-APPs/all_time_records
 # ssh
 ssh nvidia@192.168.1.29
