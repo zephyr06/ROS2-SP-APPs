@@ -87,8 +87,7 @@ class TaskInfo:
         file_path = get_subscription_file_path(data_folder_path, self.name)
         self.subscriber_offset, self.subscriber_index2data = get_index_to_data_map(
             file_path)
-        
-    # TODO: test it!
+
     def load_execution_time_data(self, data_folder_path):
         file_path = get_execution_time_file_path(data_folder_path, self.name)
         _, self.execution_time_index2data = get_index_to_data_map(file_path)
@@ -143,6 +142,8 @@ def get_task_set_info(tasks_name_list, app_name2period, data_folder_path):
         tasks_name_to_info[task] = task_info
         tasks_name_to_info[task].load_publish_data(data_folder_path)
         tasks_name_to_info[task].load_subscribe_data(data_folder_path)
+    if 'TSP' in tasks_name_list:
+        tasks_name_to_info['TSP'].load_execution_time_data(data_folder_path)
     return normalize_offsets(tasks_name_to_info)
 
 def get_response_time_file_name(task_name, start_time, end_time):
@@ -209,7 +210,7 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
             write_data_list_to_file(response_time_within_range, file_name, 1e3)
             command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_path " + file_name
         
-        task_name = "TSP" 
+        task_name = "TSP"
         execution_time_within_range = tasks_name_to_info[task_name].get_execution_time_within_range(
             start_time, end_time)
         file_name = get_execution_time_file_name(task_name, start_time, end_time)

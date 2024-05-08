@@ -172,7 +172,7 @@ def test_get_trajectory_error_list():
 def test_get_execution_time_within_range():
 
     task_set_config = os.path.join(
-        os.path.dirname(OPT_SP_PROJECT_PATH),"Visualize_SP_Metric", "data_for_test3", "task_characteristics.yaml")
+        OPT_SP_PROJECT_PATH ,"Visualize_SP_Metric", "data_for_test3", "task_characteristics.yaml")
     data_folder_path = os.path.join(
         OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test3")
     app_name2period = get_app2period(task_set_config)
@@ -181,8 +181,8 @@ def test_get_execution_time_within_range():
     task_info.load_publish_data(data_folder_path)
     task_info.load_subscribe_data(data_folder_path)
     task_info.load_execution_time_data(data_folder_path)
-    ext_time1 = task_info.get_execution_time_within_range(0,21)
+    ext_time1 = task_info.get_execution_time_within_range(60,90)
     print(ext_time1)
-    assert len(ext_time1) == pytest.approx(10, abs=1e-2)
+    assert len(ext_time1) == pytest.approx(15, abs=1e-2)
 
 
