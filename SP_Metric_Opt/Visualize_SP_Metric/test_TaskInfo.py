@@ -87,9 +87,9 @@ def test_get_sp_value_list():
     tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
     sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0, task_set_config)
     # only one value; chance of four tasks to miss DDL:
-    # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.2
-    # TSP's performance term is 0.533333
-    exp_sp = (1+1)*interpolate_sp_for_test(-0.01*np.exp(10*0.5)) + interpolate_sp_for_test(np.log(1.5))*(0.5333+1)
+    # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.0
+    # TSP's performance term is 1
+    exp_sp = (1+1)*interpolate_sp_for_test(-0.01*np.exp(10*0.5)) + interpolate_sp_for_test(np.log(1.5))*(1+1)
     assert sp_value_list == pytest.approx([exp_sp], abs=1e-2)
 
 def test_read_slam_data():

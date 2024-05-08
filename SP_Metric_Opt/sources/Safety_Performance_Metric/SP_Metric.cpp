@@ -147,7 +147,7 @@ double GetAvgTaskPerfTerm(std::string& ext_file_path,
     std::vector<double> ext_times = ReadTxtFile(ext_file_path);
     int n = ext_times.size();
     if (n == 0) {
-        CoutWarning("ext_file_path is empty!");
+        // CoutWarning("ext_file_path is empty!");
         return 0.0;
     }
     double avg_perf_coeff = 0;
