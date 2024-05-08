@@ -280,10 +280,10 @@ void* ImomdRRT::findShortestPath(void* arg) {
             "[IMOMD]", "Tree Exploration Done", 10, BM);
     }
 
-    int count = 0;
-    while (count++ < 10) {
-        this_thread->solveRTSP_();
-    }
+    // int count = 0;
+    // while (count++ < 10) {
+    //     this_thread->solveRTSP_();
+    // }
 
     pthread_mutex_lock(&this_thread->lock_);
     this_thread->is_computation_finished_ = true;
