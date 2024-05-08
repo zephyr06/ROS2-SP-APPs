@@ -23,10 +23,7 @@ all_time_records/*.txt
 all_time_records/*.pdf
 SP_Metric_Opt/TaskData/pa_result.yaml
 SP_Metric_Opt/applications/real_time_manager/configs/local_cpu_and_priority.yaml
-<<<<<<< HEAD
 Experiments/MultiRun/*
 SP_Metric_Opt/applications/tsp_solver_osm/experiments/*_command_history.csv
-=======
 SP_Metric_Opt/applications/tsp_solver_osm/experiments/*_command_history.csv
 SP_Metric_Opt/TaskData/pa_res_*
->>>>>>> f92ae29f148efcc6315132bfed2b0c4e09927df1
