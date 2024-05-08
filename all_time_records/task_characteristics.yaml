@@ -11,6 +11,9 @@ tasks:
     sp_threshold: 0.5
     sp_weight: 1
     total_running_time: 300e3
+    performance_records_time: "252.1  492.2  781.3 1448.3 1746.5 2040.6"
+    performance_records_perf: "0.5 0.89660927 0.93292741 0.97812056 0.99818609 1.0"
+    
   - id: 1
     execution_time_mu: 6.7311328000000001
     execution_time_sigma: 0.19576641726140398

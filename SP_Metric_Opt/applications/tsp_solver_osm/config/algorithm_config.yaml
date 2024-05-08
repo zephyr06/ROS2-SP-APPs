@@ -1,7 +1,7 @@
 general:
   system: 0
   pseudo: 0
-  log_data: 1
+  log_data: 0
   print_path: 0
   max_iter: 1000000
   max_time: 0.10000000000000001
