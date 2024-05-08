@@ -169,5 +169,20 @@ def test_get_trajectory_error_list():
     assert len(slam_trajectory_error_list) == 2
     assert slam_trajectory_error_list[1] == pytest.approx(1.9884e-5, abs =1e-7)
 
+def test_get_execution_time_within_range():
+
+    task_set_config = os.path.join(
+        os.path.dirname(OPT_SP_PROJECT_PATH),"Visualize_SP_Metric", "data_for_test3", "task_characteristics.yaml")
+    data_folder_path = os.path.join(
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test3")
+    app_name2period = get_app2period(task_set_config)
+    task_name ='TSP'
+    task_info = TaskInfo(task_name, app_name2period[task_name])
+    task_info.load_publish_data(data_folder_path)
+    task_info.load_subscribe_data(data_folder_path)
+    task_info.load_execution_time_data(data_folder_path)
+    ext_time1 = task_info.get_execution_time_within_range(0,21)
+    print(ext_time1)
+    assert len(ext_time1) == pytest.approx(10, abs=1e-2)
 
 

@@ -48,7 +48,10 @@ def get_index_to_data_map(file_path):
     index_to_data = {}
     with open(file_path, 'r') as file:
         lines = file.readlines()
-        offset = float(lines[0].split("::")[1][:-1])
+        if "Start time" in lines[0]:
+            offset = float(lines[0].split("::")[1][:-1])
+        else:
+            offset = 0
         for i in range(1, len(lines)):
             line = lines[i]
             if len(line)==0:
@@ -116,7 +119,7 @@ class TaskInfo:
     def get_execution_time_within_range(self, start_time, end_time):
         execution_time_within_range = []
         for index in self.publisher_index2data:
-            release_time = self.publisher_index2actual_time(index)
+            release_time = self.publisher_index2actual_time(index) - self.publisher_offset
             if release_time >= start_time and release_time < end_time and index in self.execution_time_index2data:
                 execution_time_within_range.append(self.execution_time_index2data[index]) 
         return execution_time_within_range
