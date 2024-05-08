@@ -19,7 +19,7 @@ if __name__=="__main__":
 
     discard_early_time = 60  # at least 10 seconds
     horizon_granularity = 30  # 10 seconds
-    horizon = 300  #  seconds
+    horizon = 600  #  seconds
 
     draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon)
     
