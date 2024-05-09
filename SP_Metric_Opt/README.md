@@ -8,7 +8,7 @@
 - [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page)
 - [GTSAM (optional, for unit tests only)](https://github.com/borglab/gtsam)
 - [Google Test (optional, for unit tests only)](https://github.com/google/googletest)
-
+- Other dependencies mentioned in the packages in `applications`.
 
 
 # Build and Run
@@ -21,7 +21,7 @@ make -j4
 ```
 
 ## Modify task sets and configurations
-Check and follow the yaml file such as `TaskData/test_robotics_v13.yaml`. Something more to notice when modifying the yaml file:
+Check and follow the yaml file such as `../all_time_records/task_characteristics.yaml`. Something more to notice when modifying the yaml file:
 - The task id must be integers and continuous, such as 0, 1, 2, 3, ...
 - All the time units are in milliseconds within the yaml file
 - The `processorId` attribute could only be a single integer; lists are not supported
@@ -41,21 +41,21 @@ You can also specify the absolute path:
 ```
 
 ## Run the incremental scheduler
-Please check the example provided in `/tests/AnalyzePriorityAssignmentIncrementalExample.cpp`.
+Please check the example provided in `/tests/AnalyzePriorityAssignmentIncrementalExample.cpp`. Scheduling with incremental scheduler still requires further coding works.
 
 ## Read the priority assignment results
 Priority assignment results are saved and explained in the output file generated after running the scheduler, for example, `/TaskData/pa_res_test_robotics_v1.yaml`. Bigger integers mean higher priority. (This is contrary to the print output during optimization, if any)
-
 
 
 # Result Visualization
 ## Visualize the SP metric
 ```
 cd SP_Metric_Opt/Visualize_SP_Metric
-python draw_SP_multi_figs.py
+python draw_SP_current_scheduler.py
 ```
-Please modify the parameters provided in the main function in `/Visualize_SP_Metric/draw_SP_multi_figs.py` based on the provided comments.
-## Visualize the MSE of SLAM trajectories
+Please modify the parameters provided in the main function in `/Visualize_SP_Metric/draw_SP_current_scheduler.py` based on the provided comments.
+
+## Visualize the MSE of SLAM trajectories (maybe not well supported at this time)
 ```
 cd SP_Metric_Opt/Visualize_SP_Metric
 python draw_trajectory_error.py
@@ -63,11 +63,8 @@ python draw_trajectory_error.py
 Please modify the parameters provided in the main function in `/Visualize_SP_Metric/draw_trajectory_error.py` based on the provided comments. 
 One issue: the time units of the obtained figure is based on the TUM dataset rather than the actual time unit in the real-world.
 
-
-
 # Modify the task set and SP metric coefficients
-You can modify the yaml file which describes the task set settings. Time units are in microseconds. An example yaml file is provided in `/TaskData/test_robotics_v6.yaml`.
+You can modify the yaml file which describes the task set settings. Time units are in microseconds.
 
-# TODO
-- Check SLAM code to see if it's possible to speed it up
-- Figure out if it is okay to incorporate more about core assignments into experiments
+# Implmentation details
+-  TSP's time limit is directly updated by the priority assignment optimization algorithm.
