@@ -16,9 +16,9 @@ class SLAMApp : public AppBase {
 
         void run(int msg_cnt) override { 
             std::cout<<"SLAM analyzes frame index: "<<msg_cnt<<"\n";
-            std::cout.setstate(std::ios_base::failbit);
+            // std::cout.setstate(std::ios_base::failbit);
             slam_wrapper_.next(msg_cnt); 
-            std::cout.clear();
+            // std::cout.clear();
         }
     
         ~SLAMApp(){

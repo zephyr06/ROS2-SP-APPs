@@ -8,7 +8,11 @@
 class TSPApp : public AppBase {
    public:
     TSPApp() : AppBase("TSP") {}
-    void run(int) override { run_tsp_osm(); }
+    void run(int) override {
+        std::cout << "Following cout related to TSP will be disabled\n";
+        std::cout.setstate(std::ios_base::failbit); 
+        run_tsp_osm(); 
+    }
 };
 
 int main(int argc, char* argv[]) {

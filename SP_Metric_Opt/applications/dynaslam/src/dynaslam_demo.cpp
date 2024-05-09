@@ -8,7 +8,7 @@ int main()
     slam_wrapper.init();
 
     // call this in the call_back function
-    for (int i = 0; i < 100; i++)
+    for (int i = 0; i < 500; i++)
         slam_wrapper.next(i);
 
     // exit the wrapper

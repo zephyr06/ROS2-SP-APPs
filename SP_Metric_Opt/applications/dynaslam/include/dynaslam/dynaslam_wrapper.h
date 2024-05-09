@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include<opencv2/core/core.hpp>
 #include<memory>
+#include "sources/Utils/profilier.h"
 
 // #include "Geometry.h"
 // #include "MaskNet.h"
@@ -115,9 +116,11 @@ public:
 
         cout << image_idx << endl;
         // Read image and depthmap from file
+        // BeginTimer("Read SLAM image input");
         imRGB = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"+dataset_name_rgbd+"/")+"/"+vstrImageFilenamesRGB[image_idx],CV_LOAD_IMAGE_UNCHANGED);
         imD = cv::imread(string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"+dataset_name_rgbd+"/")+"/"+vstrImageFilenamesD[image_idx],CV_LOAD_IMAGE_UNCHANGED);
-
+        // EndTimer("Read SLAM image input");
+ 
         double tframe = vTimestamps[image_idx];
 
         if(imRGB.empty())
@@ -169,7 +172,7 @@ public:
         }
 
         double ttrack= std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1).count();
-
+        std::cout<<"SLAM computation time without IO: "<<ttrack<<"\n";
         vTimesTrack[image_idx]=ttrack;
 
         // Wait to load the next frame
@@ -184,9 +187,11 @@ public:
 
         image_idx++;
 
-
-        p_SLAM->SaveTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/CameraTrajectory.txt");
-        p_SLAM->SaveKeyFrameTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/KeyFrameTrajectory.txt");
+        // BeginTimer("Save Traj");
+        // p_SLAM->SaveTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/CameraTrajectory.txt");
+        // p_SLAM->SaveKeyFrameTrajectoryTUM("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/KeyFrameTrajectory.txt");
+        // EndTimer("Save Traj");
+        // PrintTimer();
     }
 
     void exit() {
