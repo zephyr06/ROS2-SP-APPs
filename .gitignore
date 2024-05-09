@@ -19,3 +19,5 @@ SP_Metric_Opt/TaskData/*/dag-set*
 all_time_records/AppTest*
 SP_Metric_Opt/Visualize_SP_Metric/*.bin
 SP_Metric_Opt/TaskData/pa_res_test_robotics_v1.yaml
+all_time_records/*.txt
+SP_Metric_Opt/TaskData/*pa_res_test*.yaml
