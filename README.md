@@ -69,7 +69,8 @@ Configurations of the tasks (application nodes) are stored inside two YAML files
 - If results are not good, anything could cause bug. When metric related to time goes wrong, more accurate profiling seems to be a good option.
 
 # Time units
-Mostly, we use microseconds (ms) as the time units everywhere except some intermediate python results.
+Mostly, we use microseconds (ms) as the time units. However, there are still some bad code which uses seconds as the time units.
 
 # Generate time-performance coefficients
 An example is provided in `SP_Metric_Opt/applications/tsp_solver_osm/regress_exp_data.py`.
+

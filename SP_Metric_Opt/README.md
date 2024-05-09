@@ -68,3 +68,15 @@ You can modify the yaml file which describes the task set settings. Time units a
 
 # Implmentation details
 -  TSP's time limit is directly updated by the priority assignment optimization algorithm.
+
+
+# Run unit tests/check code usage
+```
+cd SP_Metric_Opt
+mkdir build
+cd build
+cmake -DCMAKE_BUILD_TYPE=DEBUG ..
+make check.SP_OPT -j4
+cd ../Visualize_SP_Metric
+pytest
+```
