@@ -74,3 +74,5 @@ Mostly, we use microseconds (ms) as the time units. However, there are still som
 # Generate time-performance coefficients
 An example is provided in `SP_Metric_Opt/applications/tsp_solver_osm/regress_exp_data.py`.
 
+# Run system multilple times
+If you need to do so to get good results, potentially, there is something wrong. 
