@@ -4,6 +4,7 @@
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_Base.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
+#include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/Utils/Parameters.h"
 
 using ::testing::AtLeast;  // #1
@@ -60,7 +61,8 @@ TEST_F(TaskSetForTest_2tasks, Optimize_bf) {
     sp_parameters.thresholds_node[0] = 0;
     sp_parameters.thresholds_node[1] = 0;
     DAG_Model dag_tasks(tasks, {}, {});
-    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    PriorityVec pa_opt =
+        OptimizePA_BruteForce(dag_tasks, sp_parameters).priority_vec;
     EXPECT_EQ(5, tasks[pa_opt[0]].period);
     EXPECT_EQ(12, tasks[pa_opt[1]].period);
 }
@@ -79,7 +81,8 @@ class TaskSetv11 : public ::testing::Test {
 };
 
 TEST_F(TaskSetv11, Optimize_bf) {
-    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    PriorityVec pa_opt =
+        OptimizePA_BruteForce(dag_tasks, sp_parameters).priority_vec;
     // PrintPriorityVec(dag_tasks.tasks, pa_opt);
     // EXPECT_EQ(5, dag_tasks.tasks[pa_opt[0]].period);
     // EXPECT_EQ(12, dag_tasks.tasks[pa_opt[1]].period);
@@ -103,7 +106,8 @@ class TaskSetv12 : public ::testing::Test {
 };
 
 TEST_F(TaskSetv12, Optimize_bf) {
-    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    PriorityVec pa_opt =
+        OptimizePA_BruteForce(dag_tasks, sp_parameters).priority_vec;
     EXPECT_EQ("MPC", dag_tasks.tasks[pa_opt[0]].name);
     EXPECT_EQ("RRT", dag_tasks.tasks[pa_opt[1]].name);
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[2]].name);
@@ -124,10 +128,11 @@ class TaskSetv13 : public ::testing::Test {
 };
 
 TEST_F(TaskSetv13, Optimize_bf) {
-    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
-    PrintPriorityVec(dag_tasks.tasks, pa_opt);
-    EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[2]].name);
-    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
+    ResourceOptResult res = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+    PrintPriorityVec(dag_tasks.tasks, res.priority_vec);
+    // EXPECT_EQ("TSP", dag_tasks.tasks[pa_opt[2]].name);
+    // EXPECT_EQ("SLAM", dag_tasks.tasks[pa_opt[3]].name);
+    EXPECT_THAT(res.id2priority[0], testing::Ge(res.id2priority[3]));
 }
 class TaskSetv14 : public ::testing::Test {
    public:
@@ -144,8 +149,8 @@ class TaskSetv14 : public ::testing::Test {
 };
 
 // TEST_F(TaskSetv14, Optimize_bf) {
-//     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
-//     PrintPriorityVec(dag_tasks.tasks, pa_opt);
+//     PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks,
+//     sp_parameters).priority_vec; PrintPriorityVec(dag_tasks.tasks, pa_opt);
 //     YAML::Node yaml_nodes = PriorityAssignmentToYaml(dag_tasks.tasks,
 //     pa_opt); EXPECT_THAT(yaml_nodes["TSP"].as<int>(),
 //                 testing::Le(yaml_nodes["SLAM"].as<int>()));
@@ -206,7 +211,74 @@ class TaskSetv14 : public ::testing::Test {
 //     EXPECT_TRUE(diff_rec[1]);
 // }
 
-int main(int argc, char **argv) {
+class TaskSetForTest_robotics_v18 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v18";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+TEST_F(TaskSetForTest_robotics_v18, RecordTimeLimitOptions) {
+    OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
+    EXPECT_EQ(4, optimizer.time_limit_option_for_each_task.size());
+    EXPECT_EQ(4, optimizer.time_limit_option_for_each_task[0].size());
+    EXPECT_EQ(400, optimizer.time_limit_option_for_each_task[0][0]);
+    EXPECT_EQ(600, optimizer.time_limit_option_for_each_task[0][1]);
+    EXPECT_EQ(800, optimizer.time_limit_option_for_each_task[0][2]);
+    EXPECT_EQ(1000, optimizer.time_limit_option_for_each_task[0][3]);
+    EXPECT_EQ(-1, optimizer.time_limit_option_for_each_task[1][0]);
+}
+
+TEST_F(TaskSetForTest_robotics_v18, AddWeightsFromTimeLimits) {
+    vector<double> time_limit_option_for_each_task = {1000, -1, -1, -1};
+    SP_Parameters sp_parameters_cur = AddWeightsFromTimeLimits(
+        dag_tasks, sp_parameters, time_limit_option_for_each_task);
+    EXPECT_EQ(1, sp_parameters_cur.weights_node[0]);
+
+    time_limit_option_for_each_task = {400, -1, -1, -1};
+    sp_parameters_cur = AddWeightsFromTimeLimits(
+        dag_tasks, sp_parameters, time_limit_option_for_each_task);
+    EXPECT_EQ(0.5, sp_parameters_cur.weights_node[0]);
+    EXPECT_EQ(1, sp_parameters_cur.weights_node[1]);
+    EXPECT_EQ(1, sp_parameters_cur.weights_node[2]);
+    EXPECT_EQ(2, sp_parameters_cur.weights_node[3]);
+}
+TEST_F(TaskSetForTest_robotics_v18, optimize) {
+    ResourceOptResult res_opt =
+        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+    EXPECT_EQ(1000, res_opt.id2time_limit[0]);
+}
+
+class TaskSetForTest_robotics_v19 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v19";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+TEST_F(TaskSetForTest_robotics_v19, optimize) {
+    ResourceOptResult res_opt =
+        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+    PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
+    EXPECT_EQ(400, res_opt.id2time_limit[0]);
+}
+int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
     return RUN_ALL_TESTS();

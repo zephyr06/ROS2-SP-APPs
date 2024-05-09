@@ -17,10 +17,14 @@ class OptimizePA_BF : public OptimimizePA_Base {
     PriorityVec Optimize();
 };
 
-inline PriorityVec OptimizePA_BruteForce(const DAG_Model& dag_tasks,
-                                         const SP_Parameters& sp_parameters) {
+inline ResourceOptResult OptimizePA_BruteForce(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     OptimizePA_BF opt(dag_tasks, sp_parameters);
-    return opt.Optimize();
+    PriorityVec pa_vec = opt.Optimize();
+    ResourceOptResult res;
+    res.UpdatePriorityVec(pa_vec);
+    res.sp_opt = opt.opt_sp_;
+    return res;
 }
 
 }  // namespace SP_OPT_PA

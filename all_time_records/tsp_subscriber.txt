@@ -1,9 +1,0 @@
-Start time of subscriber: ::1712875018.0449368954
-Receiving tsp message:tsp 0::12.95684199999999997
-Receiving tsp message:tsp 1::29.95983500000000177
-Receiving tsp message:tsp 2::50.549571000000000254
-Receiving tsp message:tsp 4::72.793801999999999452
-Receiving tsp message:tsp 7::102.87501500000000476
-Receiving tsp message:tsp 10::135.31084100000001058
-Receiving tsp message:tsp 13::159.52225500000000125
-Receiving tsp message:tsp 14::164.41896600000001172

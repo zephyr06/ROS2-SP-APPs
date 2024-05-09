@@ -3,6 +3,11 @@ import numpy as np
 from SP_draw_fig_utils import *
 from slam_analysis_utils import *
 
+def interpolate_sp_for_test(x):
+    minval = -1.484
+    maxval = 0.405465
+    return (x - minval) / (maxval - minval)
+
 def test_read_period():
     task_set_config = os.path.join(
         OPT_SP_PROJECT_PATH, "TaskData/test_robotics_v4.yaml")
@@ -82,8 +87,9 @@ def test_get_sp_value_list():
     tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
     sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, 1000, 10, 0, task_set_config)
     # only one value; chance of four tasks to miss DDL:
-    # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.2
-    exp_sp = 2*-0.01*np.exp(10*0.5) + np.log(1.5)*2 - 0.5*4
+    # TSP: 0.0, RRT: 1.0, SLAM: 1.0, MPC: 0.0
+    # TSP's performance term is 1
+    exp_sp = (1+1)*interpolate_sp_for_test(-0.01*np.exp(10*0.5)) + interpolate_sp_for_test(np.log(1.5))*(1+1)
     assert sp_value_list == pytest.approx([exp_sp], abs=1e-2)
 
 def test_read_slam_data():
@@ -163,5 +169,20 @@ def test_get_trajectory_error_list():
     assert len(slam_trajectory_error_list) == 2
     assert slam_trajectory_error_list[1] == pytest.approx(1.9884e-5, abs =1e-7)
 
+def test_get_execution_time_within_range():
+
+    task_set_config = os.path.join(
+        OPT_SP_PROJECT_PATH ,"Visualize_SP_Metric", "data_for_test3", "task_characteristics.yaml")
+    data_folder_path = os.path.join(
+        OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data_for_test3")
+    app_name2period = get_app2period(task_set_config)
+    task_name ='TSP'
+    task_info = TaskInfo(task_name, app_name2period[task_name])
+    task_info.load_publish_data(data_folder_path)
+    task_info.load_subscribe_data(data_folder_path)
+    task_info.load_execution_time_data(data_folder_path)
+    ext_time1 = task_info.get_execution_time_within_range(60,90)
+    print(ext_time1)
+    assert len(ext_time1) == pytest.approx(15, abs=1e-2)
 
 

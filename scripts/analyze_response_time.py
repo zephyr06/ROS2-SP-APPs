@@ -6,7 +6,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def get_publisher_file(task_name, project_root=PROJECT_ROOT):
-    return os.path.join(project_root, "all_time_records", "publisher_"+task_name+".txt")
+    return os.path.join(project_root, "all_time_records", task_name+"_publisher"+".txt")
 
 # TODO: make all the names consistent
 

@@ -7,6 +7,8 @@ Firstly, the repo is not properly named because ROS2 is actually not needed.
 - C++ 20
 - Other dependencies for each ROS2 package inside the `/src` folder
 - SP_Metric_Opt package: inside the `/SP_Metric_Opt` folder
+- [ORB-SLAM2](https://github.com/zephyr06/ORB_SLAM2)
+
 ### How to launch the software stack
 1. Go into `/SP_Metric_Opt` and build the SP_Metric_Opt package in release mode: [SP_Metric_Opt Build and Run](https://github.com/zephyr06/ROS2-SP-APPs/tree/main/SP_Metric_Opt#build-and-run)
 1. Inside the workspace of this repo, build ROS2 Foxy packages: `colcon build`
@@ -59,3 +61,6 @@ Configurations of the tasks (application nodes) are stored inside two YAML files
 
 1. If `chrt` coudn't change priority:
     - execute: `sysctl -w kernel.sched_rt_runtime_us=-1`
+
+# Tips in improving reproducibility
+- SLAM often (not always) takes much longer time to run for the first time after boosting the machine; after running it for one time, following runs usually are much faster. Since it is difficult to accurately reproduce the first run each time we do experiments, probably just use the following runs for measurement.

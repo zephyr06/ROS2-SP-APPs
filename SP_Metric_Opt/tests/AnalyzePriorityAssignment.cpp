@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "sources/Optimization/OptimizeSP_BF.h"
+#include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/argparse.hpp"
@@ -17,14 +18,14 @@ int main(int argc, char *argv[]) {
 
     argparse::ArgumentParser program("program name");
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v6.yaml"))
+        .default_value(std::string("TaskData/test_robotics_v19.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
             "also okay to directly pass global path that starts with '/', such "
             "as /root/usr/slam.txt ");
     program.add_argument("--output_file_path")
-        .default_value(std::string("TaskData/pa_res_test_robotics_v1.yaml"))
+        .default_value(std::string("TaskData/pa_res_test_robotics_v19.yaml"))
         .help(
             "the relative path of the file that saves priority assignment "
             "results. Example: TaskData/pa_res_test_robotics_v1.yaml. It is "
@@ -49,12 +50,16 @@ int main(int argc, char *argv[]) {
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
 
     // Perform optimization
-    PriorityVec pa_opt = OptimizePA_BruteForce(dag_tasks, sp_parameters);
-
+    ResourceOptResult res =
+        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
+
+    PriorityVec pa_opt = res.priority_vec;
     WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                              time_taken);
+    WriteTimeLimitToYamlOSM(
+        res.id2time_limit[0]);  // only write TSP's time limit
     if (GlobalVariables::debugMode == 1) {
         PrintPriorityVec(dag_tasks.tasks, pa_opt);
         PrintTimer();

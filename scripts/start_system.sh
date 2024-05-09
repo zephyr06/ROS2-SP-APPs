@@ -11,20 +11,31 @@ if [ $1 != "RM" ] && [ $1 != "CFS" ] && [ $1 != "optimizerBF" ] && [ $1 != "opti
     exit 0
 fi
 
+echo "Set TSP's initial time limit as 0.2s"
+python3 set_tsp_max_time.py --time_limit 0.2
+
+PROJECT_ROOT="/home/nvidia/workspace/sdcard/ROS2-SP-APPs"
 ### prepare for nodes execution
 export LD_LIBRARY_PATH=/usr/local/cuda-11.4/lib64:$LD_LIBRARY_PATH:/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM/lib:/usr/local/lib
 # enable FIFO priority
 sudo sysctl -w kernel.sched_rt_runtime_us=-1
 
-source ../install/setup.bash
+cd $PROJECT_ROOT/scripts
 python clear_all_time_records.py
 
-# launch the ROS2 stack with specified schduler
-ros2 launch launch_all_the_nodes.py scheduler:=$1
-
-cd ../SP_Metric_Opt/release
+cd $PROJECT_ROOT/SP_Metric_Opt/release/
 make -j8
-cd ../../scripts
+cd applications
+(./dynaslam/listener_slam &
+./mpc/listener_mpc &
+./rrt_solver/rrt_listener &
+./tsp_solver_osm/tsp_solver_listener &
+./real_time_manager/listener_scheduler $1 15000)
+
+
+cd $PROJECT_ROOT/SP_Metric_Opt/release
+make -j8
+cd $PROJECT_ROOT/scripts
 ### post-execution operations, plot SP for the single scheudler, and backup data
 python3 ../SP_Metric_Opt/Visualize_SP_Metric/draw_SP_current_scheduler.py $1
 
@@ -36,7 +47,8 @@ mkdir ${backup_file_name}
 cp -r ../all_time_records ${backup_file_name}/all_time_records_$1
 tar -czf ${backup_file_name}.tar.gz ${backup_file_name}
 
+cp ${backup_file_name}.tar.gz ../Experiments/MultiRun/$1/
 mv ${backup_file_name}.tar.gz ../Experiments/$1/
-cp ${backup_file_name}/all_time_records_$1/current_scheduler_SP.pdf ../Experiments/$1/current_scheduler_SP_$1_${current_time}.pdf
+# cp ${backup_file_name}/all_time_records_$1/current_scheduler_SP.pdf ../Experiments/$1/current_scheduler_SP_$1_${current_time}.pdf
 rm ${backup_file_name} -r
 
