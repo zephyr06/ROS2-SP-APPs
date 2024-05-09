@@ -47,7 +47,7 @@ mkdir ${backup_file_name}
 cp -r ../all_time_records ${backup_file_name}/all_time_records_$1
 tar -czf ${backup_file_name}.tar.gz ${backup_file_name}
 
-cp ${backup_file_name}.tar.gz ../Experiments/MultiRun/$1/
+# cp ${backup_file_name}.tar.gz ../Experiments/MultiRun/$1/
 mv ${backup_file_name}.tar.gz ../Experiments/$1/
 # cp ${backup_file_name}/all_time_records_$1/current_scheduler_SP.pdf ../Experiments/$1/current_scheduler_SP_$1_${current_time}.pdf
 rm ${backup_file_name} -r
