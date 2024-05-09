@@ -1,3 +1,5 @@
+Firstly, the repo is not properly named because ROS2 is actually not needed.
+
 ## ROS2 stack for Computation Aware Platform
 
 ### Dependencies
