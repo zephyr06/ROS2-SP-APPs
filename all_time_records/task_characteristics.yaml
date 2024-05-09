@@ -1,9 +1,9 @@
 tasks:
   - id: 0
-    execution_time_mu: 2630.5088768000001
-    execution_time_sigma: 17.373259068103838
-    execution_time_min: 2615.9866240000001
-    execution_time_max: 2676.6949439999999
+    execution_time_mu: 1478.1797376
+    execution_time_sigma: 31.003416361109906
+    execution_time_min: 1456.876512
+    execution_time_max: 1527.1047680000001
     period: 2000
     deadline: 2000
     processorId: 0
@@ -11,13 +11,13 @@ tasks:
     sp_threshold: 0.5
     sp_weight: 1
     total_running_time: 600e3
-    performance_records_time: 184.1  397.5  657.9 1285.1 1551.9 1827.1
-    performance_records_perf: 0.5        0.89660927 0.93292741 0.97812056 0.99818609 1.
+    performance_records_time: 184.1  397.5  657.9 1285.1
+    performance_records_perf: 0.5        0.89660927 0.93292741 0.97812056
   - id: 1
-    execution_time_mu: 6.1858111999999998
-    execution_time_sigma: 0.06877188069086497
-    execution_time_min: 6.1124159999999996
-    execution_time_max: 6.3639679999999998
+    execution_time_mu: 6.495276800000001
+    execution_time_sigma: 0.063445450580402796
+    execution_time_min: 6.3566400000000005
+    execution_time_max: 6.5837440000000003
     period: 20
     deadline: 20
     processorId: 1
@@ -26,10 +26,10 @@ tasks:
     sp_weight: 1
     total_running_time: 600e3
   - id: 2
-    execution_time_mu: 1344.6203200000002
-    execution_time_sigma: 902.3787261292174
-    execution_time_min: 291.30355200000002
-    execution_time_max: 3048.0478720000001
+    execution_time_mu: 1677.5539872000002
+    execution_time_sigma: 1450.7883342821688
+    execution_time_min: 399.88563199999999
+    execution_time_max: 5564.2515839999996
     period: 3000
     deadline: 3000
     processorId: 1
@@ -38,10 +38,10 @@ tasks:
     sp_weight: 1
     total_running_time: 600e3
   - id: 3
-    execution_time_mu: 2410.8993023999997
-    execution_time_sigma: 3697.524548223174
-    execution_time_min: 101.58220799999995
-    execution_time_max: 13113.579936
+    execution_time_mu: 94.13552319999998
+    execution_time_sigma: 1.8059127905282162
+    execution_time_min: 89.961408000000006
+    execution_time_max: 96.493216000000004
     period: 3000
     deadline: 3000
     processorId: 0

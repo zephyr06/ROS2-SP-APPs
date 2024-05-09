@@ -5,6 +5,8 @@
 - C++ 20
 - Other dependencies for each ROS2 package inside the `/src` folder
 - SP_Metric_Opt package: inside the `/SP_Metric_Opt` folder
+- [ORB-SLAM2](https://github.com/zephyr06/ORB_SLAM2)
+
 ### How to launch the software stack
 1. Go into `/SP_Metric_Opt` and build the SP_Metric_Opt package in release mode: [SP_Metric_Opt Build and Run](https://github.com/zephyr06/ROS2-SP-APPs/tree/main/SP_Metric_Opt#build-and-run)
 1. Inside the workspace of this repo, build ROS2 Foxy packages: `colcon build`
