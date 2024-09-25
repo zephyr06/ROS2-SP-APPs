@@ -73,4 +73,7 @@ YAML::Node PriorityAssignmentToYaml(const TaskSet& tasks,
 
 void WriteTimeLimitToYamlOSM(double time_limit_ms);
 
+std::unordered_map<std::string, int> Task2priority_value(
+    const TaskSet& tasks, const PriorityVec& priority_assignment,
+    int slam_priority_set = 4);
 }  // namespace SP_OPT_PA

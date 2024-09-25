@@ -46,19 +46,30 @@ void PrintPriorityVec(const TaskSet& tasks,
     }
 }
 
+std::unordered_map<std::string, int> Task2priority_value(
+    const TaskSet& tasks, const PriorityVec& priority_assignment,
+    int slam_priority_set) {
+    std::unordered_map<std::string, int> task2priority;
+    for (uint i = 0; i < priority_assignment.size(); i++) {
+        task2priority[tasks[priority_assignment[i]].name] =
+            priority_assignment.size() - i;
+    }
+
+    int slam_priority_old = task2priority["SLAM"];
+    for (uint i = 0; i < priority_assignment.size(); i++) {
+        task2priority[tasks[priority_assignment[i]].name] +=
+            slam_priority_set - slam_priority_old;
+    }
+    return task2priority;
+}
+
 YAML::Node PriorityAssignmentToYaml(const TaskSet& tasks,
                                     const PriorityVec& priority_assignment) {
+    auto task2priority = Task2priority_value(tasks, priority_assignment);
     YAML::Node dictionary;
     for (uint i = 0; i < priority_assignment.size(); i++) {
         dictionary[tasks[priority_assignment[i]].name] =
-            priority_assignment.size() - i;
-    }
-    int slam_priority_old = dictionary["SLAM"].as<int>();
-    int slam_priority_set = 4;
-    for (uint i = 0; i < priority_assignment.size(); i++) {
-        dictionary[tasks[priority_assignment[i]].name] =
-        priority_assignment.size() - i+
-            slam_priority_set - slam_priority_old;
+            task2priority[tasks[priority_assignment[i]].name];
     }
     return dictionary;
 }

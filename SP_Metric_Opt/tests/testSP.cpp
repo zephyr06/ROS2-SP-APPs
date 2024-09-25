@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "gmock/gmock.h"  // Brings in gMock.
+#include "sources/Optimization/OptimizeSP_Base.h"
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/readwrite.h"
@@ -187,6 +188,15 @@ TEST_F(TaskSetForTest_robotics_v18, calcluate_perf_term) {
     EXPECT_EQ(0.5, GetPerfTerm(timePerformancePairs, 0.5));
     EXPECT_EQ(1, GetPerfTerm(timePerformancePairs, 1));
     EXPECT_EQ(5, GetPerfTerm(timePerformancePairs, 6));
+}
+
+TEST_F(TaskSetForTest_robotics_v18, Task2priority_value) {
+    auto task2priority = Task2priority_value(
+        dag_tasks.tasks, {0, 1, 2, 3});  // TSP, MPC, RRT, SLAM
+    EXPECT_EQ(7, task2priority["TSP"]);
+    EXPECT_EQ(6, task2priority["MPC"]);
+    EXPECT_EQ(5, task2priority["RRT"]);
+    EXPECT_EQ(4, task2priority["SLAM"]);
 }
 // TEST_F(TaskSetForTest_robotics_v8, SP_Calculation) {
 //     double sp_actual = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
