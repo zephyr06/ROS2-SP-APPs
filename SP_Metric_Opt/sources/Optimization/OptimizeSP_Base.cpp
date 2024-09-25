@@ -53,6 +53,13 @@ YAML::Node PriorityAssignmentToYaml(const TaskSet& tasks,
         dictionary[tasks[priority_assignment[i]].name] =
             priority_assignment.size() - i;
     }
+    int slam_priority_old = dictionary["SLAM"].as<int>();
+    int slam_priority_set = 4;
+    for (uint i = 0; i < priority_assignment.size(); i++) {
+        dictionary[tasks[priority_assignment[i]].name] =
+        priority_assignment.size() - i+
+            slam_priority_set - slam_priority_old;
+    }
     return dictionary;
 }
 
