@@ -154,9 +154,19 @@ public:
             return;
         }
 
-        for (std::size_t i = 0; i < task_names.size(); i++)
-            setCPUandScheduling(task_names[i], cpu_lists[i], scheduling_policies[i], priorities[i]);
+        for (std::size_t i = 0; i < task_names.size(); i++){
+            if(i < priorities_old.size() && priorities_old[i] == priorities[i]){
+                continue;
+            }
+            else{
+                std::cout<<"Set priorities: "<<task_names[i] <<", " << scheduling_policies[i]<<", "<< priorities[i]<<"\n";
+                setCPUandScheduling(task_names[i], cpu_lists[i], scheduling_policies[i], priorities[i]);
+            }
+        }
+        priorities_old = priorities;
+            
     }
+    std::vector<int> priorities_old;
 
 private:
     std::string exec(const char *cmd)
