@@ -1,6 +1,7 @@
 from SP_draw_fig_utils import *
 import os
 import numpy as np
+import yaml
 import sys
 
 
@@ -19,7 +20,9 @@ if __name__=="__main__":
 
     discard_early_time = 15  # at least 10 seconds, should be integer multilpe of scheduler's period
     horizon_granularity = 10  # 10 seconds
-    horizon = 90  #  seconds
+    task_config_file_path = os.path.join(OPT_SP_PROJECT_PATH,"../all_time_records/task_characteristics.yaml")
+    yaml_data = yaml.safe_load(open(task_config_file_path))
+    horizon =  int(float(yaml_data['tasks'][0]['total_running_time'])/1e3) #  seconds
 
     draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon)
     
