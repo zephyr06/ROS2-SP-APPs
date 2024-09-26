@@ -99,9 +99,11 @@ double ObtainSP_DAG_From_Dists(
     double sp_overall = 0;
     for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
         int task_id = dag_tasks.tasks[i].id;
-        sp_overall += ObtainSP(node_rts_dists[i], dag_tasks.tasks[i].deadline,
-                               sp_parameters.thresholds_node.at(task_id),
-                               sp_parameters.weights_node.at(task_id));
+        double sp_val = ObtainSP(node_rts_dists[i], dag_tasks.tasks[i].deadline,
+                                 sp_parameters.thresholds_node.at(task_id),
+                                 sp_parameters.weights_node.at(task_id));
+        std::cout << dag_tasks.tasks[i].name << " " << sp_val << std::endl;
+        sp_overall += sp_val;
     }
     for (uint i = 0; i < dag_tasks.chains_.size(); i++) {
         sp_overall +=
@@ -155,5 +157,34 @@ double GetAvgTaskPerfTerm(std::string& ext_file_path,
         avg_perf_coeff += GetTaskPerfTerm(ext_times[i], timePerformancePairs);
     }
     return avg_perf_coeff / n;
+}
+
+double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
+                            std::string& mpc_path, std::string& tsp_path,
+                            std::string& tsp_ext_path, std::string& chain0_path,
+                            std::string& file_path_ref) {
+    int granularity = GlobalVariables::Granularity;
+    DAG_Model dag_tasks =
+        ReadDAG_Tasks(file_path_ref);  // only read the tasks without worrying
+                                       // about the execution time distribution
+
+    SP_Parameters sp_parameters = ReadSP_Parameters(file_path_ref);
+    assert(dag_tasks.tasks[0].name == "TSP");
+    double tsp_weight = GetAvgTaskPerfTerm(
+        tsp_ext_path, dag_tasks.tasks[0].timePerformancePairs);
+    sp_parameters.update_node_weight(0, tsp_weight);
+    std::vector<FiniteDist> node_rts_dists;
+    // std::string folder_path="TaskData/AnalyzeSP_Metric/";
+    node_rts_dists.push_back(FiniteDist(ReadTxtFile(tsp_path), granularity));
+    node_rts_dists.push_back(FiniteDist(ReadTxtFile(mpc_path), granularity));
+    node_rts_dists.push_back(FiniteDist(ReadTxtFile(rrt_path), granularity));
+    node_rts_dists.push_back(FiniteDist(ReadTxtFile(slam_path), granularity));
+
+    std::vector<FiniteDist> reaction_time_dists = {
+        FiniteDist(ReadTxtFile(chain0_path), granularity)};
+
+    double sp_value_overall = ObtainSP_DAG_From_Dists(
+        dag_tasks, sp_parameters, node_rts_dists, reaction_time_dists);
+    return sp_value_overall;
 }
 }  // namespace SP_OPT_PA

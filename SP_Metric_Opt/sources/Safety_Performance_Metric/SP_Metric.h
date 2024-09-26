@@ -46,8 +46,8 @@ double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
 
 double GetTaskPerfTerm(
     double ext_time_single,
-    const std::vector<TimePerfPair>& timePerformancePairs_Sorted) ;
-    
+    const std::vector<TimePerfPair>& timePerformancePairs_Sorted);
+
 double GetAvgTaskPerfTerm(std::string& ext_file_path,
                           std::vector<TimePerfPair> timePerformancePairs);
 
@@ -62,4 +62,9 @@ double ObtainSP_DAG_From_Dists(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<FiniteDist>& node_rts_dists,
     const std::vector<FiniteDist>& path_latency_dists);
+
+double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
+                            std::string& mpc_path, std::string& tsp_path,
+                            std::string& tsp_ext_path, std::string& chain0_path,
+                            std::string& file_path_ref);
 }  // namespace SP_OPT_PA

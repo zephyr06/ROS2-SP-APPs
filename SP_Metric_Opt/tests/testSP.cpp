@@ -298,6 +298,46 @@ TEST_F(TaskSetForTest_robotics_v19, GetAvgTaskPerfTerm) {
 
     EXPECT_EQ(1.6 / 3, GetAvgTaskPerfTerm(ext_file_path, time_perf_pairs));
 }
+
+class TaskSetForTest_robotics_v20 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v20";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
+TEST_F(TaskSetForTest_robotics_v20, ObtainSPFromRTAFiles) {
+    string slam_path =
+        GlobalVariables::PROJECT_PATH +
+        "TaskData/AnalyzeSP_Metric/SLAM_response_time_115_125.txt";
+    string rrt_path = GlobalVariables::PROJECT_PATH +
+                      "TaskData/AnalyzeSP_Metric/RRT_response_time_115_125.txt";
+    string mpc_path = GlobalVariables::PROJECT_PATH +
+                      "TaskData/AnalyzeSP_Metric/MPC_response_time_115_125.txt";
+    string tsp_path = GlobalVariables::PROJECT_PATH +
+                      "TaskData/AnalyzeSP_Metric/TSP_response_time_115_125.txt";
+    string tsp_ext_path =
+        GlobalVariables::PROJECT_PATH +
+        "TaskData/AnalyzeSP_Metric/TSP_execution_time_115_125.txt";
+    string chain0_path =
+        GlobalVariables::PROJECT_PATH +
+        "TaskData/AnalyzeSP_Metric/SLAM_response_time_115_125.txt";  // NOT USED
+    string file_path_ref = GlobalVariables::PROJECT_PATH + "TaskData/" +
+                           "test_robotics_v20" + ".yaml";
+    double sp_value_overall =
+        ObtainSPFromRTAFiles(slam_path, rrt_path, mpc_path, tsp_path,
+                             tsp_ext_path, chain0_path, file_path_ref);
+    EXPECT_EQ(2.0, sp_value_overall);
+}
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

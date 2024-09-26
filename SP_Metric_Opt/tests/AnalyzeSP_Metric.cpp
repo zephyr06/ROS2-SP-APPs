@@ -4,6 +4,7 @@
 #include <iostream>
 
 #include "sources/Optimization/OptimizeSP_BF.h"
+#include "sources/Safety_Performance_Metric/SP_Metric.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/argparse.hpp"
@@ -96,28 +97,8 @@ int main(int argc, char *argv[]) {
     chain0_path = RelativePathToAbsolutePath(chain0_path);
     file_path_ref = RelativePathToAbsolutePath(file_path_ref);
 
-    int granularity = GlobalVariables::Granularity;
-    DAG_Model dag_tasks =
-        ReadDAG_Tasks(file_path_ref);  // only read the tasks without worrying
-                                       // about the execution time distribution
-
-    SP_Parameters sp_parameters = ReadSP_Parameters(file_path_ref);
-    assert(dag_tasks.tasks[0].name == "TSP");
-    double tsp_weight = GetAvgTaskPerfTerm(
-        tsp_ext_path, dag_tasks.tasks[0].timePerformancePairs);
-    sp_parameters.update_node_weight(0, tsp_weight);
-    std::vector<FiniteDist> node_rts_dists;
-    // std::string folder_path="TaskData/AnalyzeSP_Metric/";
-    node_rts_dists.push_back(FiniteDist(ReadTxtFile(tsp_path), granularity));
-    node_rts_dists.push_back(FiniteDist(ReadTxtFile(mpc_path), granularity));
-    node_rts_dists.push_back(FiniteDist(ReadTxtFile(rrt_path), granularity));
-    node_rts_dists.push_back(FiniteDist(ReadTxtFile(slam_path), granularity));
-
-    std::vector<FiniteDist> reaction_time_dists = {
-        FiniteDist(ReadTxtFile(chain0_path), granularity)};
-
-    double sp_value_overall = ObtainSP_DAG_From_Dists(
-        dag_tasks, sp_parameters, node_rts_dists, reaction_time_dists);
-
+    double sp_value_overall =
+        ObtainSPFromRTAFiles(slam_path, rrt_path, mpc_path, tsp_path,
+                             tsp_ext_path, chain0_path, file_path_ref);
     std::cout << "SP-Metric: " << sp_value_overall << "\n";
 }
