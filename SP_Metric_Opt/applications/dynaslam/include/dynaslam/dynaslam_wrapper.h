@@ -57,7 +57,7 @@ void LoadImages(const string &strAssociationFilename, vector<string> &vstrImageF
 // std::string dataset_name_association_file = "fr3_walking_xyz";
 // std::string dataset_name_rgbd = "rgbd_dataset_freiburg3_walking_xyz"; 
 std::string dataset_name_association_file = "freiburg1_desk";
-std::string dataset_name_rgbd = "rgbd_dataset_freiburg1_desk"; 
+std::string dataset_name_rgbd = "rgbd_dataset_freiburg1_desk"; // There are around 500 images possible
 
 class DynaSLAMWrapperForROS2 {
 public:
@@ -75,7 +75,7 @@ public:
         
         nImages = vstrImageFilenamesRGB.size();
         std::cout << "nImages: " << nImages << std::endl;
-        nImages = 800;
+        // nImages = 800;
         if(vstrImageFilenamesRGB.empty())
         {
             cerr << endl << "No images found in provided path." << endl;
