@@ -17,9 +17,9 @@ if __name__=="__main__":
         scheduler_name: os.path.join(OPT_SP_PROJECT_PATH,"../all_time_records"),
         }
 
-    discard_early_time = 60  # at least 10 seconds
-    horizon_granularity = 30  # 10 seconds
-    horizon = 600  #  seconds
+    discard_early_time = 15  # at least 10 seconds, should be integer multilpe of scheduler's period
+    horizon_granularity = 10  # 10 seconds
+    horizon = 90  #  seconds
 
     draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon)
     

@@ -202,7 +202,11 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
     
     sp_value_list=[]
     for start_time in range(discard_early_time, horizon, horizon_granularity):
+        if start_time >70:
+            a=1
         end_time = start_time + horizon_granularity
+        if end_time>horizon:
+            break
         command_in_terminal_to_analyze_taskset_sp = get_SP_analyze_executable_file_path()
         no_data_count=0
         for task_name in tasks_name_list:
@@ -246,7 +250,7 @@ def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizo
     for method_name, data_folder_path in data_folder_paths.items():
         tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
         sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path=task_set_config)
-        x_axis = [i for i in range(0, len(sp_value_list)*horizon_granularity, horizon_granularity)]
+        x_axis = [i+discard_early_time+horizon_granularity/2.0 for i in range(0, len(sp_value_list)*horizon_granularity, horizon_granularity)]
         plt.plot(x_axis, sp_value_list, label = method_name)
         print(f"SP-Metric for {method_name}: {sum(sp_value_list)/len(sp_value_list)}")
 
