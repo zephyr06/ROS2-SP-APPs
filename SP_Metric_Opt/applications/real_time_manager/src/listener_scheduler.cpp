@@ -139,7 +139,7 @@ class SchedulerApp : public AppBase {
     RealTimeManager rt_manager_;
     int cnt_ = 0;
     std::string scheduler_;
-    SP_OPT_PA::OptimizePA_Incre incremental_optimizer_ = NULL;
+    SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
 };
 
 int main(int argc, char *argv[]) {
