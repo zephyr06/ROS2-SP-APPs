@@ -61,6 +61,7 @@ std::vector<PriorityVec> FindPriorityVec1D_Variations(const PriorityVec& pa_vec,
 
 class OptimizePA_Incre : public OptimimizePA_Base {
    public:
+    OptimizePA_Incre() {}
     OptimizePA_Incre(const DAG_Model& dag_tasks,
                      const SP_Parameters& sp_parameters)
         : OptimimizePA_Base(dag_tasks, sp_parameters) {}
@@ -71,6 +72,8 @@ class OptimizePA_Incre : public OptimimizePA_Base {
     PriorityVec OptimizeFromScratch(int K);
 
     PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update);
+
+    bool IfInitialized() const { return !dag_tasks_.tasks.empty(); }
 };
 
 inline PriorityVec PerformOptimizePA_Incre(const DAG_Model& dag_tasks,
