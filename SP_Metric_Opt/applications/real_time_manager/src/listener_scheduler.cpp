@@ -76,65 +76,66 @@ class SchedulerApp : public AppBase {
                 task_characteristics_yaml);
             rt_manager_.setCPUAffinityAndPriority(
                 local_fixed_cpu_and_priority_yaml_RM);
-        } else if (scheduler_ == "optimizerBF") {
+        } else {
             // Update execution time statitics, use last 10 data records,
             // replace the missed values with 2T seconds
             et_estimator_.updateTaskExecutionTimeDistributions(10, 2 * 3);
             std::cout << "Updated execution time\n";
+            double time_taken;
+            if (scheduler_ == "optimizerBF") {
+                // Perform schedule
+                // Scheduler command to be executed
+                std::string cmd = sp_opt_folder_path + "/release";
+                cmd += "/tests/AnalyzePriorityAssignment --file_path ";
+                cmd += task_characteristics_yaml;
+                cmd += " --output_file_path ";
+                cmd += priority_yaml_output_path;
+                std::cout << "cmd is:" << cmd << std::endl;
+                const char *scheduler_command = cmd.c_str();
+                // Execute the command
+                int result = system(scheduler_command);
+                // Check if command execution was successful
+                if (result != 0) {
+                    // Command execution failed
+                    std::cerr << "Scheduler command execution failed!\n";
+                    return;
+                }
+                TimerType finish_time = CurrentTimeInProfiler;
+                time_taken = GetTimeTaken(start_time, finish_time);
+            } else if (scheduler_ == "optimizerIncremental") {
+                using namespace SP_OPT_PA;
+                DAG_Model dag_tasks = ReadDAG_Tasks(task_characteristics_yaml);
+                SP_Parameters sp_parameters =
+                    ReadSP_Parameters(task_characteristics_yaml);
 
-            // Perform schedule
-            // Scheduler command to be executed
-            std::string cmd = sp_opt_folder_path + "/release";
-            cmd += "/tests/AnalyzePriorityAssignment --file_path ";
-            cmd += task_characteristics_yaml;
-            cmd += " --output_file_path ";
-            cmd += priority_yaml_output_path;
-            std::cout << "cmd is:" << cmd << std::endl;
-            const char *scheduler_command = cmd.c_str();
-            // Execute the command
-            int result = system(scheduler_command);
-            // Check if command execution was successful
-            if (result != 0) {
-                // Command execution failed
-                std::cerr << "Scheduler command execution failed!\n";
+                PriorityVec pa_opt;
+                if (incremental_optimizer_.IfInitialized()) {
+                    pa_opt = incremental_optimizer_.OptimizeIncre(dag_tasks);
+                } else {
+                    incremental_optimizer_ =
+                        OptimizePA_Incre(dag_tasks, sp_parameters);
+                    pa_opt = incremental_optimizer_.OptimizeFromScratch(
+                        GlobalVariables::
+                            Layer_Node_During_Incremental_Optimization);
+                }
+                TimerType finish_time = CurrentTimeInProfiler;
+                time_taken = GetTimeTaken(start_time, finish_time);
+                WritePriorityAssignments(priority_yaml_output_path,
+                                         dag_tasks.tasks, pa_opt, time_taken);
+            } else {
+                std::cerr << "Unknown scheduler: " << scheduler_ << "\n";
                 return;
             }
+            std::cout << "Time taken for scheduler to run one time: "
+                      << time_taken << "\n";
 
             // update priorities from the scheduler to local config yaml
             UpdatePriorityAssignments(local_config_yaml,
                                       priority_yaml_output_path);
             UpdateProcessorAssignmentsFromYamlFile(local_config_yaml,
                                                    task_characteristics_yaml);
-
-            TimerType finish_time = CurrentTimeInProfiler;
-            double time_taken = GetTimeTaken(start_time, finish_time);
-            cout << "Time taken for BF scheduler to run one time: "
-                 << time_taken << "\n";
             // apply the new priority assignments
             rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
-        } else if (scheduler_ == "optimizerIncremental") {
-            et_estimator_.updateTaskExecutionTimeDistributions(10, 2 * 3);
-            std::cout << "Updated execution time\n";
-
-            using namespace SP_OPT_PA;
-            DAG_Model dag_tasks = ReadDAG_Tasks(task_characteristics_yaml);
-            SP_Parameters sp_parameters =
-                ReadSP_Parameters(task_characteristics_yaml);
-
-            PriorityVec pa_opt;
-            if (incremental_optimizer_.IfInitialized()) {
-                pa_opt = incremental_optimizer_.OptimizeIncre(dag_tasks);
-            } else {
-                incremental_optimizer_ =
-                    OptimizePA_Incre(dag_tasks, sp_parameters);
-                pa_opt = incremental_optimizer_.OptimizeFromScratch(
-                    GlobalVariables::
-                        Layer_Node_During_Incremental_Optimization);
-            }
-            TimerType finish_time = CurrentTimeInProfiler;
-            double time_taken = GetTimeTaken(start_time, finish_time);
-            WritePriorityAssignments(priority_yaml_output_path, dag_tasks.tasks,
-                                     pa_opt, time_taken);
         }
     }
 
