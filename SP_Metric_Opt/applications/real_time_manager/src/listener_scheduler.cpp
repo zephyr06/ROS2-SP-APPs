@@ -36,10 +36,9 @@ class SchedulerApp : public AppBase {
     }
     // function arguments msg_cnt not used for now
     void run(int) override {
-        TimerType start_time = CurrentTimeInProfiler;
         // no execution at the first instance
         if (cnt_++ == 0) return;
-
+        TimerType start_time = CurrentTimeInProfiler;
         std::filesystem::path current_file_path =
             std::filesystem::canonical(__FILE__);
         std::filesystem::path package_directory =
@@ -107,6 +106,10 @@ class SchedulerApp : public AppBase {
             UpdateProcessorAssignmentsFromYamlFile(local_config_yaml,
                                                    task_characteristics_yaml);
 
+            TimerType finish_time = CurrentTimeInProfiler;
+            double time_taken = GetTimeTaken(start_time, finish_time);
+            cout << "Time taken for BF scheduler to run one time: "
+                 << time_taken << "\n";
             // apply the new priority assignments
             rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
         } else if (scheduler_ == "optimizerIncremental") {
