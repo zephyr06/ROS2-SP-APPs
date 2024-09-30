@@ -102,7 +102,7 @@ double ObtainSP_DAG_From_Dists(
         double sp_val = ObtainSP(node_rts_dists[i], dag_tasks.tasks[i].deadline,
                                  sp_parameters.thresholds_node.at(task_id),
                                  sp_parameters.weights_node.at(task_id));
-        std::cout << dag_tasks.tasks[i].name << " " << sp_val << std::endl;
+        // std::cout << dag_tasks.tasks[i].name << " " << sp_val << std::endl;
         sp_overall += sp_val;
     }
     for (uint i = 0; i < dag_tasks.chains_.size(); i++) {
