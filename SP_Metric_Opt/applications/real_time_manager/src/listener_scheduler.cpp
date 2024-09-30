@@ -1,12 +1,15 @@
 #include <cstdlib>
 
-#include "sources/TaskModel/DAG_Model.h"
-#include "sources/Utils/Parameters.h"
-#include "sources/UtilsForROS2/Publisher.h"
-
 #include "real_time_manager/execution_time_estimator.h"
 #include "real_time_manager/real_time_manager.h"
 #include "real_time_manager/update_priority_assignment.h"
+#include "sources/Optimization/OptimizeSP_Incre.h"
+#include "sources/TaskModel/DAG_Model.h"
+#include "sources/Utils/Parameters.h"
+#include "sources/Utils/argparse.hpp"
+#include "sources/Utils/profilier.h"
+#include "sources/Utils/readwrite.h"
+#include "sources/UtilsForROS2/Publisher.h"
 
 class SchedulerApp : public AppBase {
    public:
@@ -16,6 +19,9 @@ class SchedulerApp : public AppBase {
         scheduler_ = "optimizerBF";
         if (argc >= 2) {
             scheduler_ = argv[1];
+        } else {
+            std::cout
+                << "Must provide a valid and supported name of scheduler!\n";
         }
         if (scheduler_ != "CFS" && scheduler_ != "RM" &&
             scheduler_ != "optimizerBF" &&
@@ -29,21 +35,26 @@ class SchedulerApp : public AppBase {
         std::cout << "Using scheduler: " << scheduler_ << ".\n";
     }
     // function arguments msg_cnt not used for now
-    void run(int ) override {
+    void run(int) override {
+        TimerType start_time = CurrentTimeInProfiler;
         // no execution at the first instance
         if (cnt_++ == 0) return;
 
         std::filesystem::path current_file_path =
             std::filesystem::canonical(__FILE__);
         std::filesystem::path package_directory =
-            current_file_path.parent_path().parent_path(); // ROS2-SP-APPS/SP_Metric_Opt/real_time_manager
+            current_file_path.parent_path()
+                .parent_path();  // ROS2-SP-APPS/SP_Metric_Opt/real_time_manager
         std::string local_config_yaml =
             package_directory.string() + "/configs/local_cpu_and_priority.yaml";
-        std::string sp_opt_folder_path = package_directory.parent_path().parent_path().string();
-        if(sp_opt_folder_path.substr(sp_opt_folder_path.size()-13,13)!="SP_Metric_Opt")
-            std::cerr<<"Path configuraiton is wrong, mostly because some files' location chagned!\n";
+        std::string sp_opt_folder_path =
+            package_directory.parent_path().parent_path().string();
+        if (sp_opt_folder_path.substr(sp_opt_folder_path.size() - 13, 13) !=
+            "SP_Metric_Opt")
+            std::cerr << "Path configuraiton is wrong, mostly because some "
+                         "files' location chagned!\n";
 
-        std::string priority_yaml =
+        std::string priority_yaml_output_path =
             sp_opt_folder_path + "/TaskData/pa_result.yaml";
         std::string task_characteristics_yaml =
             getTimeRecordFolder() + "task_characteristics.yaml";
@@ -66,23 +77,19 @@ class SchedulerApp : public AppBase {
                 task_characteristics_yaml);
             rt_manager_.setCPUAffinityAndPriority(
                 local_fixed_cpu_and_priority_yaml_RM);
-        } else if (scheduler_ == "optimizerBF" ||
-                   scheduler_ ==
-                       "optimizerIncremental") {  // todo: implement the
-                                                  // "optimizerIncremental"
-
-            // Update execution time statitics, use last 10 data records, replace the missed values with 2T seconds
-            et_estimator_.updateTaskExecutionTimeDistributions(10, 2*3);
-            std::cout<<"Updated execution time\n";
+        } else if (scheduler_ == "optimizerBF") {
+            // Update execution time statitics, use last 10 data records,
+            // replace the missed values with 2T seconds
+            et_estimator_.updateTaskExecutionTimeDistributions(10, 2 * 3);
+            std::cout << "Updated execution time\n";
 
             // Perform schedule
             // Scheduler command to be executed
-            std::string cmd =
-                sp_opt_folder_path+"/release";
+            std::string cmd = sp_opt_folder_path + "/release";
             cmd += "/tests/AnalyzePriorityAssignment --file_path ";
             cmd += task_characteristics_yaml;
             cmd += " --output_file_path ";
-            cmd += priority_yaml;
+            cmd += priority_yaml_output_path;
             std::cout << "cmd is:" << cmd << std::endl;
             const char *scheduler_command = cmd.c_str();
             // Execute the command
@@ -95,12 +102,36 @@ class SchedulerApp : public AppBase {
             }
 
             // update priorities from the scheduler to local config yaml
-            UpdatePriorityAssignments(local_config_yaml, priority_yaml);
+            UpdatePriorityAssignments(local_config_yaml,
+                                      priority_yaml_output_path);
             UpdateProcessorAssignmentsFromYamlFile(local_config_yaml,
                                                    task_characteristics_yaml);
 
             // apply the new priority assignments
             rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
+        } else if (scheduler_ == "optimizerIncremental") {
+            et_estimator_.updateTaskExecutionTimeDistributions(10, 2 * 3);
+            std::cout << "Updated execution time\n";
+
+            using namespace SP_OPT_PA;
+            DAG_Model dag_tasks = ReadDAG_Tasks(task_characteristics_yaml);
+            SP_Parameters sp_parameters =
+                ReadSP_Parameters(task_characteristics_yaml);
+
+            PriorityVec pa_opt;
+            if (incremental_optimizer_.IfInitialized()) {
+                pa_opt = incremental_optimizer_.OptimizeIncre(dag_tasks);
+            } else {
+                incremental_optimizer_ =
+                    OptimizePA_Incre(dag_tasks, sp_parameters);
+                pa_opt = incremental_optimizer_.OptimizeFromScratch(
+                    GlobalVariables::
+                        Layer_Node_During_Incremental_Optimization);
+            }
+            TimerType finish_time = CurrentTimeInProfiler;
+            double time_taken = GetTimeTaken(start_time, finish_time);
+            WritePriorityAssignments(priority_yaml_output_path, dag_tasks.tasks,
+                                     pa_opt, time_taken);
         }
     }
 
@@ -108,15 +139,17 @@ class SchedulerApp : public AppBase {
     RealTimeManager rt_manager_;
     int cnt_ = 0;
     std::string scheduler_;
+    SP_OPT_PA::OptimizePA_Incre incremental_optimizer_ = NULL;
 };
 
 int main(int argc, char *argv[]) {
-    
     SP_OPT_PA::DAG_Model dag_tasks = SP_OPT_PA::ReadDAG_Tasks(
         GlobalVariables::PROJECT_PATH +
         "../all_time_records/task_characteristics.yaml");
-    if(argc<3)
-        std::cerr<<"Wrong arg format: example usage ./scheduler_runner optimizerBF 30000 The last argument is period of the scheduler in miliseconds\n";
+    if (argc < 3)
+        std::cerr << "Wrong arg format: example usage ./scheduler_runner "
+                     "optimizerBF 30000 The last argument is period of the "
+                     "scheduler in miliseconds\n";
     int period = std::stoi(argv[2]);
     int count = dag_tasks.tasks[0].total_running_time / period;
     SchedulerApp app(argc, argv);
