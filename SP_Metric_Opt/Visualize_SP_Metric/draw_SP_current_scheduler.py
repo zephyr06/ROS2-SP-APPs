@@ -18,7 +18,7 @@ if __name__=="__main__":
         scheduler_name: os.path.join(OPT_SP_PROJECT_PATH,"../all_time_records"),
         }
 
-    discard_early_time = 15  # at least 10 seconds, should be integer multilpe of scheduler's period
+    discard_early_time = 30  # at least 10 seconds, should be integer multilpe of scheduler's period
     horizon_granularity = 10  # 10 seconds
     task_config_file_path = os.path.join(OPT_SP_PROJECT_PATH,"../all_time_records/task_characteristics.yaml")
     yaml_data = yaml.safe_load(open(task_config_file_path))

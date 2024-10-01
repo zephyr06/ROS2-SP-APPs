@@ -102,11 +102,11 @@ public:
         }
 
         // add the talker task
-        task_names.push_back("talker");
-        cpu_lists.push_back({0});
-        // add the ros2 launch task
-        task_names.push_back("\"ros2 launch\"");
-        cpu_lists.push_back({1});
+        // task_names.push_back("talker");
+        // cpu_lists.push_back({0});
+        // // add the ros2 launch task
+        // task_names.push_back("\"ros2 launch\"");
+        // cpu_lists.push_back({1});
         // add the scheduler task
         task_names.push_back("listener_scheduler");
         cpu_lists.push_back({2});
@@ -114,10 +114,10 @@ public:
 
         if (has_fifo_policy)
         {
-            scheduling_policies.push_back(1);
-            priorities.push_back(std::min(99, max_priority + 5));
-            scheduling_policies.push_back(1);
-            priorities.push_back(std::min(99, max_priority + 5));
+            // scheduling_policies.push_back(1);
+            // priorities.push_back(std::min(99, max_priority + 5));
+            // scheduling_policies.push_back(1);
+            // priorities.push_back(std::min(99, max_priority + 5));
             scheduling_policies.push_back(1);
             priorities.push_back(std::min(99, max_priority + 5));
         }
@@ -159,7 +159,7 @@ public:
                 continue;
             }
             else{
-                std::cout<<"Set priorities: "<<task_names[i] <<", " << scheduling_policies[i]<<", "<< priorities[i]<<"\n";
+                std::cout<<"*******Set priorities: "<<task_names[i] <<", " << scheduling_policies[i]<<", "<< priorities[i]<<"\n";
                 setCPUandScheduling(task_names[i], cpu_lists[i], scheduling_policies[i], priorities[i]);
             }
         }
