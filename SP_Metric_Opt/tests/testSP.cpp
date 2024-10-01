@@ -193,10 +193,17 @@ TEST_F(TaskSetForTest_robotics_v18, calcluate_perf_term) {
 TEST_F(TaskSetForTest_robotics_v18, Task2priority_value) {
     auto task2priority = Task2priority_value(
         dag_tasks.tasks, {0, 1, 2, 3});  // TSP, MPC, RRT, SLAM
-    EXPECT_EQ(7, task2priority["TSP"]);
-    EXPECT_EQ(6, task2priority["MPC"]);
-    EXPECT_EQ(5, task2priority["RRT"]);
-    EXPECT_EQ(4, task2priority["SLAM"]);
+    EXPECT_EQ(6, task2priority["TSP"]);
+    EXPECT_EQ(2, task2priority["MPC"]);
+    EXPECT_EQ(1, task2priority["RRT"]);
+    EXPECT_EQ(5, task2priority["SLAM"]);
+
+    task2priority = Task2priority_value(dag_tasks.tasks,
+                                        {3, 2, 1, 0});  // SLAM, RRT, MPC, TSP
+    EXPECT_EQ(4, task2priority["TSP"]);
+    EXPECT_EQ(2, task2priority["MPC"]);
+    EXPECT_EQ(3, task2priority["RRT"]);
+    EXPECT_EQ(5, task2priority["SLAM"]);
 }
 // TEST_F(TaskSetForTest_robotics_v8, SP_Calculation) {
 //     double sp_actual = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);

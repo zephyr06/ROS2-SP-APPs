@@ -46,20 +46,61 @@ void PrintPriorityVec(const TaskSet& tasks,
     }
 }
 
+bool check_task_set_applicable(const TaskSet& tasks) {
+    int slam_index = -1, tsp_index = -1, rrt_index = -1, mpc_index = -1;
+    for (uint i = 0; i < tasks.size(); i++) {
+        if (tasks[i].name == "SLAM") slam_index = i;
+        if (tasks[i].name == "TSP") tsp_index = i;
+        if (tasks[i].name == "RRT") rrt_index = i;
+        if (tasks[i].name == "MPC") mpc_index = i;
+    }
+    if (slam_index == -1 || tsp_index == -1 || rrt_index == -1 ||
+        mpc_index == -1) {
+        return false;
+    }
+    if (tasks[slam_index].processorId != tasks[tsp_index].processorId) {
+        return false;
+    }
+
+    if (tasks[rrt_index].processorId != tasks[mpc_index].processorId) {
+        return false;
+    }
+    return true;
+}
+
 std::unordered_map<std::string, int> Task2priority_value(
-    const TaskSet& tasks, const PriorityVec& priority_assignment,
-    int slam_priority_set) {
+    const TaskSet& tasks, const PriorityVec& priority_assignment) {
+    /*
+    Logic for this function: Minimize priority assignment values' changes.
+    This function only works for a specific task set where SLAM and TSP are
+    assigned to the same core, and MPC and RRT are assigned to the same core.
+
+    In this case, SLAM's priority is always 5, MPC's priority is always 2.
+    If TSP has higher priority, it is 6, otherwise, 4;
+    If RRT has higher priority, it is 3, otherwise, 1.
+    */
+    if (!check_task_set_applicable(tasks))
+        CoutError("Task set is not applicable for Task2priority_value()!");
     std::unordered_map<std::string, int> task2priority;
     for (uint i = 0; i < priority_assignment.size(); i++) {
         task2priority[tasks[priority_assignment[i]].name] =
             priority_assignment.size() - i;
     }
-
-    int slam_priority_old = task2priority["SLAM"];
-    for (uint i = 0; i < priority_assignment.size(); i++) {
-        task2priority[tasks[priority_assignment[i]].name] +=
-            slam_priority_set - slam_priority_old;
+    if (task2priority["SLAM"] < task2priority["TSP"]) {
+        task2priority["SLAM"] = 5;
+        task2priority["TSP"] = 6;
+    } else {
+        task2priority["SLAM"] = 5;
+        task2priority["TSP"] = 4;
     }
+    if (task2priority["RRT"] < task2priority["MPC"]) {
+        task2priority["RRT"] = 1;
+        task2priority["MPC"] = 2;
+    } else {
+        task2priority["MPC"] = 2;
+        task2priority["RRT"] = 3;
+    }
+
     return task2priority;
 }
 
