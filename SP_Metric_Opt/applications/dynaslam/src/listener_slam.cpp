@@ -1,34 +1,33 @@
 
-#include "dynaslam/dynaslam_wrapper.h"
-
 #include <cassert>
 
+#include "dynaslam/dynaslam_wrapper.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/UtilsForROS2/Publisher.h"
 
 class SLAMApp : public AppBase {
-    public:
-        SLAMApp() : AppBase("SLAM") { 
-            slam_wrapper_.init(); 
-            std::cout << "Following cout related to SLAM except index will be disabled\n";
-        }
+   public:
+    SLAMApp() : AppBase("SLAM") {
+        slam_wrapper_.init();
+        std::cout
+            << "Following cout related to SLAM except index will be disabled\n";
+    }
 
-        void run(int msg_cnt) override { 
-            std::cout<<"SLAM analyzes frame index: "<<msg_cnt<<"\n";
-            // std::cout.setstate(std::ios_base::failbit);
-            slam_wrapper_.next(msg_cnt); 
-            // std::cout.clear();
-        }
-    
-        ~SLAMApp(){
-            slam_wrapper_.exit();
-        }
-        
-        DynaSLAMWrapperForROS2 slam_wrapper_;
+    void run(int msg_cnt) override {
+        std::cout << "SLAM analyzes frame index: " << msg_cnt << "\n";
+        print_time_in_us();
+        // std::cout.setstate(std::ios_base::failbit);
+        slam_wrapper_.next(msg_cnt);
+        // std::cout.clear();
+        std::cout << "SLAM finishes analyzing frame index: " << msg_cnt << "\n";
+        print_time_in_us();
+    }
+
+    ~SLAMApp() { slam_wrapper_.exit(); }
+
+    DynaSLAMWrapperForROS2 slam_wrapper_;
 };
-
-
 
 int main(int argc, char* argv[]) {
     SP_OPT_PA::DAG_Model dag_tasks = SP_OPT_PA::ReadDAG_Tasks(

@@ -16,7 +16,7 @@ class SchedulerApp : public AppBase {
     SchedulerApp() : AppBase("SCHEDULER") {}
     SchedulerApp(int argc, char *argv[]) : AppBase("SCHEDULER") {
         // supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental
-        scheduler_ = "optimizerBF";
+        // scheduler_ = "optimizerBF";
         if (argc >= 2) {
             scheduler_ = argv[1];
         } else {
