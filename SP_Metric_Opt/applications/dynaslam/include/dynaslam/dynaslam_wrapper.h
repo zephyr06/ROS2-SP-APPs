@@ -70,6 +70,8 @@ class DynaSLAMWrapperForROS2 {
         vstrImageFilenamesRGB.clear();
         vstrImageFilenamesD.clear();
         vTimestamps.clear();
+        vImgsRGB_.clear();
+        vImgsD_.clear();
 
         // Retrieve paths to images
         strAssociationFilename =
@@ -115,6 +117,23 @@ class DynaSLAMWrapperForROS2 {
         //                                     2*dilation_size+1 ), cv::Point(
         //                                     dilation_size, dilation_size ) );
 
+        vImgsRGB_.reserve(1000);
+        vImgsD_.reserve(1000);
+        for (int index = 0; index < nImages; index++) {
+            cv::Mat imRGB = cv::imread(string("/home/nvidia/workspace/sdcard/"
+                                              "SP_Scheduler_Stack/dataset/" +
+                                              dataset_name_rgbd + "/") +
+                                           "/" + vstrImageFilenamesRGB[index],
+                                       CV_LOAD_IMAGE_UNCHANGED);
+            cv::Mat imD = cv::imread(string("/home/nvidia/workspace/sdcard/"
+                                            "SP_Scheduler_Stack/dataset/" +
+                                            dataset_name_rgbd + "/") +
+                                         "/" + vstrImageFilenamesD[index],
+                                     CV_LOAD_IMAGE_UNCHANGED);
+            vImgsRGB_.push_back(imRGB);
+            vImgsD_.push_back(imD);
+        }
+
         image_idx = 0;
     }
     void next(int msg_cnt) {
@@ -128,16 +147,20 @@ class DynaSLAMWrapperForROS2 {
         cout << image_idx << endl;
         // Read image and depthmap from file
         // BeginTimer("Read SLAM image input");
-        imRGB = cv::imread(
-            string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/" +
-                   dataset_name_rgbd + "/") +
-                "/" + vstrImageFilenamesRGB[image_idx],
-            CV_LOAD_IMAGE_UNCHANGED);
-        imD = cv::imread(
-            string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/" +
-                   dataset_name_rgbd + "/") +
-                "/" + vstrImageFilenamesD[image_idx],
-            CV_LOAD_IMAGE_UNCHANGED);
+        // imRGB = cv::imread(
+        //     string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"
+        //     +
+        //            dataset_name_rgbd + "/") +
+        //         "/" + vstrImageFilenamesRGB[image_idx],
+        //     CV_LOAD_IMAGE_UNCHANGED);
+        // imD = cv::imread(
+        //     string("/home/nvidia/workspace/sdcard/SP_Scheduler_Stack/dataset/"
+        //     +
+        //            dataset_name_rgbd + "/") +
+        //         "/" + vstrImageFilenamesD[image_idx],
+        //     CV_LOAD_IMAGE_UNCHANGED);
+        imRGB = vImgsRGB_[image_idx];
+        imD = vImgsD_[image_idx];
         // EndTimer("Read SLAM image input");
 
         double tframe = vTimestamps[image_idx];
@@ -263,6 +286,8 @@ class DynaSLAMWrapperForROS2 {
 
     vector<string> vstrImageFilenamesRGB;
     vector<string> vstrImageFilenamesD;
+    std::vector<cv::Mat> vImgsRGB_;
+    std::vector<cv::Mat> vImgsD_;
     vector<double> vTimestamps;
     string strAssociationFilename;
     int nImages;
