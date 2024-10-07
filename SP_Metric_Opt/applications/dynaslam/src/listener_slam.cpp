@@ -15,13 +15,13 @@ class SLAMApp : public AppBase {
     }
 
     void run(int msg_cnt) override {
-        std::cout << "SLAM analyzes frame index: " << msg_cnt << "\n";
-        print_time_in_us();
+        print_time_in_us("SLAM analyzes frame index: " +
+                         std::to_string(msg_cnt));
         // std::cout.setstate(std::ios_base::failbit);
         slam_wrapper_.next(msg_cnt);
         // std::cout.clear();
-        std::cout << "SLAM finishes analyzing frame index: " << msg_cnt << "\n";
-        print_time_in_us();
+        print_time_in_us("SLAM finishes analyzing frame index: " +
+                         std::to_string(msg_cnt));
     }
 
     ~SLAMApp() { slam_wrapper_.exit(); }
