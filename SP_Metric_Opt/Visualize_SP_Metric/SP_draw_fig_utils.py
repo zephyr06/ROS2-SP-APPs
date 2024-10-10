@@ -8,6 +8,18 @@ OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 # print(OPT_SP_PROJECT_PATH)
 # All time in seconds
 
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+
 def verify_task_set_config(path):
     if os.path.exists(path):
         # print("task_set_config exists.")
@@ -252,7 +264,7 @@ def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizo
         sp_value_list = get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path=task_set_config)
         x_axis = [i+discard_early_time+horizon_granularity/2.0 for i in range(0, len(sp_value_list)*horizon_granularity, horizon_granularity)]
         plt.plot(x_axis, sp_value_list, label = method_name)
-        print(f"SP-Metric for {method_name}: {sum(sp_value_list)/len(sp_value_list)}")
+        print(bcolors.WARNING +f"SP-Metric for {method_name}: {sum(sp_value_list)/len(sp_value_list)}"+bcolors().ENDC)
 
     plt.legend(data_folder_paths.keys())
     plt.xlabel("Time (s)")
