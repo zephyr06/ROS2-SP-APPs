@@ -186,26 +186,12 @@ class DynaSLAMWrapperForROS2 {
 
         // Segment out the images
         cv::Mat mask = cv::Mat::ones(480, 640, CV_8U);
-        /*
-        if (argc == 6 || argc == 7)
-        {
-            cv::Mat maskRCNN;
-            maskRCNN =
-        MaskNet->GetSegmentation(imRGB,string(argv[5]),vstrImageFilenamesRGB[image_idx].replace(0,4,""));
-            cv::Mat maskRCNNdil = maskRCNN.clone();
-            cv::dilate(maskRCNN,maskRCNNdil, kernel);
-            mask = mask - maskRCNNdil;
-        }
-        */
+        
         if (argc == 6 || argc == 7)
             // mask = yolo->Segmentation(imRGB);
             cerr << "YOLO is not supported!\n";
-        // Pass the image to the SLAM system
-        // if (argc ==
-        // 7){p_SLAM->TrackRGBD(imRGB,imD,mask,tframe,imRGBOut,imDOut,maskOut);}
-        // else {
+            
         p_SLAM->TrackRGBD(imRGB, imD, tframe);
-        // }
 
 #ifdef COMPILEDWITHC11
         std::chrono::steady_clock::time_point t2 =
@@ -235,13 +221,13 @@ class DynaSLAMWrapperForROS2 {
         vTimesTrack[image_idx] = ttrack;
 
         // Wait to load the next frame
-        double T = 0;
-        if (image_idx < nImages - 1)
-            T = vTimestamps[image_idx + 1] - tframe;
-        else if (image_idx > 0)
-            T = tframe - vTimestamps[image_idx - 1];
+        // double T = 0;
+        // if (image_idx < nImages - 1)
+        //     T = vTimestamps[image_idx + 1] - tframe;
+        // else if (image_idx > 0)
+        //     T = tframe - vTimestamps[image_idx - 1];
 
-        if (ttrack < T) usleep((T - ttrack) * 1e6);
+        // if (ttrack < T) usleep((T - ttrack) * 1e6);
 
         image_idx++;
 
