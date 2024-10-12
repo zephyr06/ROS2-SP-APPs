@@ -10,6 +10,11 @@ bool ifTimeout(TimerType start_time);
 // task id sequence; small index have higher priority
 typedef std::vector<int> PriorityVec;
 
+inline std::string get_tsp_config_file_path() {
+    return GlobalVariables::PROJECT_PATH +
+           "applications/tsp_solver_osm/config/algorithm_config.yaml";
+}
+
 struct ResourceOptResult {
     void UpdatePriorityVec(const PriorityVec& pa) {
         priority_vec = pa;
