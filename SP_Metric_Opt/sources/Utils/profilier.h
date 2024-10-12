@@ -75,7 +75,7 @@ inline double GetTimeTaken(TimerType start, TimerType stop) {
            1e6;
 }
 
-inline void print_time_in_us(string msg = "") {
+inline void print_time_in_us(std::string msg = "") {
     // Get current time point
     auto now = std::chrono::system_clock::now();
 
