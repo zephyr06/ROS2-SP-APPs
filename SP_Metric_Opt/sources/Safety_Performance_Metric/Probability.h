@@ -165,12 +165,15 @@ class FiniteDist : public ProbabilityDistributionBase {
 
     void CompressDistribution(size_t max_size, double compress_threshold);
 
+    double GetAvgValue() const;
+
     // data members
     // saves the probability that x<= value, this is probability mass function
     // rather than cumulative function
     std::vector<Value_Proba> distribution;
     double min_time;
     double max_time;
+    double avg_time = -1;
 };
 
 inline FiniteDist GetUnitExecutionTimeDist(double time_limit) {

@@ -272,4 +272,16 @@ void FiniteDist::CompressDistribution(size_t max_size,
         distribution, compress_index_since, distribution.size() - 1,
         std::max(static_cast<int>(max_size) - compress_index_since, 1));
 }
+
+double FiniteDist::GetAvgValue() const {
+    if (avg_time > 0)
+        return avg_time;
+    else {
+        double sum = 0;
+        for (const Value_Proba& vp : distribution) {
+            sum += vp.value * vp.probability;
+        }
+        return sum;
+    }
+}
 }  // namespace SP_OPT_PA
