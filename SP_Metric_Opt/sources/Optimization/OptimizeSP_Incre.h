@@ -69,6 +69,17 @@ class OptimizePA_Incre : public OptimimizePA_Base {
     // TODO: Current implementation doesn't consider end-to-end latency, need to
     // add later! One way to do it is by modifying the parameters of
     // sp_parameters
+    /*
+    The implementation for this function follows Audsley's algorithm with
+    modifications for speed and optimization considerations:
+    // 1. The algortihm iterativelys finds the task to assign the lowest
+    priority to. However, since multiple tasks may qualify for the lowest
+    priority,
+    // the algorithm will consider all of them and save them as partial paths.
+    // 2. The input argument K records the maximum number of partial paths under
+    consideration in each iteration.
+    // 3. This function updates both opt_pa_ and opt_sp_, and returns opt_pa_.
+    */
     PriorityVec OptimizeFromScratch(int K);
 
     PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update);

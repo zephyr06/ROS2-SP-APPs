@@ -101,6 +101,7 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
     PriorityVec res = partial_paths[0].pa_vec_lower_pri;
     std::reverse(res.begin(), res.end());
     opt_pa_ = res;
+    opt_sp_ = partial_paths[0].sp;
     return res;
 }
 
@@ -127,8 +128,7 @@ PriorityVec RemoveOneTask(const PriorityVec& pa_vec, int task_id) {
             break;
         }
     }
-    if (!found)
-        CoutError("Task not found in RemoveOneTask");
+    if (!found) CoutError("Task not found in RemoveOneTask");
     return res;
 }
 std::vector<PriorityVec> FindPriorityVec1D_Variations(const PriorityVec& pa_vec,
