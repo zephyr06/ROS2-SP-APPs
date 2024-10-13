@@ -40,6 +40,14 @@ class PeriodicReleaser {
     void caller(const boost::system::error_code&,
                 boost::asio::deadline_timer& t) {
         if (release_total_ == release_index_) return;
+        bool enable_detailed_time_print=false;
+        if(app_.app_name_=="MPC" || app_.app_name_=="RRT")
+            enable_detailed_time_print=false;
+        if(enable_detailed_time_print){
+            std::cout<<app_.app_name_<<", "<<release_index_<<" start \n";
+            print_time_in_us();
+        }
+
         if (getCurrentTimeStamp() - start_time_stamp_ >
             time_limit_to_terminate_ / 1000.0) {
             std::cout << "Time limit reached. Terminating the application " +
@@ -48,13 +56,24 @@ class PeriodicReleaser {
             return;
         }
         run_app_and_record_time();
-        release_index_++;
+
+        if(enable_detailed_time_print){
+            std::cout<<app_.app_name_<<", "<<release_index_<<" finish \n";
+            print_time_in_us();
+        }
+
         t.expires_at(t.expires_at() +
                      boost::posix_time::milliseconds(period_ms_));
         // if (++count < 100)
         t.async_wait(boost::bind(&PeriodicReleaser<AppBase>::caller, this,
                                  boost::asio::placeholders::error,
                                  boost::ref(t)));
+
+        if(enable_detailed_time_print){
+            std::cout<<app_.app_name_<<", "<<release_index_<<" finish caller()\n";
+            print_time_in_us();
+        }
+        release_index_++;
     }
 
     void release() {

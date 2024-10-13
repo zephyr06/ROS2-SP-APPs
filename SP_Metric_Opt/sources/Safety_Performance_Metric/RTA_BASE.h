@@ -45,11 +45,13 @@ class RTA_BASE {
     }
 
     VectorDynamic ResponseTimeOfTaskSet() {
+    if(GlobalVariables::debugMode==1)
         BeginTimer("ResponseTimeOfTaskSet");
 
         VectorDynamic warmStart =
             GetParameterVD<double>(tasks, "executionTime");
         auto res = ResponseTimeOfTaskSet(warmStart);
+    if(GlobalVariables::debugMode==1)
         EndTimer("ResponseTimeOfTaskSet");
         return res;
     }
