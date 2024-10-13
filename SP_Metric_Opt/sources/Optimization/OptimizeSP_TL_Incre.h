@@ -1,35 +1,39 @@
 #pragma once
+#include "sources/Optimization/OptimizeSP_Incre.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 
 namespace SP_OPT_PA {
 
-std::vector<std::vector<double>> RecordTimeLimitOptions(
+std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
     const DAG_Model& dag_tasks);
 
-class OptimizePA_Incre_with_TimeLimits {
+class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
    public:
     OptimizePA_Incre_with_TimeLimits(const DAG_Model& dag_tasks,
                                      const SP_Parameters& sp_parameters)
-        : dag_tasks(dag_tasks),
-          sp_parameters(sp_parameters),
-          N(dag_tasks.tasks.size()) {
-        res_opt.sp_opt = INT_MIN;
-        time_limit_option_for_each_task = RecordTimeLimitOptions(dag_tasks);
+        : OptimizePA_Incre(dag_tasks, sp_parameters) {
+        time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
     }
 
-    void Optimize(uint trav_task_index,
-                  std::vector<double>& time_limit_for_task);
+    void TraverseTimeLimitFromScratch(int K, uint task_id,
+                                      std::vector<double>& time_limits);
+    PriorityVec OptimizeFromScratch_w_TL(int K);
 
-    void Optimize();
-    PriorityVec OptimizeFromScratch(int K);
+    PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update) {
+        time_limit_option_for_each_task_ =
+            RecordCloseTimeLimitOptions(dag_tasks_);
+        return {};
+    }
+
+    inline ResourceOptResult CollectResults() const { return res_opt_; }
 
     // data members
-    DAG_Model dag_tasks;
-    SP_Parameters sp_parameters;
-    int N;
-    ResourceOptResult res_opt;
-    std::vector<std::vector<double>> time_limit_option_for_each_task;
+    ResourceOptResult res_opt_;
+    std::vector<std::vector<double>> time_limit_option_for_each_task_;
+    // For each task id, it maps time limit to the optimizer
+    std::unordered_map<int, std::unordered_map<double, OptimizePA_Incre>>
+        timelimit2optimizer_;
 };
 
 inline PriorityVec PerformOptimizePA_Incre_w_TimeLimits(

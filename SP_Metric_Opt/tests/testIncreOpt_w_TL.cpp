@@ -47,15 +47,80 @@ class TaskSetForTest_robotics_v20 : public ::testing::Test {
     int N = dag_tasks.tasks.size();
 };
 
-TEST_F(TaskSetForTest_robotics_v20, RecordTimeLimitOptions) {
+TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
-        RecordTimeLimitOptions(dag_tasks);
+        RecordCloseTimeLimitOptions(dag_tasks);
     EXPECT_EQ(184.1, time_limit_options[0][0]);
     EXPECT_EQ(397.5, time_limit_options[0][1]);
 
     EXPECT_EQ(-1, time_limit_options[1][0]);
     EXPECT_EQ(-1, time_limit_options[2][0]);
     EXPECT_EQ(-1, time_limit_options[3][0]);
+}
+
+class TaskSetForTest_robotics_v18 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v18";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
+TEST_F(TaskSetForTest_robotics_v18, optimize) {
+    // ResourceOptResult res_opt =
+    //     BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.OptimizeFromScratch_w_TL(2);
+    ResourceOptResult res_opt = opt.CollectResults();
+    PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
+
+    EXPECT_EQ(1000, res_opt.id2time_limit[0]);  // SLAM+TSP have low utilization
+}
+
+class TaskSetForTest_robotics_v19 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v19";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
+    std::vector<std::vector<double>> time_limit_options =
+        RecordCloseTimeLimitOptions(dag_tasks);
+    EXPECT_EQ(4, time_limit_options.size());     // 4 tasks
+    EXPECT_EQ(2, time_limit_options[0].size());  // 2 options for TSP
+    EXPECT_EQ(800, time_limit_options[0][0]);
+    EXPECT_EQ(1000, time_limit_options[0][1]);
+
+    EXPECT_EQ(-1, time_limit_options[1][0]);
+    EXPECT_EQ(-1, time_limit_options[2][0]);
+    EXPECT_EQ(-1, time_limit_options[3][0]);
+}
+TEST_F(TaskSetForTest_robotics_v19, optimize) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.OptimizeFromScratch_w_TL(2);
+    ResourceOptResult res_opt = opt.CollectResults();
+    PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
+    EXPECT_EQ(400,
+              res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
+    //   In scratch mode, should return 400
+    // In incremental mode, should return 800
 }
 
 int main(int argc, char** argv) {
