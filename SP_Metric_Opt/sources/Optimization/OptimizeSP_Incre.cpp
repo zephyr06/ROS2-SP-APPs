@@ -97,6 +97,19 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
             partial_paths.push_back(pq.top());
             pq.pop();
         }
+
+        if (GlobalVariables::debugMode) {
+            std::cout << "Priority " << curr_priority << ":\n";
+            std::cout << "partial paths:\n";
+            for (int i = 0; i < partial_paths.size(); i++) {
+                std::cout << "SP: " << partial_paths[i].sp << " ";
+                for (int j = 0; j < partial_paths[i].pa_vec_lower_pri.size();
+                     j++) {
+                    std::cout << partial_paths[i].pa_vec_lower_pri[j] << " ";
+                }
+                std::cout << "\n";
+            }
+        }
     }
     PriorityVec res = partial_paths[0].pa_vec_lower_pri;
     std::reverse(res.begin(), res.end());
