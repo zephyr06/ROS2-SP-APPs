@@ -45,14 +45,13 @@ class RTA_BASE {
     }
 
     VectorDynamic ResponseTimeOfTaskSet() {
-    if(GlobalVariables::debugMode==1)
-        BeginTimer("ResponseTimeOfTaskSet");
+        if (GlobalVariables::debugMode == 1)
+            BeginTimer("ResponseTimeOfTaskSet");
 
         VectorDynamic warmStart =
             GetParameterVD<double>(tasks, "executionTime");
         auto res = ResponseTimeOfTaskSet(warmStart);
-    if(GlobalVariables::debugMode==1)
-        EndTimer("ResponseTimeOfTaskSet");
+        if (GlobalVariables::debugMode == 1) EndTimer("ResponseTimeOfTaskSet");
         return res;
     }
 
@@ -88,8 +87,7 @@ class RTA_BASE {
                 return false;
             }
         }
-        if (whetherPrint)
-            std::cout << std::endl;
+        if (whetherPrint) std::cout << std::endl;
         return true;
     }
 
