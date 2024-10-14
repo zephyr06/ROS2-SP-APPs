@@ -40,7 +40,8 @@ struct PriorityPartialPath {
     // const SP_Parameters& sp_parameters;
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
-    double sp;
+    // double sp=0;
+    double sp_lost = 0;
     PriorityVec pa_vec_lower_pri;
     std::unordered_set<int> tasks_to_assign;
 };

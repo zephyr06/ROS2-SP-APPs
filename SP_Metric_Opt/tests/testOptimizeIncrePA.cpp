@@ -166,7 +166,7 @@ TEST_F(TaskSetForTest_robotics_v8, AssignAndUpdateSP) {
     EXPECT_EQ("TSP", dag_tasks.tasks[priority_path.pa_vec_lower_pri[0]].name);
     EXPECT_EQ("SLAM", dag_tasks.tasks[priority_path.pa_vec_lower_pri[1]].name);
     EXPECT_EQ(0, priority_path.tasks_to_assign.size());
-    EXPECT_NEAR(sp_ref, priority_path.sp, 1e-6);
+    EXPECT_NEAR(200 + 0.5 - sp_ref, priority_path.sp_lost, 1e-6);
 }
 
 TEST_F(TaskSetForTest_robotics_v9, GetPriorityAssignments_IncrementalOpt) {
