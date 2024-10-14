@@ -85,7 +85,7 @@ class OptimizePA_Incre : public OptimimizePA_Base {
 
     PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update);
 
-    bool IfInitialized() const { return !dag_tasks_.tasks.empty(); }
+    bool IfInitialized() const { return !opt_pa_.empty(); }
 };
 
 inline PriorityVec PerformOptimizePA_Incre(const DAG_Model& dag_tasks,
