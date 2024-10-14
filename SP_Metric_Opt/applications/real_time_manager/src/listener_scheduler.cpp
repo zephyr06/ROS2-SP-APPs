@@ -4,6 +4,7 @@
 #include "real_time_manager/real_time_manager.h"
 #include "real_time_manager/update_priority_assignment.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
+#include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/argparse.hpp"
@@ -109,12 +110,16 @@ class SchedulerApp : public AppBase {
                     ReadSP_Parameters(task_characteristics_yaml);
 
                 PriorityVec pa_opt;
-                if (incremental_optimizer_.IfInitialized()) {
-                    pa_opt = incremental_optimizer_.OptimizeIncre(dag_tasks);
+                if (incremental_optimizer_w_TL_.IfInitialized()) {
+                    pa_opt = incremental_optimizer_w_TL_.OptimizeIncre_w_TL(
+                        dag_tasks,
+                        GlobalVariables::
+                            Layer_Node_During_Incremental_Optimization);
                 } else {
-                    incremental_optimizer_ =
-                        OptimizePA_Incre(dag_tasks, sp_parameters);
-                    pa_opt = incremental_optimizer_.OptimizeFromScratch(
+                    incremental_optimizer_w_TL_ =
+                        OptimizePA_Incre_with_TimeLimits(dag_tasks,
+                                                         sp_parameters);
+                    pa_opt = incremental_optimizer_w_TL_.OptimizeFromScratch(
                         GlobalVariables::
                             Layer_Node_During_Incremental_Optimization);
                 }
@@ -122,6 +127,9 @@ class SchedulerApp : public AppBase {
                 time_taken = GetTimeTaken(start_time, finish_time);
                 WritePriorityAssignments(priority_yaml_output_path,
                                          dag_tasks.tasks, pa_opt, time_taken);
+                WriteTimeLimitToYamlOSM(
+                    incremental_optimizer_w_TL_.CollectResults()
+                        .id2time_limit[0]);  // only write TSP's time limit
             } else {
                 std::cerr << "Unknown scheduler: " << scheduler_ << "\n";
                 return;
@@ -143,7 +151,8 @@ class SchedulerApp : public AppBase {
     RealTimeManager rt_manager_;
     int cnt_ = 0;
     std::string scheduler_;
-    SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
+    // SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
+    SP_OPT_TA::OptimizePA_Incre_with_TimeLimits incremental_optimizer_w_TL_;
 };
 
 int main(int argc, char *argv[]) {
