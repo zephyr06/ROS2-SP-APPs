@@ -112,15 +112,40 @@ TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
     EXPECT_EQ(-1, time_limit_options[2][0]);
     EXPECT_EQ(-1, time_limit_options[3][0]);
 }
-TEST_F(TaskSetForTest_robotics_v19, optimize) {
+TEST_F(TaskSetForTest_robotics_v19, OptimizeFromScratch_w_TL) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    EXPECT_FALSE(opt.IfInitialized());
     opt.OptimizeFromScratch_w_TL(2);
+    EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
     EXPECT_EQ(400,
               res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
     //   In scratch mode, should return 400
     // In incremental mode, should return 800
+}
+
+TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
+                                         sp_parameters);  // high utilization
+
+    opt.OptimizeFromScratch_w_TL(2);  // result is 400
+    ResourceOptResult res_opt = opt.CollectResults();
+    EXPECT_EQ(400,
+              res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
+
+    DAG_Model dag_tasks_updated =
+        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                      "TaskData/test_robotics_v21.yaml");  // low utilization
+    opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
+    res_opt = opt.CollectResults();
+    EXPECT_EQ(
+        600,
+        res_opt.id2time_limit[0]);  // change only to nearby ET level each time
+
+    dag_tasks_updated =
+        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                      "TaskData/test_robotics_v22.yaml");  // low utilization
 }
 
 int main(int argc, char** argv) {

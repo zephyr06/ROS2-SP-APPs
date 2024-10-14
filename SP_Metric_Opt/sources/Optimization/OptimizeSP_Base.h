@@ -25,8 +25,8 @@ struct ResourceOptResult {
     }
     // @time_limits: use -1 if one task does not have time limit
     void SaveTimeLimits(const TaskSet& tasks,
-                        std::vector<double>& time_limits) {
-                for (int i = 0; i < static_cast<int>(tasks.size()); i++) {
+                        const std::vector<double>& time_limits) {
+        for (int i = 0; i < static_cast<int>(tasks.size()); i++) {
             id2time_limit[tasks[i].id] = time_limits[i];
         }
     }
