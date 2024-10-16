@@ -10,6 +10,11 @@ bool ifTimeout(TimerType start_time);
 // task id sequence; small index have higher priority
 typedef std::vector<int> PriorityVec;
 
+inline std::string get_tsp_config_file_path() {
+    return GlobalVariables::PROJECT_PATH +
+           "applications/tsp_solver_osm/config/algorithm_config.yaml";
+}
+
 struct ResourceOptResult {
     void UpdatePriorityVec(const PriorityVec& pa) {
         priority_vec = pa;
@@ -18,8 +23,9 @@ struct ResourceOptResult {
             id2priority[id] = pa.size() - i;
         }
     }
+    // @time_limits: use -1 if one task does not have time limit
     void SaveTimeLimits(const TaskSet& tasks,
-                        std::vector<double>& time_limits) {
+                        const std::vector<double>& time_limits) {
         for (int i = 0; i < static_cast<int>(tasks.size()); i++) {
             id2time_limit[tasks[i].id] = time_limits[i];
         }

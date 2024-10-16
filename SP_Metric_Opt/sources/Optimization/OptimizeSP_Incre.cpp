@@ -5,7 +5,7 @@ namespace SP_OPT_PA {
 
 PriorityPartialPath::PriorityPartialPath(const DAG_Model& dag_tasks,
                                          const SP_Parameters& sp_parameters)
-    : dag_tasks(dag_tasks), sp_parameters(sp_parameters), sp(0) {
+    : dag_tasks(dag_tasks), sp_parameters(sp_parameters) {
     tasks_to_assign.reserve(dag_tasks.tasks.size());
     for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
         tasks_to_assign.insert(i);
@@ -22,8 +22,8 @@ PriorityPartialPath::PriorityPartialPath(const DAG_Model& dag_tasks,
 
 bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
                                   const PriorityPartialPath& rhs) const {
-    if (std::abs((lhs.sp - rhs.sp)) > 5e-2) {
-        return lhs.sp < rhs.sp;  // large sp value first
+    if (std::abs((lhs.sp_lost - rhs.sp_lost)) > 5e-2) {
+        return lhs.sp_lost > rhs.sp_lost;  // small sp value first
     } else {
         for (int i = 0; i < lhs.pa_vec_lower_pri.size(); i++) {
             if (lhs.pa_vec_lower_pri[i] != rhs.pa_vec_lower_pri[i]) {
@@ -50,13 +50,11 @@ void PriorityPartialPath::UpdateSP(int task_id) {
         hp_tasks.push_back(dag_tasks.tasks[task_hp_id]);
     }
     FiniteDist rta_curr = GetRTA_OneTask(dag_tasks.tasks[task_id], hp_tasks);
-    sp += ObtainSP(
-        {rta_curr}, {dag_tasks.tasks[task_id].deadline},
-        {sp_parameters.thresholds_node[task_id]},
-        {1.0 * sp_parameters
-                   .weights_node[task_id]});  // use inverse weight to prevent
-                                              // assigning tasks with high
-                                              // weights a lower priority
+    // sp +=
+    double sp_cur = ObtainSP({rta_curr}, {dag_tasks.tasks[task_id].deadline},
+                             {sp_parameters.thresholds_node[task_id]},
+                             {1.0 * sp_parameters.weights_node[task_id]});
+    sp_lost += 1.0 * sp_parameters.weights_node[task_id] - sp_cur;
 }
 
 void PriorityPartialPath::AssignAndUpdateSP(int task_id) {
@@ -90,6 +88,15 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
                 PriorityPartialPath new_path = path;
                 new_path.AssignAndUpdateSP(task_id);
                 pq.push(new_path);
+                if (GlobalVariables::debugMode) {
+                    std::cout << "Priority " << curr_priority << ":\n";
+                    std::cout << "partial paths:\n";
+                    std::cout << "SP lost: " << new_path.sp_lost << " ";
+                    for (int j = 0; j < new_path.pa_vec_lower_pri.size(); j++) {
+                        std::cout << new_path.pa_vec_lower_pri[j] << " ";
+                    }
+                    std::cout << "\n";
+                }
             }
         }
         partial_paths.clear();
@@ -97,10 +104,29 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
             partial_paths.push_back(pq.top());
             pq.pop();
         }
+
+        if (GlobalVariables::debugMode) {
+            std::cout << "Priority " << curr_priority << ":\n";
+            std::cout << "partial paths:\n";
+            for (int i = 0; i < partial_paths.size(); i++) {
+                std::cout << "SP lost: " << partial_paths[i].sp_lost << " ";
+                for (int j = 0; j < partial_paths[i].pa_vec_lower_pri.size();
+                     j++) {
+                    std::cout << partial_paths[i].pa_vec_lower_pri[j] << " ";
+                }
+                std::cout << "\n";
+            }
+        }
     }
     PriorityVec res = partial_paths[0].pa_vec_lower_pri;
     std::reverse(res.begin(), res.end());
     opt_pa_ = res;
+    double sum_sp_weights = 0;
+    for (int i = 0; i < N; i++) {
+        sum_sp_weights += sp_parameters_.weights_node[i];
+    }
+    opt_sp_ = sum_sp_weights -
+              partial_paths[0].sp_lost;  // SP range for each node is 0 to 1
     return res;
 }
 
@@ -127,8 +153,7 @@ PriorityVec RemoveOneTask(const PriorityVec& pa_vec, int task_id) {
             break;
         }
     }
-    if (!found)
-        CoutError("Task not found in RemoveOneTask");
+    if (!found) CoutError("Task not found in RemoveOneTask");
     return res;
 }
 std::vector<PriorityVec> FindPriorityVec1D_Variations(const PriorityVec& pa_vec,

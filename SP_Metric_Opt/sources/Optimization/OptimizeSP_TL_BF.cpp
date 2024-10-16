@@ -29,7 +29,9 @@ DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
     return dag_tasks_upd;
 }
 
-void OptimizePA_with_TimeLimitsStatus::RecordTimeLimitOptions() {
+std::vector<std::vector<double>> RecordTimeLimitOptions(
+    const DAG_Model& dag_tasks) {
+    std::vector<std::vector<double>> time_limit_option_for_each_task;
     time_limit_option_for_each_task.reserve(dag_tasks.tasks.size());
     for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
         time_limit_option_for_each_task.push_back({});
@@ -42,6 +44,7 @@ void OptimizePA_with_TimeLimitsStatus::RecordTimeLimitOptions() {
             time_limit_option_for_each_task[i].push_back(-1);
         }
     }
+    return time_limit_option_for_each_task;
 }
 
 void OptimizePA_with_TimeLimitsStatus::Optimize(

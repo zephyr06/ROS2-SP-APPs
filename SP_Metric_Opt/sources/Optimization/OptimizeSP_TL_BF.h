@@ -11,6 +11,8 @@ SP_Parameters AddWeightsFromTimeLimits(
 DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
                                         const std::vector<double>& time_limit);
 
+std::vector<std::vector<double>> RecordTimeLimitOptions(
+    const DAG_Model& dag_tasks);
 class OptimizePA_with_TimeLimitsStatus {
    public:
     OptimizePA_with_TimeLimitsStatus(const DAG_Model& dag_tasks,
@@ -19,10 +21,8 @@ class OptimizePA_with_TimeLimitsStatus {
           sp_parameters(sp_parameters),
           N(dag_tasks.tasks.size()) {
         res_opt.sp_opt = INT_MIN;
-        RecordTimeLimitOptions();
+        time_limit_option_for_each_task = RecordTimeLimitOptions(dag_tasks);
     }
-
-    void RecordTimeLimitOptions();
 
     void Optimize(uint trav_task_index,
                   std::vector<double>& time_limit_for_task);

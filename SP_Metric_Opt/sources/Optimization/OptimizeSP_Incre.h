@@ -40,7 +40,8 @@ struct PriorityPartialPath {
     // const SP_Parameters& sp_parameters;
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
-    double sp;
+    // double sp=0;
+    double sp_lost = 0;
     PriorityVec pa_vec_lower_pri;
     std::unordered_set<int> tasks_to_assign;
 };
@@ -69,11 +70,22 @@ class OptimizePA_Incre : public OptimimizePA_Base {
     // TODO: Current implementation doesn't consider end-to-end latency, need to
     // add later! One way to do it is by modifying the parameters of
     // sp_parameters
+    /*
+    The implementation for this function follows Audsley's algorithm with
+    modifications for speed and optimization considerations:
+    // 1. The algortihm iterativelys finds the task to assign the lowest
+    priority to. However, since multiple tasks may qualify for the lowest
+    priority,
+    // the algorithm will consider all of them and save them as partial paths.
+    // 2. The input argument K records the maximum number of partial paths under
+    consideration in each iteration.
+    // 3. This function updates both opt_pa_ and opt_sp_, and returns opt_pa_.
+    */
     PriorityVec OptimizeFromScratch(int K);
 
     PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update);
 
-    bool IfInitialized() const { return !dag_tasks_.tasks.empty(); }
+    bool IfInitialized() const { return !opt_pa_.empty(); }
 };
 
 inline PriorityVec PerformOptimizePA_Incre(const DAG_Model& dag_tasks,
