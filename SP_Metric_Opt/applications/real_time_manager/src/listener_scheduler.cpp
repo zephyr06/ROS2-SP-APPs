@@ -83,35 +83,21 @@ class SchedulerApp : public AppBase {
             et_estimator_.updateTaskExecutionTimeDistributions(10, 2 * 3);
             std::cout << "Updated execution time\n";
             double time_taken;
+
+            using namespace SP_OPT_PA;
+            DAG_Model dag_tasks = ReadDAG_Tasks(task_characteristics_yaml);
+            SP_Parameters sp_parameters =
+                ReadSP_Parameters(task_characteristics_yaml);
+
+            ResourceOptResult opt_res_pa_and_tl;
             if (scheduler_ == "optimizerBF") {
-                // Perform schedule
-                // Scheduler command to be executed
-                std::string cmd = sp_opt_folder_path + "/release";
-                cmd += "/tests/AnalyzePriorityAssignment --file_path ";
-                cmd += task_characteristics_yaml;
-                cmd += " --output_file_path ";
-                cmd += priority_yaml_output_path;
-                std::cout << "cmd is:" << cmd << std::endl;
-                const char *scheduler_command = cmd.c_str();
-                // Execute the command
-                int result = system(scheduler_command);
-                // Check if command execution was successful
-                if (result != 0) {
-                    // Command execution failed
-                    std::cerr << "Scheduler command execution failed!\n";
-                    return;
-                }
+                opt_res_pa_and_tl =
+                    BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
                 TimerType finish_time = CurrentTimeInProfiler;
                 time_taken = GetTimeTaken(start_time, finish_time);
             } else if (scheduler_ == "optimizerIncremental") {
-                using namespace SP_OPT_PA;
-                DAG_Model dag_tasks = ReadDAG_Tasks(task_characteristics_yaml);
-                SP_Parameters sp_parameters =
-                    ReadSP_Parameters(task_characteristics_yaml);
-
-                PriorityVec pa_opt;
                 if (incremental_optimizer_w_TL_.IfInitialized()) {
-                    pa_opt = incremental_optimizer_w_TL_.OptimizeIncre_w_TL(
+                    incremental_optimizer_w_TL_.OptimizeIncre_w_TL(
                         dag_tasks,
                         GlobalVariables::
                             Layer_Node_During_Incremental_Optimization);
@@ -119,22 +105,26 @@ class SchedulerApp : public AppBase {
                     incremental_optimizer_w_TL_ =
                         OptimizePA_Incre_with_TimeLimits(dag_tasks,
                                                          sp_parameters);
-                    pa_opt =
-                        incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
-                            GlobalVariables::
-                                Layer_Node_During_Incremental_Optimization);
+
+                    incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
+                        GlobalVariables::
+                            Layer_Node_During_Incremental_Optimization);
                 }
+                opt_res_pa_and_tl =
+                    incremental_optimizer_w_TL_.CollectResults();
                 TimerType finish_time = CurrentTimeInProfiler;
                 time_taken = GetTimeTaken(start_time, finish_time);
-                WritePriorityAssignments(priority_yaml_output_path,
-                                         dag_tasks.tasks, pa_opt, time_taken);
-                WriteTimeLimitToYamlOSM(
-                    incremental_optimizer_w_TL_.CollectResults()
-                        .id2time_limit[0]);  // only write TSP's time limit
             } else {
                 std::cerr << "Unknown scheduler: " << scheduler_ << "\n";
                 return;
             }
+
+            PriorityVec pa_op = opt_res_pa_and_tl.priority_vec;
+            WritePriorityAssignments(priority_yaml_output_path, dag_tasks.tasks,
+                                     pa_opt, time_taken);
+            WriteTimeLimitToYamlOSM(
+                opt_res_pa_and_tl
+                    .id2time_limit[0]);  // only write TSP's time limit
             std::cout << "Time taken for scheduler to run one time: "
                       << time_taken << "\n";
 
