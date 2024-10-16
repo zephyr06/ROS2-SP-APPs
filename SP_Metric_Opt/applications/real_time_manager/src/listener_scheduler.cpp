@@ -119,7 +119,7 @@ class SchedulerApp : public AppBase {
                 return;
             }
 
-            PriorityVec pa_op = opt_res_pa_and_tl.priority_vec;
+            PriorityVec pa_opt = opt_res_pa_and_tl.priority_vec;
             WritePriorityAssignments(priority_yaml_output_path, dag_tasks.tasks,
                                      pa_opt, time_taken);
             WriteTimeLimitToYamlOSM(
