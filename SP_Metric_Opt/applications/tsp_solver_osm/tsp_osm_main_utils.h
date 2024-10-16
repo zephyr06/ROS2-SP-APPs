@@ -25,7 +25,9 @@ struct InputDataForTSP {
     ryml::Tree tree;
 };
 
-void run_tsp_osm() {
+// this function is not used in the main experiments, it is separted into the
+// two other functions
+void run_tsp_osm(double max_time_input = 0.0) {
     std::string tsp_osm_project_path =
         GlobalVariables::PROJECT_PATH + "applications/tsp_solver_osm/";
     std::cout << tsp_osm_project_path << std::endl;
@@ -342,7 +344,7 @@ InputDataForTSP load_tsp_input() {
     return {tsp_osm_project_path, alg_config_path, raw_map, graph, tree};
 }
 
-void run_tsp(InputDataForTSP& input_tsp) {
+void run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
     std::string project_path = input_tsp.project_path;
     std::string alg_config_path = input_tsp.alg_config_path;
     std::shared_ptr<std::vector<location_t>> raw_map = input_tsp.raw_map;
@@ -376,9 +378,11 @@ void run_tsp(InputDataForTSP& input_tsp) {
 
     setting.max_iter = std::stoi(
         bipedlab::yaml_utils::convertToStr(tree["general"]["max_iter"].val()));
-
-    setting.max_time = std::stof(
-        bipedlab::yaml_utils::convertToStr(tree["general"]["max_time"].val()));
+    if (max_time_input != 0.0)
+        setting.max_time = max_time_input;
+    else
+        setting.max_time = std::stof(bipedlab::yaml_utils::convertToStr(
+            tree["general"]["max_time"].val()));
 
     setting.pseudo_mode = std::stoi(
         bipedlab::yaml_utils::convertToStr(tree["general"]["pseudo"].val()));
