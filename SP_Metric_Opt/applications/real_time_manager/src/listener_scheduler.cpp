@@ -119,9 +119,10 @@ class SchedulerApp : public AppBase {
                     incremental_optimizer_w_TL_ =
                         OptimizePA_Incre_with_TimeLimits(dag_tasks,
                                                          sp_parameters);
-                    pa_opt = incremental_optimizer_w_TL_.OptimizeFromScratch(
-                        GlobalVariables::
-                            Layer_Node_During_Incremental_Optimization);
+                    pa_opt =
+                        incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
+                            GlobalVariables::
+                                Layer_Node_During_Incremental_Optimization);
                 }
                 TimerType finish_time = CurrentTimeInProfiler;
                 time_taken = GetTimeTaken(start_time, finish_time);
