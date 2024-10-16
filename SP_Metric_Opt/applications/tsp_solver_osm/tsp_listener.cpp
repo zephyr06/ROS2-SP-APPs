@@ -1,18 +1,25 @@
 #include <cassert>
 
+#include "sources/Optimization/OptimizeSP_Base.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/UtilsForROS2/Publisher.h"
 #include "tsp_osm_main_utils.h"
 
+inline double LoadTSPMaxTime() {
+    std::string config_path = SP_OPT_PA::get_tsp_config_file_path();
+    YAML::Node config = YAML::LoadFile(config_path);
+    return config["general"]["max_time"].as<double>();
+}
+
 class TSPApp : public AppBase {
    public:
-    TSPApp() : AppBase("TSP") {}
+    TSPApp() : AppBase("TSP") { input_data_ = load_tsp_input(); }
     void run(int) override {
         std::cout << "Following cout related to TSP will be disabled\n";
-        input_data_ = load_tsp_input();
         std::cout.setstate(std::ios_base::failbit);
-        run_tsp(input_data_);
+        double max_time = LoadTSPMaxTime();
+        run_tsp(input_data_, max_time);
         // run_tsp_osm();
     }
     InputDataForTSP input_data_;
