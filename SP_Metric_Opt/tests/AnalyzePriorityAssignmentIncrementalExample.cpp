@@ -67,7 +67,9 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < 5; i++) {
         // read the updated DAG
         dag_tasks = ReadDAG_Tasks(file_path);
-        pa_opt = opt.OptimizeIncre_w_TL(dag_tasks);
+        pa_opt = opt.OptimizeIncre_w_TL(
+            dag_tasks,
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
         time_taken = GetTimeTaken(start_time, finish_time);
         // PrintPriorityVec(dag_tasks.tasks, pa_opt);
         WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
