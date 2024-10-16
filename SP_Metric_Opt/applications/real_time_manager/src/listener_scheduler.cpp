@@ -153,7 +153,7 @@ class SchedulerApp : public AppBase {
     int cnt_ = 0;
     std::string scheduler_;
     // SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
-    SP_OPT_TA::OptimizePA_Incre_with_TimeLimits incremental_optimizer_w_TL_;
+    SP_OPT_PA::OptimizePA_Incre_with_TimeLimits incremental_optimizer_w_TL_;
 };
 
 int main(int argc, char *argv[]) {
