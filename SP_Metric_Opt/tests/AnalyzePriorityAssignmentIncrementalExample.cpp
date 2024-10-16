@@ -3,6 +3,7 @@
 #include <iostream>
 
 #include "sources/Optimization/OptimizeSP_Incre.h"
+#include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/argparse.hpp"
@@ -17,7 +18,9 @@ int main(int argc, char *argv[]) {
 
     argparse::ArgumentParser program("program name");
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v6.yaml"))
+        .default_value(
+            std::string("/home/zephyr/Programming/ROS2-SP-APPs/"
+                        "all_time_records/task_characteristics.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
@@ -48,10 +51,10 @@ int main(int argc, char *argv[]) {
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
 
-    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
     // read a DAG and optimize it for the first time
-    PriorityVec pa_opt = opt.OptimizeFromScratch(
+    PriorityVec pa_opt = opt.OptimizeFromScratch_w_TL(
         GlobalVariables::Layer_Node_During_Incremental_Optimization);
 
     TimerType finish_time = CurrentTimeInProfiler;
@@ -64,7 +67,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < 5; i++) {
         // read the updated DAG
         dag_tasks = ReadDAG_Tasks(file_path);
-        pa_opt = opt.OptimizeIncre(dag_tasks);
+        pa_opt = opt.OptimizeIncre_w_TL(dag_tasks);
         time_taken = GetTimeTaken(start_time, finish_time);
         // PrintPriorityVec(dag_tasks.tasks, pa_opt);
         WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
