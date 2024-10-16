@@ -7,9 +7,10 @@
 
 class TSPApp : public AppBase {
    public:
-    TSPApp() : AppBase("TSP") { input_data_ = load_tsp_input(); }
+    TSPApp() : AppBase("TSP") {}
     void run(int) override {
         std::cout << "Following cout related to TSP will be disabled\n";
+        input_data_ = load_tsp_input();
         std::cout.setstate(std::ios_base::failbit);
         run_tsp(input_data_);
         // run_tsp_osm();

@@ -21,6 +21,7 @@ struct HashKey4Vector {
 
 class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
    public:
+   OptimizePA_Incre_with_TimeLimits(){};
     OptimizePA_Incre_with_TimeLimits(const DAG_Model& dag_tasks,
                                      const SP_Parameters& sp_parameters)
         : OptimizePA_Incre(dag_tasks, sp_parameters) {
