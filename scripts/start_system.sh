@@ -36,6 +36,8 @@ cd applications
 cd $PROJECT_ROOT/SP_Metric_Opt/release
 make -j8
 cd $PROJECT_ROOT/scripts
+python3 report_avg_scheduler_overhead.py
+
 ### post-execution operations, plot SP for the single scheudler, and backup data
 python3 ../SP_Metric_Opt/Visualize_SP_Metric/draw_SP_current_scheduler.py $1
 
