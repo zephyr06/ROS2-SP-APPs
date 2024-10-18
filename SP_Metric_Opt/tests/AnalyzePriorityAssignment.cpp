@@ -18,7 +18,9 @@ int main(int argc, char *argv[]) {
 
     argparse::ArgumentParser program("program name");
     program.add_argument("--file_path")
-        .default_value(std::string("TaskData/test_robotics_v19.yaml"))
+        .default_value(
+            std::string("/home/zephyr/Programming/ROS2-SP-APPs/"
+                        "all_time_records/task_characteristics.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
@@ -51,7 +53,7 @@ int main(int argc, char *argv[]) {
 
     // Perform optimization
     ResourceOptResult res =
-        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     TimerType finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
 

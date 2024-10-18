@@ -92,7 +92,7 @@ class SchedulerApp : public AppBase {
             ResourceOptResult opt_res_pa_and_tl;
             if (scheduler_ == "optimizerBF") {
                 opt_res_pa_and_tl =
-                    BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+                    EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
                 TimerType finish_time = CurrentTimeInProfiler;
                 time_taken = GetTimeTaken(start_time, finish_time);
             } else if (scheduler_ == "optimizerIncremental") {

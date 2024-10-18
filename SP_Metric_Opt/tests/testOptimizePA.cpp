@@ -253,7 +253,7 @@ TEST_F(TaskSetForTest_robotics_v18, AddWeightsFromTimeLimits) {
 }
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
     ResourceOptResult res_opt =
-        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     EXPECT_EQ(1000, res_opt.id2time_limit[0]);
 }
 
@@ -274,7 +274,7 @@ class TaskSetForTest_robotics_v19 : public ::testing::Test {
 };
 TEST_F(TaskSetForTest_robotics_v19, optimize) {
     ResourceOptResult res_opt =
-        BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
     EXPECT_EQ(400, res_opt.id2time_limit[0]);
 }

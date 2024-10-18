@@ -37,7 +37,7 @@ class OptimizePA_with_TimeLimitsStatus {
     std::vector<std::vector<double>> time_limit_option_for_each_task;
 };
 
-ResourceOptResult BackTrackingPA_with_TimeLimits(
+ResourceOptResult EnumeratePA_with_TimeLimits(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters);
 
 }  // namespace SP_OPT_PA

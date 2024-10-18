@@ -76,7 +76,7 @@ void OptimizePA_with_TimeLimitsStatus::Optimize() {
     Optimize(0, time_limit_for_task);
 }
 
-ResourceOptResult BackTrackingPA_with_TimeLimits(
+ResourceOptResult EnumeratePA_with_TimeLimits(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
     optimizer.Optimize();

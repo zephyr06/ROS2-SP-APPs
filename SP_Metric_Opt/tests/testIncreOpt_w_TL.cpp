@@ -76,7 +76,7 @@ class TaskSetForTest_robotics_v18 : public ::testing::Test {
 
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
     // ResourceOptResult res_opt =
-    //     BackTrackingPA_with_TimeLimits(dag_tasks, sp_parameters);
+    //     EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     opt.OptimizeFromScratch_w_TL(2);
     ResourceOptResult res_opt = opt.CollectResults();
