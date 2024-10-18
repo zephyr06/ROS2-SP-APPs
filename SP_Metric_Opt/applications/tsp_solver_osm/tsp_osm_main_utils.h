@@ -344,7 +344,7 @@ InputDataForTSP load_tsp_input() {
     return {tsp_osm_project_path, alg_config_path, raw_map, graph, tree};
 }
 
-void run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
+double run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
     std::string project_path = input_tsp.project_path;
     std::string alg_config_path = input_tsp.alg_config_path;
     std::shared_ptr<std::vector<location_t>> raw_map = input_tsp.raw_map;
@@ -440,9 +440,10 @@ void run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
             if (flag_print_path) {
                 pthread_join(tid[1], NULL);
             }
+            // std::cout << imomt.get_shortest_path_cost() << std::endl;
 
             // exit(0);
-            return;
+            return imomt.get_shortest_path_cost();
         }
         case 1: {
             BiAstar bi_astar(source, target, objectives, raw_map, graph,
@@ -463,7 +464,8 @@ void run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
             }
 
             // exit(0);
-            return;
+            CoutError("Return value is not implemented yet!");
+            return -1;
         }
         case 2: {
             ANAStar ana_star(source, target, objectives, raw_map, graph,
@@ -483,7 +485,8 @@ void run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
             }
 
             // exit(0);
-            return;
+            CoutError("Return value is not implemented yet!");
+            return -1;
         }
     }
 }
