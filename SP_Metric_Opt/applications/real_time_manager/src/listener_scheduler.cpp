@@ -128,6 +128,7 @@ class SchedulerApp : public AppBase {
             std::cout << "Time taken for scheduler to run one time: "
                       << time_taken << "\n";
 
+            start_time =  CurrentTimeInProfiler;
             // update priorities from the scheduler to local config yaml
             UpdatePriorityAssignments(local_config_yaml,
                                       priority_yaml_output_path);
@@ -135,6 +136,8 @@ class SchedulerApp : public AppBase {
                                                    task_characteristics_yaml);
             // apply the new priority assignments
             rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
+            auto finish_time =  CurrentTimeInProfiler;
+            std::cout<<"Time to change priority assignments in OS: "<<GetTimeTaken(start_time, finish_time)<<"\n";
         }
     }
 
