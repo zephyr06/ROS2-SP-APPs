@@ -84,7 +84,7 @@ class DynaSLAMWrapperForROS2 {
                                   // and depthmaps
 
         nImages = vstrImageFilenamesRGB.size();
-        std::cout << "nImages: " << nImages << std::endl;
+        // std::cout << "nImages: " << nImages << std::endl;
         // nImages = 800;
         if (vstrImageFilenamesRGB.empty()) {
             cerr << endl << "No images found in provided path." << endl;
@@ -217,7 +217,7 @@ class DynaSLAMWrapperForROS2 {
         double ttrack =
             std::chrono::duration_cast<std::chrono::duration<double> >(t2 - t1)
                 .count();
-        std::cout << "SLAM computation time without IO: " << ttrack << "\n";
+        // std::cout << "SLAM computation time without IO: " << ttrack << "\n";
         vTimesTrack[image_idx] = ttrack;
 
         // Wait to load the next frame
