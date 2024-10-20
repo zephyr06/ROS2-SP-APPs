@@ -68,6 +68,7 @@ You can modify the yaml file which describes the task set settings. Time units a
 
 # Implmentation details
 -  TSP's time limit is directly updated by the priority assignment optimization algorithm.
+- Incremental optimzier partially relies on detecting the execution time distribution difference, which can be controlled by adjusting the thresholds in `Probabiliy.h` (`approx_equal()` and `FiniteDist::operator==()` function), 
 
 
 # Run unit tests/check code usage
