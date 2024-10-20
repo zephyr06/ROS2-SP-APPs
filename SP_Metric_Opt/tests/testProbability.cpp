@@ -20,12 +20,19 @@ TEST(FiniteDist, equal) {
                                           Value_Proba(4, 0.1)};
     std::vector<Value_Proba> dist_vec3 = {Value_Proba(3, 0.1),
                                           Value_Proba(7, 0.9)};
+
+    std::vector<Value_Proba> dist_vec1_approx = {Value_Proba(3.1, 0.099),
+                                                 Value_Proba(6.9, 0.901)};
     FiniteDist dist1(dist_vec1);
     FiniteDist dist2(dist_vec2);
     FiniteDist dist3(dist_vec3);
+    FiniteDist dist1_approx(dist_vec1_approx);
+
     EXPECT_TRUE(dist1 == dist3);
     EXPECT_FALSE(dist1 == dist2);
     EXPECT_TRUE(dist1 != dist2);
+
+    EXPECT_TRUE(dist1 == dist1_approx);
 }
 TEST(FiniteDist, V1) {
     GaussianDist gau_dis(10, 1);

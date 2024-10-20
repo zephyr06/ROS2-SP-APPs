@@ -9,6 +9,11 @@ std::unordered_map<double, double> FiniteDist::GetV_PMap() const {
         m[element.value] = element.probability;
     return m;
 }
+bool Value_Proba::operator==(const Value_Proba& other) const {
+    double tolerance = 1e-1;
+    return approx_equal_double(value, other.value, tolerance) &&
+           approx_equal_double(probability, other.probability, tolerance);
+}
 
 FiniteDist::FiniteDist(const GaussianDist& gauss_dist, double min_val,
                        double max_val, int granularity)
@@ -283,5 +288,25 @@ double FiniteDist::GetAvgValue() const {
         }
         return sum;
     }
+}
+bool FiniteDist::approx_equal(const FiniteDist& other, double tolerance) const {
+    if (distribution.size() != other.distribution.size()) return false;
+    for (uint i = 0; i < distribution.size(); i++) {
+        if (distribution[i] != other.distribution[i]) return false;
+    }
+    if (near(min_time, other.min_time) && near(max_time, other.max_time))
+        return true;
+    return false;
+}
+
+bool FiniteDist::operator==(const FiniteDist& other) const {
+    if (distribution.size() != other.distribution.size()) return false;
+    double tolerance = 1e-1;
+    for (uint i = 0; i < distribution.size(); i++) {
+        if (distribution[i] != other.distribution[i]) return false;
+    }
+    if (!approx_equal_double(min_time, other.min_time, tolerance)) return false;
+    if (!approx_equal_double(max_time, other.max_time, tolerance)) return false;
+    return true;
 }
 }  // namespace SP_OPT_PA

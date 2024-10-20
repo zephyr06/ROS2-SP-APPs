@@ -139,6 +139,20 @@ TEST_F(TaskSetForTest_robotics_v8, FindTaskWithDifferentEt) {
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
 }
+
+TEST(TaskSet, FindTaskWithDifferentEt) {
+    auto dag22 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v22.yaml");
+    auto dag23 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v23.yaml");
+    auto dag24 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v24.yaml");
+    auto diff2 = FindTaskWithDifferentEt(dag22, dag23);
+    EXPECT_EQ(1, diff2.size());
+    EXPECT_EQ(1, diff2[0]);
+    auto diff3 = FindTaskWithDifferentEt(dag22, dag24);
+    EXPECT_EQ(0, diff3.size());
+}
 TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = {0, 1, 2, 3};
