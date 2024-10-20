@@ -62,21 +62,27 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
 void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
     int K, uint task_id, std::vector<double>& time_limits) {
     if (task_id == dag_tasks_.tasks.size()) {
+        auto start_time = CurrentTimeInProfiler;
         SP_Parameters sp_para_cur =
             AddWeightsFromTimeLimits(dag_tasks_, sp_parameters_, time_limits);
         DAG_Model dag_tasks_cur =
             UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
         if (timelimit2optimizer_.count(time_limits)) {
             OptimizePA_Incre& optimizer = timelimit2optimizer_[time_limits];
-            optimizer.OptimizeIncre(dag_tasks_);
+            optimizer.OptimizeIncre(
+                dag_tasks_cur);  // enforce the current time limit option
             UpdateRecords(optimizer, time_limits);
+            optimizer.UpdateDAG(dag_tasks_cur);
         } else {
             OptimizePA_Incre optimizer(dag_tasks_cur, sp_para_cur);
             optimizer.OptimizeFromScratch(K);
             timelimit2optimizer_[time_limits] = optimizer;
             UpdateRecords(optimizer, time_limits);
         }
-
+        auto finish_time = CurrentTimeInProfiler;
+        double time_taken = GetTimeTaken(start_time, finish_time);
+        CoutWarning("Time taken for one traverse: " +
+                    std::to_string(time_taken));
         return;
     } else {
         for (double time_limit : time_limit_option_for_each_task_[task_id]) {
@@ -92,6 +98,7 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
     std::vector<double> time_limits;
     time_limits.reserve(dag_tasks_.tasks.size());
     TraverseTimeLimitOptions(K, 0, time_limits);
+    std::cout << "************Finish running the scratch run***************\n";
     return opt_pa_;
 }
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(

@@ -59,6 +59,8 @@ class OptimimizePA_Base {
           opt_sp_(INT_MIN),
           start_time_((std::chrono::high_resolution_clock::now())) {}
 
+    void UpdateDAG(const DAG_Model& dag_tasks) { dag_tasks_ = dag_tasks; }
+    
     // data members
     DAG_Model dag_tasks_;
     SP_Parameters sp_parameters_;

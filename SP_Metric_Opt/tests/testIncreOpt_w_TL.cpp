@@ -143,9 +143,16 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
         600,
         res_opt.id2time_limit[0]);  // change only to nearby ET level each time
 
-    dag_tasks_updated =
-        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
-                      "TaskData/test_robotics_v22.yaml");  // low utilization
+    auto start_time = CurrentTimeInProfiler;
+    for (int i = 0; i < 10; i++) opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
+    auto finish_time = CurrentTimeInProfiler;
+    double time_taken = GetTimeTaken(start_time, finish_time);
+    EXPECT_LT(time_taken / 10.0,
+              5e-2);  // since no adjustemnts are made, it should be very fast
+
+    // dag_tasks_updated =
+    //     ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+    //                   "TaskData/test_robotics_v22.yaml");  // low utilization
 }
 
 int main(int argc, char** argv) {
