@@ -1,5 +1,4 @@
-#include "sources/applications/real_time_manager/include/real_time_manager/scheduler_wrapper.h"
-
+#include "applications/real_time_manager/include/real_time_manager/scheduler_wrapper.h"
 int main(int argc, char *argv[]) {
     SP_OPT_PA::DAG_Model dag_tasks = SP_OPT_PA::ReadDAG_Tasks(
         GlobalVariables::PROJECT_PATH +
