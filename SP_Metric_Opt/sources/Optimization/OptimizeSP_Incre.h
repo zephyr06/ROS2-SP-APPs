@@ -52,13 +52,22 @@ struct CompPriorityPath {
                     const PriorityPartialPath& rhs) const;
 };
 
-std::vector<int> FindTaskWithDifferentEt(const DAG_Model& dag_tasks,
-                                         const DAG_Model& dag_tasks_updated);
+struct DiffObj {
+    int task_id;
+    bool increase;
+};
+std::vector<DiffObj> FindTaskWithDifferentEt(
+    const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated);
 
 PriorityVec RemoveOneTask(const PriorityVec& pa_vec, int task_id);
 
-std::vector<PriorityVec> FindPriorityVec1D_Variations(const PriorityVec& pa_vec,
-                                                      int task_id);
+enum PriorityChangeStatus { Increase, Decrease, OpenToAll };
+
+PriorityChangeStatus AnalyzePriorityChangeStatus(
+    const SP_Parameters& sp_parameters, int task_id, bool et_increased);
+std::vector<PriorityVec> FindPriorityVec1D_Variations(
+    const PriorityVec& pa_vec, int task_id,
+    PriorityChangeStatus priority_change);
 
 class OptimizePA_Incre : public OptimimizePA_Base {
    public:

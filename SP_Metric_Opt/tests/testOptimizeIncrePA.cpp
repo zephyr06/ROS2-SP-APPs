@@ -149,19 +149,76 @@ TEST(TaskSet, FindTaskWithDifferentEt) {
                                "TaskData/test_robotics_v24.yaml");
     auto diff2 = FindTaskWithDifferentEt(dag22, dag23);
     EXPECT_EQ(1, diff2.size());
-    EXPECT_EQ(1, diff2[0]);
+    EXPECT_EQ(1, diff2[0].task_id);
+    EXPECT_TRUE(diff2[0].increase);
     auto diff3 = FindTaskWithDifferentEt(dag22, dag24);
     EXPECT_EQ(0, diff3.size());
 }
 TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = {0, 1, 2, 3};
-    std::vector<PriorityVec> res = FindPriorityVec1D_Variations(pa_vec1, 0);
+    std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
+        pa_vec1, 0, PriorityChangeStatus::OpenToAll);
     EXPECT_EQ(4, res.size());
     AssertEqualVectorExact<int>({0, 1, 2, 3}, res[0], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 0, 2, 3}, res[1], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 2, 0, 3}, res[2], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 2, 3, 0}, res[3], 1e-3, __LINE__);
+}
+TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_increase) {
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityVec pa_vec1 = {0, 1, 2, 3};
+    std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
+        pa_vec1, 0, PriorityChangeStatus::Increase);
+    EXPECT_EQ(1, res.size());
+    AssertEqualVectorExact<int>({0, 1, 2, 3}, res[0], 1e-3, __LINE__);
+}
+TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_increase2) {
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityVec pa_vec1 = {0, 1, 2, 3};
+    std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
+        pa_vec1, 1, PriorityChangeStatus::Increase);
+    EXPECT_EQ(2, res.size());
+    AssertEqualVectorExact<int>({1, 0, 2, 3}, res[0], 1e-3, __LINE__);
+    AssertEqualVectorExact<int>({0, 1, 2, 3}, res[1], 1e-3, __LINE__);
+}
+TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_decrease) {
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityVec pa_vec1 = {0, 1, 2, 3};
+    std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
+        pa_vec1, 0, PriorityChangeStatus::Decrease);
+    EXPECT_EQ(4, res.size());
+    AssertEqualVectorExact<int>({0, 1, 2, 3}, res[0], 1e-3, __LINE__);
+    AssertEqualVectorExact<int>({1, 0, 2, 3}, res[1], 1e-3, __LINE__);
+    AssertEqualVectorExact<int>({1, 2, 0, 3}, res[2], 1e-3, __LINE__);
+    AssertEqualVectorExact<int>({1, 2, 3, 0}, res[3], 1e-3, __LINE__);
+}
+
+class TaskSetForTest_robotics_v25 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v25";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
+TEST_F(TaskSetForTest_robotics_v25, AnalyzePriorityChangeStatus) {
+    EXPECT_EQ(PriorityChangeStatus::Increase,
+              AnalyzePriorityChangeStatus(sp_parameters, 3, true));
+    EXPECT_EQ(PriorityChangeStatus::Decrease,
+              AnalyzePriorityChangeStatus(sp_parameters, 3, false));
+    EXPECT_EQ(PriorityChangeStatus::Decrease,
+              AnalyzePriorityChangeStatus(sp_parameters, 0, true));
+    EXPECT_EQ(PriorityChangeStatus::Increase,
+              AnalyzePriorityChangeStatus(sp_parameters, 0, false));
 }
 
 TEST_F(TaskSetForTest_robotics_v8, AssignAndUpdateSP) {

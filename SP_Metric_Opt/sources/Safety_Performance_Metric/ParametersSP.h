@@ -30,6 +30,18 @@ struct SP_Parameters {
         weights_path.reserve(size);
     }
 
+    // return true if the task has uniquelly highest weight; false otherwise
+    bool if_highest_weight_unique(int task_id) const {
+        int weight_cur = weights_node.at(task_id);
+        for (auto itr = weights_node.begin(); itr != weights_node.end();
+             itr++) {
+            if (itr->second >= weight_cur && itr->first != task_id) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // data
     // std::vector<double> thresholds_node;
     // std::vector<double> weights_node;

@@ -130,14 +130,18 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
     return res;
 }
 
-std::vector<int> FindTaskWithDifferentEt(const DAG_Model& dag_tasks,
-                                         const DAG_Model& dag_tasks_updated) {
-    std::vector<int> seq;
+std::vector<DiffObj> FindTaskWithDifferentEt(
+    const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated) {
+    std::vector<DiffObj> seq;
     seq.reserve(dag_tasks.tasks.size());
     for (int i = 0; i < dag_tasks.tasks.size(); i++) {
         if (dag_tasks.tasks[i].execution_time_dist !=
             dag_tasks_updated.tasks[i].execution_time_dist) {
-            seq.push_back(i);
+            if (dag_tasks.tasks[i].execution_time_dist.GetAvgValue() <
+                dag_tasks_updated.tasks[i].execution_time_dist.GetAvgValue()) {
+                seq.push_back(DiffObj{i, true});
+            } else
+                seq.push_back(DiffObj{i, false});
         }
     }
     return seq;
@@ -156,17 +160,66 @@ PriorityVec RemoveOneTask(const PriorityVec& pa_vec, int task_id) {
     if (!found) CoutError("Task not found in RemoveOneTask");
     return res;
 }
-std::vector<PriorityVec> FindPriorityVec1D_Variations(const PriorityVec& pa_vec,
-                                                      int task_id) {
+int GetProrityIndex(const PriorityVec& pa_vec, int task_id) {
+    for (int i = 0; i < static_cast<int>(pa_vec.size()); i++) {
+        if (pa_vec[i] == task_id) {
+            return i;
+        }
+    }
+    CoutError("Task not found in GetProrityIndex");
+    return -1;
+}
+std::vector<PriorityVec> FindPriorityVec1D_Variations(
+    const PriorityVec& pa_vec, int task_id,
+    PriorityChangeStatus priority_change) {
+    int old_priority_index = GetProrityIndex(pa_vec, task_id);
+    int lb, ub;
+    switch (priority_change) {
+        case Increase:
+            lb = 0;
+            ub = old_priority_index;
+            break;
+        case Decrease:
+            lb = old_priority_index;
+            ub = pa_vec.size() - 1;
+            break;
+        case OpenToAll:
+            lb = 0;
+            ub = pa_vec.size() - 1;
+            break;
+        default:
+            CoutError("Invalid priority_change status");
+            break;
+    }
+
     std::vector<PriorityVec> res;
     res.reserve(pa_vec.size());
     PriorityVec pa_vec_ref = RemoveOneTask(pa_vec, task_id);
-    for (int i = 0; i <= static_cast<int>(pa_vec_ref.size()); i++) {
+    for (int i = lb; i <= ub; i++) {
         PriorityVec pa_vec_new = pa_vec_ref;
         pa_vec_new.insert(pa_vec_new.begin() + i, task_id);
         res.push_back(pa_vec_new);
     }
     return res;
+}
+PriorityChangeStatus AnalyzePriorityChangeStatus(
+    const SP_Parameters& sp_parameters, int task_id, bool et_increased) {
+    if (et_increased) {
+        if (sp_parameters.if_highest_weight_unique(task_id))
+            return Increase;  // if the task has the highest weight, it should
+                              // be assigned the higher priority
+        else
+            return Decrease;  // Generally speaking, a task wigh higher ET
+                              // should be assigned lwoer priority
+    } else {
+        if (sp_parameters.if_highest_weight_unique(task_id))
+            return Decrease;  // if the task has the highest weight, it should
+                              // be assigned most of the resource; however, if
+                              // it requires less resources, we can assign lower
+                              // priority to it
+        else
+            return Increase;
+    }
 }
 
 PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
@@ -178,11 +231,17 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
         EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_);
     std::cout << "Initial SP before incremental optimziation is: " << opt_sp_
               << "\n";
-    std::vector<int> tasks_with_diff_et =
+    std::vector<DiffObj> tasks_with_diff_et =
         FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
-    for (int task_id : tasks_with_diff_et) {
+    for (DiffObj task_diff_obj : tasks_with_diff_et) {
+        int task_id = task_diff_obj.task_id;
+        bool et_increased = task_diff_obj.increase;
+        // TODO!!!!
         std::vector<PriorityVec> pa_vec_variations =
-            FindPriorityVec1D_Variations(opt_pa_, task_id);
+            FindPriorityVec1D_Variations(
+                opt_pa_, task_id,
+                AnalyzePriorityChangeStatus(sp_parameters_, task_id,
+                                            et_increased));
         for (const PriorityVec& priority_assignment : pa_vec_variations) {
             double sp_eval = EvaluateSPWithPriorityVec(
                 dag_tasks_update, sp_parameters_, priority_assignment);
