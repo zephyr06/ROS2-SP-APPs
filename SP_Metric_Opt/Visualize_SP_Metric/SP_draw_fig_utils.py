@@ -250,7 +250,7 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
     return sp_value_list
 
 
-def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon):
+def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon, show_fig_time=3):
 
     task_set_config = os.path.join(
         os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
@@ -275,8 +275,9 @@ def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizo
         os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "current_scheduler_SP.pdf"), format='pdf')
     
     plt.show(block=False)
-    plt.pause(10)
+    plt.pause(show_fig_time)
     plt.close()
+    return x_axis, sp_value_list
 
 # def compute_avg_SP_from_multi_run(data_folder_paths, discard_early_time, horizon_granularity, horizon):
 #     task_set_config = os.path.join(
