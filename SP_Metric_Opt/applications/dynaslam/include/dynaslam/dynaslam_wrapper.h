@@ -87,11 +87,10 @@ class DynaSLAMWrapperForROS2 {
         // std::cout << "nImages: " << nImages << std::endl;
         // nImages = 800;
         if (vstrImageFilenamesRGB.empty()) {
-            cerr << endl << "No images found in provided path." << endl;
+            CoutError("No images found in provided path.");
             return;
         } else if (vstrImageFilenamesD.size() != vstrImageFilenamesRGB.size()) {
-            cerr << endl
-                 << "Different number of images for rgb and depth." << endl;
+            CoutError("Different number of images for rgb and depth.");
             return;
         }
 

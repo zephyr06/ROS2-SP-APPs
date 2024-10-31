@@ -17,6 +17,7 @@
 
 #include <yaml-cpp/yaml.h>
 #include "sources/UtilsForROS2/profile_and_record_time.h"
+#include "sources/Utils/testMy.h"
 
 class RealTimeManager
 {
@@ -46,7 +47,7 @@ public:
         // Check if file is opened successfully
         if (!fin.is_open())
         {
-            std::cerr << "Failed to open file." << std::endl;
+            CoutError("Failed to open file.");
             return;
         }
 
@@ -80,8 +81,8 @@ public:
             }
             else
             {
-                std::cerr << "Unrecognized scheduling policy: " << scheduling_policy << std::endl;
-                std::cerr << "Supported policies are: SCHED_FIFO, SCHED_OTHER. \n";
+                // std::cerr << "Unrecognized scheduling policy: " << scheduling_policy << std::endl;
+                CoutError("Unrecognized scheduling policy: " + scheduling_policy + " Supported policies are: SCHED_FIFO, SCHED_OTHER. \n");
                 return;
             }
 
@@ -123,10 +124,10 @@ public:
         }
         else
         {
-            scheduling_policies.push_back(0);
-            priorities.push_back(0);
-            scheduling_policies.push_back(0);
-            priorities.push_back(0);
+            // scheduling_policies.push_back(0);
+            // priorities.push_back(0);
+            // scheduling_policies.push_back(0);
+            // priorities.push_back(0);
             scheduling_policies.push_back(0);
             priorities.push_back(0);
         }
@@ -150,7 +151,7 @@ public:
         if (task_names.size() != cpu_lists.size() || task_names.size() != scheduling_policies.size() || task_names.size() != priorities.size())
         {
             perror("setCPUAffinityAndPriority");
-            std::cerr << "The input vectors don't have the same size! " << std::endl;
+            CoutError("The input vectors don't have the same size! " );
             return;
         }
 
@@ -229,7 +230,8 @@ private:
             if (sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset) != 0)
             {
                 perror("sched_setaffinity");
-                std::cerr << "Error setting CPU affinity for thread " << tid << std::endl;
+                CoutError("Error setting CPU affinity for thread " +std::to_string(tid));
+                // std::cerr << "Error setting CPU affinity for thread " << tid << std::endl;
             }
         }
     }
@@ -243,7 +245,8 @@ private:
             if (sched_setscheduler(tid, policy, &param) != 0)
             {
                 perror("sched_setscheduler");
-                std::cerr << "Error setting scheduling policy for thread " << tid << std::endl;
+                CoutError("Error setting scheduling policy for thread " +std::to_string(tid));
+                // std::cerr << "Error setting scheduling policy for thread " << tid << std::endl;
             }
         }
     }
