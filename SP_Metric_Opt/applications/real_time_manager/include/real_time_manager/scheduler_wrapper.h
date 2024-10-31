@@ -24,7 +24,8 @@ class SchedulerApp : public AppBase {
             std::cout
                 << "Must provide a valid and supported name of scheduler!\n";
         }
-        if (scheduler_ != "CFS" && scheduler_ != "RM" &&
+        if (scheduler_ != "CFS" && scheduler_ != "RM_Fast" && 
+            scheduler_ !="RM_Slow" && scheduler_ !="RM" &&
             scheduler_ != "optimizerBF" &&
             scheduler_ != "optimizerIncremental") {
             std::cerr << "Error: Unknown scheduler: " << scheduler_
