@@ -1,51 +1,51 @@
 tasks:
   - id: 0
-    execution_time_mu: 667.19156480000004
-    execution_time_sigma: 2.9717347297719399
-    execution_time_min: 663.48857599999997
-    execution_time_max: 672.94019200000002
+    execution_time_mu: 699.86565440000004
+    execution_time_sigma: 35.319053032916898
+    execution_time_min: 676.11343999999997
+    execution_time_max: 757.77599999999995
     period: 1500
     deadline: 1500
     processorId: 0
     name: TSP
     sp_threshold: 0.5
     sp_weight: 1
-    total_running_time: 300e3
+    total_running_time: 60e3
     performance_records_time: 184.1  397.5  657.9 1285.1
     performance_records_perf: 0.5        0.89660927 0.93292741 0.97812056
   - id: 1
-    execution_time_mu: 6.9189247999999992
-    execution_time_sigma: 0.9163550626796193
-    execution_time_min: 6.2055039999999995
-    execution_time_max: 8.653535999999999
-    period: 20
-    deadline: 20
+    execution_time_mu: 6.3305087999999996
+    execution_time_sigma: 0.048260329142690725
+    execution_time_min: 6.2696000000000005
+    execution_time_max: 6.4246080000000001
+    period: 15
+    deadline: 15
     processorId: 1
     name: MPC
     sp_threshold: 0.5
     sp_weight: 1
-    total_running_time: 300e3
+    total_running_time: 60e3
   - id: 2
-    execution_time_mu: 1232.383024
-    execution_time_sigma: 361.64424499450536
-    execution_time_min: 472.92406399999999
-    execution_time_max: 1806.246112
+    execution_time_mu: 1164.7796543999998
+    execution_time_sigma: 732.74219647144412
+    execution_time_min: 258.81004799999999
+    execution_time_max: 2774.681568
     period: 3000
     deadline: 3000
     processorId: 1
     name: RRT
     sp_threshold: 0.5
     sp_weight: 1
-    total_running_time: 300e3
+    total_running_time: 60e3
   - id: 3
-    execution_time_mu: 268.75400640000004
-    execution_time_sigma: 305.42706147083163
-    execution_time_min: 65.58201600000001
-    execution_time_max: 749.46335999999997
+    execution_time_mu: 114.30352639999998
+    execution_time_sigma: 98.97636920876424
+    execution_time_min: 46.194592
+    execution_time_max: 291.00860799999992
     period: 2000
     deadline: 2000
     processorId: 0
     name: SLAM
     sp_threshold: 0.9
     sp_weight: 2
-    total_running_time: 300e3
+    total_running_time: 60e3
