@@ -54,7 +54,9 @@ void SchedulerApp::run(int) {
     std::filesystem::path current_file_path =
         std::filesystem::canonical(__FILE__);
     std::filesystem::path package_directory =
-        current_file_path.parent_path().parent_path().parent_path();  // ROS2-SP-APPS/SP_Metric_Opt/real_time_manager
+        current_file_path.parent_path()
+            .parent_path()
+            .parent_path();  // ROS2-SP-APPS/SP_Metric_Opt/real_time_manager
     std::string local_config_yaml =
         package_directory.string() + "/configs/local_cpu_and_priority.yaml";
     std::string sp_opt_folder_path =
@@ -77,7 +79,8 @@ void SchedulerApp::run(int) {
             local_fixed_cpu_and_priority_yaml_CFS, task_characteristics_yaml);
         rt_manager_.setCPUAffinityAndPriority(
             local_fixed_cpu_and_priority_yaml_CFS);
-    } else if (scheduler_ == "RM") {
+    } else if (scheduler_ == "RM_Fast" || scheduler_ == "RM_Slow" ||
+               scheduler_ == "RM") {
         std::string local_fixed_cpu_and_priority_yaml_RM =
             package_directory.string() +
             "/configs/local_fixed_cpu_and_priority_RM.yaml";
@@ -85,6 +88,21 @@ void SchedulerApp::run(int) {
             local_fixed_cpu_and_priority_yaml_RM, task_characteristics_yaml);
         rt_manager_.setCPUAffinityAndPriority(
             local_fixed_cpu_and_priority_yaml_RM);
+
+        auto dag_tasks = SP_OPT_PA::ReadDAG_Tasks(task_characteristics_yaml);
+        double fastest_time_limit =
+            dag_tasks.GetTask(0).timePerformancePairs[0].first;
+        double slowest_time_limit =
+            dag_tasks.GetTask(0).timePerformancePairs.back().first;
+        if (scheduler_ == "RM_Fast") {
+            WriteTimeLimitToYamlOSM(
+                fastest_time_limit);  // only write TSP's time limit
+        } else if (scheduler_ == "RM_Slow") {
+            WriteTimeLimitToYamlOSM(
+                slowest_time_limit);  // only write TSP's time limit
+        } else {
+            ;  // do nothing
+        }
     } else {
         // Update execution time statitics, use last 10 data records,
         // replace the missed values with 2T seconds
