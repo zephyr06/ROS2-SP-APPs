@@ -10,7 +10,7 @@ tasks:
     name: TSP
     sp_threshold: 0.5
     sp_weight: 1
-    total_running_time: 60e3
+    total_running_time: 350e3
     performance_records_time: 184.1  397.5  657.9 1285.1
     performance_records_perf: 0.5        0.89660927 0.93292741 0.97812056
   - id: 1
@@ -24,7 +24,7 @@ tasks:
     name: MPC
     sp_threshold: 0.5
     sp_weight: 1
-    total_running_time: 60e3
+    total_running_time: 350e3
   - id: 2
     execution_time_mu: 1164.7796543999998
     execution_time_sigma: 732.74219647144412
@@ -36,7 +36,7 @@ tasks:
     name: RRT
     sp_threshold: 0.5
     sp_weight: 1
-    total_running_time: 60e3
+    total_running_time: 350e3
   - id: 3
     execution_time_mu: 114.30352639999998
     execution_time_sigma: 98.97636920876424
@@ -48,4 +48,4 @@ tasks:
     name: SLAM
     sp_threshold: 0.9
     sp_weight: 2
-    total_running_time: 60e3
+    total_running_time: 350e3
