@@ -4,9 +4,9 @@ if [ $# -eq 0 ]; then
     echo "Exiting the script ..."
     exit 0
 fi
-if [ $1 != "RM" ] && [ $1 != "CFS" ] && [ $1 != "optimizerBF" ] && [ $1 != "optimizerIncremental" ] ; then
+if [ $1 != "RM_Fast" ] && [ $1 != "RM_Slow" ] && [ $1 != "CFS" ] && [ $1 != "optimizerBF" ] && [ $1 != "optimizerIncremental" ] ; then
     echo "Scheduler $1 is not supported."
-    echo "Supported schedulers are: CFS, RM, optimizerBF, optimizerIncremental"
+    echo "Supported schedulers are: CFS, RM_Fast, RM_Slow, optimizerBF, optimizerIncremental. RM_Fast is default RM."
     echo "Exiting the script ..."
     exit 0
 fi
