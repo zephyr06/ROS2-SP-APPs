@@ -63,7 +63,7 @@ def process_tar_files(folder_path):
 
     return all_time_sp_pairs
 
-def plot_and_save_boxplot(data, file_path):
+def plot_and_save_boxplot(data, file_path, show_fig_time=3):
     """
     This function takes in time series data and corresponding SP values,
     creates a box plot, and saves the figure as a PDF file.
@@ -111,16 +111,22 @@ def plot_and_save_boxplot(data, file_path):
     plt.savefig(file_path, format='pdf')
 
     # Show the plot (optional)
-    plt.show()
+    plt.show(block=False)
+    plt.pause(show_fig_time)
+    plt.close()
 
 
-def main():
-    scheduler_name = "RM"
+def analyze_one_scheduler(scheduler_name = "RM"):
     exp_res_folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
     time_sp_pairs = process_tar_files(exp_res_folder)
     plot_and_save_boxplot(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data.pdf"))
 
+def analyze_all_schedulers():
+    scheduler_names = ["RM_Fast", "RM_Slow", "CFS", "optimizerBF", "optimizerIncremental"]
+    for scheduler_name in scheduler_names:
+        analyze_one_scheduler(scheduler_name)
+
 # Example usage:
 # main('/path/to/your/folder')
 if __name__ =="__main__":
-    main()
+    analyze_all_schedulers()
