@@ -9,6 +9,9 @@ from SP_draw_fig_utils import OPT_SP_PROJECT_PATH
 from draw_SP_current_scheduler import *
 import time
 
+# marker_list = ["o", "D", "v", "s", "*"]  #
+# color_list = ["#0084DB", "y", "r", "limegreen", "#333333"]  #
+
 import os
 import shutil
 def clear_folder(folder_path):
@@ -93,7 +96,7 @@ def process_tar_files(folder_path):
     clear_folder(temp_folder_path)
     return all_time_sp_pairs
 
-def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, show_fig_time=3):
+def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, show_fig_time=3, normalize_coeff=5.0):
     """
     This function takes in time series data and corresponding SP values,
     creates a box plot, and saves the figure as a PDF file.
@@ -108,7 +111,7 @@ def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, s
 
     # Transpose SP values to get values at each time point for all series
     sp_values_at_times = np.array([t[1] for t in data])  # Transpose to group SP values by time
-
+    sp_values_at_times = sp_values_at_times / normalize_coeff
     # Create the box plot
     # plt.figure(figsize=(10, 6))
 
@@ -134,7 +137,7 @@ def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, s
     plt.xlabel('Time')
     plt.ylabel('SP Values')
     plt.title('Box Plot of SP Values Over Time: ' + scheduler_name)
-    plt.grid(True)
+    plt.grid(linestyle="--")
     # plt.ylim([3.4,5.0])
 
     # Save the figure to the specified file path as a PDF
@@ -161,8 +164,9 @@ def analyze_all_schedulers(scheduler_names):
 def plot_avg_line_for_all_methods(scheduler_names):
     # Create a figure for the plot
     # plt.figure(figsize=(10, 6))
+    colors = sns.color_palette("Set2", len(scheduler_names))  # Generate a unique color for each folder
 
-    for scheduler_name in scheduler_names:
+    for i, scheduler_name in enumerate(scheduler_names):
         folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
         csv_path = os.path.join(folder, 'sp_data.csv')  # Assuming CSV files are named 'data.csv'
 
@@ -177,13 +181,15 @@ def plot_avg_line_for_all_methods(scheduler_names):
         values = averaged_data.values
 
         # Plot the averaged data
-        plt.plot(time_points, values, label=scheduler_name)
+        # plt.plot(time_points, values, label=scheduler_name)
+        sns.lineplot(x=time_points, y=values, label=scheduler_name, color=colors[i], linewidth=2)
 
     # Add labels and title
     plt.xlabel('Time')
-    plt.ylabel('Average Value')
+    plt.ylabel('Average SP Value')
     plt.title('Averaged Data for Each Folder')
     plt.legend()
+    plt.grid(linestyle="--")
 
     # Display the plot
     plt.show()
@@ -193,5 +199,5 @@ def plot_avg_line_for_all_methods(scheduler_names):
 if __name__ =="__main__":
     scheduler_names = ["RM_Fast", "RM_Slow", "CFS",  "optimizerIncremental", "optimizerBF"]
 
-    analyze_all_schedulers(scheduler_names)
+    # analyze_all_schedulers(scheduler_names)
     plot_avg_line_for_all_methods(scheduler_names)
