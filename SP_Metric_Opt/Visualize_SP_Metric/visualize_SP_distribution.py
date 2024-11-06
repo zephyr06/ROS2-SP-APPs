@@ -11,6 +11,29 @@ import time
 
 import os
 import shutil
+def clear_folder(folder_path):
+    try:
+        # Check if folder exists
+        if not os.path.exists(folder_path):
+            print(f"The folder {folder_path} does not exist.")
+            return
+        
+        # Loop through all files in the folder and delete them
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+            
+            # Check if it's a file (not a subdirectory)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+                print(f"Deleted: {file_path}")
+            else:
+                print(f"Skipping: {file_path} (not a file)")
+                
+        print(f"All files have been deleted from {folder_path}")
+    
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
 
 
 def get_subfolder_path(folder_path):
@@ -67,7 +90,7 @@ def process_tar_files(folder_path):
             # Collect all (time, SP) pairs from the extracted files
             data_pairs = read_data_from_file(get_subfolder_path(get_subfolder_path(temp_folder_path)))
             all_time_sp_pairs.append(data_pairs)
-
+    clear_folder(temp_folder_path)
     return all_time_sp_pairs
 
 def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, show_fig_time=3):
