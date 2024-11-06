@@ -7,6 +7,10 @@ import seaborn as sns
 import pandas as pd
 from SP_draw_fig_utils import OPT_SP_PROJECT_PATH
 from draw_SP_current_scheduler import *
+import time
+
+import os
+import shutil
 
 
 def get_subfolder_path(folder_path):
@@ -54,8 +58,11 @@ def process_tar_files(folder_path):
             file_path = os.path.join(folder_path, file_name)
 
             # Extract the .tar.gz file
+            start_time = time.time()
             with tarfile.open(file_path, 'r:gz') as tar:
                 tar.extractall(temp_folder_path)
+            end_time = time.time()
+            # print("Execution time for extracting tar gz file: " + str(end_time-start_time))
 
             # Collect all (time, SP) pairs from the extracted files
             data_pairs = read_data_from_file(get_subfolder_path(get_subfolder_path(temp_folder_path)))
@@ -63,7 +70,7 @@ def process_tar_files(folder_path):
 
     return all_time_sp_pairs
 
-def plot_and_save_boxplot(data, file_path, show_fig_time=3):
+def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, show_fig_time=3):
     """
     This function takes in time series data and corresponding SP values,
     creates a box plot, and saves the figure as a PDF file.
@@ -103,12 +110,14 @@ def plot_and_save_boxplot(data, file_path, show_fig_time=3):
     # Customize the plot
     plt.xlabel('Time')
     plt.ylabel('SP Values')
-    plt.title('Box Plot of SP Values Over Time')
+    plt.title('Box Plot of SP Values Over Time: ' + scheduler_name)
     plt.grid(True)
-    plt.ylim([3.4,5.0])
+    # plt.ylim([3.4,5.0])
 
     # Save the figure to the specified file path as a PDF
-    plt.savefig(file_path, format='pdf')
+    plt.savefig(plot_file_path, format='pdf')
+    df.to_csv(csv_file_path, index=False)
+
 
     # Show the plot (optional)
     plt.show(block=False)
@@ -119,14 +128,47 @@ def plot_and_save_boxplot(data, file_path, show_fig_time=3):
 def analyze_one_scheduler(scheduler_name = "RM"):
     exp_res_folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
     time_sp_pairs = process_tar_files(exp_res_folder)
-    plot_and_save_boxplot(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data.pdf"))
+    plot_and_save_boxplot(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data.pdf"),
+                          os.path.join(exp_res_folder, "sp_data.csv"), scheduler_name, show_fig_time=0.1)
 
-def analyze_all_schedulers():
-    scheduler_names = ["RM_Fast", "RM_Slow", "CFS", "optimizerBF", "optimizerIncremental"]
+def analyze_all_schedulers(scheduler_names):
     for scheduler_name in scheduler_names:
         analyze_one_scheduler(scheduler_name)
+
+def plot_avg_line_for_all_methods(scheduler_names):
+    # Create a figure for the plot
+    # plt.figure(figsize=(10, 6))
+
+    for scheduler_name in scheduler_names:
+        folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
+        csv_path = os.path.join(folder, 'sp_data.csv')  # Assuming CSV files are named 'data.csv'
+
+        # Read the CSV file into a pandas DataFrame
+        df = pd.read_csv(csv_path)
+
+        # Average the values for each column (each time point)
+        averaged_data = df.mean()
+
+        # Extract the time points and averaged data
+        time_points = [int(col.split(' ')[1]) for col in df.columns]
+        values = averaged_data.values
+
+        # Plot the averaged data
+        plt.plot(time_points, values, label=scheduler_name)
+
+    # Add labels and title
+    plt.xlabel('Time')
+    plt.ylabel('Average Value')
+    plt.title('Averaged Data for Each Folder')
+    plt.legend()
+
+    # Display the plot
+    plt.show()
 
 # Example usage:
 # main('/path/to/your/folder')
 if __name__ =="__main__":
-    analyze_all_schedulers()
+    scheduler_names = ["RM_Fast", "RM_Slow", "CFS",  "optimizerIncremental", "optimizerBF"]
+
+    analyze_all_schedulers(scheduler_names)
+    plot_avg_line_for_all_methods(scheduler_names)
