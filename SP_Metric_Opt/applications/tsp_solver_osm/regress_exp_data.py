@@ -1,3 +1,5 @@
+import copy
+
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -7,20 +9,32 @@ from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from scipy.optimize import curve_fit
+from collect_tsp_time_perf_data import *
 
+
+# Folder containing the text files
+data_folder = "."
+output_csv = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/applications/tsp_solver_osm/experiments/average_performance.csv"
+average_performance = calculate_average_performance(data_folder, output_csv)
+print(average_performance)
 # Read the CSV file
-data = pd.read_csv("experiments/2024-08-05-19-14-03_command_history.csv", sep=';')
+data = pd.read_csv(output_csv, sep=';')
+# Replace 'inf' values with NaN
+data.replace([np.inf, -np.inf], np.nan, inplace=True)
+# Drop rows that contain NaN (which were 'inf' originally)
+data.dropna(inplace=True)
+data_org = copy.deepcopy(data)
 
 # Extract CPU time and path cost
-data[['CPU_time']] = data[['CPU_time']] * 1000.0
+data[['Time']] = data[['Time']] * 1000.0
 data['path_cost'] = max(data['path_cost']) - data['path_cost']
-X = data[['CPU_time']]
+X = data[['Time']]
 y = data['path_cost']
 print("CPU time:")
-print(np.array(X['CPU_time']))
+print(np.array(X['Time']))
 
 # Normalize path cost
-scaler = MinMaxScaler(feature_range=(0.5, 1))
+scaler = MinMaxScaler(feature_range=(0.1, 1))
 y_normalized = scaler.fit_transform(data['path_cost'].values.reshape(-1, 1))
 print("Normalized performance:")
 print(np.array(y_normalized).flatten())
@@ -44,7 +58,7 @@ print(model[1].coef_)
 # y_predicted = scaler.inverse_transform(y_predicted_normalized)
 
 # Plot the original data points
-plt.scatter(data['CPU_time'], data['path_cost'], color='blue', label='Original Data')
+plt.scatter(data['Time'], data['path_cost'], color='blue', label='Original Data')
 
 # Sort the values for plotting the regression curve
 sort_axis = np.argsort(X.values.flatten())
@@ -59,4 +73,8 @@ plt.title('Polynomial Regression Curve with Original Data Points')
 plt.legend()
 
 # Show plot
-plt.show()
+# plt.show()
+
+
+for i in range(len(y_normalized)):
+    print(i, ":", X['Time'][2+i], data_org['path_cost'][2+i], y_normalized[i])
