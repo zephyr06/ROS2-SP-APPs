@@ -1,9 +1,9 @@
 tasks:
   - id: 0
-    execution_time_mu: 1248.6311008
-    execution_time_sigma: 37.585113269965099
-    execution_time_min: 1218.5470399999999
-    execution_time_max: 1305.9279040000001
+    execution_time_mu: 463.43325440000007
+    execution_time_sigma: 2.3219016365134988
+    execution_time_min: 459.33395200000001
+    execution_time_max: 467.86799999999994
     period: 1500
     deadline: 1500
     processorId: 0

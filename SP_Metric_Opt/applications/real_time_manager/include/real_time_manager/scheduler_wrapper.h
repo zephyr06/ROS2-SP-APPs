@@ -24,7 +24,8 @@ class SchedulerApp : public AppBase {
             std::cout
                 << "Must provide a valid and supported name of scheduler!\n";
         }
-        if (scheduler_ != "CFS" && scheduler_ != "RM" &&
+        if (scheduler_ != "CFS" && scheduler_ != "RM_Fast" && 
+            scheduler_ !="RM_Slow" && scheduler_ !="RM" &&
             scheduler_ != "optimizerBF" &&
             scheduler_ != "optimizerIncremental") {
             std::cerr << "Error: Unknown scheduler: " << scheduler_
@@ -91,14 +92,14 @@ void SchedulerApp::run(int) {
 
         auto dag_tasks = SP_OPT_PA::ReadDAG_Tasks(task_characteristics_yaml);
         double fastest_time_limit =
-            dag_tasks.GetTask(0).timePerformancePairs[0].first;
+            dag_tasks.GetTask(0).timePerformancePairs[0].time_limit;
         double slowest_time_limit =
-            dag_tasks.GetTask(0).timePerformancePairs.back().first;
+            dag_tasks.GetTask(0).timePerformancePairs.back().time_limit;
         if (scheduler_ == "RM_Fast") {
-            WriteTimeLimitToYamlOSM(
+            SP_OPT_PA::WriteTimeLimitToYamlOSM(
                 fastest_time_limit);  // only write TSP's time limit
         } else if (scheduler_ == "RM_Slow") {
-            WriteTimeLimitToYamlOSM(
+            SP_OPT_PA::WriteTimeLimitToYamlOSM(
                 slowest_time_limit);  // only write TSP's time limit
         } else {
             ;  // do nothing
