@@ -110,8 +110,12 @@ def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, s
     time_series = data[0][0]
 
     # Transpose SP values to get values at each time point for all series
-    sp_values_at_times = np.array([t[1] for t in data])  # Transpose to group SP values by time
+    sp_values_at_times = np.array([np.array(t[1]) for t in data])  # Transpose to group SP values by time
+    min_sp_length = min(len(sublist) for sublist in sp_values_at_times)
+    sp_values_at_times = np.array([sublist[:min_sp_length] for sublist in sp_values_at_times])
+    time_series = time_series[:min_sp_length]
     sp_values_at_times = sp_values_at_times / normalize_coeff
+    # sp_values_at_times =[x/normalize_coeff for x in sp_values_at_times]
     # Create the box plot
     # plt.figure(figsize=(10, 6))
 
@@ -136,9 +140,9 @@ def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, s
     # Customize the plot
     plt.xlabel('Time')
     plt.ylabel('SP Values')
-    plt.title('Box Plot of SP Values Over Time: ' + scheduler_name)
+    # plt.title('Box Plot of SP Values Over Time: ' + scheduler_name)
     plt.grid(linestyle="--")
-    # plt.ylim([3.4,5.0])
+    plt.ylim([0.1, 1.05])
 
     # Save the figure to the specified file path as a PDF
     plt.savefig(plot_file_path, format='pdf')
@@ -154,14 +158,14 @@ def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, s
 def analyze_one_scheduler(scheduler_name = "RM"):
     exp_res_folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
     time_sp_pairs = process_tar_files(exp_res_folder)
-    plot_and_save_boxplot(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data.pdf"),
+    plot_and_save_boxplot(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data_"+scheduler_name+".pdf"),
                           os.path.join(exp_res_folder, "sp_data.csv"), scheduler_name, show_fig_time=0.1)
 
 def analyze_all_schedulers(scheduler_names):
     for scheduler_name in scheduler_names:
         analyze_one_scheduler(scheduler_name)
 
-def plot_avg_line_for_all_methods(scheduler_names):
+def plot_avg_line_for_all_methods(scheduler_names,plot_file_path,show_fig_time=3):
     # Create a figure for the plot
     # plt.figure(figsize=(10, 6))
     colors = sns.color_palette("Set2", len(scheduler_names))  # Generate a unique color for each folder
@@ -187,17 +191,21 @@ def plot_avg_line_for_all_methods(scheduler_names):
     # Add labels and title
     plt.xlabel('Time')
     plt.ylabel('Average SP Value')
-    plt.title('Averaged Data for Each Folder')
+    # plt.title('Averaged Data for Each Scheduler')
     plt.legend()
     plt.grid(linestyle="--")
+    plt.savefig(plot_file_path, format='pdf')
 
     # Display the plot
-    plt.show()
+    plt.show(block=False)
+    plt.pause(show_fig_time)
+    plt.close()
+
 
 # Example usage:
 # main('/path/to/your/folder')
 if __name__ =="__main__":
-    scheduler_names = ["RM_Fast", "RM_Slow", "CFS",  "optimizerIncremental", "optimizerBF"]
+    scheduler_names = ["RM_Slow", "RM_Fast",  "CFS",  "optimizerIncremental", "optimizerBF"]
 
-    # analyze_all_schedulers(scheduler_names)
-    plot_avg_line_for_all_methods(scheduler_names)
+    analyze_all_schedulers(scheduler_names)
+    plot_avg_line_for_all_methods(scheduler_names,plot_file_path=os.path.join(OPT_SP_PROJECT_PATH, "../Experiments","average_all.pdf"))
