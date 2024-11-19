@@ -1,64 +1,18 @@
-import os
 import tarfile
-import shutil
-import tempfile
-import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-from SP_draw_fig_utils import OPT_SP_PROJECT_PATH
+
+from SP_Metric_Opt.Visualize_SP_Metric.box_plot_utils import get_subfolder_path, clear_folder
 from draw_SP_current_scheduler import *
 import time
 
-# marker_list = ["o", "D", "v", "s", "*"]  #
-# color_list = ["#0084DB", "y", "r", "limegreen", "#333333"]  #
+from SP_Metric_Opt.Visualize_SP_Metric.visualize_ET_distribution import plot_ET_distribution
 
 import os
 import shutil
-def clear_folder(folder_path):
-    try:
-        # Check if folder exists
-        if not os.path.exists(folder_path):
-            print(f"The folder {folder_path} does not exist.")
-            return
-        
-        # Loop through all files in the folder and delete them
-        for filename in os.listdir(folder_path):
-            file_path = os.path.join(folder_path, filename)
-            
-            # Check if it's a file (not a subdirectory)
-            if os.path.isfile(file_path):
-                os.remove(file_path)
-                print(f"Deleted: {file_path}")
-            else:
-                print(f"Skipping: {file_path} (not a file)")
-                
-        print(f"All files have been deleted from {folder_path}")
-    
-    except Exception as e:
-        print(f"An error occurred: {e}")
 
 
-
-def get_subfolder_path(folder_path):
-    # Check if the given path is a directory
-    if not os.path.isdir(folder_path):
-        raise ValueError(f"The path {folder_path} is not a directory.")
-
-    # List all items in the directory
-    items = os.listdir(folder_path)
-
-    # Filter for subfolders
-    subfolders = [os.path.join(folder_path, item) for item in items if os.path.isdir(os.path.join(folder_path, item))]
-
-    # Check if there is exactly one subfolder
-    if len(subfolders) == 1:
-        return subfolders[0]
-    elif len(subfolders) > 1:
-        raise ValueError("The folder contains more than one subfolder.")
-    else:
-        raise ValueError("The folder does not contain any subfolders.")
-
-def read_data_from_file(folder_path):
+def read_sp_data_from_file(folder_path):
     data_folder_paths = {
         "Unknown": folder_path,
         }
@@ -70,7 +24,7 @@ def read_data_from_file(folder_path):
 
     return draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon, show_fig_time=0.1)
 
-def process_tar_files(folder_path):
+def process_tar_files_sp(folder_path):
     temp_folder_path = os.path.join(OPT_SP_PROJECT_PATH, "temp_folder")
 
     # os.rmdir(temp_folder_path)
@@ -91,12 +45,12 @@ def process_tar_files(folder_path):
             # print("Execution time for extracting tar gz file: " + str(end_time-start_time))
 
             # Collect all (time, SP) pairs from the extracted files
-            data_pairs = read_data_from_file(get_subfolder_path(get_subfolder_path(temp_folder_path)))
+            data_pairs = read_sp_data_from_file(get_subfolder_path(get_subfolder_path(temp_folder_path)))
             all_time_sp_pairs.append(data_pairs)
     clear_folder(temp_folder_path)
     return all_time_sp_pairs
 
-def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, show_fig_time=3, normalize_coeff=5.0):
+def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name, show_fig_time=3, normalize_coeff=5.0):
     """
     This function takes in time series data and corresponding SP values,
     creates a box plot, and saves the figure as a PDF file.
@@ -157,9 +111,9 @@ def plot_and_save_boxplot(data, plot_file_path, csv_file_path, scheduler_name, s
 
 def analyze_one_scheduler(scheduler_name = "RM"):
     exp_res_folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
-    time_sp_pairs = process_tar_files(exp_res_folder)
-    plot_and_save_boxplot(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data_"+scheduler_name+".pdf"),
-                          os.path.join(exp_res_folder, "sp_data.csv"), scheduler_name, show_fig_time=0.1)
+    time_sp_pairs = process_tar_files_sp(exp_res_folder)
+    plot_and_save_boxplot_sp(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data_" + scheduler_name + ".pdf"),
+                             os.path.join(exp_res_folder, "sp_data.csv"), scheduler_name, show_fig_time=0.1)
 
 def analyze_all_schedulers(scheduler_names):
     for scheduler_name in scheduler_names:
