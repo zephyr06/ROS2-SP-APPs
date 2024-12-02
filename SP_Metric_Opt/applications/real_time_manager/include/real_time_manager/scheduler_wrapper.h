@@ -72,10 +72,18 @@ void SchedulerApp::run(int) {
     std::string task_characteristics_yaml =
         getTimeRecordFolder() + "task_characteristics.yaml";
 
+    auto dag_tasks = SP_OPT_PA::ReadDAG_Tasks(task_characteristics_yaml);
+    double fastest_time_limit =
+        dag_tasks.GetTask(0).timePerformancePairs[0].time_limit;
+    double slowest_time_limit =
+        dag_tasks.GetTask(0).timePerformancePairs.back().time_limit;
+
     if (scheduler_ == "CFS") {
         std::string local_fixed_cpu_and_priority_yaml_CFS =
             package_directory.string() +
             "/configs/local_fixed_cpu_and_priority_CFS.yaml";
+        SP_OPT_PA::WriteTimeLimitToYamlOSM(
+                slowest_time_limit);
         UpdateProcessorAssignmentsFromYamlFile(
             local_fixed_cpu_and_priority_yaml_CFS, task_characteristics_yaml);
         rt_manager_.setCPUAffinityAndPriority(
@@ -90,11 +98,6 @@ void SchedulerApp::run(int) {
         rt_manager_.setCPUAffinityAndPriority(
             local_fixed_cpu_and_priority_yaml_RM);
 
-        auto dag_tasks = SP_OPT_PA::ReadDAG_Tasks(task_characteristics_yaml);
-        double fastest_time_limit =
-            dag_tasks.GetTask(0).timePerformancePairs[0].time_limit;
-        double slowest_time_limit =
-            dag_tasks.GetTask(0).timePerformancePairs.back().time_limit;
         if (scheduler_ == "RM_Fast") {
             SP_OPT_PA::WriteTimeLimitToYamlOSM(
                 fastest_time_limit);  // only write TSP's time limit
@@ -124,20 +127,20 @@ void SchedulerApp::run(int) {
             time_taken = GetTimeTaken(start_time, finish_time);
         } else if (scheduler_ == "optimizerIncremental") {
             if (incremental_optimizer_w_TL_.IfInitialized()) {
-                // incremental_optimizer_w_TL_.OptimizeIncre_w_TL(
-                //     dag_tasks, GlobalVariables::
-                //                    Layer_Node_During_Incremental_Optimization);
+                incremental_optimizer_w_TL_.OptimizeIncre_w_TL(
+                   dag_tasks, GlobalVariables::
+                                    Layer_Node_During_Incremental_Optimization);
 
-                incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
-                    GlobalVariables::
-                        Layer_Node_During_Incremental_Optimization);
+                // incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
+                //    GlobalVariables::
+                //         Layer_Node_During_Incremental_Optimization);
             } else {
-                incremental_optimizer_w_TL_ =
+               incremental_optimizer_w_TL_ =
                     OptimizePA_Incre_with_TimeLimits(dag_tasks, sp_parameters);
 
                 incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
-                    GlobalVariables::
-                        Layer_Node_During_Incremental_Optimization);
+                   GlobalVariables::
+                       Layer_Node_During_Incremental_Optimization);
             }
             opt_res_pa_and_tl = incremental_optimizer_w_TL_.CollectResults();
             TimerType finish_time = CurrentTimeInProfiler;

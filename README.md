@@ -76,3 +76,6 @@ An example is provided in `SP_Metric_Opt/applications/tsp_solver_osm/regress_exp
 
 # Run system multilple times
 If you need to do so to get good results, potentially, there is something wrong. 
+
+# Traps
+- most time measurements in the folder `all_time_records` are accurate, except `SCHEDULER_*.txt`. The profiling code is based on measuring the CPU time of a single core running a single thread, while schedulers involve running code in multilple cores. Therefore, it could be inaccurate up to 0.5 seconds, based on experiment observation.
