@@ -1,5 +1,6 @@
 
 #include "sources/Optimization/OptimizeSP_Base.h"
+#include "sources/UtilsForROS2/profile_and_record_time.h"
 
 namespace SP_OPT_PA {
 
@@ -147,11 +148,19 @@ void WritePriorityAssignments(std::string path, const TaskSet& tasks,
 double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
                                  const SP_Parameters& sp_parameters,
                                  const PriorityVec& priority_assignment) {
+
+    auto start_time = CurrentTimeInProfiler;
     TaskSet tasks_eval =
         UpdateTaskSetPriorities(dag_tasks.tasks, priority_assignment);
     DAG_Model dag_tasks_eval = dag_tasks;
     dag_tasks_eval.tasks = tasks_eval;
-    return ObtainSP_DAG(dag_tasks_eval, sp_parameters);
+    auto res = ObtainSP_DAG(dag_tasks_eval, sp_parameters);
+
+    auto finish_time = CurrentTimeInProfiler;
+    if(GlobalVariables::debugMode == 1)
+        CoutWarning("Running time to evaluate SP for one time: " + \
+            std::to_string(getDuration(start_time, finish_time)));
+    return res;
 }
 
 void PrintPA_IfDebugMode(const PriorityVec& priority_assignment,
