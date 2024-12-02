@@ -45,7 +45,7 @@ inline std::string getTimeRecordFolder() {
             .parent_path();  // ROS2-SP-APPS
     std::string time_record_file_path =
         current_file_directory.string() + "/all_time_records/";
-    std::cout << time_record_file_path << "\n";
+    // std::cout << time_record_file_path << "\n";
     return time_record_file_path;
 }
 
