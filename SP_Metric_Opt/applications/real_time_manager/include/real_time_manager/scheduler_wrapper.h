@@ -163,9 +163,14 @@ void SchedulerApp::run(int) {
         UpdatePriorityAssignments(local_config_yaml, priority_yaml_output_path);
         UpdateProcessorAssignmentsFromYamlFile(local_config_yaml,
                                                task_characteristics_yaml);
-        // apply the new priority assignments
-        rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
+
         auto finish_time = CurrentTimeInProfiler;
+        std::cout << "Time to record priority assignments to disk: "
+                  << GetTimeTaken(start_time, finish_time) << "\n";
+        // apply the new priority assignments
+        start_time = CurrentTimeInProfiler;
+        rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
+        finish_time = CurrentTimeInProfiler;
         std::cout << "Time to change priority assignments in OS: "
                   << GetTimeTaken(start_time, finish_time) << "\n";
     }
