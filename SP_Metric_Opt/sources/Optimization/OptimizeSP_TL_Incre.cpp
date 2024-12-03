@@ -81,7 +81,7 @@ void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
         }
         auto finish_time = CurrentTimeInProfiler;
         double time_taken = GetTimeTaken(start_time, finish_time);
-        CoutWarning("Time taken for one traverse: " +
+        CoutWarning("Time taken for evaluating one time limit option: " +
                     std::to_string(time_taken));
         return;
     } else {

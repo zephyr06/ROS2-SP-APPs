@@ -230,8 +230,8 @@ private:
             if (sched_setaffinity(tid, sizeof(cpu_set_t), &cpuset) != 0)
             {
                 perror("sched_setaffinity");
-                CoutError("Error setting CPU affinity for thread " +std::to_string(tid));
-                // std::cerr << "Error setting CPU affinity for thread " << tid << std::endl;
+                // CoutError("Error setting CPU affinity for thread " +std::to_string(tid));
+                std::cerr << "Error setting CPU affinity for thread  (maybe bcause the thread already terminates)" << tid << std::endl;
             }
         }
     }
@@ -245,8 +245,8 @@ private:
             if (sched_setscheduler(tid, policy, &param) != 0)
             {
                 perror("sched_setscheduler");
-                CoutError("Error setting scheduling policy for thread " +std::to_string(tid));
-                // std::cerr << "Error setting scheduling policy for thread " << tid << std::endl;
+                // CoutError("Error setting scheduling policy for thread " +std::to_string(tid));
+                std::cerr << "Error setting scheduling policy for thread (maybe bcause the thread already terminates)" << tid << std::endl;
             }
         }
     }
