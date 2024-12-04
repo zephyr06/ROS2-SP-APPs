@@ -11,6 +11,7 @@
 #include "sources/Utils/profilier.h"
 #include "sources/Utils/readwrite.h"
 #include "sources/UtilsForROS2/Publisher.h"
+#include "sources/UtilsForROS2/Recorder.h"
 
 class SchedulerApp : public AppBase {
    public:
@@ -24,8 +25,8 @@ class SchedulerApp : public AppBase {
             std::cout
                 << "Must provide a valid and supported name of scheduler!\n";
         }
-        if (scheduler_ != "CFS" && scheduler_ != "RM_Fast" && 
-            scheduler_ !="RM_Slow" && scheduler_ !="RM" &&
+        if (scheduler_ != "CFS" && scheduler_ != "RM_Fast" &&
+            scheduler_ != "RM_Slow" && scheduler_ != "RM" &&
             scheduler_ != "optimizerBF" &&
             scheduler_ != "optimizerIncremental") {
             std::cerr << "Error: Unknown scheduler: " << scheduler_
@@ -45,10 +46,11 @@ class SchedulerApp : public AppBase {
     std::string scheduler_;
     // SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
     SP_OPT_PA::OptimizePA_Incre_with_TimeLimits incremental_optimizer_w_TL_;
+    Recorder recorder_("SCHEDULER_PUER_OPT");
 };
 
 // function arguments msg_cnt not used for now
-void SchedulerApp::run(int) {
+void SchedulerApp::run(int release_index) {
     // no execution at the first instance
     if (cnt_++ == 0) return;
     TimerType start_time = CurrentTimeInProfiler;
@@ -82,8 +84,7 @@ void SchedulerApp::run(int) {
         std::string local_fixed_cpu_and_priority_yaml_CFS =
             package_directory.string() +
             "/configs/local_fixed_cpu_and_priority_CFS.yaml";
-        SP_OPT_PA::WriteTimeLimitToYamlOSM(
-                slowest_time_limit);
+        SP_OPT_PA::WriteTimeLimitToYamlOSM(slowest_time_limit);
         UpdateProcessorAssignmentsFromYamlFile(
             local_fixed_cpu_and_priority_yaml_CFS, task_characteristics_yaml);
         rt_manager_.setCPUAffinityAndPriority(
@@ -120,6 +121,7 @@ void SchedulerApp::run(int) {
             ReadSP_Parameters(task_characteristics_yaml);
 
         ResourceOptResult opt_res_pa_and_tl;
+        auto start_time_for_optimization = CurrentTimeInProfiler;
         if (scheduler_ == "optimizerBF") {
             opt_res_pa_and_tl =
                 EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
@@ -128,19 +130,19 @@ void SchedulerApp::run(int) {
         } else if (scheduler_ == "optimizerIncremental") {
             if (incremental_optimizer_w_TL_.IfInitialized()) {
                 incremental_optimizer_w_TL_.OptimizeIncre_w_TL(
-                   dag_tasks, GlobalVariables::
-                                    Layer_Node_During_Incremental_Optimization);
+                    dag_tasks, GlobalVariables::
+                                   Layer_Node_During_Incremental_Optimization);
 
                 // incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
                 //    GlobalVariables::
                 //         Layer_Node_During_Incremental_Optimization);
             } else {
-               incremental_optimizer_w_TL_ =
+                incremental_optimizer_w_TL_ =
                     OptimizePA_Incre_with_TimeLimits(dag_tasks, sp_parameters);
 
                 incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
-                   GlobalVariables::
-                       Layer_Node_During_Incremental_Optimization);
+                    GlobalVariables::
+                        Layer_Node_During_Incremental_Optimization);
             }
             opt_res_pa_and_tl = incremental_optimizer_w_TL_.CollectResults();
             TimerType finish_time = CurrentTimeInProfiler;
@@ -149,6 +151,9 @@ void SchedulerApp::run(int) {
             std::cerr << "Unknown scheduler: " << scheduler_ << "\n";
             return;
         }
+        auto finish_time_for_optimization = CurrentTimeInProfiler;
+        double time_for_optimization = GetTimeTaken(
+            start_time_for_optimization, finish_time_for_optimization);
 
         PriorityVec pa_opt = opt_res_pa_and_tl.priority_vec;
         WritePriorityAssignments(priority_yaml_output_path, dag_tasks.tasks,
@@ -171,7 +176,12 @@ void SchedulerApp::run(int) {
         start_time = CurrentTimeInProfiler;
         rt_manager_.setCPUAffinityAndPriority(local_config_yaml);
         finish_time = CurrentTimeInProfiler;
+        double time_for_OS_to_change_priority =
+            GetTimeTaken(start_time, finish_time);
         std::cout << "Time to change priority assignments in OS: "
-                  << GetTimeTaken(start_time, finish_time) << "\n";
+                  << time_for_OS_to_change_priority << "\n";
+        recorder_.write_execution_time(
+            time_for_optimization + time_for_OS_to_change_priority,
+            release_index);
     }
 }
