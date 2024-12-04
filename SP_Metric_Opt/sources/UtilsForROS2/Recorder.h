@@ -3,6 +3,7 @@
 #include "sources/UtilsForROS2/profile_and_record_time.h"
 
 struct Recorder {
+    Recorder(){};
     Recorder(std::string app_name)
         : app_name_(app_name),
           publisher_file_path_(getTimeRecordFolder() + app_name_ +

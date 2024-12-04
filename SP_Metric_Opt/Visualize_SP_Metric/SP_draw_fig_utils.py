@@ -4,6 +4,7 @@ import yaml
 import subprocess
 from datetime import datetime
 
+# example, /zephyr/Programming/ROS2-SP-APPS/SP_Metric_Opt
 OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # print(OPT_SP_PROJECT_PATH)
 # All time in seconds
