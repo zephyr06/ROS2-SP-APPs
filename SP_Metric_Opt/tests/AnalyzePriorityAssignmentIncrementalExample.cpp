@@ -19,8 +19,7 @@ int main(int argc, char *argv[]) {
     argparse::ArgumentParser program("program name");
     program.add_argument("--file_path")
         .default_value(
-            std::string("/home/zephyr/Programming/ROS2-SP-APPs/"
-                        "all_time_records/task_characteristics.yaml"))
+            std::string("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/task_characteristics.yaml"))
         .help(
             "the relative path of the yaml file that saves information about "
             "the tasks. Example: TaskData/test_robotics_v1.yaml. It is "
@@ -63,16 +62,22 @@ int main(int argc, char *argv[]) {
     WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                              time_taken);
 
+    std::cout<<"Total time taken: "<<time_taken<<"\n";
     // to perform incremental optimization for 5 more times
     for (int i = 0; i < 5; i++) {
         // read the updated DAG
         dag_tasks = ReadDAG_Tasks(file_path);
+        std::cout<<"Run M-Audsley\n";
+        pa_opt = opt.OptimizeFromScratch_w_TL(GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        std::cout<<"Run incremental:\n";
         pa_opt = opt.OptimizeIncre_w_TL(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        
         time_taken = GetTimeTaken(start_time, finish_time);
         // PrintPriorityVec(dag_tasks.tasks, pa_opt);
         WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                                  time_taken);
     }
+    std::cout<<"Total time taken: "<<time_taken<<"\n";
 }
