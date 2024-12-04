@@ -3,6 +3,7 @@
 #include "real_time_manager/execution_time_estimator.h"
 #include "real_time_manager/real_time_manager.h"
 #include "real_time_manager/update_priority_assignment.h"
+#include "real_time_manager/execution_time_estimator.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/TaskModel/DAG_Model.h"
@@ -49,6 +50,8 @@ class SchedulerApp : public AppBase {
     // SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
     SP_OPT_PA::OptimizePA_Incre_with_TimeLimits incremental_optimizer_w_TL_;
     Recorder recorder_;
+    ExecutionTimeProfiler exe_profiler_;
+
 };
 
 // function arguments msg_cnt not used for now
@@ -123,7 +126,8 @@ void SchedulerApp::run(int release_index) {
             ReadSP_Parameters(task_characteristics_yaml);
 
         ResourceOptResult opt_res_pa_and_tl;
-        auto start_time_for_optimization = CurrentTimeInProfiler;
+        // auto start_time_for_optimization = CurrentTimeInProfiler;
+        exe_profiler_.start();
         if (scheduler_ == "optimizerBF") {
             opt_res_pa_and_tl =
                 EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
@@ -153,9 +157,8 @@ void SchedulerApp::run(int release_index) {
             std::cerr << "Unknown scheduler: " << scheduler_ << "\n";
             return;
         }
-        auto finish_time_for_optimization = CurrentTimeInProfiler;
-        double time_for_optimization = GetTimeTaken(
-            start_time_for_optimization, finish_time_for_optimization);
+        exe_profiler_.end();
+        double time_for_optimization = exe_profiler_.get_exe_time();
 
         PriorityVec pa_opt = opt_res_pa_and_tl.priority_vec;
         WritePriorityAssignments(priority_yaml_output_path, dag_tasks.tasks,
