@@ -48,6 +48,12 @@ int main(int argc, char *argv[]) {
     string output_file_path = program.get<std::string>("--output_file_path");
     output_file_path = RelativePathToAbsolutePath(output_file_path);
 
+    string dag1 =
+        "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/TaskData/"
+        "test_robotics_v21.yaml";
+    string dag2 =
+        "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/TaskData/"
+        "test_robotics_v25.yaml";
     DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
 
@@ -58,21 +64,35 @@ int main(int argc, char *argv[]) {
         GlobalVariables::Layer_Node_During_Incremental_Optimization);
 
     TimerType finish_time = CurrentTimeInProfiler;
+    // PrintPriorityVec(dag_tasks.tasks, pa_opt);
     double time_taken = GetTimeTaken(start_time, finish_time);
+    WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
+                             time_taken);
+    time_taken = GetTimeTaken(start_time, finish_time);
+
+    // to perform incremental optimization for 5 more times
+    for (int i = 0; i < 10; i++) {
+        // read the updated DAG
+        if (i % 2 == 0)
+            dag_tasks = ReadDAG_Tasks(dag1);
+        else
+            dag_tasks = ReadDAG_Tasks(dag2);
+        // dag_tasks = ReadDAG_Tasks(file_path);
+        pa_opt = opt.OptimizeIncre_w_TL(
+            dag_tasks,
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        // time_taken = GetTimeTaken(start_time, finish_time);
+        // PrintPriorityVec(dag_tasks.tasks, pa_opt);
+        WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt, -1);
+    }
+    finish_time = CurrentTimeInProfiler;
+    double time_taken_all = GetTimeTaken(start_time, finish_time);
     // PrintPriorityVec(dag_tasks.tasks, pa_opt);
     WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
                              time_taken);
 
-    // to perform incremental optimization for 5 more times
-    for (int i = 0; i < 5; i++) {
-        // read the updated DAG
-        dag_tasks = ReadDAG_Tasks(file_path);
-        pa_opt = opt.OptimizeIncre_w_TL(
-            dag_tasks,
-            GlobalVariables::Layer_Node_During_Incremental_Optimization);
-        time_taken = GetTimeTaken(start_time, finish_time);
-        // PrintPriorityVec(dag_tasks.tasks, pa_opt);
-        WritePriorityAssignments(output_file_path, dag_tasks.tasks, pa_opt,
-                                 time_taken);
-    }
+    std::cout << "Total running time from scratch: " << time_taken
+              << " seconds\n";
+    std::cout << "Average for 10 incremental: "
+              << (time_taken_all - time_taken) / 10.0 << " seconds\n";
 }

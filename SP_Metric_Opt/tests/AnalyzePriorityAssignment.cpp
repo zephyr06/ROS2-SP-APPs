@@ -66,4 +66,5 @@ int main(int argc, char *argv[]) {
         PrintPriorityVec(dag_tasks.tasks, pa_opt);
         PrintTimer();
     }
+    std::cout << "Total running time: " << time_taken << " seconds\n";
 }

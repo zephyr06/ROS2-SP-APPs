@@ -16,7 +16,9 @@
 class SchedulerApp : public AppBase {
    public:
     SchedulerApp() : AppBase("SCHEDULER") {}
+
     SchedulerApp(int argc, char *argv[]) : AppBase("SCHEDULER") {
+        recorder_ = Recorder("SCHEDULER_PUER_OPT");
         // supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental
         // scheduler_ = "optimizerBF";
         if (argc >= 2) {
@@ -46,7 +48,7 @@ class SchedulerApp : public AppBase {
     std::string scheduler_;
     // SP_OPT_PA::OptimizePA_Incre incremental_optimizer_;
     SP_OPT_PA::OptimizePA_Incre_with_TimeLimits incremental_optimizer_w_TL_;
-    Recorder recorder_("SCHEDULER_PUER_OPT");
+    Recorder recorder_;
 };
 
 // function arguments msg_cnt not used for now
