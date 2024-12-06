@@ -20,6 +20,8 @@ class SchedulerApp : public AppBase {
 
     SchedulerApp(int argc, char *argv[]) : AppBase("SCHEDULER") {
         recorder_ = Recorder("SCHEDULER_PUER_OPT");
+        recorder_.write_initial_publish_time();
+        recorder_.write_initial_receive_time();
         // supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental
         // scheduler_ = "optimizerBF";
         if (argc >= 2) {
