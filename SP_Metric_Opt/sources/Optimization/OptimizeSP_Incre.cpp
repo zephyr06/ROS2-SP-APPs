@@ -229,8 +229,8 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
     // reset optimal sp
     opt_sp_ =
         EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_);
-    std::cout << "Initial SP before incremental optimziation is: " << opt_sp_
-              << "\n";
+    // std::cout << "Initial SP before incremental optimziation is: " << opt_sp_
+    //           << "\n";
     std::vector<DiffObj> tasks_with_diff_et =
         FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
     for (DiffObj task_diff_obj : tasks_with_diff_et) {
@@ -252,8 +252,8 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
             }
         }
     }
-    std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
-              << "\n";
+    // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
+    //           << "\n";
     return opt_pa_;
 }
 }  // namespace SP_OPT_PA
