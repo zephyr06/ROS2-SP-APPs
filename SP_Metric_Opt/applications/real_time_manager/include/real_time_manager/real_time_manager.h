@@ -81,7 +81,7 @@ public:
             }
             else
             {
-                // std::cerr << "Unrecognized scheduling policy: " << scheduling_policy << std::endl;
+                // std::cerr << "Unrecognized scheduling policy: " << scheduling_policy << "\n";
                 CoutError("Unrecognized scheduling policy: " + scheduling_policy + " Supported policies are: SCHED_FIFO, SCHED_OTHER. \n");
                 return;
             }
@@ -137,7 +137,7 @@ public:
             std::cout << task_names[i] << ":   policy:" << scheduling_policies[i] << ",   priority:" << priorities[i] << "\n        cpu lists:";
             for (auto cpu : cpu_lists[i])
                 std::cout << cpu << ", ";
-            std::cout << std::endl;
+            std::cout << "\n";
         }
 
         setCPUAffinityAndPriority(task_names, cpu_lists, scheduling_policies, priorities);
@@ -231,7 +231,7 @@ private:
             {
                 perror("sched_setaffinity");
                 // CoutError("Error setting CPU affinity for thread " +std::to_string(tid));
-                std::cerr << "Error setting CPU affinity for thread  (maybe bcause the thread already terminates)" << tid << std::endl;
+                std::cerr << "Error setting CPU affinity for thread  (maybe bcause the thread already terminates)" << tid << "\n";
             }
         }
     }
@@ -246,7 +246,7 @@ private:
             {
                 perror("sched_setscheduler");
                 // CoutError("Error setting scheduling policy for thread " +std::to_string(tid));
-                std::cerr << "Error setting scheduling policy for thread (maybe bcause the thread already terminates)" << tid << std::endl;
+                std::cerr << "Error setting scheduling policy for thread (maybe bcause the thread already terminates)" << tid << "\n";
             }
         }
     }
@@ -266,7 +266,7 @@ private:
                 {
                     std::cout << pid << " ";
                 }
-                std::cout << std::endl;
+                std::cout << "\n";
 
                 std::vector<pid_t> thread_ids = getAllThreadIds(pids);
                 if (!thread_ids.empty())
@@ -276,24 +276,24 @@ private:
                     {
                         std::cout << tid << " ";
                     }
-                    std::cout << std::endl;
+                    std::cout << "\n";
 
                     setCPUAffinity(thread_ids, cpu_list);
                     setSchedulingPolicy(thread_ids, scheduling_policy, priority);
                 }
                 else
                 {
-                    std::cout << "No thread IDs found." << std::endl;
+                    std::cout << "No thread IDs found." << "\n";
                 }
             }
             else
             {
-                std::cout << "Task '" << task_name << "' not found or not running." << std::endl;
+                std::cout << "Task '" << task_name << "' not found or not running." << "\n";
             }
         }
         catch (const std::exception &e)
         {
-            std::cerr << "Exception caught: " << e.what() << std::endl;
+            std::cerr << "Exception caught: " << e.what() << "\n";
             return;
         }
     }
