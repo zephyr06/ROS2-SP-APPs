@@ -20,6 +20,8 @@ class SchedulerApp : public AppBase {
 
     SchedulerApp(int argc, char *argv[]) : AppBase("SCHEDULER") {
         recorder_ = Recorder("SCHEDULER_PUER_OPT");
+        recorder_.write_initial_publish_time();
+        recorder_.write_initial_receive_time();
         // supported scheduler are: CFS, RM, optimizerBF, optimizerIncremental
         // scheduler_ = "optimizerBF";
         if (argc >= 2) {
@@ -59,6 +61,7 @@ void SchedulerApp::run(int release_index) {
     // no execution at the first instance
     if (cnt_++ == 0) return;
     TimerType start_time = CurrentTimeInProfiler;
+    recorder_.write_publish_time(getCurrentTimeStamp(), release_index);
     std::filesystem::path current_file_path =
         std::filesystem::canonical(__FILE__);
     std::filesystem::path package_directory =
@@ -128,6 +131,9 @@ void SchedulerApp::run(int release_index) {
         ResourceOptResult opt_res_pa_and_tl;
         // auto start_time_for_optimization = CurrentTimeInProfiler;
         exe_profiler_.start();
+        exe_profiler_.end();
+        
+        exe_profiler_.start();
         if (scheduler_ == "optimizerBF") {
             opt_res_pa_and_tl =
                 EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
@@ -185,6 +191,7 @@ void SchedulerApp::run(int release_index) {
             GetTimeTaken(start_time, finish_time);
         std::cout << "Time to change priority assignments in OS: "
                   << time_for_OS_to_change_priority << "\n";
+        recorder_.write_receive_time(getCurrentTimeStamp(), release_index);
         recorder_.write_execution_time(
             time_for_optimization + time_for_OS_to_change_priority,
             release_index);

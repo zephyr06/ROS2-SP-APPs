@@ -1,12 +1,12 @@
 # $1: repeat times
 sleep_interval=120
-repeat=20
+repeat=50
 
 PROJECT_ROOT="/home/nvidia/workspace/sdcard/ROS2-SP-APPs"
 cd $PROJECT_ROOT/scripts
 
-schedulers=("CFS" "RM_Fast" "optimizerBF" "RM_Slow" "optimizerIncremental")
-# schedulers=("optimizerBF")
+# schedulers=("CFS" "RM_Fast" "optimizerBF" "RM_Slow" "optimizerIncremental")
+schedulers=("optimizerIncremental" "optimizerBF")
 for scheduler in "${schedulers[@]}"; do
     echo $scheduler
     rm -rf $PROJECT_ROOT/Experiments/$scheduler/*

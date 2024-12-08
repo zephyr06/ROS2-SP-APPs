@@ -30,3 +30,4 @@ SP_Metric_Opt/applications/tsp_solver_osm/experiments/*_command_history.csv
 SP_Metric_Opt/TaskData/pa_res_*
 Experiments/*
 SP_Metric_Opt/temp_folder
+scripts/.run_multiple_times.sh.swp
