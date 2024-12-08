@@ -69,7 +69,7 @@ def read_ET_data_from_file( file_path, sample_threshold=10000, sample_rate=0.01)
 #     return times
 
 
-def average_execution_time_with_intervals(time_stamps, execution_times, T):
+def average_execution_time_with_intervals(time_stamps, execution_times, T, max_time_under_consider=-1):
     """
     Calculate average execution times in intervals of size T and return midpoints and averages.
 
@@ -86,7 +86,12 @@ def average_execution_time_with_intervals(time_stamps, execution_times, T):
     if len(time_stamps) != len(execution_times):
         raise ValueError("time_stamps and execution_times must have the same length.")
 
-    max_time = time_stamps[-1]  # Assuming time_stamps are sorted
+    if max_time_under_consider<0:
+        max_time = time_stamps[-1]  # Assuming time_stamps are sorted
+    else:
+        max_time = max_time_under_consider
+    if max_time > 1e5:
+        raise ValueError("The time record file seems to contain too many timestamps or the timestamp does not have proper start time")
     num_intervals = int(np.ceil(max_time / T))
 
     midpoints = np.zeros(num_intervals)
@@ -105,7 +110,7 @@ def average_execution_time_with_intervals(time_stamps, execution_times, T):
 
     return np.array([midpoints, averages])
 
-def process_tar_files_for_ET(folder_path, appname, horizon_granularity = 10):
+def process_tar_files_for_ET(folder_path, appname, max_time_under_consider=835, horizon_granularity = 10):
     temp_folder_path = os.path.join(OPT_SP_PROJECT_PATH, "temp_folder")
 
     all_times = []
@@ -133,11 +138,11 @@ def process_tar_files_for_ET(folder_path, appname, horizon_granularity = 10):
             et_data = et_data[:len_min]
             publish_time=publish_time[:len_min]
 
-            all_times.append(average_execution_time_with_intervals(publish_time, et_data, horizon_granularity))
+            all_times.append(average_execution_time_with_intervals(publish_time, et_data, horizon_granularity, max_time_under_consider = max_time_under_consider))
     clear_folder(temp_folder_path)
     return all_times
 
-def plot_and_save_et_boxplot(data, plot_file_path, csv_file_path,  show_fig_time=3, normalize_coeff=1.0, xlim_min=30, xlim_max=650):
+def plot_and_save_et_boxplot(data, plot_file_path, csv_file_path,  show_fig_time=3, normalize_coeff=1.0, xlim_min=30, xlim_max=850):
     """
     This function takes in time series data and corresponding SP values,
     creates a box plot, and saves the figure as a PDF file.
@@ -230,12 +235,13 @@ def plot_ET_distribution(appname, folder_path,scheduler_name, extra_pdf_file_nam
 
 if __name__ =="__main__":
 
-    optimizer_names = [ "optimizerIncremental"]
-    optimizer_names = ["optimizerBF"]
+    optimizer_names = [ "optimizerIncremental", "optimizerBF"]
+    # optimizer_names = []
     for optimizer in optimizer_names:
         folder_path = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", optimizer)
-        app_names = ["SLAM", "RRT", "TSP", "MPC", "SCHEDULER"]  # "MPC" is too slow
-        app_names = ["SCHEDULER"]
+        app_names = ["SLAM", "TSP", "RRT", "MPC", "SCHEDULER"]  # "MPC" is too slow
+        app_names = ["SLAM"]
+        # app_names = ["SCHEDULER_PUER_OPT"]
         for app_name in app_names:
             plot_ET_distribution(app_name, folder_path=folder_path, extra_pdf_file_name_append=optimizer, scheduler_name=optimizer)
 
