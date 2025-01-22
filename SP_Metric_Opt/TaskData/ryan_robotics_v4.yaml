@@ -1,0 +1,27 @@
+tasks:
+  - id: 0
+    execution_time_mu: 60.2848960000000016
+    execution_time_sigma: 0.54832350626064584
+    execution_time_min: 60.1955200000000001
+    execution_time_max: 60.3567679999999998
+    period: 100
+    deadline: 100
+    processorId: 0
+    name: MPC
+    sp_threshold: 0.99
+    sp_weight: 1
+    total_running_time: 850e3
+  - id: 1
+    execution_time_mu: 42.99182079999991
+    execution_time_sigma: 10.27445313801697
+    execution_time_min: 17.65763200000001
+    execution_time_max: 49.44540800000004
+    period: 150
+    deadline: 150
+    processorId: 0
+    name: TSP
+    sp_threshold: 0.5
+    sp_weight: 1
+    total_running_time: 850e3
+    performance_records_time: 15   25   30   45   85   90   95   100  105  110  120  150
+    performance_records_perf: 0.1  0.73 0.80 0.86 0.88 0.91 0.94 0.95 0.97 0.98 0.99 1    

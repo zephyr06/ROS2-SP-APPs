@@ -1,0 +1,49 @@
+tasks:
+  - id: 0
+    execution_time_mu: 3002.8666834285714
+    execution_time_sigma: 2.9397882308931798
+    execution_time_min: 3000.9881919999998
+    execution_time_max: 3008.6959999999999
+    period: 1000
+    deadline: 1000
+    processorId: 0
+    name: TSP
+    sp_threshold: 0.5
+    sp_weight: 1
+    total_running_time: 3000
+  - id: 1
+    execution_time_mu: 6.3180652799999999
+    execution_time_sigma: 0.30515094249547797
+    execution_time_min: 6.015968
+    execution_time_max: 7.327712
+    period: 20
+    deadline: 20
+    processorId: 1
+    name: MPC
+    sp_threshold: 0.5
+    sp_weight: 1
+    total_running_time: 1.2e6
+  - id: 2
+    execution_time_mu: 1226.7180719999999
+    execution_time_sigma: 766.05056359811044
+    execution_time_min: 346.384096
+    execution_time_max: 4235.6999999999998
+    period: 3000
+    deadline: 3000
+    processorId: 1
+    name: RRT
+    sp_threshold: 0.5
+    sp_weight: 1
+    total_running_time: 1.2e6
+  - id: 3
+    execution_time_mu: 2713.4543167999996
+    execution_time_sigma: 3590.252655052107
+    execution_time_min: 531.81478400000003
+    execution_time_max: 16393.618112
+    period: 2000
+    deadline: 2000
+    processorId: 0
+    name: SLAM
+    sp_threshold: 0.5
+    sp_weight: 2
+    total_running_time: 1.25e6

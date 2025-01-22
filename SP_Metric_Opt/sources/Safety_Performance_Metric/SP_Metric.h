@@ -4,6 +4,7 @@
 #include "sources/Safety_Performance_Metric/RTA.h"
 #include "sources/Safety_Performance_Metric/RTDA_Prob.h"
 #include "sources/TaskModel/RegularTasks.h"
+#include "sources/Utils/Parameters.h"
 
 namespace SP_OPT_PA {
 
@@ -28,6 +29,9 @@ inline double RewardFunc(double violate_probability, double threshold) {
     return log((threshold - violate_probability) + 1);
 }
 
+#if defined(RYAN_HE_CHANGE)
+double SP_Func(double violate_probability, double threshold);
+#else
 inline double SP_Func(double violate_probability, double threshold) {
     double min_val, max_val, val;
     min_val = PenaltyFunc(1, threshold);
@@ -39,6 +43,7 @@ inline double SP_Func(double violate_probability, double threshold) {
     }
     return interpolate(val, min_val, 0, max_val, 1);
 }
+#endif
 
 // timePerformancePairs is required to be sorted by time
 double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
@@ -66,5 +71,14 @@ double ObtainSP_DAG_From_Dists(
 double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& mpc_path, std::string& tsp_path,
                             std::string& tsp_ext_path, std::string& chain0_path,
-                            std::string& file_path_ref);
+                            std::string& file_path_ref
+#if defined(RYAN_HE_CHANGE)
+                            , int dbg = 0
+#endif
+                            );
+
+#if defined(RYAN_HE_CHANGE)
+double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, int dbg );
+#endif
+
 }  // namespace SP_OPT_PA

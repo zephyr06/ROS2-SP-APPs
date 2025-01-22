@@ -82,9 +82,7 @@ class RunQueue {
         job_info.StartRun(time_now);
 
         auto itr = schedule_.find(job_info.job);
-        if (itr ==
-            schedule_
-                .end()) {  // record the start time only when first accessing it
+        if (itr == schedule_.end()) {  // record the start time only when first accessing it
             JobStartFinish job_sf(time_now, -1);
             schedule_[job_info.job] = job_sf;
         }

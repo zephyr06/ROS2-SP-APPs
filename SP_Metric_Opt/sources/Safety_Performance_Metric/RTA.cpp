@@ -2,6 +2,8 @@
 #include <unordered_map>
 
 #include "sources/TaskModel/RegularTasks.h"
+#include "sources/Utils/Parameters.h"
+
 namespace SP_OPT_PA {
 
 FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
@@ -47,8 +49,19 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     std::vector<FiniteDist> rtas(n);
     TaskSet hp_tasks;
     hp_tasks.reserve(n - 1);
+#if defined(RYAN_HE_CHANGE_DEBUG)
+    if (GlobalVariables::debugMode & DBG_PRT_MSK_SP_Metric) {
+        std::cout << "####ProbabilisticRTA_TaskSet_SingleCore: "<<n<<" tasks: "<<std::endl;
+    }
+#endif
     for (int i = 0; i < n; i++) {
         FiniteDist rta_curr = GetRTA_OneTask(tasks[i], hp_tasks);
+#if defined(RYAN_HE_CHANGE_DEBUG)
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_SP_Metric) {
+            std::cout << "####ProbabilisticRTA_TaskSet_SingleCore: tasks["<<i<<"]'s RTA: "<<std::endl;
+            rta_curr.print();
+        }
+#endif        
         // rtas.push_back(rta_curr);
         rtas[task_id_to_index[tasks[i].id]] = rta_curr;
         hp_tasks.push_back(tasks[i]);
@@ -90,6 +103,8 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet(const TaskSet& tasks) {
     return rtas;
 }
 
+// assumes not preempted? no! finite_dist is the distribution is from task set so 
+// premption is considered
 double GetDDL_MissProbability(const FiniteDist& finite_dist, double ddl) {
     auto itr = std::upper_bound(finite_dist.distribution.begin(),
                                 finite_dist.distribution.end(), ddl,

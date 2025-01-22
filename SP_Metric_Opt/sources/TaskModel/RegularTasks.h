@@ -42,12 +42,86 @@ class Task {
           name(name) {
         if (name == "") name = "Task_" + std::to_string(id);
         executionTime = -1;
+
+#if defined(RYAN_HE_CHANGE) 
+    	priorityType_ = "RM"; //
+#endif	        
     }
+
+#if defined(RYAN_HE_CHANGE)  
+    // RYAN_HE: allow set priority at runtime
+    void set_priority(double p) { priority=p;}
+
+    // modify public member priorityType_ to change how to calculate the value:
+    // a larger return value means higher priority
+
+    // RYAN_HE: this is old api. For RM and fixed execution time, it should work.
+    double get_priority() const;
+    //double get_priority(int time_now) const;
+
+    // RYAN_HE: this is new api. For CSP EDF, need this api
+    double get_priority2(LLint time_now, LLint deadlineObj, LLint jobId) const;
+#endif
 
     void print() {
         std::cout << "The period is: " << period << " The deadline is "
                   << deadline << std::endl;
     }
+
+#if defined(RYAN_HE_CHANGE)
+    // RYAN HE: return random execution time for a job following its distribution
+    double getExecutionTimeFromDist() { 
+        double v = execution_time_dist.getRandomValue(); 
+        #if defined(RYAN_HE_CHANGE_DEBUG)
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_TSK) {
+            std::cout << "####getExecutionTimeFromDist: The execution time distrubition is: " <<std::endl;
+            execution_time_dist.print();
+            std::cout << "####getExecutionTimeFromDist: The execution time is: " << v << std::endl;
+        }
+        #endif
+        return v;
+    }
+
+    // RYAN HE: return min and max execution time (USED FOR RM_FAST/SLOW)
+    double getExecutionTimeFromDistMin() const {
+        double v = execution_time_dist.getMinValue();
+        return v;
+    }
+
+    double getExecutionTimeFromDistMax() const {
+        double v = execution_time_dist.getMaxValue();
+        return v;
+    }
+
+    double getExecutionTimePerformanceSigma() const {
+        return performance_records_sigma;
+    }
+
+    double getExecutionTimePerformanceMin() const {
+        if ( timePerformancePairs.size() > 0 ) {
+            return timePerformancePairs[0].time_limit;
+        } else {
+            return -1.0;
+        }
+    }
+    double getExecutionTimePerformanceMax() const {
+        if ( timePerformancePairs.size() > 0 ) {
+            return timePerformancePairs[timePerformancePairs.size()-1].time_limit;
+        } else {
+            return -1.0;
+        }
+    }
+
+    // RYAN HE: return the fixed execution time (int) since simulation time granularity is ms
+    int getExecutionTime() const {
+        if (executionTime > 0)
+            return executionTime;
+        else
+            CoutError("Execution time is not set!");
+        return 0;
+    }
+    void setExecutionTime(int x) { executionTime = x; }    
+#else
 
     double getExecutionTime() const {
         if (executionTime > 0)
@@ -57,6 +131,7 @@ class Task {
         return 0;
     }
     void setExecutionTime(double x) { executionTime = x; }
+#endif
 
     // TODO: test this scale function
     void Scale(double k) {
@@ -86,8 +161,19 @@ class Task {
     double total_running_time;
     std::vector<TimePerfPair> timePerformancePairs;
 
+#if defined(RYAN_HE_CHANGE)
+    // RYAN HE: add priority type to support assigned, RM, EDF.
+    std::string priorityType_;
+    double performance_records_sigma;
+#endif
+
    private:
+#if defined(RYAN_HE_CHANGE)
+    // RYAN HE: change executionTime to int since simulation time granularity is ms
+    int executionTime;
+#else
     double executionTime;
+#endif
     GaussianDist exec_time_gauss;  // not used except IO part
 };
 typedef std::vector<SP_OPT_PA::Task> TaskSet;
@@ -137,6 +223,14 @@ class TaskSetInfoDerived {
         return tasks[task_id2position_.at(task_id)];
     }
     inline const TaskSet& GetTaskSet() const { return tasks; }
+#if defined(RYAN_HE_CHANGE)
+    // RYAN HE: add it for CSP
+    // CSP scheduler returns priority vectory, need to map index to id and then get task
+    // so that we can assign task priority
+    inline Task& GetTaskForPriority(uint task_id) {
+        return tasks[task_id2position_.at(task_id)];
+    }
+#endif
 
     void RecordTaskPosition() {
         for (int i = 0; i < static_cast<int>(tasks.size()); i++) {

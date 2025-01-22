@@ -1,0 +1,28 @@
+tasks:
+  - id: 0
+    execution_time_mu: 427.99182079999991
+    execution_time_sigma: 102.27445313801697
+    execution_time_min: 175.65763200000001
+    execution_time_max: 494.44540800000004
+    period: 1500
+    deadline: 1500
+    processorId: 0
+    name: TSP0
+    sp_threshold: 0.5
+    sp_weight: 1
+    total_running_time: 850e3
+    performance_records_time: 150 250  300  450  850  900  950  10001050 1100 1200 1500
+    performance_records_perf: 0.1 0.73 0.80 0.86 0.88 0.91 0.94 0.95 0.97 0.98 0.99 1   
+    performance_records_sigma: 100
+  - id: 1
+    execution_time_mu: 361.38785279999991
+    execution_time_sigma: 577.33202467870478
+    execution_time_min: 68.300479999999993
+    execution_time_max: 1560.2162879999998
+    period: 2000
+    deadline: 2000
+    processorId: 0
+    name: SLAM
+    sp_threshold: 0.9
+    sp_weight: 2
+    total_running_time: 850e3

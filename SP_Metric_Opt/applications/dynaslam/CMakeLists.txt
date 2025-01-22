@@ -1,5 +1,15 @@
-
 # find opencv
+#find_package(OpenCV 4 QUIET)
+#if(NOT OpenCV_FOUND)
+#    find_package(OpenCV 3.0 QUIET)
+#    if(NOT OpenCV_FOUND)
+#        find_package(OpenCV 2.4.11 QUIET)
+#        if(NOT OpenCV_FOUND)
+#            message(FATAL_ERROR "OpenCV > 2.4.11 not found.")
+#        endif()
+#    endif()
+#endif()
+
 find_package(OpenCV 2.4.11 QUIET)
 if(NOT OpenCV_FOUND)
     message("OpenCV > 2.4.11 not found.")
@@ -35,7 +45,8 @@ find_package(Pangolin REQUIRED)
 
 include_directories(${PROJECT_SOURCE_DIR}/../utils)
 set(DYNASLAM_PROJ_DIR /home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM)
-set(ORBASLAM2_PROJ_DIR /home/nvidia/workspace/sdcard/ORB_SLAM2)
+#set(ORBASLAM2_PROJ_DIR /home/nvidia/workspace/sdcard/ORB_SLAM2)
+set(ORBASLAM2_PROJ_DIR /mnt/d/robotics_research/ORB_SLAM2)
 include_directories(
   ${PROJECT_SOURCE_DIR}/include
   ${ORBASLAM2_PROJ_DIR}
@@ -60,7 +71,8 @@ target_link_libraries(dynaslam_demo
   ${Pangolin_LIBRARIES}
   ${ORBASLAM2_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
   ${ORBASLAM2_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
-  /lib/aarch64-linux-gnu/libpython2.7.so
+  #/lib/aarch64-linux-gnu/libpython2.7.so
+  /usr/lib/x86_64-linux-gnu/libpython2.7.so
   ${Boost_LIBRARIES}
 )
 target_link_libraries(dynaslam_demo ${CONVENIENCE_LIB_NAME})
@@ -77,7 +89,8 @@ target_link_libraries(listener_slam
   ${Pangolin_LIBRARIES}
   ${ORBASLAM2_PROJ_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
   ${ORBASLAM2_PROJ_DIR}/Thirdparty/g2o/lib/libg2o.so
-  /lib/aarch64-linux-gnu/libpython2.7.so
+  #/lib/aarch64-linux-gnu/libpython2.7.so
+  /usr/lib/x86_64-linux-gnu/libpython2.7.so
   ${Boost_LIBRARIES}
 )
 

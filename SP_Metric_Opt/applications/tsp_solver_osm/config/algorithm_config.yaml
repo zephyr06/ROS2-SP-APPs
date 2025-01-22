@@ -4,7 +4,7 @@ general:
   log_data: 0
   print_path: 0
   max_iter: 1000000
-  max_time: 0.65789999999999993
+  max_time: 0.45000000000000001
 rrt_params:
   goal_bias: 1.0
   random_seed: 0

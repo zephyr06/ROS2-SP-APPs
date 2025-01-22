@@ -3,7 +3,135 @@
 #include <yaml-cpp/yaml.h>
 
 #include <filesystem>
+
+
 namespace SP_OPT_PA {
+
+#if defined(RYAN_HE_CHANGE)
+
+// RYAN_HE: moved get_priority from .h to .cpp
+// just try to avoid keep recompiling eveything when anything changes in .h
+// this function is pretty much unchanged
+// NOTE: bigger priority means higher priority
+double Task::get_priority() const {
+  if (CompareStringNoCase(priorityType_, "RM")) {
+    if (period > 0)
+      return 1.0 / period +
+             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
+                                      // possible period is 10^4; adding id
+                                      // into priority breaks the tie when
+                                      // different tasks have the same periods
+    else
+      CoutError("Period parameter less or equal to 0!");
+  } else if (CompareStringNoCase(priorityType_, "orig")) {
+    return id * -1;
+  } else if (CompareStringNoCase(priorityType_, "assigned")) {
+    return priority;
+  }  
+  else if (CompareStringNoCase(priorityType_, "DM")) {
+	// d bigger means lower priority
+    //std::cout << "####Task::priority: task_id="<<id<<", deadline="<<deadline<<", deadline="<<deadline<<std::endl;
+	// the smaller deadline, the bigger priority should be  
+    if (deadline > 0)
+      return 1.0 / deadline +
+             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
+                                      // possible period is 10^4; adding id
+                                      // into priority breaks the tie when
+                                      // different tasks have the same periods
+    else
+      return (-deadline) + 1e6 + float(id) / pow(10, 6);
+  }  
+  else {
+    CoutError("Priority settings not recognized!");
+  }
+  return -1;
+}
+
+// RYAN_HE: for RunQueue2. 
+// given time_now, deadlineJob and jobId, so that EDF priority can be computed
+// jobId is used to break ties when EDF is same 
+double Task::get_priority2(LLint time_now, LLint deadlineJob, LLint jobId) const {
+  if (CompareStringNoCase(priorityType_, "RM")) {
+    if (period > 0) {
+      double f = pow(10,6);
+      return 1.0 / period - double(jobId)/f + 
+             double(id) / f;  // pow(10, 6) because the minimum
+                                      // possible period is 10^4; adding id
+                                      // into priority breaks the tie when
+                                      // different tasks have the same periods
+    } else {
+      CoutError("Period parameter less or equal to 0!");
+    }
+  } else if (CompareStringNoCase(priorityType_, "orig")) {
+    return id * -1;
+  } else if (CompareStringNoCase(priorityType_, "assigned")) {
+    return priority;
+  } 
+  else if (CompareStringNoCase(priorityType_, "DM")) {
+	// d bigger means lower priority
+
+	// the smaller deadline, the bigger priority should be  
+	int d = deadlineJob-time_now;
+	//std::cout << "####Task::priority_arg: task_id="<<id<<", deadlineObj="<<deadlineObj<<", relative deadline="<<d<<std::endl;
+    if (d > 0) {
+	  double f = pow(10,6); // for same id, jobid bigger, prio should be smaller
+      return 1.0 / d - double(jobId)/f +
+             double(id) / f;  // pow(10, 6) because the minimum
+                                      // possible period is 10^4; adding id
+                                      // into priority breaks the tie when
+                                      // different tasks have the same periods
+    } else {
+      double f = pow(10,6);
+      return (-d) - double(jobId)/f + double(id) / f;
+	}
+  }
+  else {
+    CoutError("Priority settings not recognized!");
+  }
+  return -1;	
+}
+
+/*
+double Task::get_priority(int time_now) const {
+  if (CompareStringNoCase(priorityType_, "RM")) {
+    if (period > 0)
+      return 1.0 / period +
+             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
+                                      // possible period is 10^4; adding id
+                                      // into priority breaks the tie when
+                                      // different tasks have the same periods
+    else
+      CoutError("Period parameter less or equal to 0!");
+  } else if (CompareStringNoCase(priorityType_, "orig")) {
+    return id * -1;
+  } else if (CompareStringNoCase(priorityType_, "assigned")) {
+    return priority;
+  } 
+  else if (CompareStringNoCase(priorityType_, "DM")) {
+	// d bigger means lower priority
+
+	// the smaller deadline, the bigger priority should be  
+	int d = deadline-time_now;
+	std::cout << "####Task::priority_arg: task_id="<<id<<", deadline="<<deadline<<", relative deadline="<<d<<std::endl;
+		
+	// int d = deadline; // if deadline -- every cycle, just use this
+    //std::cout << "####Task::priority_arg: task_id="<<id<<", deadline="<<deadline<<", deadline="<<deadline<<std::endl;	
+    if (d > 0)
+      return 1.0 / d +
+             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
+                                      // possible period is 10^4; adding id
+                                      // into priority breaks the tie when
+                                      // different tasks have the same periods
+    else
+      return (-d) + 1e6 + float(id) / pow(10, 6);
+  }
+  else {
+    CoutError("Priority settings not recognized!");
+  }
+  return -1;
+}
+*/
+#endif
 
 std::vector<double> str_seq2vector(const std::string &strs) {
     std::vector<double> res;
@@ -86,6 +214,14 @@ TaskSet ReadTaskSet(std::string path, int granulairty) {
         if (tasksNode[i]["total_running_time"])
             task.total_running_time =
                 tasksNode[i]["total_running_time"].as<double>();
+#if defined(RYAN_HE_CHANGE)
+        if (tasksNode[i]["performance_records_sigma"]) {
+            task.performance_records_sigma =
+                tasksNode[i]["performance_records_sigma"].as<double>();
+        } else {
+            task.performance_records_sigma = 0.0;
+        }
+#endif                
         if (tasksNode[i]["performance_records_time"]) {
             task.timePerformancePairs = AnalyzeTimePerfPair(
                 tasksNode[i]["performance_records_time"].as<std::string>(),

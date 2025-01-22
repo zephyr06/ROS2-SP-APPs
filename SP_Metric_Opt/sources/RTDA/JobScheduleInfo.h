@@ -3,11 +3,16 @@
 #include "sources/Utils/JobCEC.h"
 #include "unordered_map"
 
+
 namespace SP_OPT_PA {
 struct JobStartFinish {
     JobStartFinish() {}
     JobStartFinish(int s, int f) : start(s), finish(f) {}
-
+#ifdef RYAN_HE_CHANGE
+    // RYAN_HE: add executionTime 
+    // if task doesn't have fixed execution time, need to record it in schedule output
+    JobStartFinish(int s, int f, int e) : start(s), finish(f), executionTime(e) {}
+#endif
     inline bool operator==(const JobStartFinish &other) const {
         return start == other.start && finish == other.finish;
     }
@@ -17,12 +22,29 @@ struct JobStartFinish {
     // data members
     int start;
     int finish;
+#ifdef RYAN_HE_CHANGE
+    int executionTime = 0;
+#endif    
 };
 
 typedef std::unordered_map<JobCEC, JobStartFinish> Schedule;
 
+// RYAN_HE: key change is to add executionTime into JobScheduleInfo
+// For a task, executionTime of a job is not always the same which is why it cannot be in Task
+// I also added deadlineJob here which is a job's release time + task_deadline. It makes EDF easier
 struct JobScheduleInfo {
     JobScheduleInfo(JobCEC job) : job(job), accum_run_time(0) {}
+#ifdef RYAN_HE_CHANGE
+    JobScheduleInfo(JobCEC job, LLint deadlineJob, int executionTime) :
+        job(job), accum_run_time(0), deadlineJob(deadlineJob), executionTime(executionTime) {}
+
+    JobScheduleInfo(JobCEC job, LLint deadlineJob) :
+        job(job), accum_run_time(0), deadlineJob(deadlineJob), executionTime(0) {}
+
+    inline bool IfFinished() const {
+        return accum_run_time >= executionTime;
+    }        
+#endif
 
     inline bool IfFinished(const TaskSetInfoDerived &tasks_info) const {
         return accum_run_time >= tasks_info.GetTask(job.taskId).getExecutionTime();
@@ -46,6 +68,11 @@ struct JobScheduleInfo {
     int start_time_last;
     int accum_run_time;
     bool running = false;
+	
+#ifdef RYAN_HE_CHANGE
+    LLint deadlineJob;
+    int executionTime = 0;	
+#endif
 };
 
 struct IndexInfoMultiHp {

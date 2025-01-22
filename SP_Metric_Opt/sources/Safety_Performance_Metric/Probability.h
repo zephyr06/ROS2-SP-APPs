@@ -5,7 +5,18 @@
 
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/testMy.h"
+
+#if defined(RYAN_HE_CHANGE)
+#include <random>
+#endif
+
+
 namespace SP_OPT_PA {
+
+#if defined(RYAN_HE_CHANGE)
+// Function to generate a random value from a Gaussian distribution
+double getRandomValueByMuSigma(double mu, double std, double *minVal, double *maxVal);
+#endif
 
 class ProbabilityDistributionBase {
    public:
@@ -17,6 +28,7 @@ class ProbabilityDistributionBase {
 
     // data members
 };
+
 
 class GaussianDist : public ProbabilityDistributionBase {
    public:
@@ -81,6 +93,51 @@ class FiniteDist : public ProbabilityDistributionBase {
     }
 
     FiniteDist(const std::vector<double>& data_raw, int granularity);
+
+#if defined(RYAN_HE_CHANGE)
+    double getMinValue() const {
+        return min_time;
+    }
+    double getMaxValue() const {
+        return max_time;
+    }
+    // get a random value following the distribution
+    double getRandomValue() {
+        if (distribution.empty()) {
+            throw std::runtime_error("Distribution is empty. Cannot generate random value.");
+        }
+
+        // Generate a random number between 0 and 1
+        static std::random_device rd;
+        static std::mt19937 gen(rd());
+        std::uniform_real_distribution<> dis(0.0, 1.0);
+        double random_probability = dis(gen);
+
+        // Iterate through the distribution and select the corresponding value
+        double cumulative_probability = 0.0;
+        for (size_t i = 0; i < distribution.size(); ++i) {
+            cumulative_probability += distribution[i].probability;
+
+            // If random_probability falls within this bin
+            if (random_probability <= cumulative_probability) {
+                // If it's the first bin, return the first value
+                if (i == 0) {
+                    return distribution[i].value;
+                }
+
+                // Otherwise, interpolate between the current bin and the previous bin
+                double prev_cumulative = cumulative_probability - distribution[i].probability;
+                double weight = (random_probability - prev_cumulative) / distribution[i].probability;
+
+                // Linear interpolation between the two values
+                return distribution[i - 1].value + weight * (distribution[i].value - distribution[i - 1].value);
+            }
+        }
+
+        // If no value is found (due to rounding errors), return the last value
+        return distribution.back().value;
+    }
+#endif
 
     void CheckDistributionValid() const;
     void UpdateDistribution(

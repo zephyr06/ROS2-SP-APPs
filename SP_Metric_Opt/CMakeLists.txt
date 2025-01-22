@@ -4,7 +4,13 @@ set (CMAKE_CXX_STANDARD 17)
 # set(CMAKE_BUILD_TYPE DEBUG)
 # set(CMAKE_BUILD_TYPE Release)
   
-  
+# RyanHe: may need -fpermissive globally to modify task
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpermissive")
+
+# RyanHe: add a flag marking code changes
+add_definitions(-DRYAN_HE_CHANGE)
+add_definitions(-DRYAN_HE_CHANGE_DEBUG)
+
 include_directories(${CMAKE_SOURCE_DIR})
 # for unittest scripts
 set(CMAKE_WARN_DEPRECATED OFF)
@@ -14,12 +20,15 @@ add_compile_options(-Wdeprecated-declarations)
 unset(CMAKE_WARN_DEPRECATED)
 
 
+
 find_package(Boost 1.65 REQUIRED)
 # find_package(CppUnitLite REQUIRED)
 find_package(yaml-cpp 0.5.2 REQUIRED)
 include_directories(${Boost_INCLUDE_DIR})
 include_directories(includeMoe)
 include_directories(/usr/local/lib)
+include_directories(/mnt/d/robotics_research/ORB_SLAM2/include)
+include_directories(/mnt/d/robotics_research/ORB_SLAM2)
 # file(GLOB sources "sources/*.cpp" "sources/*.h")
 file(GLOB_RECURSE sources "sources/*.cpp" "sources/*.h")
 set(CONVENIENCE_LIB_NAME ${PROJECT_NAME})
@@ -47,6 +56,8 @@ include(GoogleTest)
 # find_package(GTest REQUIRED)
 
 add_library(${CONVENIENCE_LIB_NAME} SHARED ${sources})
+
+
 
 # linking with dependencies
 target_link_libraries(${CONVENIENCE_LIB_NAME} ${Boost_LIBRARIES})

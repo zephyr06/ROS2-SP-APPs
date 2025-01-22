@@ -123,12 +123,14 @@ class DynaSLAMWrapperForROS2 {
                                               "SP_Scheduler_Stack/dataset/" +
                                               dataset_name_rgbd + "/") +
                                            "/" + vstrImageFilenamesRGB[index],
-                                       CV_LOAD_IMAGE_UNCHANGED);
+                                       //CV_LOAD_IMAGE_UNCHANGED);
+                                       cv::IMREAD_UNCHANGED);
             cv::Mat imD = cv::imread(string("/home/nvidia/workspace/sdcard/"
                                             "SP_Scheduler_Stack/dataset/" +
                                             dataset_name_rgbd + "/") +
                                          "/" + vstrImageFilenamesD[index],
-                                     CV_LOAD_IMAGE_UNCHANGED);
+                                     //CV_LOAD_IMAGE_UNCHANGED);
+                                     cv::IMREAD_UNCHANGED);
             vImgsRGB_.push_back(imRGB);
             vImgsD_.push_back(imD);
         }

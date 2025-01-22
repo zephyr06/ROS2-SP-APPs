@@ -1,0 +1,25 @@
+tasks:
+  - id: 0
+    execution_time_mu: 2.2848960000000016
+    execution_time_sigma: 0.54832350626064584
+    execution_time_min: 1.0
+    execution_time_max: 3.0
+    period: 4
+    deadline: 4
+    processorId: 0
+    name: MPC
+    sp_threshold: 0.99
+    sp_weight: 1
+    total_running_time: 850e3
+  - id: 1
+    execution_time_mu: 2.0
+    execution_time_sigma: 1.27445313801697
+    execution_time_min: 1.0
+    execution_time_max: 3.0
+    period: 6
+    deadline: 6
+    processorId: 0
+    name: TSP
+    sp_threshold: 0.5
+    sp_weight: 1
+    total_running_time: 850e3

@@ -3,6 +3,23 @@
 #include "algorithm"
 namespace SP_OPT_PA {
 
+#if defined(RYAN_HE_CHANGE)
+// Function to generate a random value from a Gaussian distribution
+double getRandomValueByMuSigma(double mu, double std, double *minVal, double *maxVal) {
+    // Random number generator
+    static std::random_device rd;  // Seed for the random number engine
+    static std::mt19937 gen(rd()); // Mersenne Twister engine
+    std::normal_distribution<> d(mu, std); // Gaussian distribution
+
+    double randomValue = d(gen); // Generate and return a random value
+    if (minVal != nullptr && randomValue < *minVal)
+        randomValue = *minVal;
+    if (maxVal != nullptr && randomValue > *maxVal)
+        randomValue = *maxVal;
+    return randomValue;
+}
+#endif
+
 std::unordered_map<double, double> FiniteDist::GetV_PMap() const {
     std::unordered_map<double, double> m;
     for (const Value_Proba& element : distribution)

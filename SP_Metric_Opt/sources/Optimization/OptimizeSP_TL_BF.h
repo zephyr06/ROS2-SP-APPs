@@ -33,6 +33,8 @@ class OptimizePA_with_TimeLimitsStatus {
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
     int N;
+
+    // struct ResourceOptResult is defined in OptimizeSP_Base.h
     ResourceOptResult res_opt;
     std::vector<std::vector<double>> time_limit_option_for_each_task;
 };

@@ -1,3 +1,4 @@
+from pickle import TRUE
 import matplotlib.pyplot as plt
 import os
 import yaml
@@ -8,6 +9,8 @@ from datetime import datetime
 OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # print(OPT_SP_PROJECT_PATH)
 # All time in seconds
+
+RYAN_CHANGE = TRUE
 
 class bcolors:
     HEADER = '\033[95m'
@@ -29,6 +32,22 @@ def verify_task_set_config(path):
         # print(path, " does not exist.")
         raise Exception(path + " does not exist.")
 
+# RYAN_CHANGE: RYAN ADD
+# return task name list
+def get_app2name(task_set_config):
+    names = []
+    with open(task_set_config, 'r') as file:
+        yaml_data = yaml.safe_load(file)
+        if 'tasks' in yaml_data:
+            key ='tasks'
+        elif 'Tasks' in yaml_data:
+            key = 'Tasks'
+        else:
+            raise Exception("The key for tasks is not found in the yaml file.")
+        for i in range(len(yaml_data[key])):
+            data_entry = yaml_data[key][i]
+            names.append(data_entry['name'])
+    return names
 
 def get_app2period(task_set_config):
     app_name2period = {}
@@ -57,6 +76,8 @@ def get_execution_time_file_path(folder_path, task_name):
     return os.path.join(folder_path, task_name.upper() + "_execution_time.txt")
 
 def get_index_to_data_map(file_path):
+    global RYAN_CHANGE
+
     verify_task_set_config(file_path)
     index_to_data = {}
     with open(file_path, 'r') as file:
@@ -75,6 +96,7 @@ def get_index_to_data_map(file_path):
             last_word = words[-1]
             if last_word[-1]=='\n':
                 last_word = last_word[:-1]
+                
             index = int(last_word.split("::")[0])
             time = float(last_word.split("::")[1])
             index_to_data[index] = time
@@ -182,6 +204,7 @@ def get_sp_value(output_str):
     output_split = output_str.split(" ")
     if len(output_split) < 2:
         raise Exception("Error: SP-Metric not found in the output string: "+output_str)
+    print(f'float {output_split[1]}, output_split={output_split} ...')
     return float(output_split[1])
 
 def get_sp_value_file_name():
@@ -241,9 +264,9 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
         if no_data_count>=0.75*len(tasks_name_list):
             break
         command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)
-        # print(command_in_terminal_to_analyze_taskset_sp)
+        print(command_in_terminal_to_analyze_taskset_sp)
         result = subprocess.run(command_in_terminal_to_analyze_taskset_sp, shell=True, capture_output=True, text=True)
-        # print(result.stdout)
+        print(result.stdout)
         sp_value = get_sp_value(result.stdout)
         if sp_value > -4.5:
             a=1
@@ -251,14 +274,24 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
     return sp_value_list
 
 
-def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon, show_fig_time=3):
+def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizon_granularity, horizon, 
+    show_fig_time=3, 
+    task_characteristics_dir=None,task_characteristics_name=None,RYAN_CHANGE_I=False):
+    global RYAN_CHANGE
+    RYAN_CHANGE = RYAN_CHANGE_I
 
-    task_set_config = os.path.join(
-        os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
+    if RYAN_CHANGE and task_characteristics_dir is not None and task_characteristics_name is not None:
+        task_set_config = os.path.join(task_characteristics_dir,task_characteristics_name)
+    else:
+        task_set_config = os.path.join(
+            os.path.dirname(OPT_SP_PROJECT_PATH),"all_time_records", "task_characteristics.yaml")
     verify_task_set_config(task_set_config)
     app_name2period = get_app2period(task_set_config)
-    tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
+    if RYAN_CHANGE:
+        tasks_name_list = get_app2name(task_set_config)
+    else:
+        tasks_name_list = ['TSP', 'RRT', 'SLAM', 'MPC']
 
     for method_name, data_folder_path in data_folder_paths.items():
         tasks_name_to_info = get_task_set_info(tasks_name_list, app_name2period, data_folder_path)
@@ -272,8 +305,12 @@ def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizo
     plt.ylabel("SP-Metric")
     plt.tight_layout()
     
-    plt.savefig(os.path.join(
-        os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "current_scheduler_SP.pdf"), format='pdf')
+    if RYAN_CHANGE and task_characteristics_dir is not None:
+        plt.savefig(os.path.join(
+            task_characteristics_dir, "current_scheduler_SP_new.pdf"), format='pdf')
+    else:
+        plt.savefig(os.path.join(
+            os.path.dirname(OPT_SP_PROJECT_PATH), "all_time_records", "current_scheduler_SP.pdf"), format='pdf')
     
     plt.show(block=False)
     plt.pause(show_fig_time)
