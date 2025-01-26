@@ -104,7 +104,7 @@ class ExecutionTimeEstimator {
 
         double sq_sum =
             std::inner_product(data.begin(), data.end(), data.begin(), 0.0);
-        std_dev = std::sqrt(sq_sum / data.size() - mean * mean);
+        std_dev = std::sqrt(sq_sum / data.size() - mean * mean); // it could be slightly better if use unbiased estimate instead; however, we estimate that the results will not be heavily influenced
 
         min_val = *std::min_element(data.begin(), data.end());
         max_val = *std::max_element(data.begin(), data.end());
