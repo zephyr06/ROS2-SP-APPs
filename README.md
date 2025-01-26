@@ -77,5 +77,10 @@ An example is provided in `SP_Metric_Opt/applications/tsp_solver_osm/regress_exp
 # Run system multilple times
 If you need to do so to get good results, potentially, there is something wrong. 
 
+# SP Values analysis
+- Use `SP_MetricOpt/Visualize_SP_Metric/visualize_SP_distribution.py` to plot the figures of `SP Values` at different running time. Example output can be seen in the Paper's experiments section: a collection of figures that show the SP values measured when running different scheduling algorithms. This script reads data from the `Experiments` folder. Inside the `Experiments` folder, for each scheduler, there is one folder. For example, In `Experiments/CFS`, there could be 50 `all_time_records` tar.gz files, each obtained by compressing the `all_time_records` folder after finish running the experiments. `SP_MetricOpt/Visualize_SP_Metric/visualize_SP_distribution.py` reads data under such kind of settings, and records the analyzed data back to the schedulere folders.
+- Note that the data above will be generated in the format after running the `scripts/run_multi_times.sh` and `Experiments/load_exp_data.sh`. 
+- Use `SP_MetricOpt/Visualize_SP_Metric/visualize_ET_distribution.py` to plot the figures of execution time of each task at different running time. This script shows the window-average of execution time at different times. To use it, first store the data in the same format as above, and then specify `optimizer_names` argument and `app_names`.
+
 # Traps
 - most time measurements in the folder `all_time_records` are accurate, except `SCHEDULER_*.txt`. The profiling code is based on measuring the CPU time of a single core running a single thread, while schedulers involve running code in multilple cores. Therefore, it could be inaccurate up to 0.5 seconds, based on experiment observation.
