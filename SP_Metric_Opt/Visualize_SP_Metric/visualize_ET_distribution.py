@@ -235,13 +235,13 @@ def plot_ET_distribution(appname, folder_path,scheduler_name, extra_pdf_file_nam
 
 if __name__ =="__main__":
 
-    optimizer_names = [ "optimizerIncremental", "optimizerBF"]
+    optimizer_names = [ "optimizerIncremental"] # , "optimizerBF"
     # optimizer_names = []
     for optimizer in optimizer_names:
         folder_path = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", optimizer)
         app_names = ["SLAM", "TSP", "RRT", "MPC", "SCHEDULER"]  # "MPC" is too slow
+        app_names = ["RRT", "MPC"]
         app_names = ["SLAM"]
-        # app_names = ["SCHEDULER_PUER_OPT"]
         for app_name in app_names:
             plot_ET_distribution(app_name, folder_path=folder_path, extra_pdf_file_name_append=optimizer, scheduler_name=optimizer)
 

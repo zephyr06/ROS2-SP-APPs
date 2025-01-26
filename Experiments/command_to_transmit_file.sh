@@ -2,5 +2,5 @@
 
 
 
-scp nvidia@100.64.241.199:/home/nvidia/workspace/sdcard/ROS2-SP-APPs/Experiments/experiments_all__20241203152459.tar.gz /home/zephyr/Programming/ROS2-SP-APPs/Experiments
+scp nvidia@100.64.241.199:/home/nvidia/workspace/sdcard/ROS2-SP-APPs/Experiments/experiments_all__20241210091650.tar.gz /home/zephyr/Programming/ROS2-SP-APPs/Experiments
 
