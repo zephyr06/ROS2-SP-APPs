@@ -13,8 +13,6 @@ if __name__=="__main__":
     
     # the path of the folder which generates the profiling data in ROS2 workspace
     data_folder_paths = {
-        # "FIFO": os.path.join(
-        # OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data"),
         scheduler_name: os.path.join(OPT_SP_PROJECT_PATH,"../all_time_records"),
         }
 
