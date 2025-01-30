@@ -1,0 +1,46 @@
+The one named SP_Metric_Opt is the updated one, the old one is there just in case stuff was messed up
+
+/*************************************************************************************************
+ * Under SP_Metric_Opt
+ *************************************************************************************************/
+
+Build:
+
+cd ROS2-SP-APPs/SP_Metric_Opt
+mkdir release
+cd release
+cmake -DCMAKE_BUILD_TYPE=RELEASE ..
+make -j4
+
+
+Under the release folder:
+
+./tests/CSPSimulation --file_path TaskData/ryan_robotics_v3.yaml \
+--output_file_path TaskData/sim_res_BR_ryan_robotics_v3.txt --simt 100000 --scheduler BR --verbose 1
+
+args:
+--file_path: task characteristics file_path
+--output_file_path: simulation output file_path
+--simt: simulation length in ms
+--scheduler: type of scheduler:
+	BR: brute force
+	INCR: incremental
+	RM_FAST: RM fast
+	RM_SLOW: RM slow
+	CFS: fair
+--verbose: controls print of various modules
+	default is 0 (no output)
+	14 is a typical usage
+
+*Test data is in TaskData folder
+*main source file of simulation in sources\RTDA
+\implicitCommunication
+	RunQueueCSP.h/cpp
+	ScheduleSimulation.h/cpp
+tests\CSPSimulation.cpp
+
+IMPORTANT: the slam include directories will need to be edited in the CMakeLists.txt
+SP_Metric_Opt/CMakeLists.txt: lines 30 & 31
+
+
+
