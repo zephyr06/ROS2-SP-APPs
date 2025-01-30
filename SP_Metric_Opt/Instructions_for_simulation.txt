@@ -35,10 +35,9 @@ args:
 ##########################################################################################################################
 Test data
 *Test data is in TaskData folder
-*main source file of simulation in sources\RTDA
-tests\CSPSimulation.cpp
+*main entry of simulation in sources\RTDA\tests\CSPSimulation.cpp
 
-dependencies for main source file:
+These are the actual simulation code that the main entry uses
 \implicitCommunication
 	RunQueueCSP.h/cpp
 	ScheduleSimulation.h/cpp
