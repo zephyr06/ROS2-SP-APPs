@@ -11,6 +11,8 @@ OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__))
 # All time in seconds
 
 RYAN_CHANGE = TRUE
+if RYAN_CHANGE:
+    import math
 
 class bcolors:
     HEADER = '\033[95m'
@@ -299,6 +301,10 @@ def draw_and_saveSP_fig_single_run(data_folder_paths, discard_early_time, horizo
         x_axis = [i+discard_early_time+horizon_granularity/2.0 for i in range(0, len(sp_value_list)*horizon_granularity, horizon_granularity)]
         plt.plot(x_axis, sp_value_list, label = method_name)
         print(bcolors.WARNING +f"SP-Metric for {method_name}: {sum(sp_value_list)/len(sp_value_list)}"+bcolors().ENDC)
+
+    if RYAN_CHANGE:
+        # Ensure Y-axis starts from 0
+        plt.ylim(0, math.ceil(max(sp_value_list)))  # Adding a little margin for better visualization
 
     plt.legend(data_folder_paths.keys())
     plt.xlabel("Time (s)")

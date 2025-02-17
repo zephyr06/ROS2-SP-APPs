@@ -1,5 +1,7 @@
 #pragma once
 
+// RYAN_CHANGE_20250207: THIS FILE
+
 #ifdef RYAN_HE_CHANGE
 
 // RYAN_HE: RunQueue2 replacing RunQueue for old RM/EDF type scheduling
@@ -56,7 +58,10 @@ Schedule SimulatedCSP_SingleCore(const DAG_Model &dag_tasks,
                                  int processor_id,							
                                  LLint simt,
                                  std::string priority_policy,
-                                 std::ofstream *fout							 
+                                 std::ofstream *fout,
+                                 std::vector<std::vector<float>> *task_Ets=nullptr,
+                                 int output_job_not_executed=1,
+                                 std::ofstream *flog=nullptr
 								 );
 
 Schedule SimulateCSPSched(const DAG_Model &dag_tasks,
@@ -64,7 +69,10 @@ Schedule SimulateCSPSched(const DAG_Model &dag_tasks,
                           const SP_Parameters &sp_parameters,					
                           LLint simt,
                           std::string priority_policy,
-                          std::ofstream *fout		
+                          std::ofstream *fout,
+                          std::vector<std::vector<float>> *task_Ets=nullptr,
+                          int output_job_not_executed=1,
+                          std::ofstream *flog=nullptr		
 					      );                                 
 #endif
 

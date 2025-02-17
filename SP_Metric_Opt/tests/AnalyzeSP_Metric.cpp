@@ -120,8 +120,8 @@ int main(int argc, char *argv[]) {
     if (data_dir != "") {
         data_dir = RelativePathToAbsolutePath(data_dir);
         file_path_ref = RelativePathToAbsolutePath(file_path_ref);
-        double sp_value_overall =
-        ObtainSPFromRTAFiles2(file_path_ref, data_dir, dbg);
+
+        double sp_value_overall = ObtainSPFromRTAFiles2(file_path_ref, data_dir, dbg);
         std::cout << "SP-Metric: " << sp_value_overall << "\n";
         return 0;
     }

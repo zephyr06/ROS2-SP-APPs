@@ -11,8 +11,14 @@
 #include <fstream>
 #endif
 
+// RYAN_CHANGE_20250207: THIS FILE
+
 namespace SP_OPT_PA {
 
+// RYAN_HE: for a job which is not executed (because previous job missed deadline)
+// write the following to output file: 
+// taskId,jobId,start,finish=deadline+1,exe_time=1
+static int g_output_job_not_executed = 1;
 
 void AddTasksToRunQueue(RUNQUEUE &run_queue, 
 						const DAG_Model &dag_tasks,
@@ -48,10 +54,14 @@ void AddTasksToRunQueue(RUNQUEUE &run_queue,
 // the added task will need to be evaluated by CSP to decide execution time
 std::vector<int> AddTasksToCSPRunQueue(RunQueueCSP &run_queue, 
 	                                   const DAG_Model &dag_tasks,
-                                       int processor_id, LLint time_now ) {
+                                       int processor_id, LLint time_now,
+                                       std::vector<std::vector<float>> *task_Ets,
+                                       std::vector<LLint> *task_Et_idx,
+                                       std::ofstream *fout,
+                                       std::ofstream *flog ) {
     std::vector<int> added_task_ids;
     for (int task_id = 0;
-         task_id < static_cast<int>(dag_tasks.GetTaskSet().size()); task_id++) {
+        task_id < static_cast<int>(dag_tasks.GetTaskSet().size()); task_id++) {
         Task task_curr = dag_tasks.GetTask(task_id);
         if (task_curr.processorId == processor_id &&  time_now % task_curr.period == 0) {
             // this is the new release time for this task
@@ -61,10 +71,21 @@ std::vector<int> AddTasksToCSPRunQueue(RunQueueCSP &run_queue,
 
                 JobCEC job_curr(task_id, time_now / task_curr.period);
 
-                // this is the randomly generated execution time for this job 
-                // (following its distribution)
-                double execution_time = task_curr.getExecutionTimeFromDist();
-                int executionTime = int(execution_time+0.5);
+                int executionTime;
+                double execution_time;
+                if (task_Ets != NULL && task_Ets->size() > task_id && (*task_Ets)[task_id].size() > 0) {
+                    int idx = (*task_Et_idx)[task_id];
+                    //std::cout<<task_id<<", Et_idx="<<idx<<std::endl;
+                    execution_time = (*task_Ets)[task_id][idx];
+                    (*task_Et_idx)[task_id] = (idx+1) % (*task_Ets)[task_id].size();
+                    //std::cout<<"####AddTasksToCSPRunQueue: get Et trace, task_id="<<task_id<<", executionTime="<<execution_time<<std::endl;
+                } else {
+                    // this is the randomly generated execution time for this job 
+                    // (following its distribution)
+                    execution_time = task_curr.getExecutionTimeFromDist();
+                }
+                executionTime = int(execution_time+0.5);
+
 #if defined(RYAN_HE_CHANGE_DEBUG)
                 if (GlobalVariables::debugMode & DBG_PRT_MSK_SIMULATION) {
                     std::cout<<"####AddTasksToCSPRunQueue: task_id="<<task_id<<", jobId="<<job_curr.jobId;
@@ -74,6 +95,34 @@ std::vector<int> AddTasksToCSPRunQueue(RunQueueCSP &run_queue,
                 // add it to run queue (the name insert maybe misleadding). We simply add it to the end
                 // RunHigestPriority will pick the highest one to run anyway.
                 run_queue.insert(job_curr, time_now, executionTime);
+            }
+            else {
+                // the current job has not finished yet (so we missed a deadline)
+                if (g_output_job_not_executed && fout) {
+                    JobCEC job_curr(task_id, time_now / task_curr.period);
+                    // write the following to output file: 
+                    // taskId,jobId,start,finish=deadline+1,exe_time=1
+                    //std::cout<<"####AddTasksToCSPRunQueue: job not executed"<<std::endl;
+                    int execution_time;
+                    if (task_Ets != NULL && task_Ets->size() > task_id && (*task_Ets)[task_id].size() > 0) {
+                        int idx = (*task_Et_idx)[task_id];
+                        //execution_time = (int)( (*task_Ets)[task_id][idx] + 0.5 );
+                        execution_time = 1; // the task not even have a chance to run, just make minimum execution time 1
+                        //std::cout<<"####AddTasksToCSPRunQueue: job not executed, jobId="<<job_curr.jobId;
+                        //std::cout<<", execution_time=1"<<", now="<<time_now<<std::endl;
+                        (*task_Et_idx)[task_id] = (idx+1) % (*task_Ets)[task_id].size();
+                    } else {
+                        execution_time = 1;
+                    } 
+                    // intentionally make finish time more than deadline
+                    *fout<<task_id<<","<<job_curr.jobId<<","<<time_now<<","<<(time_now+task_curr.period*2)<<",";
+                    *fout<<execution_time<<std::endl;
+                    if (flog) {
+                        *flog<<"Fake bad job insert: task_id="<<task_id<<", jobId="<<job_curr.jobId;
+                        *flog<<", start="<<time_now<<", finish="<<(time_now+task_curr.period*2);
+                        *flog<<", exe_time="<<execution_time<<std::endl;
+                    }
+                }
             }
         }
     }
@@ -130,7 +179,10 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                                  int processor_id,							
                                  LLint simt,
                                  std::string priority_policy,
-                                 std::ofstream *fout								 
+                                 std::ofstream *fout,
+                                 std::vector<std::vector<float>> *task_Ets,
+                                 std::vector<LLint> *task_Et_idx,
+                                 std::ofstream *flog								 
 								 ) {
 
 #if defined(RYAN_HE_CHANGE_DEBUG)
@@ -172,12 +224,13 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
 #endif
 
         // first remove jobs that have been finished at this time
-        run_queue.RemoveFinishedJob(time_now, fout);
+        run_queue.RemoveFinishedJob(time_now, fout, flog);
 
         // RYAN_HE: check if any new jobs are added
         std::vector<int> added_task_ids;
         if (time_now < simt) {
-            added_task_ids = AddTasksToCSPRunQueue(run_queue, dag_tasks, processor_id, time_now);
+            added_task_ids = AddTasksToCSPRunQueue(run_queue, dag_tasks, processor_id, time_now, 
+                task_Ets,task_Et_idx,fout,flog);
         }
         if (added_task_ids.size()>0) {
             // if any new jobs are added, we need to recalculate priorities
@@ -205,8 +258,11 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
             for (int i=0; i<added_task_ids.size(); i++) {
                 int task_id = added_task_ids[i];
                 if ( res.id2time_limit[task_id] > 0 ) {
+                //if ( res.id2time_limit[task_id] > 0 && task_Ets == NULL) {
+                    // note: if task_Ets is not NULL, we always use execution time from task_Ets
+                    //       instead of res.id2time_limit[]
                     int newexetime = res.id2time_limit[task_id]; // RYAN_HE: MAY BE ADD SOME VARIATION ??
-                    std::cout<< "new exe time " << newexetime << "\n";
+                    // std::cout<< "new exe time " << newexetime << "\n";
                     double std = tasks_info.GetTask(task_id).getExecutionTimePerformanceSigma();
                     if (std>0.0) {
                         double pmin = tasks_info.GetTask(task_id).getExecutionTimePerformanceMin();
@@ -262,6 +318,10 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
 
         // Run jobs with highest priority
         run_queue.RunJobHigestPriority(time_now);
+
+        if ( (time_now%1000) == 0 ) {
+            std::cout<<"\n\n"<<ppre<<"simulation completed "<< (time_now/1000) <<"s" << std::endl;
+        }
     }
 
 #if defined(RYAN_HE_CHANGE_DEBUG)   
@@ -274,14 +334,17 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
 }
 
 // RYAN_HE: main api for RM_FAST/SLOW simulation
-// priority_policy: "RM_FAST" or "RM_SLOW"
+// priority_policy: "RM_FAST" or "RM_SLOW", or "RM"
 Schedule SimulatedCSP_SingleCore_RM(const DAG_Model &dag_tasks,
                                  const TaskSetInfoDerived &tasks_info,
                                  const SP_Parameters &sp_parameters,
                                  int processor_id,							
                                  LLint simt,
                                  std::string priority_policy,
-                                 std::ofstream *fout										 
+                                 std::ofstream *fout,
+                                 std::vector<std::vector<float>> *task_Ets,
+                                 std::vector<LLint> *task_Et_idx,
+                                 std::ofstream *flog										 
 								 ) {
 #if defined(RYAN_HE_CHANGE_DEBUG)
     std::string ppre="####SimulatedCSP_SingleCore_RM: ";
@@ -323,29 +386,35 @@ Schedule SimulatedCSP_SingleCore_RM(const DAG_Model &dag_tasks,
 #endif
 
         // first remove jobs that have been finished at this time
-        run_queue.RemoveFinishedJob(time_now, fout);
+        run_queue.RemoveFinishedJob(time_now, fout, flog);
 
         // RYAN_HE: check if any new jobs are added
         std::vector<int> added_task_ids;
         if (time_now < simt) {
-            added_task_ids = AddTasksToCSPRunQueue(run_queue, dag_tasks, processor_id, time_now);
+            added_task_ids = AddTasksToCSPRunQueue(run_queue, dag_tasks, processor_id, time_now, 
+                task_Ets, task_Et_idx, fout, flog);
         }
-        if (added_task_ids.size()>0) {
+        if (added_task_ids.size()>0 && priority_policy != "RM") {
             // try to re-set its execution time (either min or max)
             for (int i=0; i<added_task_ids.size(); i++) {
                 int task_id = added_task_ids[i];
-                int newexetime;
-                if ( priority_policy == "RM_FAST" ) {
-                    newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMin());
-                } else { // ( priority_policy == "RM_SLOW" ) {
-                    newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMax());
-                }
-                run_queue.set_job_executionTime(task_id, newexetime); 
+                int perf_size = dag_tasks.GetTask(task_id).timePerformancePairs.size();
+                if ( perf_size > 0 ) {
+                    // change execution time only if performance_records_time available
+                    int newexetime;
+                    if ( priority_policy == "RM_FAST" ) {
+                        newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMin());
+                    }
+                    else { // if ( priority_policy == "RM_SLOW" ) {
+                        newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMax());
+                    }
+                    run_queue.set_job_executionTime(task_id, newexetime); 
 #if defined(RYAN_HE_CHANGE_DEBUG)          
-                if (GlobalVariables::debugMode & DBG_PRT_MSK_SIMULATION) {                
-                    std::cout << ppre << "TASK " << task_id << "'s EXETIME set to: " << newexetime << "\n";
-                }
+                    if (GlobalVariables::debugMode & DBG_PRT_MSK_SIMULATION) {                
+                        std::cout << ppre << "TASK " << task_id << "'s EXETIME set to: " << newexetime << "\n";
+                    }
 #endif
+                }
             }
         }
 
@@ -369,7 +438,10 @@ Schedule SimulatedCSP_SingleCore_CFS(const DAG_Model &dag_tasks,
                                  int processor_id,							
                                  LLint simt,
                                  std::string priority_policy,
-                                 std::ofstream *fout												 
+                                 std::ofstream *fout,
+                                 std::vector<std::vector<float>> *task_Ets,
+                                 std::vector<LLint> *task_Et_idx,
+                                 std::ofstream *flog									 
 								 ) {
 #if defined(RYAN_HE_CHANGE_DEBUG)
     std::string ppre="####SimulatedCSP_SingleCore_CFS: ";
@@ -409,12 +481,13 @@ Schedule SimulatedCSP_SingleCore_CFS(const DAG_Model &dag_tasks,
 #endif
 
         // first remove jobs that have been finished at this time
-        run_queue.RemoveFinishedJob(time_now, fout);
+        run_queue.RemoveFinishedJob(time_now, fout, flog);
 
         // RYAN_HE: check if any new jobs are added
         std::vector<int> added_task_ids;
         if (time_now < simt) {
-            added_task_ids = AddTasksToCSPRunQueue(run_queue, dag_tasks, processor_id, time_now);
+            added_task_ids = AddTasksToCSPRunQueue(run_queue, dag_tasks, processor_id, time_now, 
+                task_Ets, task_Et_idx, fout, flog);
         }
         if (added_task_ids.size()>0) {
             // we don't need to re-set any execution time
@@ -442,20 +515,33 @@ Schedule SimulatedCSP_SingleCore(const DAG_Model &dag_tasks,
                                  int processor_id,							
                                  LLint simt,
                                  std::string priority_policy,
-                                 std::ofstream *fout										 
+                                 std::ofstream *fout,
+                                 std::vector<std::vector<float>> *task_Ets,
+                                 int output_job_not_executed,
+                                 std::ofstream *flog									 
 								 ) {
+
+    g_output_job_not_executed = output_job_not_executed;
+
+    // initialize task_Et_idx
+    std::vector<LLint> task_Et_idx;
+    if (task_Ets != nullptr and task_Ets->size() > 0) {
+        for (int i = 0; i < task_Ets->size(); i++) {
+            task_Et_idx.push_back(0);
+        }
+    }
 
     if (priority_policy == "BR" || priority_policy == "INCR") {
         return SimulatedCSP_SingleCore_CSP(dag_tasks, tasks_info, sp_parameters, processor_id, 
-                                           simt, priority_policy, fout);
+                                           simt, priority_policy, fout, task_Ets, &task_Et_idx,flog);
     }
-    else if (priority_policy == "RM_FAST" || priority_policy == "RM_SLOW") {
+    else if (priority_policy == "RM_FAST" || priority_policy == "RM_SLOW" || priority_policy == "RM") {
         return SimulatedCSP_SingleCore_RM(dag_tasks, tasks_info, sp_parameters, processor_id, 
-                                          simt, priority_policy, fout);
+                                          simt, priority_policy, fout, task_Ets, &task_Et_idx,flog);
     }    
     else if (priority_policy == "CFS") {
         return SimulatedCSP_SingleCore_CFS(dag_tasks, tasks_info, sp_parameters, processor_id, 
-                                           simt, priority_policy, fout);
+                                           simt, priority_policy, fout, task_Ets, &task_Et_idx,flog);
     }     
     else {
         std::cout << "Error in SimulatedCSP_SingleCore, unknown priority policy " << priority_policy << "\n";
@@ -507,8 +593,13 @@ Schedule SimulateCSPSched(const DAG_Model &dag_tasks,
                           const SP_Parameters &sp_parameters,						
                           LLint simt,
                           std::string priority_policy,
-                          std::ofstream *fout		
+                          std::ofstream *fout,
+                          std::vector<std::vector<float>> *task_Ets,
+                          int output_job_not_executed,
+                          std::ofstream *flog
 					      ) {
+
+    g_output_job_not_executed = output_job_not_executed;
 
     // RYAN_HE: better to use a map to store dags for each processor
     // so that BR will be much faster!
@@ -522,7 +613,8 @@ Schedule SimulateCSPSched(const DAG_Model &dag_tasks,
     for (int processor_id : processor_ids) {
         Schedule schedule_curr =	
             SimulatedCSP_SingleCore(dag_tasks, tasks_info, sp_parameters, processor_id, 
-                                    simt, priority_policy, fout);
+                                    simt, priority_policy, fout, task_Ets, 
+                                    output_job_not_executed, flog);
         schedule_all.insert(schedule_curr.begin(), schedule_curr.end());
     }
 

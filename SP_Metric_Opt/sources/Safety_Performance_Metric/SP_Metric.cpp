@@ -4,6 +4,11 @@
 #include "sources/Utils/readwrite.h"
 #include "sources/Utils/Parameters.h"
 
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <chrono>
+
 namespace SP_OPT_PA {
 
 #if defined(RYAN_HE_CHANGE)
@@ -185,7 +190,11 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
 double ObtainSP_DAG_From_Dists(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<FiniteDist>& node_rts_dists,
-    const std::vector<FiniteDist>& path_latency_dists) {
+    const std::vector<FiniteDist>& path_latency_dists   
+    #if defined(RYAN_HE_CHANGE)
+    ,std::ofstream *log_stream
+    #endif
+    ) {      
     double sp_overall = 0;
     int print_weight = 0; // not to print to cout since python will parse std::cout
     if (print_weight)
@@ -195,7 +204,14 @@ double ObtainSP_DAG_From_Dists(
         double sp_val = ObtainSP(node_rts_dists[i], dag_tasks.tasks[i].deadline,
                                  sp_parameters.thresholds_node.at(task_id),
                                  sp_parameters.weights_node.at(task_id));
+
         // std::cout << dag_tasks.tasks[i].name << " " << sp_val << std::endl;
+#if defined(RYAN_HE_CHANGE)
+        if (log_stream) {
+            *log_stream << "task " << i << ": sp_val=" << sp_val << std::endl;
+        }
+#endif
+
         sp_overall += sp_val;
 
         if (print_weight)
@@ -205,12 +221,14 @@ double ObtainSP_DAG_From_Dists(
         std::cerr << std::endl;
 
     for (uint i = 0; i < dag_tasks.chains_.size(); i++) {
-        sp_overall +=
+        double v =
             ObtainSP(path_latency_dists[i], dag_tasks.chains_deadlines_[i],
                      sp_parameters.thresholds_path.at(i),
                      sp_parameters.weights_path.at(i));
+        sp_overall += v;
         std::cerr << sp_parameters.weights_path.at(i) << " ";
     }
+
     return sp_overall;
 }
 
@@ -349,7 +367,10 @@ double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
 // using content in file_path_ref to
 // read dag_tasks and sp_parameters
 // get data files in the data_dir (TASKNAME_response_time.txt, TASKNAME_execution_time.txt)
-double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, int dbg ) {
+
+#define DBG_OUTPUT_FILE
+// RYAN_HE_CHANGE_20250207
+double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, int dbg) {
     int granularity = GlobalVariables::Granularity;
 
      // only read the tasks without worrying about the execution time distribution
@@ -365,6 +386,24 @@ double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, 
         data_dir = data_dir + "/";
     }
 
+    #if defined(DBG_OUTPUT_FILE)
+    std::ofstream *dbg_output_file = nullptr;
+    if (1) {
+        auto now = std::chrono::system_clock::now();
+        // Convert to seconds since epoch
+        auto epoch = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
+        // Get the long int timestamp
+        long int timestamp = epoch.count();        
+        std::ostringstream ss;
+        ss << "SP_Metric_" << timestamp << ".txt";
+        dbg_output_file = new std::ofstream(ss.str());
+        if (!dbg_output_file->is_open()) {
+            delete dbg_output_file;
+            dbg_output_file = nullptr;
+        }
+    }
+    #endif
+
     // get all task names and data files
     // IN EACH FILE, every line is a double number in seconds
     // they are response time and execution (for TSP type tasks)    
@@ -379,6 +418,13 @@ double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, 
         if ( dag_tasks.tasks[i].timePerformancePairs.size() > 0 ) {
             std::string ext_path = data_dir + dag_tasks.tasks[i].name + "_execution_time.txt";
             double weight = GetAvgTaskPerfTerm(ext_path, dag_tasks.tasks[i].timePerformancePairs);
+
+            #if defined(DBG_OUTPUT_FILE)
+            if (dbg_output_file) {
+                (*dbg_output_file) << "with perf, task:" << i<< ", weight=" << weight << std::endl;
+            }
+            #endif
+
             sp_parameters.update_node_weight(i, weight);
             if (dbg) {
                 std::cout << "####ObtainSPFromRTAFiles2: ext_path = " << ext_path << ", weight = " << weight << std::endl;
@@ -389,8 +435,23 @@ double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, 
 
     // RYAN_HE: chain is not always available so just allow it to be empty
     std::vector<FiniteDist> reaction_time_dists;
+    // RYAN_HE_CHANGE_20250207
     double sp_value_overall = ObtainSP_DAG_From_Dists(dag_tasks, sp_parameters, 
-                                                      node_rts_dists, reaction_time_dists);
+                                                      node_rts_dists, reaction_time_dists
+                                                      #if defined(RYAN_HE_CHANGE) && defined(DBG_OUTPUT_FILE)
+                                                      , dbg_output_file
+                                                      #endif
+                                                      );
+
+    #if defined(DBG_OUTPUT_FILE)
+    if (dbg_output_file) {
+        (*dbg_output_file) << "sp_value_overall = " << sp_value_overall << std::endl;
+        dbg_output_file->close();
+        delete dbg_output_file;
+        dbg_output_file = nullptr;
+    }
+    #endif
+
     return sp_value_overall;
 }
 #endif

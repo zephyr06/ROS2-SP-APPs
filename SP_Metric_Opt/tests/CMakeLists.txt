@@ -25,6 +25,8 @@ ADD_EXECUTABLE(testRTA testRTA.cpp)
 TARGET_LINK_LIBRARIES(testRTA ${CONVENIENCE_LIB_NAME})
 ADD_EXECUTABLE(CSPSimulation CSPSimulation.cpp)
 TARGET_LINK_LIBRARIES(CSPSimulation ${CONVENIENCE_LIB_NAME})
+ADD_EXECUTABLE(CSPSimulation_2 CSPSimulation_2.cpp)
+TARGET_LINK_LIBRARIES(CSPSimulation_2 ${CONVENIENCE_LIB_NAME})
 
 
 # ADD_EXECUTABLE(AnalyzePriorityAssignmentIncremental AnalyzePriorityAssignmentIncremental.cpp)

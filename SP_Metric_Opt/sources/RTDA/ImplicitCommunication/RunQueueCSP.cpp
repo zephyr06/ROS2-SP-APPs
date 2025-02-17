@@ -55,7 +55,7 @@ void RunQueueCSP::set_task_priority(int task_id, double priority) {
   tasks_info_.GetTaskForPriority(task_id).set_priority(priority);
 }
 
-void RunQueueCSP::RemoveFinishedJob(LLint time_now, std::ofstream *output_file) {
+void RunQueueCSP::RemoveFinishedJob(LLint time_now, std::ofstream *output_file, std::ofstream *log_file) {
     for (size_t i = 0; i < job_queue_.size(); i++) {
       auto &job_info = job_queue_[i];
       if (job_info.running) {
@@ -73,6 +73,11 @@ void RunQueueCSP::RemoveFinishedJob(LLint time_now, std::ofstream *output_file) 
           int exe_time = job_info.executionTime;
           if (output_file) {
             *output_file << taskId << "," << jobId << "," << start << "," << finish << "," << exe_time << std::endl;
+          }
+
+          if (log_file && time_now > job_info.deadlineJob) {
+            *log_file << "Deadline miss: taskId="<<taskId<<", jobId="<<jobId<<", start="<<start<<", finish="<<finish;
+            *log_file <<", deadline="<<job_info.deadlineJob<<", exe_time="<<exe_time<< std::endl;
           }
           if (dbg) {
             // schedule_[job_info.job].start,finish,

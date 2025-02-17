@@ -40,8 +40,12 @@ int checkMakeDir(std::string dir_path) {
 // how to run
 // specify input and output file path in command line
 /*
+// old interface: just input yaml file and execution time is dynamically generated
 ./tests/CSPSimulation --file_path TaskData/ryan_robotics_v1.yaml \
 --output_file_path TaskData/sim_res_ryan_robotics_v1.txt --simt 100 --scheduler BR --verbose 1
+
+// new interface: execution time is provided in input_folder
+// implemented in CSPSimulation_2.cpp
 */
 int main(int argc, char *argv[]) {
 #if defined(RYAN_HE_CHANGE_DEBUG)
@@ -72,7 +76,7 @@ int main(int argc, char *argv[]) {
     program.add_argument("--scheduler")
         .default_value(std::string("BR"))
         .help(
-            "scheduler  which can be BR, INCR, RM_FAST, RM_SLOW, CFS");            
+            "scheduler  which can be BR, INCR, RM_FAST, RM_SLOW, RM, CFS");            
     program.add_argument("--verbose")
         .default_value(std::string("0"))
         .help(
