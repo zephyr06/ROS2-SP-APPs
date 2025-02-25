@@ -61,7 +61,8 @@ Schedule SimulatedCSP_SingleCore(const DAG_Model &dag_tasks,
                                  std::ofstream *fout,
                                  std::vector<std::vector<float>> *task_Ets=nullptr,
                                  int output_job_not_executed=1,
-                                 std::ofstream *flog=nullptr
+                                 std::ofstream *flog=nullptr,
+                                 int reevaluate_prio_interval_ms=10000		
 								 );
 
 Schedule SimulateCSPSched(const DAG_Model &dag_tasks,
@@ -72,8 +73,36 @@ Schedule SimulateCSPSched(const DAG_Model &dag_tasks,
                           std::ofstream *fout,
                           std::vector<std::vector<float>> *task_Ets=nullptr,
                           int output_job_not_executed=1,
-                          std::ofstream *flog=nullptr		
-					      );                                 
+                          std::ofstream *flog=nullptr,
+                          int reevaluate_prio_interval_ms=10000		
+					      );     
+
+
+Schedule SimulatedCSP_SingleCore_vecs(std::vector<DAG_Model> &dag_tasks_vecs,
+                                      std::vector<TaskSetInfoDerived> &tasks_info_vecs,		
+                                      std::vector<SP_Parameters> &sp_parameters_vecs,			
+                                      int processor_id,							
+                                      LLint simt,
+                                      std::string priority_policy,
+                                      std::ofstream *fout,
+                                      std::vector<std::vector<float>> *task_Ets=nullptr,
+                                      int output_job_not_executed=1,
+                                      std::ofstream *flog=nullptr,
+                                      int reevaluate_prio_interval_ms=10000		
+								     );
+
+Schedule SimulateCSPSched_vecs(std::vector<DAG_Model> &dag_tasks_vecs,
+                               std::vector<TaskSetInfoDerived> &tasks_info_vecs,		
+                               std::vector<SP_Parameters> &sp_parameters_vecs,					
+                               LLint simt,
+                               std::string priority_policy,
+                               std::ofstream *fout,
+                               std::vector<std::vector<float>> *task_Ets=nullptr,
+                               int output_job_not_executed=1,
+                               std::ofstream *flog=nullptr,
+                               int reevaluate_prio_interval_ms=10000		
+					          );     
+
 #endif
 
 }  // namespace SP_OPT_PA

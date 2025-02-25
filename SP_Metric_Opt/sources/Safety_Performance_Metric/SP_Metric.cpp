@@ -368,7 +368,7 @@ double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
 // read dag_tasks and sp_parameters
 // get data files in the data_dir (TASKNAME_response_time.txt, TASKNAME_execution_time.txt)
 
-#define DBG_OUTPUT_FILE
+//#define DBG_OUTPUT_FILE
 // RYAN_HE_CHANGE_20250207
 double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, int dbg) {
     int granularity = GlobalVariables::Granularity;

@@ -89,9 +89,10 @@ def main():
     #print(OPT_SP_PROJECT_PATH)
     #quit()
     if dbg:
-        sim_rst_dir = r'TaskData\\taskset_cfg_1_gen_1'
-        method = 'CFS'
+        sim_rst_dir = r'TaskData\\taskset_cfg_3_gen_1'
+        method = 'RM_FAST'
         interactive = True
+        path_idx = 0
     else:
         ###############################################################################################
         # parse arguments
@@ -101,6 +102,7 @@ def main():
         # Add arguments
         parser.add_argument("-sd", "--sim_rst_dir", type=str, help="simulation result directory", required=True)
         parser.add_argument("-m", "--method", type=str, help="optimization method", required=True)
+        parser.add_argument("-p", "--path_idx", type=int, help="path index", required=False,default=0)
 
         # -i not require value, change to str
         parser.add_argument("-i", "--interactive", action="store_true", help="interactive", required=False)
@@ -110,6 +112,7 @@ def main():
 
         sim_rst_dir = args.sim_rst_dir
         method = args.method
+        path_idx = args.path_idx
         interactive = args.interactive
 
     if not sim_rst_dir.startswith("/"):
@@ -118,12 +121,12 @@ def main():
         print("sim_rst_dir {} does not exist".format(sim_rst_dir))
         quit()
 
-    task_config_file_path = os.path.join(sim_rst_dir, 'taskset_characteristics.yaml')
+    task_config_file_path = os.path.join(sim_rst_dir, 'taskset_characteristics_0.yaml')
     if not os.path.exists(task_config_file_path):
         print("task_config_file_path {} does not exist".format(task_config_file_path))
         quit()
     
-    out_dir = os.path.join(sim_rst_dir, 'sim_res_{}'.format(method))
+    out_dir = os.path.join(sim_rst_dir, f'sim_res_p{path_idx}_{method}')
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
 
@@ -202,21 +205,21 @@ def main():
             for taskid in task_id_dict:
                 task_name = yaml_data['tasks'][taskid]['name']  # task name
                 if i in rst_dict[taskid]:
-                    print(f'processing {task_name} at interval {i} ...')
+                    #print(f'processing {task_name} at interval {i} ...')
                     resp_file_path = os.path.join(temp_dir, task_name + "_response_time.txt")
 
                     # no need to sort since result should be sorted already
                     # rst_dict[taskid][i] = sorted(rst_dict[taskid][i], key=lambda x: x[1])    # sort by start time
 
                     with open(resp_file_path, 'w') as f:
-                        print(f'gen {resp_file_path} at interval {i} ...')
+                        #print(f'gen {resp_file_path} at interval {i} ...')
                         for jobid, start_time, end_time, execution_time in rst_dict[taskid][i]:
                             f.write(f"{(end_time - start_time)*1000}\n")
                     
                     if 'performance_records_time' in yaml_data['tasks'][taskid]:
                         exe_file_path = os.path.join(temp_dir, task_name + "_execution_time.txt")
                         with open(exe_file_path, 'w') as f:
-                            print(f'gen {exe_file_path} at interval {i} ...')
+                            #print(f'gen {exe_file_path} at interval {i} ...')
                             for jobid, start_time, end_time, execution_time in rst_dict[taskid][i]:
                                 f.write(f"{execution_time*1000}\n")
 
@@ -225,7 +228,7 @@ def main():
             command += " --file_path " 
             command += task_config_file_path
             command += " --data_dir " + temp_dir
-            print(f'run command: {command}')
+            #print(f'run command: {command}')
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
             print(result.stdout)
             sp_value = get_sp_value(result.stdout)
