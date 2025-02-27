@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
     program.add_argument("--file_path")
         .default_value(
 #if defined(RYAN_HE_CHANGE)
-			std::string("/mnt/f/explore/ROS2-SP-APPs/all_time_records/task_characteristics.yaml"))
+			std::string("/home/ai/208_share/ROS2-SP-APPs/all_time_records/task_characteristics.yaml"))
 #else
             std::string("/home/nvidia/workspace/sdcard/ROS2-SP-APPs/all_time_records/task_characteristics.yaml"))
 #endif

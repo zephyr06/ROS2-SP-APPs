@@ -66,7 +66,11 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
 double ObtainSP_DAG_From_Dists(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<FiniteDist>& node_rts_dists,
-    const std::vector<FiniteDist>& path_latency_dists);
+    const std::vector<FiniteDist>& path_latency_dists
+    #if defined(RYAN_HE_CHANGE)
+    ,std::ofstream *log_stream = nullptr
+    #endif
+    );
 
 double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& mpc_path, std::string& tsp_path,
@@ -78,7 +82,8 @@ double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             );
 
 #if defined(RYAN_HE_CHANGE)
-double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, int dbg );
+// RYAN_HE_CHANGE_20250207
+double ObtainSPFromRTAFiles2(std::string& file_path_ref, std::string& data_dir, int dbg);
 #endif
 
 }  // namespace SP_OPT_PA

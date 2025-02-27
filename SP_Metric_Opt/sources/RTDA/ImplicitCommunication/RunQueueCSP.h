@@ -80,7 +80,7 @@ class RunQueueCSP {
     return true;
   }
 
-  void RemoveFinishedJob(LLint time_now, std::ofstream *output_file=NULL);
+  void RemoveFinishedJob(LLint time_now, std::ofstream *output_file=NULL, std::ofstream *log_file=NULL);
 
   inline JobScheduleInfo front() const {
     if (job_queue_.empty()) CoutError("job_queue_ is empty!");

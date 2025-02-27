@@ -1,0 +1,6 @@
+with perf, task:1, weight=0.765347
+task 0: sp_val=1
+task 1: sp_val=1.37753
+task 2: sp_val=0.868694
+task 3: sp_val=0.618614
+sp_value_overall = 3.86483

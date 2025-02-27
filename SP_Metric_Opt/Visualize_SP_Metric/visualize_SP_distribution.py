@@ -2,6 +2,15 @@ import tarfile
 import seaborn as sns
 import pandas as pd
 
+import os,sys
+# directory_path is the directory of the current python file, go up two levels
+directory_path = os.path.dirname(os.path.abspath(__file__))
+directory_path = os.path.dirname(directory_path)  # Go up one level
+directory_path = os.path.dirname(directory_path)  # Go up one level
+# Add it to the system path
+sys.path.append(directory_path)  # OR use sys.path.insert(0, directory_path)
+
+
 from SP_Metric_Opt.Visualize_SP_Metric.box_plot_utils import get_subfolder_path, clear_folder
 from draw_SP_current_scheduler import *
 import time
@@ -115,6 +124,8 @@ def analyze_one_scheduler(scheduler_name = "RM"):
     plot_and_save_boxplot_sp(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data_" + scheduler_name + ".pdf"),
                              os.path.join(exp_res_folder, "sp_data.csv"), scheduler_name, show_fig_time=0.1)
 
+#analyze_one_scheduler("optimizerBF")
+
 def analyze_all_schedulers(scheduler_names):
     for scheduler_name in scheduler_names:
         analyze_one_scheduler(scheduler_name)
@@ -159,7 +170,7 @@ def plot_avg_line_for_all_methods(scheduler_names,plot_file_path,show_fig_time=3
 # Example usage:
 # main('/path/to/your/folder')
 if __name__ =="__main__":
-    # scheduler_names = ["RM_Slow", "RM_Fast",  "CFS",  "optimizerIncremental", "optimizerBF"]
+    # scheduler_names = ["RM_Slow", "RM_Fast",  "RM", "CFS",  "optimizerIncremental", "optimizerBF"]
     scheduler_names = ["optimizerIncremental", "optimizerBF"]
 
     analyze_all_schedulers(scheduler_names)
