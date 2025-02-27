@@ -17,15 +17,17 @@ ADD_EXECUTABLE(AnalyzeSP_Metric AnalyzeSP_Metric.cpp)
 TARGET_LINK_LIBRARIES(AnalyzeSP_Metric ${CONVENIENCE_LIB_NAME})
 
 # zhe add testSP, testOptimizeIncrePA
-ADD_EXECUTABLE(testSP testSP.cpp)
-TARGET_LINK_LIBRARIES(testSP ${CONVENIENCE_LIB_NAME})
-ADD_EXECUTABLE(testOptimizeIncrePA testOptimizeIncrePA.cpp)
-TARGET_LINK_LIBRARIES(testOptimizeIncrePA ${CONVENIENCE_LIB_NAME})
-ADD_EXECUTABLE(testRTA testRTA.cpp)
-TARGET_LINK_LIBRARIES(testRTA ${CONVENIENCE_LIB_NAME})
+# ADD_EXECUTABLE(testSP testSP.cpp)
+# TARGET_LINK_LIBRARIES(testSP ${CONVENIENCE_LIB_NAME})
+# ADD_EXECUTABLE(testOptimizeIncrePA testOptimizeIncrePA.cpp)
+# TARGET_LINK_LIBRARIES(testOptimizeIncrePA ${CONVENIENCE_LIB_NAME})
+# ADD_EXECUTABLE(testRTA testRTA.cpp)
+# TARGET_LINK_LIBRARIES(testRTA ${CONVENIENCE_LIB_NAME})
 ADD_EXECUTABLE(CSPSimulation CSPSimulation.cpp)
 TARGET_LINK_LIBRARIES(CSPSimulation ${CONVENIENCE_LIB_NAME})
 
+ADD_EXECUTABLE(RunPA_Opt_Incremenal RunPA_Opt_Incremenal.cpp)
+TARGET_LINK_LIBRARIES(RunPA_Opt_Incremenal ${CONVENIENCE_LIB_NAME})
 
 # ADD_EXECUTABLE(AnalyzePriorityAssignmentIncremental AnalyzePriorityAssignmentIncremental.cpp)
 # TARGET_LINK_LIBRARIES(AnalyzePriorityAssignmentIncremental ${CONVENIENCE_LIB_NAME})
