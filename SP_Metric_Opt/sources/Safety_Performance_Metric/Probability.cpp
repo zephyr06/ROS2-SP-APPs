@@ -278,6 +278,10 @@ void FiniteDist::CompressDistribution(size_t max_size,
         std::max(static_cast<int>(max_size) - compress_index_since, 1));
 }
 
+void FiniteDist::CompressDistributionWithOnlySize(size_t max_size) {
+    CompressDistribution(max_size, 1.0 / max_size);
+}
+
 double FiniteDist::GetAvgValue() const {
     if (avg_time > 0)
         return avg_time;

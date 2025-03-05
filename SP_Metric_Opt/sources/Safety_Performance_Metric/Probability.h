@@ -5,15 +5,16 @@
 
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/testMy.h"
-namespace SP_OPT_PA {
 
+namespace SP_OPT_PA {
 class ProbabilityDistributionBase {
    public:
     ProbabilityDistributionBase() {}
 
     double CDF(double x) const;
 
-    // virtual void UpdateDistribution(std::vector<double> execution_time_data);
+    // virtual void UpdateDistribution(std::vector<double>
+    // execution_time_data);
 
     // data members
 };
@@ -157,11 +158,12 @@ class FiniteDist : public ProbabilityDistributionBase {
 
     void CompressDistribution(size_t max_size, double compress_threshold);
 
+    void CompressDistributionWithOnlySize(size_t max_size);
     double GetAvgValue() const;
 
     // data members
-    // saves the probability that x<= value, this is probability mass function
-    // rather than cumulative function
+    // saves the probability that x<= value, this is probability mass
+    // function rather than cumulative function
     std::vector<Value_Proba> distribution;
     double min_time;
     double max_time;
