@@ -46,7 +46,8 @@ find_package(Pangolin REQUIRED)
 include_directories(${PROJECT_SOURCE_DIR}/../utils)
 set(DYNASLAM_PROJ_DIR /home/nvidia/workspace/sdcard/SP_Scheduler_Stack/YOLO-DynaSLAM)
 #set(ORBASLAM2_PROJ_DIR /home/nvidia/workspace/sdcard/ORB_SLAM2)
-set(ORBASLAM2_PROJ_DIR /mnt/d/robotics_research/ORB_SLAM2)
+#set(ORBASLAM2_PROJ_DIR /mnt/d/robotics_research/ORB_SLAM2)
+set(ORBASLAM2_PROJ_DIR /mnt/f/explore/ROS2-SP-APPs/ORB_SLAM2)
 include_directories(
   ${PROJECT_SOURCE_DIR}/include
   ${ORBASLAM2_PROJ_DIR}

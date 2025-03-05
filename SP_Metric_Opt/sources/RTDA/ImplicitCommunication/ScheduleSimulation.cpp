@@ -689,10 +689,12 @@ Schedule SimulatedCSP_SingleCore_RM(const DAG_Model &dag_tasks,
                     // change execution time only if performance_records_time available
                     int newexetime;
                     if ( priority_policy == "RM_FAST" ) {
-                        newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMin());
+                        // newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMin());
+						newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimePerformanceMin());						
                     }
                     else { // if ( priority_policy == "RM_SLOW" ) {
-                        newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMax());
+                        // newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimeFromDistMax());
+						newexetime = (int)(0.5+dag_tasks.GetTask(task_id).getExecutionTimePerformanceMax());						
                     }
                     run_queue.set_job_executionTime(task_id, newexetime); 
 #if defined(RYAN_HE_CHANGE_DEBUG)          

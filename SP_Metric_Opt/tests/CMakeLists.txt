@@ -31,6 +31,15 @@ TARGET_LINK_LIBRARIES(CSPSimulation_2 ${CONVENIENCE_LIB_NAME})
 ADD_EXECUTABLE(RunPA_Opt_Incremenal RunPA_Opt_Incremenal.cpp)
 TARGET_LINK_LIBRARIES(RunPA_Opt_Incremenal ${CONVENIENCE_LIB_NAME})
 
+ADD_EXECUTABLE(testIncreOpt_w_TL testIncreOpt_w_TL.cpp)
+TARGET_LINK_LIBRARIES(testIncreOpt_w_TL ${CONVENIENCE_LIB_NAME})
+
+ADD_EXECUTABLE(testBF_w_TL testBF_w_TL.cpp)
+TARGET_LINK_LIBRARIES(testBF_w_TL ${CONVENIENCE_LIB_NAME})
+
+ADD_EXECUTABLE(testRMCFS testRMCFS.cpp)
+TARGET_LINK_LIBRARIES(testRMCFS ${CONVENIENCE_LIB_NAME})
+
 # ADD_EXECUTABLE(AnalyzePriorityAssignmentIncremental AnalyzePriorityAssignmentIncremental.cpp)
 # TARGET_LINK_LIBRARIES(AnalyzePriorityAssignmentIncremental ${CONVENIENCE_LIB_NAME})
 
