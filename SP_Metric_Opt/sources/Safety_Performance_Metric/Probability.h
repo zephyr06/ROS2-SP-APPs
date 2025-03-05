@@ -10,12 +10,12 @@
 #include <random>
 #endif
 
-
 namespace SP_OPT_PA {
 
 #if defined(RYAN_HE_CHANGE)
 // Function to generate a random value from a Gaussian distribution
-double getRandomValueByMuSigma(double mu, double std, double *minVal, double *maxVal);
+double getRandomValueByMuSigma(double mu, double std, double* minVal,
+                               double* maxVal);
 #endif
 
 class ProbabilityDistributionBase {
@@ -29,12 +29,12 @@ class ProbabilityDistributionBase {
     // data members
 };
 
-
 class GaussianDist : public ProbabilityDistributionBase {
    public:
     GaussianDist() {}
     GaussianDist(double mu, double sigma) : mu(mu), sigma(sigma) {
-        if (abs(sigma) < 1e-6) CoutError("Invalid sigma value!");
+        if (abs(sigma) < 1e-6)
+            CoutError("Invalid sigma value!");
     }
 
     inline double CDF(double x) const {
@@ -54,8 +54,10 @@ class GaussianDist : public ProbabilityDistributionBase {
 };
 
 inline bool approx_equal_double(double a, double b, double tolerance_rel) {
-    if (a == 0 && b == 0) return true;
-    if (a == 0 || b == 0) return false;
+    if (a == 0 && b == 0)
+        return true;
+    if (a == 0 || b == 0)
+        return false;
     return std::abs(a - b) / std::abs(a) < tolerance_rel;
 }
 struct Value_Proba {
@@ -95,16 +97,13 @@ class FiniteDist : public ProbabilityDistributionBase {
     FiniteDist(const std::vector<double>& data_raw, int granularity);
 
 #if defined(RYAN_HE_CHANGE)
-    double getMinValue() const {
-        return min_time;
-    }
-    double getMaxValue() const {
-        return max_time;
-    }
+    double getMinValue() const { return min_time; }
+    double getMaxValue() const { return max_time; }
     // get a random value following the distribution
     double getRandomValue() {
         if (distribution.empty()) {
-            throw std::runtime_error("Distribution is empty. Cannot generate random value.");
+            throw std::runtime_error(
+                "Distribution is empty. Cannot generate random value.");
         }
 
         // Generate a random number between 0 and 1
@@ -125,12 +124,17 @@ class FiniteDist : public ProbabilityDistributionBase {
                     return distribution[i].value;
                 }
 
-                // Otherwise, interpolate between the current bin and the previous bin
-                double prev_cumulative = cumulative_probability - distribution[i].probability;
-                double weight = (random_probability - prev_cumulative) / distribution[i].probability;
+                // Otherwise, interpolate between the current bin and the
+                // previous bin
+                double prev_cumulative =
+                    cumulative_probability - distribution[i].probability;
+                double weight = (random_probability - prev_cumulative) /
+                                distribution[i].probability;
 
                 // Linear interpolation between the two values
-                return distribution[i - 1].value + weight * (distribution[i].value - distribution[i - 1].value);
+                return distribution[i - 1].value +
+                       weight *
+                           (distribution[i].value - distribution[i - 1].value);
             }
         }
 
@@ -214,6 +218,7 @@ class FiniteDist : public ProbabilityDistributionBase {
 
     void CompressDistribution(size_t max_size, double compress_threshold);
 
+    void CompressDistributionWithOnlySize(size_t max_size);
     double GetAvgValue() const;
 
     // data members

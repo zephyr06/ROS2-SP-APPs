@@ -5,13 +5,14 @@ namespace SP_OPT_PA {
 
 #if defined(RYAN_HE_CHANGE)
 // Function to generate a random value from a Gaussian distribution
-double getRandomValueByMuSigma(double mu, double std, double *minVal, double *maxVal) {
+double getRandomValueByMuSigma(double mu, double std, double* minVal,
+                               double* maxVal) {
     // Random number generator
-    static std::random_device rd;  // Seed for the random number engine
-    static std::mt19937 gen(rd()); // Mersenne Twister engine
-    std::normal_distribution<> d(mu, std); // Gaussian distribution
+    static std::random_device rd;           // Seed for the random number engine
+    static std::mt19937 gen(rd());          // Mersenne Twister engine
+    std::normal_distribution<> d(mu, std);  // Gaussian distribution
 
-    double randomValue = d(gen); // Generate and return a random value
+    double randomValue = d(gen);  // Generate and return a random value
     if (minVal != nullptr && randomValue < *minVal)
         randomValue = *minVal;
     if (maxVal != nullptr && randomValue > *maxVal)
@@ -36,7 +37,8 @@ FiniteDist::FiniteDist(const GaussianDist& gauss_dist, double min_val,
                        double max_val, int granularity)
     : min_time(min_val), max_time(max_val) {
     distribution.reserve(granularity);
-    if (granularity < 1) CoutError("Invalid granularity!");
+    if (granularity < 1)
+        CoutError("Invalid granularity!");
 
     double step = (max_val - min_val) / (double(granularity) - 1);
     distribution.push_back(Value_Proba(min_val, gauss_dist.CDF(min_val)));
@@ -249,7 +251,8 @@ double FiniteDist::CDF(double x) const {
 void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
                                 int end_index, int size_after_compres) {
     int element_counts_before_merge = end_index - start_index + 1;
-    if (element_counts_before_merge <= size_after_compres) return;
+    if (element_counts_before_merge <= size_after_compres)
+        return;
 
     int size_per_merge =
         ceil(double(element_counts_before_merge) / size_after_compres);
@@ -279,7 +282,8 @@ void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
 
 void FiniteDist::CompressDistribution(size_t max_size,
                                       double compress_threshold) {
-    if (distribution.size() <= max_size) return;
+    if (distribution.size() <= max_size)
+        return;
     int compress_index_since = distribution.size();
     for (size_t i = 0; i < distribution.size(); i++) {
         if (distribution[i].probability < compress_threshold) {
@@ -288,11 +292,16 @@ void FiniteDist::CompressDistribution(size_t max_size,
         }
     }
 
-    if (compress_index_since == distribution.size()) return;
+    if (compress_index_since == distribution.size())
+        return;
 
     CompressDistributionVector(
         distribution, compress_index_since, distribution.size() - 1,
         std::max(static_cast<int>(max_size) - compress_index_since, 1));
+}
+
+void FiniteDist::CompressDistributionWithOnlySize(size_t max_size) {
+    CompressDistribution(max_size, 1.0 / max_size);
 }
 
 double FiniteDist::GetAvgValue() const {
@@ -307,9 +316,11 @@ double FiniteDist::GetAvgValue() const {
     }
 }
 bool FiniteDist::approx_equal(const FiniteDist& other, double tolerance) const {
-    if (distribution.size() != other.distribution.size()) return false;
+    if (distribution.size() != other.distribution.size())
+        return false;
     for (uint i = 0; i < distribution.size(); i++) {
-        if (distribution[i] != other.distribution[i]) return false;
+        if (distribution[i] != other.distribution[i])
+            return false;
     }
     if (near(min_time, other.min_time) && near(max_time, other.max_time))
         return true;
@@ -317,13 +328,17 @@ bool FiniteDist::approx_equal(const FiniteDist& other, double tolerance) const {
 }
 
 bool FiniteDist::operator==(const FiniteDist& other) const {
-    if (distribution.size() != other.distribution.size()) return false;
+    if (distribution.size() != other.distribution.size())
+        return false;
     double tolerance = 1e-1;
     for (uint i = 0; i < distribution.size(); i++) {
-        if (distribution[i] != other.distribution[i]) return false;
+        if (distribution[i] != other.distribution[i])
+            return false;
     }
-    if (!approx_equal_double(min_time, other.min_time, tolerance)) return false;
-    if (!approx_equal_double(max_time, other.max_time, tolerance)) return false;
+    if (!approx_equal_double(min_time, other.min_time, tolerance))
+        return false;
+    if (!approx_equal_double(max_time, other.max_time, tolerance))
+        return false;
     return true;
 }
 }  // namespace SP_OPT_PA
