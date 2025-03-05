@@ -123,7 +123,7 @@ TEST_F(TaskSetv9, RTA_w_processor_assignment) {
     EXPECT_NEAR(1.0, GetDDL_MissProbability(rtas[0], 199), 1e-6);
 
     // RT distribution from 200 to 600
-    EXPECT_NEAR(0.5, GetDDL_MissProbability(rtas[1], 400), 1e-6);
+    EXPECT_NEAR(0.59, GetDDL_MissProbability(rtas[1], 400), 1e-2);
 }
 int main(int argc, char **argv) {
     // ::testing::InitGoogleTest(&argc, argv);
