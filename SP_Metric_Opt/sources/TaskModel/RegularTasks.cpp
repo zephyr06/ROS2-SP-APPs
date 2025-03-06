@@ -4,7 +4,6 @@
 
 #include <filesystem>
 
-
 namespace SP_OPT_PA {
 
 #if defined(RYAN_HE_CHANGE)
@@ -14,81 +13,85 @@ namespace SP_OPT_PA {
 // this function is pretty much unchanged
 // NOTE: bigger priority means higher priority
 double Task::get_priority() const {
-  if (CompareStringNoCase(priorityType_, "RM")) {
-    if (period > 0)
-      return 1.0 / period +
-             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
-                                      // possible period is 10^4; adding id
-                                      // into priority breaks the tie when
-                                      // different tasks have the same periods
-    else
-      CoutError("Period parameter less or equal to 0!");
-  } else if (CompareStringNoCase(priorityType_, "orig")) {
-    return id * -1;
-  } else if (CompareStringNoCase(priorityType_, "assigned")) {
-    return priority;
-  }  
-  else if (CompareStringNoCase(priorityType_, "DM")) {
-	// d bigger means lower priority
-    //std::cout << "####Task::priority: task_id="<<id<<", deadline="<<deadline<<", deadline="<<deadline<<std::endl;
-	// the smaller deadline, the bigger priority should be  
-    if (deadline > 0)
-      return 1.0 / deadline +
-             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
-                                      // possible period is 10^4; adding id
-                                      // into priority breaks the tie when
-                                      // different tasks have the same periods
-    else
-      return (-deadline) + 1e6 + float(id) / pow(10, 6);
-  }  
-  else {
-    CoutError("Priority settings not recognized!");
-  }
-  return -1;
+    if (CompareStringNoCase(priorityType_, "RM")) {
+        if (period > 0)
+            return 1.0 / period +
+                   float(id) /
+                       pow(10, 6);  // pow(10, 6) because the minimum
+                                    // possible period is 10^4; adding id
+                                    // into priority breaks the tie when
+                                    // different tasks have the same periods
+        else
+            CoutError("Period parameter less or equal to 0!");
+    } else if (CompareStringNoCase(priorityType_, "orig")) {
+        return id * -1;
+    } else if (CompareStringNoCase(priorityType_, "assigned")) {
+        return priority;
+    } else if (CompareStringNoCase(priorityType_, "DM")) {
+        // d bigger means lower priority
+        // std::cout << "####Task::priority: task_id="<<id<<",
+        // deadline="<<deadline<<", deadline="<<deadline<<std::endl;
+        //  the smaller deadline, the bigger priority should be
+        if (deadline > 0)
+            return 1.0 / deadline +
+                   float(id) /
+                       pow(10, 6);  // pow(10, 6) because the minimum
+                                    // possible period is 10^4; adding id
+                                    // into priority breaks the tie when
+                                    // different tasks have the same periods
+        else
+            return (-deadline) + 1e6 + float(id) / pow(10, 6);
+    } else {
+        CoutError("Priority settings not recognized!");
+    }
+    return -1;
 }
 
-// RYAN_HE: for RunQueue2. 
+// RYAN_HE: for RunQueue2.
 // given time_now, deadlineJob and jobId, so that EDF priority can be computed
-// jobId is used to break ties when EDF is same 
-double Task::get_priority2(LLint time_now, LLint deadlineJob, LLint jobId) const {
-  if (CompareStringNoCase(priorityType_, "RM")) {
-    if (period > 0) {
-      double f = pow(10,6);
-      return 1.0 / period - double(jobId)/f + 
-             double(id) / f;  // pow(10, 6) because the minimum
-                                      // possible period is 10^4; adding id
-                                      // into priority breaks the tie when
-                                      // different tasks have the same periods
-    } else {
-      CoutError("Period parameter less or equal to 0!");
-    }
-  } else if (CompareStringNoCase(priorityType_, "orig")) {
-    return id * -1;
-  } else if (CompareStringNoCase(priorityType_, "assigned")) {
-    return priority;
-  } 
-  else if (CompareStringNoCase(priorityType_, "DM")) {
-	// d bigger means lower priority
+// jobId is used to break ties when EDF is same
+double Task::get_priority2(LLint time_now, LLint deadlineJob,
+                           LLint jobId) const {
+    if (CompareStringNoCase(priorityType_, "RM")) {
+        if (period > 0) {
+            double f = pow(10, 6);
+            return 1.0 / period - double(jobId) / f +
+                   double(id) / f;  // pow(10, 6) because the minimum
+                                    // possible period is 10^4; adding id
+                                    // into priority breaks the tie when
+                                    // different tasks have the same periods
+        } else {
+            CoutError("Period parameter less or equal to 0!");
+        }
+    } else if (CompareStringNoCase(priorityType_, "orig")) {
+        return id * -1;
+    } else if (CompareStringNoCase(priorityType_, "assigned")) {
+        return priority;
+    } else if (CompareStringNoCase(priorityType_, "DM")) {
+        // d bigger means lower priority
 
-	// the smaller deadline, the bigger priority should be  
-	int d = deadlineJob-time_now;
-	//std::cout << "####Task::priority_arg: task_id="<<id<<", deadlineObj="<<deadlineObj<<", relative deadline="<<d<<std::endl;
-    if (d > 0) {
-	  double f = pow(10,6); // for same id, jobid bigger, prio should be smaller
-      return 1.0 / d - double(jobId)/f +
-             double(id) / f;  // pow(10, 6) because the minimum
-                                      // possible period is 10^4; adding id
-                                      // into priority breaks the tie when
-                                      // different tasks have the same periods
+        // the smaller deadline, the bigger priority should be
+        int d = deadlineJob - time_now;
+        // std::cout << "####Task::priority_arg: task_id="<<id<<",
+        // deadlineObj="<<deadlineObj<<", relative deadline="<<d<<std::endl;
+        if (d > 0) {
+            double f = pow(
+                10, 6);  // for same id, jobid bigger, prio should be smaller
+            return 1.0 / d - double(jobId) / f +
+                   double(id) / f;  // pow(10, 6) because the minimum
+                                    // possible period is 10^4; adding id
+                                    // into priority breaks the tie when
+                                    // different tasks have the same periods
+        } else {
+            double f = pow(10, 6);
+            return (-d) - double(jobId) / f + double(id) / f;
+        }
+    } else if (CompareStringNoCase(priorityType_, "FTP_Read_Priority_Value")) {
+        return priority;
     } else {
-      double f = pow(10,6);
-      return (-d) - double(jobId)/f + double(id) / f;
-	}
-  }
-  else {
-    CoutError("Priority settings not recognized!");
-  }
-  return -1;	
+        CoutError("Priority settings not recognized!");
+    }
+    return -1;
 }
 
 /*
@@ -106,19 +109,19 @@ double Task::get_priority(int time_now) const {
     return id * -1;
   } else if (CompareStringNoCase(priorityType_, "assigned")) {
     return priority;
-  } 
+  }
   else if (CompareStringNoCase(priorityType_, "DM")) {
-	// d bigger means lower priority
+        // d bigger means lower priority
 
-	// the smaller deadline, the bigger priority should be  
-	int d = deadline-time_now;
-	std::cout << "####Task::priority_arg: task_id="<<id<<", deadline="<<deadline<<", relative deadline="<<d<<std::endl;
-		
-	// int d = deadline; // if deadline -- every cycle, just use this
-    //std::cout << "####Task::priority_arg: task_id="<<id<<", deadline="<<deadline<<", deadline="<<deadline<<std::endl;	
-    if (d > 0)
-      return 1.0 / d +
-             float(id) / pow(10, 6);  // pow(10, 6) because the minimum
+        // the smaller deadline, the bigger priority should be
+        int d = deadline-time_now;
+        std::cout << "####Task::priority_arg: task_id="<<id<<",
+deadline="<<deadline<<", relative deadline="<<d<<std::endl;
+
+        // int d = deadline; // if deadline -- every cycle, just use this
+    //std::cout << "####Task::priority_arg: task_id="<<id<<",
+deadline="<<deadline<<", deadline="<<deadline<<std::endl; if (d > 0) return 1.0
+/ d + float(id) / pow(10, 6);  // pow(10, 6) because the minimum
                                       // possible period is 10^4; adding id
                                       // into priority breaks the tie when
                                       // different tasks have the same periods
@@ -158,7 +161,8 @@ std::vector<TimePerfPair> AnalyzeTimePerfPair(const std::string &time_strs,
 
 // Recursive function to return gcd of a and b
 long long gcd(long long int a, long long int b) {
-    if (b == 0) return a;
+    if (b == 0)
+        return a;
     return gcd(b, a % b);
 }
 
@@ -187,7 +191,8 @@ long long int HyperPeriod(const TaskSet &tasks) {
 }
 
 TaskSet ReadTaskSet(std::string path, int granulairty) {
-    if (!(std::filesystem::exists(path))) CoutError(path + " not exist!");
+    if (!(std::filesystem::exists(path)))
+        CoutError(path + " not exist!");
     YAML::Node config = YAML::LoadFile(path);
     YAML::Node tasksNode;
     if (config["tasks"]) {
@@ -221,7 +226,7 @@ TaskSet ReadTaskSet(std::string path, int granulairty) {
         } else {
             task.performance_records_sigma = 0.0;
         }
-#endif                
+#endif
         if (tasksNode[i]["performance_records_time"]) {
             task.timePerformancePairs = AnalyzeTimePerfPair(
                 tasksNode[i]["performance_records_time"].as<std::string>(),
