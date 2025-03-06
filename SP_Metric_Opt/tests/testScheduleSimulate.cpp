@@ -1,5 +1,6 @@
 // #include <gtest/gtest.h>
-
+// NOTE: This file has been modified based on Ryan's definition of priority
+// values: bigger values imply higher priority
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/RTDA/ImplicitCommunication/ScheduleSimulation.h"
 #include "sources/Safety_Performance_Metric/ParametersSP.h"
@@ -20,9 +21,16 @@ class TaskSetForTest_scheduling_v1 : public ::testing::Test {
         std::string path =
             GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
         dag_tasks = ReadDAG_Tasks(path);
+
+#if defined(RYAN_HE_CHANGE)
+        for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
+            dag_tasks.tasks[i].priorityType_ = "FTP_Read_Priority_Value";
+            dag_tasks.tasks[i].priority = 10 - i;
+        }
+
+#endif
         tasks = dag_tasks.tasks;
         sp_parameters = SP_Parameters(tasks);
-        AssignTaskSetPriorityById(dag_tasks.tasks);
         tasks_info = TaskSetInfoDerived(dag_tasks.tasks);
 
         dag_tasks.tasks[0].setExecutionTime(1);
@@ -45,9 +53,9 @@ TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule) {
     EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v2) {
-    dag_tasks.tasks[0].priority = 3;
+    dag_tasks.tasks[0].priority = 1;
     dag_tasks.tasks[1].priority = 2;
-    dag_tasks.tasks[2].priority = 1;
+    dag_tasks.tasks[2].priority = 3;
     Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
     EXPECT_EQ(4, schedule.size());
     EXPECT_EQ(5, schedule[JobCEC(0, 0)].start);
