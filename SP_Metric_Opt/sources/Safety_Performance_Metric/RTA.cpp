@@ -8,6 +8,8 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
     FiniteDist rta_cur = task_curr.execution_time_dist;
     bool if_new_preempt = false;
     for (const Task& task_hp : hp_tasks) {
+        rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity *
+                                                 2);
         rta_cur.Convolve(task_hp.execution_time_dist);
         if_new_preempt =
             if_new_preempt || (rta_cur.max_time / task_hp.period > 1);
@@ -30,6 +32,7 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
         }
     }
     rta_cur.CompressDeadlineMissProbability(task_curr.deadline);
+    rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 2);
     rta_cur.UpdateMinMaxValues();
     return rta_cur;
 }
@@ -50,6 +53,7 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     hp_tasks.reserve(n - 1);
     for (int i = 0; i < n; i++) {
         FiniteDist rta_curr = GetRTA_OneTask(tasks[i], hp_tasks);
+
         // rtas.push_back(rta_curr);
         rtas[task_id_to_index[tasks[i].id]] = rta_curr;
         hp_tasks.push_back(tasks[i]);
