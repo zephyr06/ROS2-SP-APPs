@@ -51,6 +51,25 @@ class TaskSetForTest_taskset_cfg_10_1_gen_1 : public ::testing::Test {
     int N = dag_tasks.tasks.size();
 };
 
+class TaskSetForTest_taskset_cfg_4_5_gen_1 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "taskset_characteristics_0";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
+        file_path = path;
+        //dag_tasks = ReadDAG_Tasks(path, 5);
+        dag_tasks = ReadDAG_Tasks(path);
+        sp_parameters = SP_Parameters(dag_tasks);
+    }
+
+    // data members
+    string file_path;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int N = dag_tasks.tasks.size();
+};
+
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
@@ -181,7 +200,6 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, ObtainSP_DAG) {
 TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
        EnumeratePA_with_TimeLimits_long) {
     std::cout << "\n\n\n Start Running the Long Test:\n\n\n";
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     auto start_time = CurrentTimeInProfiler;
     ResourceOptResult res_opt =
         EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
@@ -189,6 +207,54 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
     double time_taken = GetTimeTaken(start_time, finish_time);
     std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
               << time_taken << std::endl;
+}
+
+TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
+    // simulate from 0 to 300s, cpu util should increase and then descrease
+	// one task_characteristics file for every 10s 
+    // check task 3 (with performance_records_time) exetime
+    int task_wPerf = 3; // this task has performance_records_time
+    
+    std::cout<<"\n-------- check id2time_limit varies with cpu utilization\n";    
+    
+    // time 0: 
+    ResourceOptResult res_opt = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+	// calculate cpu_util for other tasks
+    double cpu_util = 0.0;
+    for ( int i=0;i<4;i++ ){
+        if (i==task_wPerf) continue;
+        const Task t = dag_tasks.GetTask(i);
+        int prd = t.period;
+        GaussianDist g_et = t.getExecGaussian();
+        double mu = g_et.mu;
+        cpu_util += mu/prd;
+    }
+	// print cpu_util, and id2time_limit for task 3
+    printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",0, 
+        cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]); 
+    
+	// for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
+	// we expect res_opt.id2time_limit[task_wPerf] increase/descrease while cpu_util descrease/increase
+    for (int k=1;k<=30;k++) {        
+        std::string file_name = "taskset_characteristics_" + std::to_string(k);
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
+        DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);    
+        sp_parameters = SP_Parameters(dag_tasks_updated);
+        res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
+        
+        cpu_util = 0.0;
+        for ( int i=0;i<4;i++ ){
+            if (i==task_wPerf) continue;
+            const Task t = dag_tasks_updated.GetTask(i);
+            int prd = t.period;
+            GaussianDist g_et = t.getExecGaussian();
+            double mu = g_et.mu;
+            cpu_util += mu/prd;
+        }        
+        printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",k, 
+            cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);         
+    }
 }
 
 int main(int argc, char** argv) {
