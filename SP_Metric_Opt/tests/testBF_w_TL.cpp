@@ -2,11 +2,9 @@
 
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_BF.h"
-#include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
-
+#include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/RTDA/ImplicitCommunication/ScheduleSimulation.h"
-	
 #include "sources/Utils/Parameters.h"
 
 using ::testing::AtLeast;  // #1
@@ -14,7 +12,6 @@ using ::testing::Return;
 using namespace std;
 using namespace SP_OPT_PA;
 using namespace GlobalVariables;
-
 
 class TaskSetForTest_robotics_v20 : public ::testing::Test {
    public:
@@ -38,11 +35,12 @@ class TaskSetForTest_taskset_cfg_10_1_gen_1 : public ::testing::Test {
    public:
     void SetUp() override {
         std::string file_name = "taskset_characteristics_0";
-        std::string path =
-            GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_10_1_gen_1/" + file_name + ".yaml";
+        std::string path = GlobalVariables::PROJECT_PATH +
+                           "TaskData/taskset_cfg_10_1_gen_1/" + file_name +
+                           ".yaml";
         file_path = path;
-        //dag_tasks = ReadDAG_Tasks(path, 5);
-		dag_tasks = ReadDAG_Tasks(path);
+        // dag_tasks = ReadDAG_Tasks(path, 5);
+        dag_tasks = ReadDAG_Tasks(path);
         sp_parameters = SP_Parameters(dag_tasks);
     }
 
@@ -120,55 +118,77 @@ TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
 }
 
 TEST_F(TaskSetForTest_robotics_v19, EnumeratePA_with_TimeLimits) {
-	ResourceOptResult res_opt = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
-	
+    ResourceOptResult res_opt =
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
     EXPECT_EQ(400,
               res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
     // BF should return 400
-	// std::cout<<"TaskSetForTest_robotics_v19 EnumeratePA_with_TimeLimits done"<<std::endl;
+    // std::cout<<"TaskSetForTest_robotics_v19 EnumeratePA_with_TimeLimits
+    // done"<<std::endl;
 }
 
 TEST_F(TaskSetForTest_robotics_v19, EnumeratePA_with_TimeLimits_2) {
-	ResourceOptResult res_opt = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);	
-    EXPECT_EQ(400, res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
-	std::cout<<"#### TaskSetForTest_robotics_v19 BF run TSP worst"<<std::endl;
-	
+    ResourceOptResult res_opt =
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    EXPECT_EQ(400,
+              res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
+    std::cout << "#### TaskSetForTest_robotics_v19 BF run TSP worst"
+              << std::endl;
+
     DAG_Model dag_tasks_updated =
         ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
                       "TaskData/test_robotics_v21.yaml");  // low utilization
-	res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);	
-    EXPECT_EQ(
-        1000,
-        res_opt.id2time_limit[0]);  // TSP can run to best it can 
-	std::cout<<"#### TaskSetForTest_robotics_v21 BF run TSP best"<<std::endl;
-	
+    res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
+    EXPECT_EQ(1000,
+              res_opt.id2time_limit[0]);  // TSP can run to best it can
+    std::cout << "#### TaskSetForTest_robotics_v21 BF run TSP best"
+              << std::endl;
+
     dag_tasks_updated =
-         ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
-                       "TaskData/test_robotics_v22.yaml");  // low utilization
-	res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);	
-    EXPECT_EQ(
-        1000,
-        res_opt.id2time_limit[0]);  // TSP can run to best it can 			
-	std::cout<<"#### TaskSetForTest_robotics_v22 BF run TSP best"<<std::endl;
-	
+        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                      "TaskData/test_robotics_v22.yaml");  // low utilization
+    res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
+    EXPECT_EQ(1000,
+              res_opt.id2time_limit[0]);  // TSP can run to best it can
+    std::cout << "#### TaskSetForTest_robotics_v22 BF run TSP best"
+              << std::endl;
+
     dag_tasks_updated =
-         ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
-                       "TaskData/test_robotics_v19.yaml");  // low utilization
-	res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);	
-    EXPECT_EQ(
-        400,
-        res_opt.id2time_limit[0]);  // TSP can only run worst again		
-	std::cout<<"#### TaskSetForTest_robotics_v19 BF run TSP worst"<<std::endl;		
+        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                      "TaskData/test_robotics_v19.yaml");  // low utilization
+    res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
+    EXPECT_EQ(400,
+              res_opt.id2time_limit[0]);  // TSP can only run worst again
+    std::cout << "#### TaskSetForTest_robotics_v19 BF run TSP worst"
+              << std::endl;
 }
 
-TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, EnumeratePA_with_TimeLimits_long) {
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks,sp_parameters);  
+TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, ObtainSP_DAG) {
+    std::cout << "\n\n\n Start Running the Long Test, ObtainSP_DAG:\n\n\n";
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     auto start_time = CurrentTimeInProfiler;
-	ResourceOptResult res_opt = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);		
+    // ResourceOptResult res_opt =
+    //     EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    double initial_sp = ObtainSP_DAG(dag_tasks, sp_parameters);
     auto finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
-	std::cout<<"time taken for OptimizePA_Incre_with_TimeLimits:" << time_taken << std::endl;
+    std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
+              << time_taken << std::endl;
+}
+
+TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
+       EnumeratePA_with_TimeLimits_long) {
+    std::cout << "\n\n\n Start Running the Long Test:\n\n\n";
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    auto start_time = CurrentTimeInProfiler;
+    ResourceOptResult res_opt =
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    auto finish_time = CurrentTimeInProfiler;
+    double time_taken = GetTimeTaken(start_time, finish_time);
+    std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
+              << time_taken << std::endl;
 }
 
 int main(int argc, char** argv) {

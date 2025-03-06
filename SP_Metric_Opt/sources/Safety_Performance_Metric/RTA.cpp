@@ -10,6 +10,8 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
     FiniteDist rta_cur = task_curr.execution_time_dist;
     bool if_new_preempt = false;
     for (const Task& task_hp : hp_tasks) {
+        rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity *
+                                                 2);
         rta_cur.Convolve(task_hp.execution_time_dist);
         if_new_preempt =
             if_new_preempt || (rta_cur.max_time / task_hp.period > 1);
@@ -31,6 +33,7 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
         }
     }
     rta_cur.CompressDeadlineMissProbability(task_curr.deadline);
+    rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 2);
     rta_cur.UpdateMinMaxValues();
     return rta_cur;
 }
@@ -51,17 +54,19 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     hp_tasks.reserve(n - 1);
 #if defined(RYAN_HE_CHANGE_DEBUG)
     if (GlobalVariables::debugMode & DBG_PRT_MSK_SP_Metric) {
-        std::cout << "####ProbabilisticRTA_TaskSet_SingleCore: "<<n<<" tasks: "<<std::endl;
+        std::cout << "####ProbabilisticRTA_TaskSet_SingleCore: " << n
+                  << " tasks: " << std::endl;
     }
 #endif
     for (int i = 0; i < n; i++) {
         FiniteDist rta_curr = GetRTA_OneTask(tasks[i], hp_tasks);
 #if defined(RYAN_HE_CHANGE_DEBUG)
         if (GlobalVariables::debugMode & DBG_PRT_MSK_SP_Metric) {
-            std::cout << "####ProbabilisticRTA_TaskSet_SingleCore: tasks["<<i<<"]'s RTA: "<<std::endl;
+            std::cout << "####ProbabilisticRTA_TaskSet_SingleCore: tasks[" << i
+                      << "]'s RTA: " << std::endl;
             rta_curr.print();
         }
-#endif        
+#endif
         // rtas.push_back(rta_curr);
         rtas[task_id_to_index[tasks[i].id]] = rta_curr;
         hp_tasks.push_back(tasks[i]);
@@ -103,8 +108,8 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet(const TaskSet& tasks) {
     return rtas;
 }
 
-// assumes not preempted? no! finite_dist is the distribution is from task set so 
-// premption is considered
+// assumes not preempted? no! finite_dist is the distribution is from task set
+// so premption is considered
 double GetDDL_MissProbability(const FiniteDist& finite_dist, double ddl) {
     auto itr = std::upper_bound(finite_dist.distribution.begin(),
                                 finite_dist.distribution.end(), ddl,
