@@ -246,6 +246,8 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
     printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",0, 
         cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]); 
     
+	// check k = 1 .. 7 against brute-force scheduler
+    double br_rst[] = {-1,90.0,90.0,90.0,80.556,80.556,80.556,80.556};
 	// for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
 	// we expect res_opt.id2time_limit[task_wPerf] increase/descrease while cpu_util descrease/increase
     for (int k=1;k<=30;k++) {        
@@ -266,7 +268,11 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
             cpu_util += mu/prd;
         }        
         printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",k, 
-            cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);         
+            cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);   
+        if (k>=1 && k<=7) {
+           double v = abs(res_opt.id2time_limit[task_wPerf] - br_rst[k]);
+		   EXPECT_LT(v, 0.001);  // hopefully result == brute-force result
+        }			
     }
 }
 
