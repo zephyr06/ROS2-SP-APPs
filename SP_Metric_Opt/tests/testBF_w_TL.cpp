@@ -60,7 +60,8 @@ class TaskSetForTest_taskset_cfg_4_5_gen_1 : public ::testing::Test {
         file_path = path;
         //dag_tasks = ReadDAG_Tasks(path, 5);
         dag_tasks = ReadDAG_Tasks(path);
-        sp_parameters = SP_Parameters(dag_tasks);
+        // sp_parameters = SP_Parameters(dag_tasks);
+		sp_parameters = ReadSP_Parameters(path);
     }
 
     // data members
@@ -240,7 +241,8 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
         std::string path =
             GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
         DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);    
-        sp_parameters = SP_Parameters(dag_tasks_updated);
+        //sp_parameters = SP_Parameters(dag_tasks_updated);
+        sp_parameters = ReadSP_Parameters(path);
         res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
         
         cpu_util = 0.0;

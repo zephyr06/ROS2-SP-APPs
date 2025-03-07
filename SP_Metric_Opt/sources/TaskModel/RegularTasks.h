@@ -159,6 +159,8 @@ class Task {
     // Member list
     int id;
     FiniteDist execution_time_dist;
+    inline void set_execution_time_dist(FiniteDist &t) {execution_time_dist=t;}
+
     int period;  // must be integer for the system simulation to work; if not
                  // integer, must be scaled to be so;
     double deadline;
