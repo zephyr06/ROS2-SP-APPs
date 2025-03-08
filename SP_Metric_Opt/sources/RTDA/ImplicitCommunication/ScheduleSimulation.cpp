@@ -9,6 +9,7 @@
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
 
 #include <fstream>
+#include <assert.h>
 #endif
 
 // RYAN_CHANGE_20250207: THIS FILE
@@ -186,6 +187,10 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                                  std::ofstream *flog,
                                  int reevaluate_prio_interval_ms							 
 								 ) {
+
+    
+    std::cout<<"please dont use. use SimulatedCSP_SingleCore_CSP_vecs instead\n";
+    assert(0);
 
 #if defined(RYAN_HE_CHANGE_DEBUG)
     int last_perf_record_t[10] = {0};
@@ -413,8 +418,10 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
     int tasks_interval_size = dag_tasks_vecs.size();
     const DAG_Model &dag_tasks = dag_tasks_vecs[0];
     const TaskSet &tasks = dag_tasks.GetTaskSet();
-    const SP_Parameters &sp_parameters = sp_parameters_vecs[0];
-    const TaskSetInfoDerived &tasks_info = tasks_info_vecs[0];
+    //const 
+    SP_Parameters &sp_parameters = sp_parameters_vecs[0];
+    //const 
+    TaskSetInfoDerived &tasks_info = tasks_info_vecs[0];
     if (simt<=0) {
         simt = tasks_info.hyper_period;
     }
@@ -438,6 +445,16 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
 
     // RYAN_HE: for INCR only
     OptimizePA_Incre_with_TimeLimits inc_opt(dag_tasks, sp_parameters);
+
+    // get tasks allowing selecting execution time
+    int ntasks = tasks.size();
+    std::vector<double> exeSel(ntasks);
+    std::vector<std::vector<double>> time_limit_options = RecordCloseTimeLimitOptions(dag_tasks);
+    for (int i=0;i<ntasks;i++) {
+        // either > 0 or -1
+        exeSel[i] = time_limit_options[i][0];
+        //std::cout<<i<<","<<exeSel[i]<<std::endl;
+    }
 
     // start simulation loop ...
     int reevaluate_prio_ms_cnt = 0;
@@ -476,13 +493,12 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                 recalced_prio = 1;
                 if (reevaluate_prio_ms_cnt >= reevaluate_prio_interval_ms) {
                     reevaluate_prio_ms_cnt = 0;
-
                 }
 
                 const DAG_Model &dag_tasks_const = dag_tasks_vecs[interval_idx];
                 std::cout<<"SimulatedCSP_SingleCore_vecs: dag_tasks interval "<<interval_idx<<std::endl;
-                //sp_parameters = sp_parameters_vecs[interval_idx];
-                //tasks_info = tasks_info_vecs[interval_idx];                    
+                sp_parameters = sp_parameters_vecs[interval_idx];
+                tasks_info = tasks_info_vecs[interval_idx];                    
                 interval_idx += 1;
                 if (interval_idx>=tasks_interval_size) {
                     interval_idx = tasks_interval_size-1;
@@ -497,11 +513,29 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                             GlobalVariables::Layer_Node_During_Incremental_Optimization);
                     } else {
                         //std::cout<<ppre<<"INCR time="<<time_now<<", calc prio ..."<<std::endl;
+
+                        for (int i=0;i<ntasks;i++) {
+                            if (exeSel[i]<0) continue;
+                            double mu = exeSel[i];
+                            GaussianDist g = GaussianDist(mu, 0.01);
+                            FiniteDist eTDist = FiniteDist(g, mu, mu, 1);
+                            const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).set_execution_time_dist(eTDist);
+                            const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).setExecGaussian(g);  
+                        }
+
                         PriorityVec pa_opt = inc_opt.OptimizeIncre_w_TL(dag_tasks_const,
                             GlobalVariables::Layer_Node_During_Incremental_Optimization);                    
                     }
                     //std::cout<<ppre<<": collect results ..."<<std::endl;
                     res = inc_opt.CollectResults();
+
+                    // save selected execution time
+                    for (int i=0;i<ntasks;i++) {
+                        if ( exeSel[i]>0 ) {
+                            exeSel[i] = res.id2time_limit[i];
+                            std::cout<<"task "<<i<<": incremental exet="<<exeSel[i]<<std::endl;
+                        }
+                    }
                 } else {
                     res = EnumeratePA_with_TimeLimits(dag_tasks_const, sp_parameters);
                 }
@@ -527,29 +561,11 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                         prt = 1;
                         last_perf_record_t[task_id] = newexetime_i;
                     }
-#endif
 
-                    // std::cout<< "new exe time " << newexetime << "\n";
-                    double std = tasks_info.GetTask(task_id).getExecutionTimePerformanceSigma();
-                    if (std>0.0) {
-                        double pmin = tasks_info.GetTask(task_id).getExecutionTimePerformanceMin();
-                        double pmax = tasks_info.GetTask(task_id).getExecutionTimePerformanceMax();
-                        double *pminp = nullptr;
-                        double *pmaxp = nullptr;
-                        if (pmin>0.0 ) {
-                            pminp = &pmin;
-                        }
-                        if (pmax>0.0 ) {
-                            pmaxp = &pmax;
-                        }
-                        //int oldt = newexetime;
-                        newexetime = int(getRandomValueByMuSigma(newexetime_i, std, pminp, pmaxp) + 0.5);
-                    }
-                    #if defined(RYAN_HE_CHANGE_DEBUG)   
                     if (prt==1) {
                         std::cout << ppre << "TASK " << task_id << " Et: propose " << newexetime_i << ", set to " << newexetime << "\n";
                     }
-                    #endif                    
+#endif                    
                     run_queue.set_job_executionTime(task_id, newexetime); 
 #if defined(RYAN_HE_CHANGE_DEBUG)           
                     if (GlobalVariables::debugMode & DBG_PRT_MSK_SIMULATION) {               

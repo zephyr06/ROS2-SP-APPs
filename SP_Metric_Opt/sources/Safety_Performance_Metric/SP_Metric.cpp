@@ -123,6 +123,17 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
                               sp_parameters.thresholds_node.at(task_id)) *
                               sp_parameters.weights_node.at(task_id);
 #endif
+        // RYAN_20250308
+        // if ddl_miss_chance is 1.0, then sp_loss for this task will be same, no matter
+        // what is the execution time selected 
+        // however, to break tie, we still want to select the one with smaller execution time
+        if (ddl_miss_chance>=0.99999) {
+            double v = tasks[i].execution_time_dist.GetAvgValue();
+            // printf("-------- %s task%d, reduce SP further for ddl_miss==1, EtAvg=%.4f, deadline=%f, sp=%f\n",
+            //   __func__,i,v,tasks[i].deadline,sp_overall);
+            sp_overall -= v/tasks[i].deadline*0.001;
+            // printf("sp=%f\n",sp_overall);
+        }
     }
     return sp_overall;
 }

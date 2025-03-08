@@ -59,7 +59,8 @@ class TaskSetForTest_taskset_cfg_10_1_gen_1 : public ::testing::Test {
         file_path = path;
         //dag_tasks = ReadDAG_Tasks(path, 5);
         dag_tasks = ReadDAG_Tasks(path);
-        sp_parameters = SP_Parameters(dag_tasks);
+        //sp_parameters = SP_Parameters(dag_tasks);
+        sp_parameters = ReadSP_Parameters(path);
     }
 
     // data members
@@ -273,7 +274,9 @@ TEST_F(TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL) {
 
 TEST_F(TaskSetForTest_robotics_v19_2, optimize_incremental) {
     printf("\n-------- TaskSetForTest_robotics_v19_2, optimize_incremental ...\n");     
-
+    int granuality = 1;
+    int n_options = 2;
+    // find task with execution time to optimize
     int n = dag_tasks.tasks.size();
     int perfTask = 0;
     std::vector<std::vector<double>> time_limit_options = RecordCloseTimeLimitOptions(dag_tasks);
@@ -287,6 +290,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, optimize_incremental) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
     // -------------------------------------- first time 
+    // estimate cpu utilization
     double cpu_util = 0.0;
     int prd0;
     for (int k=0;k<n;k++) {
@@ -301,85 +305,92 @@ TEST_F(TaskSetForTest_robotics_v19_2, optimize_incremental) {
         double mu = g_et.mu;
         cpu_util += mu/prd;    
     }
-    opt.OptimizeFromScratch_w_TL(2);  // result should be 400
+    opt.OptimizeFromScratch_w_TL(n_options);  // result should be 400
     ResourceOptResult res_opt = opt.CollectResults();
     EXPECT_EQ(400, res_opt.id2time_limit[perfTask]);  // SLAM+TSP have high utilization;
     printf("cpu util for other/all tasks: %.2f/%.2f\n",cpu_util,cpu_util+res_opt.id2time_limit[perfTask]/prd0);
-
-    // --------------------------------------- next 
-    DAG_Model dag_tasks_updated =
-        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
-                      "TaskData/test_robotics_v21_2.yaml");  // low utilization    
-
-    // the loop before tries to update task characteristics but not sure if it is the correct way
-    for ( int i=0; i<n; i++) {
-        // for task perfTask, keep execution_time_dist
-        if (i==perfTask) continue;
-
-        // for other tasks, update execution_time_dist       
-        FiniteDist new_execution_time_dist = dag_tasks_updated.GetTask(i).execution_time_dist;
-        const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(i)).set_execution_time_dist(new_execution_time_dist);
-        GaussianDist new_g_et = dag_tasks_updated.GetTask(i).getExecGaussian();
-        const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(i)).setExecGaussian(new_g_et);     
-    }        
-    cpu_util = 0;
-    for (int k=0;k<n;k++) {
-        if (k==perfTask) {        
-            continue;
-        }
-        const Task t = dag_tasks.GetTask(k);
-        int prd = t.period;
-        GaussianDist g_et = t.getExecGaussian();
-        double mu = g_et.mu;
-        cpu_util += mu/prd;    
-    }    
-    opt.OptimizeIncre_w_TL(dag_tasks, 2); // call incremental again with updated characteristics
-    res_opt = opt.CollectResults();
-    EXPECT_EQ(800,res_opt.id2time_limit[perfTask]);  // should increase a bit
-    printf("cpu util for other/all tasks: %.2f/%.2f\n",cpu_util,cpu_util+res_opt.id2time_limit[perfTask]/prd0);
+    printf("task%d exeT=%.2f\n",perfTask,res_opt.id2time_limit[perfTask]);
 
 
     // --------------------------------------- next 
-	// read test_robotics_v19_2 again, very high utilization
-    dag_tasks_updated =
-        ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
-                      "TaskData/test_robotics_v19_2.yaml");  // high utilization again 
-
-    // the loop before tries to update task characteristics but not sure if it is the correct way
-    for ( int i=0; i<n; i++) {
-        // for task perfTask, keep execution_time_dist
-        if (i==perfTask) continue;
-
-        // for other tasks, update execution_time_dist       
-        FiniteDist new_execution_time_dist = dag_tasks_updated.GetTask(i).execution_time_dist;
-        const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(i)).set_execution_time_dist(new_execution_time_dist);
-        GaussianDist new_g_et = dag_tasks_updated.GetTask(i).getExecGaussian();
-        const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(i)).setExecGaussian(new_g_et);     
-    }        
-    cpu_util = 0;
+    DAG_Model dag_tasks_updated = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+        "TaskData/test_robotics_v21_2.yaml");  // low utilization     
     for (int k=0;k<n;k++) {
         if (k==perfTask) {        
-            continue;
+            double mu = res_opt.id2time_limit[perfTask];
+            GaussianDist g = GaussianDist(mu, 0.01);
+            FiniteDist eTDist = FiniteDist(g, mu, mu, granuality);
+            //printf("set mu=%f\n",mu);
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(perfTask)).set_execution_time_dist(eTDist);
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(perfTask)).setExecGaussian(g);  
+        } else {
+            // for other tasks: update the characteristics
+            FiniteDist eTDist = dag_tasks_updated.GetTask(k).execution_time_dist;
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(k)).set_execution_time_dist(eTDist);
+            GaussianDist g = dag_tasks_updated.GetTask(k).getExecGaussian();  
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(k)).setExecGaussian(g);   
         }
-        const Task t = dag_tasks.GetTask(k);
-        int prd = t.period;
-        GaussianDist g_et = t.getExecGaussian();
-        double mu = g_et.mu;
-        cpu_util += mu/prd;    
-    }    
-    opt.OptimizeIncre_w_TL(dag_tasks, 2); // call incremental again with updated characteristics
-    res_opt = opt.CollectResults();
-    EXPECT_EQ(600,res_opt.id2time_limit[perfTask]);  // should decrease????
-    printf("cpu util for other/all tasks: %.2f/%.2f\n",cpu_util,cpu_util+res_opt.id2time_limit[perfTask]/prd0);
-
-    // ----------------------------- 
-    // keep calling for a few time to see if incremental scheduler will make any changes further  
-    for (int k = 0; k < 10; k++) {
-        opt.OptimizeIncre_w_TL(dag_tasks, 2);
-        res_opt = opt.CollectResults();
-        printf("%d: %f\n",k,res_opt.id2time_limit[perfTask]);
     }
+
+    cpu_util = 0;
+    for (int k=0;k<n;k++) {
+        if (k==perfTask) {        
+            continue;
+        }
+        const Task t = dag_tasks.GetTask(k);
+        int prd = t.period;
+        GaussianDist g_et = t.getExecGaussian();
+        double mu = g_et.mu;
+        cpu_util += mu/prd;    
+    }   
+
+    opt.OptimizeIncre_w_TL(dag_tasks, n_options); // call incremental again with updated characteristics    
+    res_opt = opt.CollectResults();
+    EXPECT_EQ(600,res_opt.id2time_limit[perfTask]);  // should increase a bit
+    printf("cpu util for other/all tasks: %.2f/%.2f\n",cpu_util,cpu_util+res_opt.id2time_limit[perfTask]/prd0);
+    printf("task%d exeT=%.2f\n",perfTask,res_opt.id2time_limit[perfTask]);
+
+    // --------------------------------------- next 
+    //GlobalVariables::debugMode = 1;    
+	// read test_robotics_v19_2 again, very high utilization
+    dag_tasks_updated = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+        "TaskData/test_robotics_v19_3.yaml");  // high utilization again 
+    for (int k=0;k<n;k++) {
+        if (k==perfTask) {        
+            double mu = res_opt.id2time_limit[perfTask];
+            GaussianDist g = GaussianDist(mu, 0.01);
+            FiniteDist eTDist = FiniteDist(g, mu, mu, granuality);
+            // printf("set mu=%f\n",mu);
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(perfTask)).set_execution_time_dist(eTDist);
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(perfTask)).setExecGaussian(g);  
+        } else {
+            // for other tasks: update the characteristics
+            FiniteDist eTDist = dag_tasks_updated.GetTask(k).execution_time_dist;
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(k)).set_execution_time_dist(eTDist);
+            GaussianDist g = dag_tasks_updated.GetTask(k).getExecGaussian();  
+            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(k)).setExecGaussian(g);   
+        }
+    }
+
+    cpu_util = 0;
+    for (int k=0;k<n;k++) {
+        if (k==perfTask) {        
+            continue;
+        }
+        const Task t = dag_tasks.GetTask(k);
+        int prd = t.period;
+        GaussianDist g_et = t.getExecGaussian();
+        double mu = g_et.mu;
+        cpu_util += mu/prd;    
+    }   
+
+    opt.OptimizeIncre_w_TL(dag_tasks, n_options); // call incremental again with updated characteristics    
+    res_opt = opt.CollectResults();
+    EXPECT_EQ(400,res_opt.id2time_limit[perfTask]);  // should decrease????
+    printf("cpu util for other/all tasks: %.2f/%.2f\n",cpu_util,cpu_util+res_opt.id2time_limit[perfTask]/prd0);
+    printf("task%d exeT=%.2f\n",perfTask,res_opt.id2time_limit[perfTask]);
 }
+
 
 TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, optimize_incremental) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks,sp_parameters);  
@@ -393,8 +404,6 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, optimize_incremental) {
     double time_taken = GetTimeTaken(start_time, finish_time);
     std::cout<<"time taken for OptimizeFromScratch_w_TL:" << time_taken << std::endl;
 
-    
-
     start_time = CurrentTimeInProfiler;
     opt.OptimizeIncre_w_TL(dag_tasks, n);
     finish_time = CurrentTimeInProfiler;
@@ -402,87 +411,6 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, optimize_incremental) {
     std::cout<<"time taken for OptimizeIncre_w_TL:" << time_taken << std::endl;
 }
 
-/*
-TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
-    // simulate from 0 to 300s, cpu util should increase and then descrease
-    // one task_characteristics file for every 10s 
-    // check task 3 (with performance_records_time) exetime
-    int task_wPerf = 3; // this task has performance_records_time
-    
-    std::cout<<"\n-------- check id2time_limit varies with cpu utilization\n";    
-    
-    
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks,sp_parameters);  
-    int n = GlobalVariables::Layer_Node_During_Incremental_Optimization;
-
-    // time 0: 
-    opt.OptimizeFromScratch_w_TL(n);
-    ResourceOptResult res_opt = opt.CollectResults();
-    // calculate cpu_util for other tasks
-    double cpu_util = 0.0;
-    for ( int i=0;i<4;i++ ){
-        if (i==task_wPerf) continue;
-        const Task t = dag_tasks.GetTask(i);
-        int prd = t.period;
-        GaussianDist g_et = t.getExecGaussian();
-        double mu = g_et.mu;
-        cpu_util += mu/prd;
-    }
-    // print cpu_util, and id2time_limit for task 3
-    printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",0, 
-        cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]); 
-    
-    FiniteDist last_execution_time_dist = dag_tasks.GetTask(task_wPerf).execution_time_dist;
-    double lastExeT = res_opt.id2time_limit[task_wPerf];
-
-    // check k = 1 .. 7 against brute-force scheduler
-    double br_rst[] = {-1,90.0,90.0,90.0,80.556,80.556,80.556,80.556};
-    // for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
-    // we expect res_opt.id2time_limit[task_wPerf] increase/descrease while cpu_util descrease/increase
-    for (int k=1;k<=30;k++) {        
-        std::string file_name = "taskset_characteristics_" + std::to_string(k);
-        std::string path =
-            GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
-        DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);
-
-        //dag_tasks_updated.GetTask(task_wPerf).setExecutionTime(lastExeT);
-        const_cast<SP_OPT_PA::Task&>(dag_tasks_updated.GetTask(task_wPerf)).setExecutionTime(lastExeT);
-        
-        //const_cast<SP_OPT_PA::Task&>(dag_tasks_updated.GetTask(task_wPerf)).set_execution_time_dist(last_execution_time_dist);
-        //double last_min=last_execution_time_dist.min_time;
-        //double last_max=last_execution_time_dist.max_time;
-        //double last_avg=last_execution_time_dist.avg_time;
-        //printf("%02d: min/max/avg_time before call opt = %.2f/%.2f/%.2f\n",k, last_min,last_max,last_avg);
-
-        opt.OptimizeIncre_w_TL(dag_tasks_updated, n);
-        res_opt = opt.CollectResults();
-        
-        cpu_util = 0.0;
-        for ( int i=0;i<4;i++ ){
-            if (i==task_wPerf) continue;
-            const Task t = dag_tasks_updated.GetTask(i);
-            int prd = t.period;
-            GaussianDist g_et = t.getExecGaussian();
-            double mu = g_et.mu;
-            cpu_util += mu/prd;
-        }        
-        printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",k, 
-            cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);   
-        if (k>=1 && k<=7) {
-           double v = abs(res_opt.id2time_limit[task_wPerf] - br_rst[k]);
-           EXPECT_LT(v, 0.001);  // hopefully result == brute-force result
-        }
-         
-        lastExeT = res_opt.id2time_limit[task_wPerf];
-
-        //last_execution_time_dist = dag_tasks_updated.GetTask(task_wPerf).execution_time_dist;        
-        //last_min=last_execution_time_dist.min_time;
-        //last_max=last_execution_time_dist.max_time;
-        //last_avg=last_execution_time_dist.avg_time;
-        //printf("%02d: min/max/avg_time after call opt = %.2f/%.2f/%.2f\n",k, last_min,last_max,last_avg);        
-    }
-}
-*/
 
 
 // read new tasks, and update:
@@ -524,7 +452,7 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
         task_wPerf,res_opt.id2time_limit[task_wPerf]); 
 
     // check k = 1 .. 7 against brute-force scheduler
-    double br_rst[] = {-1,90.0,90.0,90.0,80.556,80.556,80.556,80.556};
+    double br_rst[] = {-1,90.0,80.556,90.0,80.556,80.556,80.556,80.556};
     // for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
     // we expect res_opt.id2time_limit[task_wPerf] increase/descrease while cpu_util descrease/increase
     for (int k=1;k<=30;k++) {        
@@ -533,15 +461,14 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
             GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
         DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);
 
-        // update execution_time_dist for other tasks
-        for (int i=0;i<4;i++) {
-            if (i==task_wPerf) continue;
-            FiniteDist new_execution_time_dist = dag_tasks_updated.GetTask(i).execution_time_dist;
-            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(task_wPerf)).set_execution_time_dist(new_execution_time_dist);
-            GaussianDist new_g_et = dag_tasks_updated.GetTask(i).getExecGaussian();
-            const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(i)).setExecGaussian(new_g_et);
-        }        
-        opt.OptimizeIncre_w_TL(dag_tasks, n);
+        // update execution_time_dist for task_wPerf
+        double mu = res_opt.id2time_limit[task_wPerf];
+        GaussianDist g = GaussianDist(mu, 0.01);
+        FiniteDist eTDist = FiniteDist(g, mu, mu, 1);
+        const_cast<SP_OPT_PA::Task&>(dag_tasks_updated.GetTask(task_wPerf)).set_execution_time_dist(eTDist);
+        const_cast<SP_OPT_PA::Task&>(dag_tasks_updated.GetTask(task_wPerf)).setExecGaussian(g);  
+
+        opt.OptimizeIncre_w_TL(dag_tasks_updated, n);
         res_opt = opt.CollectResults();
         
         cpu_util = 0.0;

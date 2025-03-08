@@ -42,6 +42,7 @@ std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
 
 void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
+    // printf("Ryan %s: opt_sp=%f, optimizer.opt_sp_=%f\n",__func__,opt_sp_,optimizer.opt_sp_);
     if (optimizer.opt_sp_ > opt_sp_) {
         opt_sp_ = optimizer.opt_sp_;
         opt_pa_ = optimizer.opt_pa_;
@@ -50,6 +51,7 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
         res_opt_.UpdatePriorityVec(opt_pa_);
         res_opt_.sp_opt = opt_sp_;
 
+         
         if (GlobalVariables::debugMode) {
             std::cout << "Time limit: \n";
             for (double time : time_limits) std::cout << time << " ";
@@ -68,12 +70,14 @@ void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
         DAG_Model dag_tasks_cur =
             UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
         if (timelimit2optimizer_.count(time_limits)) {
+            //printf("%s Ryan: OPtimizeIncre...\n",__func__);
             OptimizePA_Incre& optimizer = timelimit2optimizer_[time_limits];
             optimizer.OptimizeIncre(
                 dag_tasks_cur);  // enforce the current time limit option
             UpdateRecords(optimizer, time_limits);
             optimizer.UpdateDAG(dag_tasks_cur);
         } else {
+            //printf("%s Ryan: scratch ...\n",__func__);
             OptimizePA_Incre optimizer(dag_tasks_cur, sp_para_cur);
             optimizer.OptimizeFromScratch(K);
             timelimit2optimizer_[time_limits] = optimizer;
@@ -81,6 +85,7 @@ void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
         }
         auto finish_time = CurrentTimeInProfiler;
         double time_taken = GetTimeTaken(start_time, finish_time);
+        // printf("---- %s Ryan: evaluating one time limit option %f\n",__func__,time_taken);
         // CoutWarning("Time taken for evaluating one time limit option: " + std::to_string(time_taken));
         return;
     } else {
@@ -97,17 +102,24 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
     std::vector<double> time_limits;
     time_limits.reserve(dag_tasks_.tasks.size());
     TraverseTimeLimitOptions(K, 0, time_limits);
-    std::cout << "************Finish running the scratch run***************\n";
+    //std::cout << "************Finish running the scratch run***************\n";
     return opt_pa_;
 }
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
+    // RYAN_20250308
+    // bugfix: should reset it.
+    // If previous high value is kept, and this time sp is never better than previous one,
+    // then none of the result in this round will be selected.
+    opt_sp_ = 0.0;
+
     dag_tasks_ = dag_tasks_update;
     time_limit_option_for_each_task_ =
         RecordCloseTimeLimitOptions(dag_tasks_update);
 
     std::vector<double> time_limits;
     time_limits.reserve(dag_tasks_.tasks.size());
+    // printf("%s RYAN: K=%d\n",__func__,K);
     TraverseTimeLimitOptions(K, 0, time_limits);
     return opt_pa_;
 }
