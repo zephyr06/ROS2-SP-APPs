@@ -2,7 +2,7 @@
 PROJECT_ROOT="/home/zephyr/Programming/ROS2-SP-APPs"
 # Set the parent directory path and tar.gz filename
 PARENT_DIR="$(pwd)"
-TAR_FILE="experiments_all__20241210091650"  # Replace with your actual tar.gz filename
+TAR_FILE="experiments_all__20250308153057"  # Replace with your actual tar.gz filename
 TAR_FILE_complete=$TAR_FILE.tar.gz
 
 # Configurable folder names
