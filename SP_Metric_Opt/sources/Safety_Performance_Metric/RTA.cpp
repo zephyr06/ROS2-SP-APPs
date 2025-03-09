@@ -89,7 +89,10 @@ std::unordered_map<int, TaskSet> ExtractTaskSetPerProcessor(
 
 std::vector<FiniteDist> ProbabilisticRTA_TaskSet(const TaskSet& tasks) {
     std::unordered_map<int, int> task_id2index;
-    for (uint i = 0; i < tasks.size(); i++) task_id2index[tasks[i].id] = i;
+    for (uint i = 0; i < tasks.size(); i++) {
+        //printf("RYAN %s i=%d, tasks[i].id=%d\n",__func__,i,tasks[i].id);
+        task_id2index[tasks[i].id] = i;
+    }
 
     std::unordered_map<int, TaskSet> processor_task_set =
         ExtractTaskSetPerProcessor(tasks);

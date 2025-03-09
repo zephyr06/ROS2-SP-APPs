@@ -160,6 +160,22 @@ class TaskSetForTest_robotics_v19_2 : public ::testing::Test {
     int N = dag_tasks.tasks.size();
 };
 
+class TestDDLMiss : public ::testing::Test {
+    public:
+     void SetUp() override {
+         std::string file_name = "test_ddl_miss";
+         std::string path =
+             GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+         dag_tasks = ReadDAG_Tasks(path, 5);
+         sp_parameters = ReadSP_Parameters(path);
+     }
+ 
+     // data members
+     DAG_Model dag_tasks;
+     SP_Parameters sp_parameters;
+     int N = dag_tasks.tasks.size();
+};
+
 TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
@@ -490,6 +506,35 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
     }
 }
 
+TEST_F(TestDDLMiss, test_ddl_miss) {
+    // the very last task has high utilization
+    // the last one should definitely miss deadline!
+    double cpu_util = 0.0;
+    for (int i=0;i<dag_tasks.tasks.size();i++) {
+        double mu = dag_tasks.tasks[i].execution_time_dist.GetAvgValue();
+        printf("task%d, period=%d, deadline=%.0f, mu=%.2f\n",i,
+            dag_tasks.tasks[i].period,  dag_tasks.tasks[i].deadline, mu);
+        cpu_util += mu/dag_tasks.tasks[i].period;
+    }
+    printf("overall cpu util=%.2f\n\n",cpu_util);
+
+    std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(dag_tasks.tasks);
+    for (int i = 0; i < rtas.size(); i++) {
+        std::cout << "rtas["<<i<<"]: ..."<<std::endl;
+        rtas[i].print();
+    }
+    printf("\n");
+    for (int i = 0; i < dag_tasks.tasks.size(); i++) {
+        double ddl_miss_chance = GetDDL_MissProbability(rtas[i], dag_tasks.tasks[i].deadline);
+        printf("task%d, ddl_miss_chance=%.2f\n",i,ddl_miss_chance);
+
+        if (i == dag_tasks.tasks.size()-1) {
+            EXPECT_GT(ddl_miss_chance, 0.99999);
+        } else {
+            EXPECT_LT(ddl_miss_chance, 0.00001);
+        }
+    }
+}
 
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);

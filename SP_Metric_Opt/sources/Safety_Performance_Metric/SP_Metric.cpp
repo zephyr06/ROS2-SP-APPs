@@ -85,6 +85,8 @@ double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
 //     return sp_overall;
 // }
 
+//#define TMP_DBG
+
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters) {
                       
@@ -102,15 +104,23 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
     // return ObtainSP(rtas, deadlines, sp_parameters.thresholds_node,
     //                 sp_parameters.weights_node);
     double sp_overall = 0;
+    #if defined(TMP_DBG)
+    std::vector<double> ddl_miss_chances;
+    #endif
+    //std::cout<<std::endl;
     for (int i = 0; i < tasks.size(); i++) {
         int task_id = tasks[i].id;
         double ddl_miss_chance =
             GetDDL_MissProbability(rtas[i], tasks[i].deadline);
+        #if defined(TMP_DBG)
+        ddl_miss_chances.push_back(ddl_miss_chance);
+        #endif
+
 #if defined(RYAN_HE_CHANGE_DEBUG)
         double weight = sp_parameters.weights_node.at(task_id);
         double sp_threshold = sp_parameters.thresholds_node.at(task_id);
         if (GlobalVariables::debugMode & DBG_PRT_MSK_SP_Metric) {
-            std::cout << "####ObtainSP_TaskSet: task_id="<<task_id;
+            std::cout << "####ObtainSP_TaskSet: task_id="<<task_id<<", deadline="<<tasks[i].deadline<<", prd="<<tasks[i].period;
             std::cout<<", ddl_miss_chance="<<ddl_miss_chance<<", weight="<<weight;
             std::cout<<", sp_threshold="<<sp_threshold<<", SP_Func ... "<<std::endl;
         }
@@ -129,12 +139,38 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
         // however, to break tie, we still want to select the one with smaller execution time
         if (ddl_miss_chance>=0.99999) {
             double v = tasks[i].execution_time_dist.GetAvgValue();
-            // printf("-------- %s task%d, reduce SP further for ddl_miss==1, EtAvg=%.4f, deadline=%f, sp=%f\n",
-            //   __func__,i,v,tasks[i].deadline,sp_overall);
+            //printf("-------- Ryan %s task%d, reduce SP further for ddl_miss==1, EtAvg=%.4f, deadline=%f, sp=%f\n",
+            //    __func__,i,v,tasks[i].deadline,sp_overall);
             sp_overall -= v/tasks[i].deadline*0.001;
             // printf("sp=%f\n",sp_overall);
         }
     }
+
+    #if defined(TMP_DBG)
+    int n = ddl_miss_chances.size();
+    if (ddl_miss_chances[n-1] < 0.3) {
+        printf("!!!!!!!!Ryan %s: ddl_miss_chances = ",__func__);
+        for (int i = 0; i < n; i++) {
+            printf("%.2f ",ddl_miss_chances[i]);
+        }
+        printf("\n");
+
+        printf("!!!!!!!!Ryan %s: tasks ...\n",__func__);
+        for (int i = 0; i < tasks.size(); i++) {
+            printf("id=%d, deadline=%.2f, et=%.2f, period=%d\n",
+                tasks[i].id,tasks[i].deadline,tasks[i].execution_time_dist.GetAvgValue(),tasks[i].period);
+        }
+
+        printf("!!!!!!!!Ryan %s:rtas ...",__func__);
+        for (int i = 0; i < rtas.size(); i++) {
+            std::cout << "rtas["<<i<<"]: "<<std::endl;
+            rtas[i].print();
+        }
+
+    }
+    #endif
+
+    // printf("Ryan %s this sp_overall = %f\n",__func__,sp_overall);
     return sp_overall;
 }
 

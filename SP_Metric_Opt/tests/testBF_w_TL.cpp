@@ -124,6 +124,7 @@ class TaskSetForTest_robotics_v19 : public ::testing::Test {
     SP_Parameters sp_parameters;
     int N = dag_tasks.tasks.size();
 };
+
 TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
@@ -186,7 +187,7 @@ TEST_F(TaskSetForTest_robotics_v19, EnumeratePA_with_TimeLimits_2) {
 }
 
 TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, ObtainSP_DAG) {
-    std::cout << "\n\n\n Start Running the Long Test, ObtainSP_DAG:\n\n\n";
+    std::cout << "\n\n\nStart Running the Long Test, ObtainSP_DAG:\n\n\n";
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     auto start_time = CurrentTimeInProfiler;
     // ResourceOptResult res_opt =
@@ -208,6 +209,57 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
     double time_taken = GetTimeTaken(start_time, finish_time);
     std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
               << time_taken << std::endl;
+    std::cout<<"task 0 exeT: "<<res_opt.id2time_limit[0] << std::endl;
+}
+
+TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
+    EnumeratePA_with_TimeLimits_sorted) {
+    std::cout << "\n\n\nStart Running the Long Test sorted options:\n\n\n";
+    auto start_time = CurrentTimeInProfiler;
+    ResourceOptResult res_opt =
+        EnumeratePA_with_TimeLimits_sortOptionsFirst(dag_tasks, sp_parameters);
+    auto finish_time = CurrentTimeInProfiler;
+    double time_taken = GetTimeTaken(start_time, finish_time);
+    std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
+              << time_taken << std::endl;
+    std::cout<<"task 0 exeT: "<<res_opt.id2time_limit[0] << std::endl;
+}
+
+TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, enumperate_ExeTOptions) {
+    std::cout << "\n\n\nTaskSetForTest_taskset_cfg_10_1_gen_1: enumperate_ExeTOptions:\n\n\n";
+    std::vector<std::vector<double>> options = enumerate_all_exeTOptions(dag_tasks);
+
+    double util_regular_tasks = 0.0;
+    std::vector<double> prds;
+    for (int i=0;i<dag_tasks.tasks.size();i++) {
+        double prd = dag_tasks.tasks[i].period;
+        prds.push_back(prd);
+        if (dag_tasks.tasks[i].timePerformancePairs.size() == 0) {
+            double mu = dag_tasks.tasks[i].getExecGaussian().mu;
+            util_regular_tasks += mu/prd;
+        }
+    }
+    double last_u;
+    for (int i=0;i<options.size();i++) {
+        // iter over options
+        double u = util_regular_tasks;
+        for (int k=0;k<options[i].size();k++) {
+            // iter over tasks
+            if ( options[i][k] > 0.0 ) {
+                u += options[i][k]/prds[k];
+            }
+        }
+        if (i==0) {
+            last_u = u;
+        } else {
+            double last_abs = abs(last_u-1.0);
+            double this_abs = abs(u-1.0);
+            // the prio should be closer to 100% utilization
+            EXPECT_LT(last_abs-this_abs, 0.0);
+            last_u = u;
+        }
+    }
+    std::cout << "TaskSetForTest_taskset_cfg_10_1_gen_1: enumperate_ExeTOptions done\n";    
 }
 
 TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
@@ -231,8 +283,8 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
         cpu_util += mu/prd;
     }
 	// print cpu_util, and id2time_limit for task 3
-    printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",0, 
-        cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]); 
+    //printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",0, 
+    //    cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]); 
     
 	// for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
 	// we expect res_opt.id2time_limit[task_wPerf] increase/descrease while cpu_util descrease/increase
@@ -254,8 +306,8 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
             double mu = g_et.mu;
             cpu_util += mu/prd;
         }        
-        printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",k, 
-            cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);         
+        //printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",k, 
+        //    cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);         
     }
 }
 

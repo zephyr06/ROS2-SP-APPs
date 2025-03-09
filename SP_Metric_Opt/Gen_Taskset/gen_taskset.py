@@ -56,6 +56,8 @@ g_min_performance_records_time_step = 0.5
 g_sel_n_perf_record_task = 2
 g_min_prd_with_perf_records = 100
 g_total_weights = 5
+g_perf_task_weight_scale = 1
+g_n_perf_entries = 4 # 10
 
 g_n_tasks = 10
 g_n_big_periods = 2
@@ -1007,6 +1009,7 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_total_weights
     global g_final_Et_over_period_range
+    global g_n_perf_entries
 
     out = {'tasks': []}
     n = len(inp['tasks'])
@@ -1063,7 +1066,9 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
         if add_perf_records:
             if i in perf_sel:
 
-                n_steps = 9 # 0.1 to 1
+                #n_steps = 9 # 0.1 to 1
+                n_steps = g_n_perf_entries-1
+
                 performance_records_time = []
                 performance_records_perf = []
 
@@ -1093,8 +1098,13 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
                 performance_records_perf_s = " ".join(f"{x:.1f}" for x in performance_records_perf)
                 t['performance_records_time'] = performance_records_time_s
                 t['performance_records_perf'] = performance_records_perf_s
-                t['sp_weight'] = 2
-                total_weights += 1
+
+                #t['sp_weight'] = 2
+                #total_weights += 1
+                total_weights -= t['sp_weight']
+                t['sp_weight'] = g_perf_task_weight_scale * t['sp_weight']
+                total_weights += t['sp_weight']
+
                 #n_perf_added += 1
 
         out['tasks'].append(t)

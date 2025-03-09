@@ -497,6 +497,14 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
 
                 const DAG_Model &dag_tasks_const = dag_tasks_vecs[interval_idx];
                 std::cout<<"SimulatedCSP_SingleCore_vecs: dag_tasks interval "<<interval_idx<<std::endl;
+                double util_regular_tasks = 0.0;
+                for (int i=0;i<ntasks;i++) {
+                    if (exeSel[i]<0) {
+                        double mu = dag_tasks_const.GetTask(i).getExecGaussian().mu;
+                        util_regular_tasks += mu/dag_tasks_const.GetTask(i).period;
+                        // std::cout<<"regular task "<<i<<": incremental, exet="<<mu<<std::endl;
+                    }
+                }                
                 sp_parameters = sp_parameters_vecs[interval_idx];
                 tasks_info = tasks_info_vecs[interval_idx];                    
                 interval_idx += 1;
@@ -509,19 +517,25 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     if (time_now==0) {
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
+                        printf("INCR time=0, regular cpu_util=%.2f\n", util_regular_tasks);
                         PriorityVec pa_opt = inc_opt.OptimizeFromScratch_w_TL(
                             GlobalVariables::Layer_Node_During_Incremental_Optimization);
                     } else {
                         //std::cout<<ppre<<"INCR time="<<time_now<<", calc prio ..."<<std::endl;
-
+                        double u = util_regular_tasks;
                         for (int i=0;i<ntasks;i++) {
-                            if (exeSel[i]<0) continue;
+                            if (exeSel[i]<0) {
+                                continue;
+                            }
                             double mu = exeSel[i];
+                            u += mu/dag_tasks_const.GetTask(i).period;
                             GaussianDist g = GaussianDist(mu, 0.01);
                             FiniteDist eTDist = FiniteDist(g, mu, mu, 1);
+                            std::cout<<"task "<<i<<": incremental, set exet="<<mu<<std::endl;
                             const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).set_execution_time_dist(eTDist);
                             const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).setExecGaussian(g);  
                         }
+                        printf("INCR time=%llu, regular/all cpu_util=%.2f/%.2f\n", time_now, util_regular_tasks,u);
 
                         PriorityVec pa_opt = inc_opt.OptimizeIncre_w_TL(dag_tasks_const,
                             GlobalVariables::Layer_Node_During_Incremental_Optimization);                    
@@ -533,11 +547,16 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     for (int i=0;i<ntasks;i++) {
                         if ( exeSel[i]>0 ) {
                             exeSel[i] = res.id2time_limit[i];
-                            std::cout<<"task "<<i<<": incremental exet="<<exeSel[i]<<std::endl;
+                            std::cout<<"task "<<i<<": incremental return exet="<<exeSel[i]<<std::endl;
                         }
                     }
                 } else {
                     res = EnumeratePA_with_TimeLimits(dag_tasks_const, sp_parameters);
+                    for (int i=0;i<ntasks;i++) {
+                        if ( res.id2time_limit[i]>0 ) {
+                            std::cout<<"task "<<i<<": BR return exet="<<res.id2time_limit[i]<<std::endl;
+                        }
+                    }                    
                 }
             }
 
