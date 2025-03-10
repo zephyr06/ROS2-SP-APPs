@@ -92,8 +92,8 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
                 pq.push(new_path);
                 if (GlobalVariables::debugMode) {
                     std::cout << "Priority " << curr_priority << ":\n";
-                    std::cout << "partial paths:\n";
                     std::cout << "SP lost: " << new_path.sp_lost << " ";
+                    std::cout << "partial paths:\n";
                     for (int j = 0; j < new_path.pa_vec_lower_pri.size(); j++) {
                         std::cout << new_path.pa_vec_lower_pri[j] << " ";
                     }
