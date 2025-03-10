@@ -20,6 +20,7 @@ namespace GlobalVariables {
 #define DBG_PRT_MSK_OptimizeSP_TL_BF 256
 #define DBG_PRT_MSK_SP_Metric 512
 #define DBG_PRT_MSK_TSK 1024
+#define DBG_PRT_MSK_DBG_DDL_SP 0x8000 // 32768, debug for deadline miss and SP calcualation trace
 
 #define DBG_PRT_MSK_ALL \
     (DBG_PRT_MSK_MAIN | DBG_PRT_MSK_OptimizeSP_TL_BF | DBG_PRT_MSK_SP_Metric | \

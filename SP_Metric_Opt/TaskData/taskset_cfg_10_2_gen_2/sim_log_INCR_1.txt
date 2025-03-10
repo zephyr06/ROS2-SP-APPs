@@ -1,0 +1,6 @@
+Fake bad job insert: task_id=9, jobId=126, start=504000, finish=512000, exe_time=1
+Deadline miss: taskId=9, jobId=125, start=500192, finish=504286, deadline=504000, exe_time=1711
+Fake bad job insert: task_id=9, jobId=128, start=512000, finish=520000, exe_time=1
+Deadline miss: taskId=9, jobId=127, start=508232, finish=512497, deadline=512000, exe_time=1711
+Fake bad job insert: task_id=9, jobId=130, start=520000, finish=528000, exe_time=1
+Deadline miss: taskId=9, jobId=129, start=516184, finish=520288, deadline=520000, exe_time=1711

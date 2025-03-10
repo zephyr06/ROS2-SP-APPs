@@ -278,7 +278,11 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                     //std::cout<<ppre<<": collect results ..."<<std::endl;
                     res = inc_opt.CollectResults();
                 } else {
-                    res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+                    if (priority_policy == "BR") {
+                        res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+                    } else { // BROPT
+                        res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+                    }
                 }
             }
 
@@ -496,7 +500,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                 }
 
                 const DAG_Model &dag_tasks_const = dag_tasks_vecs[interval_idx];
-                std::cout<<"SimulatedCSP_SingleCore_vecs: dag_tasks interval "<<interval_idx<<std::endl;
+                std::cout<<ppre<<"dag_tasks interval "<<interval_idx<<std::endl;
                 double util_regular_tasks = 0.0;
                 for (int i=0;i<ntasks;i++) {
                     if (exeSel[i]<0) {
@@ -517,6 +521,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     if (time_now==0) {
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
+                        std::cout<<ppre;
                         printf("INCR time=0, regular cpu_util=%.2f\n", util_regular_tasks);
                         PriorityVec pa_opt = inc_opt.OptimizeFromScratch_w_TL(
                             GlobalVariables::Layer_Node_During_Incremental_Optimization);
@@ -531,10 +536,11 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                             u += mu/dag_tasks_const.GetTask(i).period;
                             GaussianDist g = GaussianDist(mu, 0.01);
                             FiniteDist eTDist = FiniteDist(g, mu, mu, 1);
-                            std::cout<<"task "<<i<<": incremental, set exet="<<mu<<std::endl;
+                            std::cout<<ppre<<"task "<<i<<": incremental, set exet="<<mu<<std::endl;
                             const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).set_execution_time_dist(eTDist);
                             const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).setExecGaussian(g);  
                         }
+                        std::cout<<ppre;
                         printf("INCR time=%llu, regular/all cpu_util=%.2f/%.2f\n", time_now, util_regular_tasks,u);
 
                         PriorityVec pa_opt = inc_opt.OptimizeIncre_w_TL(dag_tasks_const,
@@ -547,14 +553,18 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     for (int i=0;i<ntasks;i++) {
                         if ( exeSel[i]>0 ) {
                             exeSel[i] = res.id2time_limit[i];
-                            std::cout<<"task "<<i<<": incremental return exet="<<exeSel[i]<<std::endl;
+                            std::cout<<ppre<<"task "<<i<<": incremental return exet="<<exeSel[i]<<std::endl;
                         }
                     }
                 } else {
-                    res = EnumeratePA_with_TimeLimits(dag_tasks_const, sp_parameters);
+                    if (priority_policy == "BR") {
+                        res = EnumeratePA_with_TimeLimits(dag_tasks_const, sp_parameters);
+                    } else {
+                        res = EnumeratePA_with_TimeLimits_sortOptionsFirst(dag_tasks_const, sp_parameters);
+                    }
                     for (int i=0;i<ntasks;i++) {
                         if ( res.id2time_limit[i]>0 ) {
-                            std::cout<<"task "<<i<<": BR return exet="<<res.id2time_limit[i]<<std::endl;
+                            std::cout<<ppre<<"task "<<i<<": BR return exet="<<res.id2time_limit[i]<<std::endl;
                         }
                     }                    
                 }
@@ -611,7 +621,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     // this is old priority. get it for debug
                     //std::cout<<ppre<<"get task "<<task_id<<"old priority ..."<<std::endl;
                     double priority = run_queue.tasks_info_.GetTask(task_id).get_priority();
-                    //std::cout<<ppre<<"task "<<task_id<<"old priority = "<<priority<<std::endl;
+                    //std::cout<<ppre<<"task "<<task_id<<" old priority = "<<priority<<std::endl;
 
                     double new_priority = tasks.size()-task_id-1;
                     run_queue.set_task_priority(task_id, new_priority);
@@ -909,7 +919,7 @@ Schedule SimulatedCSP_SingleCore_vecs(std::vector<DAG_Model> &dag_tasks_vecs,
         }
     }
 
-    if (priority_policy == "BR" || priority_policy == "INCR") {
+    if (priority_policy == "BR" || priority_policy == "BROPT" ||  priority_policy == "INCR") {
         return SimulatedCSP_SingleCore_CSP_vecs(dag_tasks_vecs, tasks_info_vecs, sp_parameters_vecs, processor_id, 
                                                 simt, priority_policy, fout, task_Ets, &task_Et_idx,flog,
                                                 reevaluate_prio_interval_ms);

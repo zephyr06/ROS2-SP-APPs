@@ -57,8 +57,10 @@ std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
 void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     if (optimizer.opt_sp_ > opt_sp_) {
-        printf("Ryan %s: optimizer.opt_sp_=%f > opt_sp=%f, update!\n", __func__,
-               optimizer.opt_sp_, opt_sp_);
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+            printf("DBG_PRT_MSK_DBG_DDL_SP %s: optimizer.opt_sp_=%f > opt_sp=%f, update!\n", __func__,
+                optimizer.opt_sp_, opt_sp_);
+        }
 
         opt_sp_ = optimizer.opt_sp_;
         opt_pa_ = optimizer.opt_pa_;
@@ -73,8 +75,10 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
                       << "opt_sp_ = " << opt_sp_ << std::endl;
         }
     } else {
-        printf("Ryan %s: optimizer.opt_sp_=%f <= opt_sp=%f, NOT update!\n",
-               __func__, optimizer.opt_sp_, opt_sp_);
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+            printf("DBG_PRT_MSK_DBG_DDL_SP %s: optimizer.opt_sp_=%f <= opt_sp=%f, NOT update!\n",
+                __func__, optimizer.opt_sp_, opt_sp_);
+        }
     }
 }
 
@@ -93,10 +97,12 @@ void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
                 printf("%.2f ", time_limits[i]);
         }
         if (timelimit2optimizer_.count(time_limits)) {
-            printf("%s Ryan: OptimizeIncre...\n", __func__);
-            for (int i = 0; i < time_limits.size(); i++)
-                printf("%.2f ", time_limits[i]);
-            printf("\n");
+            if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+                printf("DBG_PRT_MSK_DBG_DDL_SP %s : OptimizeIncre...\n", __func__);
+                for (int i = 0; i < time_limits.size(); i++)
+                    printf("%.2f ", time_limits[i]);
+                printf("\n");
+            }
             OptimizePA_Incre& optimizer = timelimit2optimizer_[time_limits];
             optimizer.OptimizeIncre(
                 dag_tasks_cur);  // enforce the current time limit option

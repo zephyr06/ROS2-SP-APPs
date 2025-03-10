@@ -85,7 +85,7 @@ double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
 //     return sp_overall;
 // }
 
-//#define TMP_DBG
+#define TMP_DBG
 
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters) {
@@ -104,17 +104,17 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
     // return ObtainSP(rtas, deadlines, sp_parameters.thresholds_node,
     //                 sp_parameters.weights_node);
     double sp_overall = 0;
-    #if defined(TMP_DBG)
+    
+    // FOR DEBUG PRINT
     std::vector<double> ddl_miss_chances;
-    #endif
+    
     //std::cout<<std::endl;
     for (int i = 0; i < tasks.size(); i++) {
         int task_id = tasks[i].id;
         double ddl_miss_chance =
             GetDDL_MissProbability(rtas[i], tasks[i].deadline);
-        #if defined(TMP_DBG)
+        
         ddl_miss_chances.push_back(ddl_miss_chance);
-        #endif
 
 #if defined(RYAN_HE_CHANGE_DEBUG)
         double weight = sp_parameters.weights_node.at(task_id);
@@ -146,29 +146,31 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
         }
     }
 
-    #if defined(TMP_DBG)
-    int n = ddl_miss_chances.size();
-    if (ddl_miss_chances[n-1] < 0.3) {
-        printf("!!!!!!!!Ryan %s: ddl_miss_chances = ",__func__);
-        for (int i = 0; i < n; i++) {
-            printf("%.2f ",ddl_miss_chances[i]);
-        }
-        printf("\n");
+    if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+        int n = ddl_miss_chances.size();
+        if (ddl_miss_chances[n-1] > 0.3) {
+            printf("DBG_PRT_MSK_DBG_DDL_SP: %s: ddl_miss_chances = ",__func__);
+            for (int i = 0; i < n; i++) {
+                printf("%.2f ",ddl_miss_chances[i]);
+            }
+            printf("\n");
 
-        printf("!!!!!!!!Ryan %s: tasks ...\n",__func__);
-        for (int i = 0; i < tasks.size(); i++) {
-            printf("id=%d, deadline=%.2f, et=%.2f, period=%d\n",
-                tasks[i].id,tasks[i].deadline,tasks[i].execution_time_dist.GetAvgValue(),tasks[i].period);
-        }
+            printf("DBG_PRT_MSK_DBG_DDL_SP: %s: tasks (id,deadline,et) ...\n",__func__);
+            for (int i = 0; i < tasks.size(); i++) {
+                printf("(%d,%.0f,%.2f) ",
+                    tasks[i].id,tasks[i].deadline,tasks[i].execution_time_dist.GetAvgValue());
+            }
+            printf("\n");
 
-        printf("!!!!!!!!Ryan %s:rtas ...",__func__);
-        for (int i = 0; i < rtas.size(); i++) {
-            std::cout << "rtas["<<i<<"]: "<<std::endl;
-            rtas[i].print();
+            printf("DBG_PRT_MSK_DBG_DDL_SP: %s:rtas ...\n",__func__);
+            for (int i = 0; i < rtas.size(); i++) {
+                if (ddl_miss_chances[i]>0.0) {
+                    std::cout << "rtas["<<i<<"]: ";
+                    rtas[i].print();
+                }
+            }
         }
-
     }
-    #endif
 
     // printf("Ryan %s this sp_overall = %f\n",__func__,sp_overall);
     return sp_overall;

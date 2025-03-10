@@ -1,123 +1,123 @@
   tasks:
     - id: 0
-      execution_time_mu: 329.5750680314543
-      execution_time_sigma: 55.67588968852019
+      execution_time_mu: 1.318301419217739
+      execution_time_sigma: 0.30798885104253443
+      execution_time_min: 1.0
+      execution_time_max: 2.3440562722754
+      period: 20
+      deadline: 20
+      processorId: 0
+      name: task_1
+      sp_threshold: 0.7776123327266002
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 1
+      execution_time_mu: 1.0038109965838304
+      execution_time_sigma: 0.021320802371892118
+      execution_time_min: 1.0
+      execution_time_max: 1.2825610015113962
+      period: 20
+      deadline: 20
+      processorId: 0
+      name: task_2
+      sp_threshold: 0.5643688024176817
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 2
+      execution_time_mu: 1.072188476937256
+      execution_time_sigma: 0.15159305511116222
+      execution_time_min: 1.0
+      execution_time_max: 1.881778776017705
+      period: 20
+      deadline: 20
+      processorId: 0
+      name: task_3
+      sp_threshold: 0.7730176912430878
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 3
+      execution_time_mu: 1.8459850293442963
+      execution_time_sigma: 0.29837103179711516
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 3.9068756726845466
+      period: 33
+      deadline: 33
+      processorId: 0
+      name: task_4
+      sp_threshold: 0.532935493597674
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 4
+      execution_time_mu: 1.9147433791477888
+      execution_time_sigma: 0.37422334195671964
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 3.4706311166402153
+      period: 33
+      deadline: 33
+      processorId: 0
+      name: task_5
+      sp_threshold: 0.5335312191106638
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 5
+      execution_time_mu: 1.9771356398592186
+      execution_time_sigma: 0.3236183629770413
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 3.2432471792004343
+      period: 33
+      deadline: 33
+      processorId: 0
+      name: task_6
+      sp_threshold: 0.759871492592528
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 6
+      execution_time_mu: 3.4519358554887107
+      execution_time_sigma: 0.7300766504077374
+      execution_time_min: 2.5
+      execution_time_max: 5.658051814460063
+      period: 50
+      deadline: 50
+      processorId: 0
+      name: task_7
+      sp_threshold: 0.5269589161648907
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 7
+      execution_time_mu: 6.555132617199936
+      execution_time_sigma: 1.0776208978476336
+      execution_time_min: 5.0
+      execution_time_max: 10.106135110402713
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_8
+      sp_threshold: 0.8316009714443227
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 8
+      execution_time_mu: 60.082670578153895
+      execution_time_sigma: 12.419936647662157
+      execution_time_min: 50.0
+      execution_time_max: 95.47438184535808
+      period: 1000
+      deadline: 1000
+      processorId: 0
+      name: task_9
+      sp_threshold: 0.5418053501284371
+      sp_weight: 0.45454545454545453
+      total_running_time: 1000000
+    - id: 9
+      execution_time_mu: 303.9099816678629
+      execution_time_sigma: 54.518536087014574
       execution_time_min: 200.0
       execution_time_max: 3600.0
       period: 4000
       deadline: 4000
       processorId: 0
-      name: task_1
-      sp_threshold: 0.8882918649315057
-      sp_weight: 2.631578947368421
-      total_running_time: 1000000
-      performance_records_time: 200.000 1333.333 2466.667 3600.000
-      performance_records_perf: 0.1 0.2 0.3 0.4
-    - id: 1
-      execution_time_mu: 102.57182407863338
-      execution_time_sigma: 6.790011408043516
-      execution_time_min: 100.0
-      execution_time_max: 128.90146780560423
-      period: 2000
-      deadline: 2000
-      processorId: 0
-      name: task_2
-      sp_threshold: 0.5848935902896644
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 2
-      execution_time_mu: 1.9766621283685213
-      execution_time_sigma: 0.3177232792102041
-      execution_time_min: 1.6500000000000001
-      execution_time_max: 3.270928780854547
-      period: 33
-      deadline: 33
-      processorId: 0
-      name: task_3
-      sp_threshold: 0.8140515729600896
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 3
-      execution_time_mu: 5.610868721393086
-      execution_time_sigma: 0.8814140970601549
-      execution_time_min: 5.0
-      execution_time_max: 9.50975699676802
-      period: 100
-      deadline: 100
-      processorId: 0
-      name: task_4
-      sp_threshold: 0.853383135784748
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 4
-      execution_time_mu: 1.0281115950763702
-      execution_time_sigma: 0.07735443091747228
-      execution_time_min: 1.0
-      execution_time_max: 1.6680129493042226
-      period: 20
-      deadline: 20
-      processorId: 0
-      name: task_5
-      sp_threshold: 0.7949956412690571
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 5
-      execution_time_mu: 2.505874677966774
-      execution_time_sigma: 0.056725651368326295
-      execution_time_min: 2.5
-      execution_time_max: 3.5847403644241123
-      period: 50
-      deadline: 50
-      processorId: 0
-      name: task_6
-      sp_threshold: 0.5815094007518078
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 6
-      execution_time_mu: 2.5398775952121424
-      execution_time_sigma: 0.163548003947381
-      execution_time_min: 2.5
-      execution_time_max: 4.1256181012989215
-      period: 50
-      deadline: 50
-      processorId: 0
-      name: task_7
-      sp_threshold: 0.686785334538612
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 7
-      execution_time_mu: 1.0115621074171472
-      execution_time_sigma: 0.0427239182128921
-      execution_time_min: 1.0
-      execution_time_max: 1.4847816391343183
-      period: 20
-      deadline: 20
-      processorId: 0
-      name: task_8
-      sp_threshold: 0.5355941149934083
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 8
-      execution_time_mu: 1.9584001921912406
-      execution_time_sigma: 0.37213425040552234
-      execution_time_min: 1.6500000000000001
-      execution_time_max: 4.0786075215526365
-      period: 33
-      deadline: 33
-      processorId: 0
-      name: task_9
-      sp_threshold: 0.6168284597914887
-      sp_weight: 0.2631578947368421
-      total_running_time: 1000000
-    - id: 9
-      execution_time_mu: 1.8762951793206741
-      execution_time_sigma: 0.2928272532422703
-      execution_time_min: 1.6500000000000001
-      execution_time_max: 3.313442804112277
-      period: 33
-      deadline: 33
-      processorId: 0
       name: task_10
-      sp_threshold: 0.5404530773452108
-      sp_weight: 0.2631578947368421
+      sp_threshold: 0.8152317753721078
+      sp_weight: 0.9090909090909091
       total_running_time: 1000000
+      performance_records_time: 200.000 577.778 955.556 1333.333 1711.111 2088.889 2466.667 2844.444 3222.222 3600.000
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0

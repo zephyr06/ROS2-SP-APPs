@@ -47,7 +47,7 @@ void RunQueue2::insert(JobCEC job, LLint time_now) {
 LLint RunQueue2::FindPrev(LLint task_id, LLint job_id, LLint time_now, LLint deadlineJob) {
     Task taskCurr = tasks_info_.GetTask(task_id);
 	
-	// priority computation should also include deadline etc.
+	  // priority computation should also include deadline etc.
     double priorityCurr = taskCurr.get_priority2(time_now,deadlineJob,job_id);
 
 #if defined(RYAN_HE_CHANGE_DEBUG)

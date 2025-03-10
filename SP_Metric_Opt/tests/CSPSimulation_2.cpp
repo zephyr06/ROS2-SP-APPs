@@ -94,7 +94,7 @@ int main(int argc, char *argv[]) {
     program.add_argument("--scheduler")
         .default_value(std::string("BR"))
         .help(
-            "scheduler  which can be BR, INCR, RM, RM_FAST, RM_SLOW, RM, CFS");            
+            "scheduler  which can be BR, BROPT, INCR, RM, RM_FAST, RM_SLOW, RM, CFS");            
     program.add_argument("--verbose")
         .default_value(std::string("0"))
         .help(
@@ -128,7 +128,7 @@ int main(int argc, char *argv[]) {
     GlobalVariables::debugMode = verbose;
      
     string sched_policy = program.get<std::string>("--scheduler");
-    if ( sched_policy == "BR" || sched_policy == "INCR" || sched_policy == "RM" || 
+    if ( sched_policy == "BR" || sched_policy == "BROPT" || sched_policy == "INCR" || sched_policy == "RM" || 
          sched_policy == "RM_FAST" || sched_policy == "RM_SLOW" || sched_policy == "CFS" ) {
         std::cout << "Scheduler type: " << sched_policy << std::endl;
     } else {
