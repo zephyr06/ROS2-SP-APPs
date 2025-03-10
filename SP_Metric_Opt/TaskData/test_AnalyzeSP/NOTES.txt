@@ -1,0 +1,3 @@
+put it in SP_Metric_Opt
+run 
+./tests/AnalyzeSP_Metric --file_path TaskData/test_AnalyzeSP/taskset_characteristics_0.yaml --data_dir TaskData/test_AnalyzeSP

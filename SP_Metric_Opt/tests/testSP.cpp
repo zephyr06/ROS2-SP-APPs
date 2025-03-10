@@ -65,6 +65,23 @@ class TaskSetForTest_2tasks1chain : public ::testing::Test {
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
 };
+
+class Test_testAnalyzeSP : public ::testing::Test {
+    public:
+    void SetUp() override {
+        std::string file_name = "taskset_characteristics_0";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/test_AnalyzeSP/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+
+    // data members
+    // TaskSet tasks;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;    
+};
+
 TEST_F(TaskSetForTest_2tasks1chain, reaction_time_full_utilization) {
     dag_tasks.tasks[0].setExecutionTime(3);
     dag_tasks.tasks[1].setExecutionTime(4);
@@ -346,6 +363,106 @@ TEST_F(TaskSetForTest_robotics_v20, ObtainSPFromRTAFiles) {
                              tsp_ext_path, chain0_path, file_path_ref);
     EXPECT_EQ(2.0, sp_value_overall);
 }
+
+TEST_F(Test_testAnalyzeSP, ObtainSPFromRTAFiles2 ){
+    string file_path_ref = GlobalVariables::PROJECT_PATH + "TaskData/test_AnalyzeSP/" + "taskset_characteristics_0.yaml";
+    string data_dir = GlobalVariables::PROJECT_PATH + "TaskData/test_AnalyzeSP";
+    int dbg = 1;
+    double sp_value_overall = ObtainSPFromRTAFiles2(file_path_ref, data_dir, dbg);
+
+    EXPECT_NEAR(sp_value_overall, 3.3333, 0.0001);
+    std::cout << "SP-Metric: " << sp_value_overall << "\n";
+}
+
+TEST_F(Test_testAnalyzeSP, GetAvgTaskPerfTerm ){
+    int granularity = GlobalVariables::Granularity;
+
+    // task 8 and 9
+    string data_dir = GlobalVariables::PROJECT_PATH + "TaskData/test_AnalyzeSP/";
+
+    for (int i = 8; i < dag_tasks.tasks.size(); i++) {
+        std::string rst_path = data_dir + dag_tasks.tasks[i].name + "_response_time.txt";
+        std::vector<double> rst_data = ReadTxtFile(rst_path);
+        printf("task %d, rst_data size %d\n", i, (int)rst_data.size());
+        FiniteDist dist = FiniteDist(rst_data, granularity);
+        EXPECT_GT(dist.distribution.size(), 0);
+
+        printf("response_time dist ...");
+        dist.print();
+
+        if ( dag_tasks.tasks[i].timePerformancePairs.size() > 0 ) {
+            std::string ext_path = data_dir + dag_tasks.tasks[i].name + "_execution_time.txt";
+
+            std::vector<double> ext_times = ReadTxtFile(ext_path);
+            int n = ext_times.size();
+            if (i==8) {
+                EXPECT_EQ(n, 5);
+            } else {
+                EXPECT_EQ(n, 3);
+            }
+            printf("task %d, ext_times: ", i);
+            for (int k=0;k<n;k++) {
+                printf("%.2f ", ext_times[k]);
+            }
+            printf("\n");
+
+            double weight = GetAvgTaskPerfTerm(ext_path, dag_tasks.tasks[i].timePerformancePairs);
+            sp_parameters.update_node_weight(i, weight);
+            std::cout << "ext_path = " << ext_path << ", weight = " << weight << std::endl;
+            printf("timePerformancePairs: (time_limit, performance) ...\n");
+            for (int k=0;k<dag_tasks.tasks[i].timePerformancePairs.size();k++) {
+                printf("(%.2f,%.1f) ", dag_tasks.tasks[i].timePerformancePairs[k].time_limit,
+                    dag_tasks.tasks[i].timePerformancePairs[k].performance );
+            }
+
+            if (i==8) {
+                // 2 really small and 3 max exe
+                EXPECT_NEAR(weight, (0.1*2+1.0*3)/5, 0.0001);
+            } else {
+                // 2 really small and 1 max exe
+                EXPECT_NEAR(weight, (0.1*2+1.0*1)/3, 0.0001);
+            }
+            printf("\n\n");
+        } else {
+            std::cout << "ERROR! task_id="<<i<<", no timePerformancePairs" << std::endl;
+        }
+    }
+
+    std::vector<FiniteDist> node_rts_dists;
+    for (int i = 0; i < dag_tasks.tasks.size(); i++) {
+        std::string rst_path = data_dir + dag_tasks.tasks[i].name + "_response_time.txt";
+        std::vector<double> rst_data = ReadTxtFile(rst_path);
+        printf("task %d, rst_data size %d\n", i, (int)rst_data.size());
+        FiniteDist dist = FiniteDist(rst_data, granularity);
+        node_rts_dists.push_back(dist);
+
+        if ( dag_tasks.tasks[i].timePerformancePairs.size() > 0 ) {
+            std::string ext_path = data_dir + dag_tasks.tasks[i].name + "_execution_time.txt";
+            double weight = GetAvgTaskPerfTerm(ext_path, dag_tasks.tasks[i].timePerformancePairs);
+            sp_parameters.update_node_weight(i, weight);
+        }        
+    }
+
+    double sp_overall = 0;
+    for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
+        int task_id = dag_tasks.tasks[i].id;
+        double weight = sp_parameters.weights_node.at(task_id);
+        double threshold = sp_parameters.thresholds_node.at(task_id);
+
+        printf("%d, task%d: deadline=%.0f, weight=%f, threshold=%f\n",
+            i,task_id,dag_tasks.tasks[i].deadline, weight, threshold);
+        printf("response_time dist ...");
+        node_rts_dists[i].print();
+
+        double ddl_miss_chance = GetDDL_MissProbability(node_rts_dists[i],dag_tasks.tasks[i].deadline);
+        double sp_val = SP_Func(ddl_miss_chance, threshold) * weight;
+        printf("ddl_miss_chance = %f, sp_val=%f\n\n", ddl_miss_chance,sp_val);
+        sp_overall += sp_val;
+    }
+    printf("sp_overall = %f\n", sp_overall);  
+    EXPECT_NEAR(sp_overall, 3.3333, 0.0001);
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

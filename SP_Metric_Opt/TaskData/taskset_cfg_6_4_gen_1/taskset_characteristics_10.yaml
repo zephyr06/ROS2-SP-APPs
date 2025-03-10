@@ -1,0 +1,75 @@
+  tasks:
+    - id: 0
+      execution_time_mu: 2.8375999490115045
+      execution_time_sigma: 0.8506626238631533
+      execution_time_min: 1.0268629506301823
+      execution_time_max: 5.474433940441463
+      period: 20
+      deadline: 20
+      processorId: 0
+      name: task_1
+      sp_threshold: 0.5676441251271065
+      sp_weight: 0.7142857142857143
+      total_running_time: 1000000
+    - id: 1
+      execution_time_mu: 3.6704891108433295
+      execution_time_sigma: 1.2196989542641843
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 8.212198676488473
+      period: 33
+      deadline: 33
+      processorId: 0
+      name: task_2
+      sp_threshold: 0.7984635231474566
+      sp_weight: 0.7142857142857143
+      total_running_time: 1000000
+    - id: 2
+      execution_time_mu: 4.272834690269714
+      execution_time_sigma: 1.0279807542459785
+      execution_time_min: 2.5
+      execution_time_max: 7.724847719454701
+      period: 50
+      deadline: 50
+      processorId: 0
+      name: task_3
+      sp_threshold: 0.5988400992465925
+      sp_weight: 0.7142857142857143
+      total_running_time: 1000000
+    - id: 3
+      execution_time_mu: 11.890984368025842
+      execution_time_sigma: 3.502065412572094
+      execution_time_min: 5.0
+      execution_time_max: 23.94477844047293
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_4
+      sp_threshold: 0.6060385501123167
+      sp_weight: 0.7142857142857143
+      total_running_time: 1000000
+    - id: 4
+      execution_time_mu: 105.67768498346682
+      execution_time_sigma: 37.22985666219852
+      execution_time_min: 50.0
+      execution_time_max: 900.0
+      period: 1000
+      deadline: 1000
+      processorId: 0
+      name: task_5
+      sp_threshold: 0.8725843976360452
+      sp_weight: 1.4285714285714286
+      total_running_time: 1000000
+      performance_records_time: 50.000 144.444 238.889 333.333 427.778 522.222 616.667 711.111 805.556 900.000
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+    - id: 5
+      execution_time_mu: 377.23788609449457
+      execution_time_sigma: 93.83724380041446
+      execution_time_min: 200.0
+      execution_time_max: 562.579131105551
+      period: 4000
+      deadline: 4000
+      processorId: 0
+      name: task_6
+      sp_threshold: 0.7381420171963562
+      sp_weight: 0.7142857142857143
+      total_running_time: 1000000

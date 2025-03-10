@@ -1,0 +1,14 @@
+Fake bad job insert: task_id=9, jobId=39, start=156000, finish=164000, exe_time=1
+Deadline miss: taskId=9, jobId=38, start=152258, finish=156677, deadline=156000, exe_time=1711
+Fake bad job insert: task_id=9, jobId=41, start=164000, finish=172000, exe_time=1
+Deadline miss: taskId=9, jobId=40, start=160236, finish=164534, deadline=164000, exe_time=1711
+Fake bad job insert: task_id=9, jobId=43, start=172000, finish=180000, exe_time=1
+Deadline miss: taskId=9, jobId=42, start=168266, finish=172544, deadline=172000, exe_time=1711
+Fake bad job insert: task_id=9, jobId=211, start=844000, finish=852000, exe_time=1
+Deadline miss: taskId=9, jobId=210, start=841478, finish=845685, deadline=844000, exe_time=577
+Fake bad job insert: task_id=9, jobId=226, start=904000, finish=912000, exe_time=1
+Fake bad job insert: task_id=9, jobId=227, start=908000, finish=916000, exe_time=1
+Deadline miss: taskId=9, jobId=225, start=901966, finish=909936, deadline=904000, exe_time=200
+Fake bad job insert: task_id=9, jobId=229, start=916000, finish=924000, exe_time=1
+Fake bad job insert: task_id=9, jobId=230, start=920000, finish=928000, exe_time=1
+Deadline miss: taskId=9, jobId=228, start=913828, finish=921847, deadline=916000, exe_time=577
