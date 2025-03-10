@@ -9,7 +9,7 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
     bool if_new_preempt = false;
     for (const Task& task_hp : hp_tasks) {
         rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity *
-                                                 2);
+                                                 1);
         rta_cur.Convolve(task_hp.execution_time_dist);
         if_new_preempt =
             if_new_preempt || (rta_cur.max_time / task_hp.period > 1);
@@ -32,7 +32,7 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
         }
     }
     rta_cur.CompressDeadlineMissProbability(task_curr.deadline);
-    rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 2);
+    rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 1);
     rta_cur.UpdateMinMaxValues();
     return rta_cur;
 }
