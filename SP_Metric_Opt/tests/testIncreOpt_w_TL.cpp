@@ -216,7 +216,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
     EXPECT_EQ(4, time_limit_options.size());  // 4 tasks
 
     int perfTask = 0;
-    for (int i = 0; i < time_limit_options.size(); i++) {
+    for (int i = 0; i < static_cast<int>(time_limit_options.size()); i++) {
         if (time_limit_options[i][0] != -1) {
             perfTask = i;
             break;
@@ -227,7 +227,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
     EXPECT_EQ(800, time_limit_options[perfTask][0]);
     EXPECT_EQ(1000, time_limit_options[perfTask][1]);
 
-    for (int i = 0; i < time_limit_options.size(); i++) {
+    for (uint i = 0; i < time_limit_options.size(); i++) {
         if (i == perfTask) continue;
         EXPECT_EQ(-1, time_limit_options[i][0]);
     }
@@ -286,7 +286,7 @@ TEST_F(TestDDLMiss, test_ddl_miss) {
     printf("overall cpu util=%.2f\n\n", cpu_util);
 
     std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(dag_tasks.tasks);
-    for (int i = 0; i < rtas.size(); i++) {
+    for (uint i = 0; i < rtas.size(); i++) {
         std::cout << "rtas[" << i << "]: ..." << std::endl;
         rtas[i].print();
     }
@@ -296,7 +296,7 @@ TEST_F(TestDDLMiss, test_ddl_miss) {
             GetDDL_MissProbability(rtas[i], dag_tasks.tasks[i].deadline);
         printf("task%d, ddl_miss_chance=%.2f\n", i, ddl_miss_chance);
 
-        if (i == static_cast<int>(dag_tasks.tasks.size()) - 1) {
+        if (i == dag_tasks.tasks.size() - 1) {
             EXPECT_GT(ddl_miss_chance, 0.99999);
         } else {
             EXPECT_LT(ddl_miss_chance, 0.00001);

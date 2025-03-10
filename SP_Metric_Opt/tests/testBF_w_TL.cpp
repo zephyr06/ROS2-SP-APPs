@@ -1,7 +1,6 @@
 // #include <gtest/gtest.h>
 
 #include "gmock/gmock.h"  // Brings in gMock.
-#include "sources/Optimization/OptUtilsFunctionsFromRyan.h"
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
