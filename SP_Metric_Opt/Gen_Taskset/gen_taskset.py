@@ -56,8 +56,8 @@ g_min_performance_records_time_step = 0.5
 g_sel_n_perf_record_task = 2
 g_min_prd_with_perf_records = 100
 g_total_weights = 5
-g_perf_task_weight_scale = 1
-g_n_perf_entries = 4 # 10
+g_perf_task_weight_scale = 2
+g_n_perf_entries = 10
 
 g_n_tasks = 10
 g_n_big_periods = 2
@@ -1152,7 +1152,18 @@ def gen_taskset_param(cfgs,dump_dir=None,save_task_Et_plot=False,n_sec=None):
         task_param = gen_mix_gaussian_task_param(cfgs,prd_sel='small')
         taskset_param.append(task_param)
         total_util += task_param['Et_mean']/task_param['period']
-        
+    
+    # sort taskset_param by period
+    # why!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    # because BR and INCR scheduler not have a chance to explore different priorities when there are too many tasks
+    # so, just make they sorted by period so that they will try RM first
+    taskset_param = sorted(taskset_param, key=lambda x: x['period'])
+    #print(json.dumps(taskset_param,indent=4,ensure_ascii=False)) 
+    #for t in taskset_param:
+    #    print('period:',t['period'],'Et_mean:',t['Et_mean'],'Et_sigma:',t['Et_sigma'])
+    #    print(t)
+    #quit()
+
     # scale Et of every individual gaussian task, and re-generate the whole taskset_param
     util_scale_factor = cpu_util/total_util
     # print(f'util_scale_factor={util_scale_factor}')
