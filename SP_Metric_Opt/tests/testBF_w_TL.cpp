@@ -1,6 +1,7 @@
 // #include <gtest/gtest.h>
 
 #include "gmock/gmock.h"  // Brings in gMock.
+#include "sources/Optimization/OptUtilsFunctionsFromRyan.h"
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
@@ -55,13 +56,14 @@ class TaskSetForTest_taskset_cfg_4_5_gen_1 : public ::testing::Test {
    public:
     void SetUp() override {
         std::string file_name = "taskset_characteristics_0";
-        std::string path =
-            GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
+        std::string path = GlobalVariables::PROJECT_PATH +
+                           "TaskData/taskset_cfg_4_5_gen_1/" + file_name +
+                           ".yaml";
         file_path = path;
-        //dag_tasks = ReadDAG_Tasks(path, 5);
+        // dag_tasks = ReadDAG_Tasks(path, 5);
         dag_tasks = ReadDAG_Tasks(path);
         // sp_parameters = SP_Parameters(dag_tasks);
-		sp_parameters = ReadSP_Parameters(path);
+        sp_parameters = ReadSP_Parameters(path);
     }
 
     // data members
@@ -209,11 +211,11 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
     double time_taken = GetTimeTaken(start_time, finish_time);
     std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
               << time_taken << std::endl;
-    std::cout<<"task 0 exeT: "<<res_opt.id2time_limit[0] << std::endl;
+    std::cout << "task 0 exeT: " << res_opt.id2time_limit[0] << std::endl;
 }
 
 TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
-    EnumeratePA_with_TimeLimits_sorted) {
+       EnumeratePA_with_TimeLimits_sorted) {
     std::cout << "\n\n\nStart Running the Long Test sorted options:\n\n\n";
     auto start_time = CurrentTimeInProfiler;
     ResourceOptResult res_opt =
@@ -222,92 +224,100 @@ TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1,
     double time_taken = GetTimeTaken(start_time, finish_time);
     std::cout << "time taken for OptimizePA_Incre_with_TimeLimits:"
               << time_taken << std::endl;
-    std::cout<<"task 0 exeT: "<<res_opt.id2time_limit[0] << std::endl;
+    std::cout << "task 0 exeT: " << res_opt.id2time_limit[0] << std::endl;
 }
 
 TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, enumperate_ExeTOptions) {
-    std::cout << "\n\n\nTaskSetForTest_taskset_cfg_10_1_gen_1: enumperate_ExeTOptions:\n\n\n";
-    std::vector<std::vector<double>> options = enumerate_all_exeTOptions(dag_tasks);
+    std::cout << "\n\n\nTaskSetForTest_taskset_cfg_10_1_gen_1: "
+                 "enumperate_ExeTOptions:\n\n\n";
+    std::vector<std::vector<double>> options =
+        enumerate_all_exeTOptions(dag_tasks);
 
     double util_regular_tasks = 0.0;
     std::vector<double> prds;
-    for (int i=0;i<dag_tasks.tasks.size();i++) {
+    for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
         double prd = dag_tasks.tasks[i].period;
         prds.push_back(prd);
         if (dag_tasks.tasks[i].timePerformancePairs.size() == 0) {
             double mu = dag_tasks.tasks[i].getExecGaussian().mu;
-            util_regular_tasks += mu/prd;
+            util_regular_tasks += mu / prd;
         }
     }
     double last_u;
-    for (int i=0;i<options.size();i++) {
+    for (int i = 0; i < options.size(); i++) {
         // iter over options
         double u = util_regular_tasks;
-        for (int k=0;k<options[i].size();k++) {
+        for (int k = 0; k < static_cast<int>(options[i].size()); k++) {
             // iter over tasks
-            if ( options[i][k] > 0.0 ) {
-                u += options[i][k]/prds[k];
+            if (options[i][k] > 0.0) {
+                u += options[i][k] / prds[k];
             }
         }
-        if (i==0) {
+        if (i == 0) {
             last_u = u;
         } else {
-            double last_abs = abs(last_u-1.0);
-            double this_abs = abs(u-1.0);
+            double last_abs = abs(last_u - 1.0);
+            double this_abs = abs(u - 1.0);
             // the prio should be closer to 100% utilization
-            EXPECT_LT(last_abs-this_abs, 0.0);
+            EXPECT_LT(last_abs - this_abs, 0.0);
             last_u = u;
         }
     }
-    std::cout << "TaskSetForTest_taskset_cfg_10_1_gen_1: enumperate_ExeTOptions done\n";    
+    std::cout << "TaskSetForTest_taskset_cfg_10_1_gen_1: "
+                 "enumperate_ExeTOptions done\n";
 }
 
 TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
     // simulate from 0 to 300s, cpu util should increase and then descrease
-	// one task_characteristics file for every 10s 
+    // one task_characteristics file for every 10s
     // check task 3 (with performance_records_time) exetime
-    int task_wPerf = 3; // this task has performance_records_time
-    
-    std::cout<<"\n-------- check id2time_limit varies with cpu utilization\n";    
-    
-    // time 0: 
-    ResourceOptResult res_opt = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
-	// calculate cpu_util for other tasks
+    int task_wPerf = 3;  // this task has performance_records_time
+
+    std::cout << "\n-------- check id2time_limit varies with cpu utilization\n";
+
+    // time 0:
+    ResourceOptResult res_opt =
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    // calculate cpu_util for other tasks
     double cpu_util = 0.0;
-    for ( int i=0;i<4;i++ ){
-        if (i==task_wPerf) continue;
+    for (int i = 0; i < 4; i++) {
+        if (i == task_wPerf) continue;
         const Task t = dag_tasks.GetTask(i);
         int prd = t.period;
         GaussianDist g_et = t.getExecGaussian();
         double mu = g_et.mu;
-        cpu_util += mu/prd;
+        cpu_util += mu / prd;
     }
-	// print cpu_util, and id2time_limit for task 3
-    //printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",0, 
-    //    cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]); 
-    
-	// for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
-	// we expect res_opt.id2time_limit[task_wPerf] increase/descrease while cpu_util descrease/increase
-    for (int k=1;k<=30;k++) {        
+    // print cpu_util, and id2time_limit for task 3
+    // printf("%02d: cpu_util_for_other_tasks=%.4f,
+    // exe_time_for_task_%d=%.4f\n",0,
+    //     cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);
+
+    // for the rest 30*10s, print cpu_util and res_opt.id2time_limit[task_wPerf]
+    // we expect res_opt.id2time_limit[task_wPerf] increase/descrease while
+    // cpu_util descrease/increase
+    for (int k = 1; k <= 30; k++) {
         std::string file_name = "taskset_characteristics_" + std::to_string(k);
-        std::string path =
-            GlobalVariables::PROJECT_PATH + "TaskData/taskset_cfg_4_5_gen_1/" + file_name + ".yaml";
-        DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);    
-        //sp_parameters = SP_Parameters(dag_tasks_updated);
+        std::string path = GlobalVariables::PROJECT_PATH +
+                           "TaskData/taskset_cfg_4_5_gen_1/" + file_name +
+                           ".yaml";
+        DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);
+        // sp_parameters = SP_Parameters(dag_tasks_updated);
         sp_parameters = ReadSP_Parameters(path);
         res_opt = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
-        
+
         cpu_util = 0.0;
-        for ( int i=0;i<4;i++ ){
-            if (i==task_wPerf) continue;
+        for (int i = 0; i < 4; i++) {
+            if (i == task_wPerf) continue;
             const Task t = dag_tasks_updated.GetTask(i);
             int prd = t.period;
             GaussianDist g_et = t.getExecGaussian();
             double mu = g_et.mu;
-            cpu_util += mu/prd;
-        }        
-        //printf("%02d: cpu_util_for_other_tasks=%.4f, exe_time_for_task_%d=%.4f\n",k, 
-        //    cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);         
+            cpu_util += mu / prd;
+        }
+        // printf("%02d: cpu_util_for_other_tasks=%.4f,
+        // exe_time_for_task_%d=%.4f\n",k,
+        //     cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);
     }
 }
 
