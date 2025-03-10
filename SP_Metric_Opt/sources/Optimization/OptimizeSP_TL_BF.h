@@ -11,6 +11,14 @@ SP_Parameters AddWeightsFromTimeLimits(
 DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
                                         const std::vector<double>& time_limit);
 
+void insert_sorted(
+    std::vector<std::pair<std::vector<double>, double>>& sequences,
+    const std::vector<double>& new_tasks, double utilization);
+
+ResourceOptResult EnumeratePA_with_TimeLimits_sortOptionsFirst(
+    const DAG_Model& dag_tasks,
+    const SP_Parameters& sp_parameters);  // Sen: what does this function do?
+
 std::vector<std::vector<double>> RecordTimeLimitOptions(
     const DAG_Model& dag_tasks);
 class OptimizePA_with_TimeLimitsStatus {
@@ -29,6 +37,9 @@ class OptimizePA_with_TimeLimitsStatus {
                   std::vector<double>& time_limit_for_task);
 
     void Optimize();
+
+    void OptimizeDo(
+        std::vector<double>& time_limit_for_task);  // Sen: what does this do?
 
     // data members
     DAG_Model dag_tasks;
