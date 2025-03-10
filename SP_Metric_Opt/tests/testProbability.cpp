@@ -221,6 +221,7 @@ TEST(FiniteDist, AddOnePreemption_v2) {
 }
 
 TEST(FiniteDist, AddPreemption) {
+    GlobalVariables::Granularity = 10;
     // this is hp
     std::vector<Value_Proba> dist_vec1 = {
         Value_Proba(1, 0.6), Value_Proba(2, 0.3), Value_Proba(3, 0.1)};
