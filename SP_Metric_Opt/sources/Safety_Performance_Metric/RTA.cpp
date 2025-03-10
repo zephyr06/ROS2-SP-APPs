@@ -14,15 +14,16 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
     }
     int n_hp = hp_tasks.size();
     std::vector<int> hp_jobs_considered(n_hp, 1);
-    while (if_new_preempt && rta_cur.max_time <= task_curr.deadline) {
+    while (if_new_preempt && rta_cur.min_time <= task_curr.deadline) {
         if_new_preempt = false;
-        for (uint i = 0; i < n_hp; i++) {
+        for (int i = 0; i < n_hp; i++) {
             const Task& task_hp = hp_tasks[i];
             if (ceil(rta_cur.max_time / task_hp.period) >
                 hp_jobs_considered[i]) {
                 rta_cur.AddOnePreemption(
                     task_hp.execution_time_dist,
                     hp_jobs_considered[i] * task_hp.period);
+                rta_cur.CompressDeadlineMissProbability(task_curr.deadline);
                 hp_jobs_considered[i]++;
                 if_new_preempt = true;
             }
