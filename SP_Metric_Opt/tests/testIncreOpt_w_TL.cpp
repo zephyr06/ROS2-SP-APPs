@@ -52,7 +52,7 @@ class TaskSetForTest_robotics_v20 : public ::testing::Test {
 class TaskSetForTest_taskset_cfg_10_1_gen_1 : public ::testing::Test {
    public:
     void SetUp() override {
-        std::string file_name = "taskset_characteristics_0";
+        std::string file_name = "taskset_characteristics_i0_p0";
         std::string path = GlobalVariables::PROJECT_PATH +
                            "TaskData/taskset_cfg_10_1_gen_1/" + file_name +
                            ".yaml";
@@ -73,7 +73,7 @@ class TaskSetForTest_taskset_cfg_10_1_gen_1 : public ::testing::Test {
 class TaskSetForTest_taskset_cfg_4_5_gen_1 : public ::testing::Test {
    public:
     void SetUp() override {
-        std::string file_name = "taskset_characteristics_0";
+        std::string file_name = "taskset_characteristics_i0_p0";
         std::string path = GlobalVariables::PROJECT_PATH +
                            "TaskData/taskset_cfg_4_5_gen_1/" + file_name +
                            ".yaml";
@@ -522,7 +522,7 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
     // we expect res_opt.id2time_limit[task_wPerf] increase/descrease while
     // cpu_util descrease/increase
     for (int k = 1; k <= 30; k++) {
-        std::string file_name = "taskset_characteristics_" + std::to_string(k);
+        std::string file_name = "taskset_characteristics_i" + std::to_string(k) + "_p0";
         std::string path = GlobalVariables::PROJECT_PATH +
                            "TaskData/taskset_cfg_4_5_gen_1/" + file_name +
                            ".yaml";

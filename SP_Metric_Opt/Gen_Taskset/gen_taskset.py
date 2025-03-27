@@ -20,7 +20,7 @@ python gen_taskset.py TaskData/taskset_cfg_1.json --dir_path TaskData/taskset_cf
 - --interact: enable interactive mode (default is False)
 
 The main files generated in [dir_path] are:
-- path_Et_task_[i].txt: 
+- path_Et_task_[taskid]_[pathid]_[instance].txt: 
   -- this is the path and execution time of the i-th task
   -- each line is x,y,Et
 - taskset_param.yaml: 
@@ -38,6 +38,7 @@ UPDATE 20250216
 
 '''
 
+from optparse import NO_DEFAULT
 from re import T
 import os, sys
 import numpy as np
@@ -56,8 +57,6 @@ g_min_performance_records_time_step = 0.5
 g_sel_n_perf_record_task = 2
 g_min_prd_with_perf_records = 100
 g_total_weights = 5
-g_perf_task_weight_scale = 2
-g_n_perf_entries = 10
 
 g_n_tasks = 10
 g_n_big_periods = 2
@@ -72,11 +71,16 @@ g_D1_variance_factor_tbl = []
 
 g_final_Et_over_period_range = [0.05,0.9]
 
+# .1,.6 period, with score 0.1,0.8; 
+# .6,.9 period, with score 0.8,1.0
+g_TaskP_Et_over_period_range_segs = [ [0.1, 0.6, 0.1, 0.8], [0.6, 0.9, 0.8, 1.0] ]
+
 g_update_mean_sigma_interval_s = 10 # how often to re-generate mean and sigma for taskset
 
 # don't enable. debug only
 g_gen_Et_by_mean_only = False
 
+g_n_processors = 1
 
 ###################################################################################################
 # utility functions
@@ -88,6 +92,8 @@ def read_cfg_file(cfg_fpath):
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_D1_variance_factor_tbl,g_D1_variance_factor
     global g_final_Et_over_period_range
+    global g_TaskP_Et_over_period_range_segs 
+    global g_n_processors
 
     with open(cfg_fpath, 'r') as f:
         cfgs = json.load(f)
@@ -106,6 +112,13 @@ def read_cfg_file(cfg_fpath):
 
         if 'FINAL_Et_OVER_PERIOD_RANGE' in cfgs:
             g_final_Et_over_period_range = cfgs['FINAL_Et_OVER_PERIOD_RANGE']
+
+        if 'PERFORMANCE_TASK_Et_OVER_PERIOD_RANGE' in cfgs:
+            g_TaskP_Et_over_period_range_segs = cfgs['PERFORMANCE_TASK_Et_OVER_PERIOD_RANGE']
+            print(f'g_TaskP_Et_over_period_range_segs: {g_TaskP_Et_over_period_range_segs}')
+
+        if 'N_PROCESSORS' in cfgs:
+            g_n_processors = cfgs['N_PROCESSORS']
 
         nn = math.ceil(cfgs['D1_RANGE'][1])
         g_D1_variance_factor_tbl = [0] * nn
@@ -1003,13 +1016,22 @@ def gen_Et_from_path(path_xys,period,ms_per_move,
     return steps,[float(Et_min),float(Et_max)]
 
 # convert taskset parameter to old task_characteristics.yaml format
+# - inp is the input taskset parameter
+# - n_sec is the number of seconds to generate
+# - add_perf_records is whether to add performance records
+# - perf_sel is the list of tasks to add performance records
+#   if None, code will select tasks randomly for all processors to add performance records
+# - processorId is the processor id of the taskset
 def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
-    perf_sel=None):
+    perf_sel=None,iprocessorId=0):
     global g_min_performance_records_time_step
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_total_weights
     global g_final_Et_over_period_range
-    global g_n_perf_entries
+    global g_TaskP_Et_over_period_range_segs
+    global g_n_processors
+
+    ############### weight is fixed to 1 and 2 (for tasks with performance records)
 
     out = {'tasks': []}
     n = len(inp['tasks'])
@@ -1029,17 +1051,38 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
     #n_perf_added = 0
     
     if perf_sel is None:
+        # select tasks with performance records
+        max_ptasks_per_processor = math.ceil(g_sel_n_perf_record_task/g_n_processors)
+        n_ptasks_per_processor = [0]*g_n_processors
         perf_sel = []
-        while len(perf_sel) < g_sel_n_perf_record_task:
+        loopcnt = 0
+        while len(perf_sel) < g_sel_n_perf_record_task and loopcnt <= g_sel_n_perf_record_task*10:
             i = random.randint(0,n-1)
             if i in perf_sel:
+                loopcnt += 1
                 continue
             if inp['tasks'][i]['period'] < g_min_prd_with_perf_records:
+                loopcnt += 1
                 continue
-            perf_sel.append(i)
 
+            processorId = inp['tasks'][i]['processorId']
+            if n_ptasks_per_processor[processorId] >= max_ptasks_per_processor:
+                loopcnt += 1
+                continue
+            
+            perf_sel.append(i)
+            n_ptasks_per_processor[processorId] += 1
+            loopcnt += 1
+
+    task_id_in_processor = 0
     for i in range(n):
-        t = {'id': i}
+        if inp['tasks'][i]['processorId'] != iprocessorId:
+            continue
+
+        t = {'id': task_id_in_processor}
+        task_id_in_processor += 1
+        t['gid'] = i
+
         if 'Et_actual' in inp['tasks'][i]:
             t['execution_time_mu'] = inp['tasks'][i]['Et_actual']['Et_mean']
             t['execution_time_sigma'] = inp['tasks'][i]['Et_actual']['Et_sigma']
@@ -1055,7 +1098,7 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
 
         t['period'] = inp['tasks'][i]['period']
         t['deadline'] = t['period']
-        t['processorId'] = 0
+        t['processorId'] = inp['tasks'][i]['processorId']
         t['name'] = f'task_{i+1}'
         t['sp_threshold'] = inp['tasks'][i]['sp_threshold']
         t['sp_weight'] = 1
@@ -1065,53 +1108,47 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
 
         if add_perf_records:
             if i in perf_sel:
+                t['execution_time_max'] = None
+                t['execution_time_min']= None
+                performance_records_time = [0] * 10
+                performance_records_perf = [0] * 10 # 0.1 to 1
+                idx = 0
+                for seg in g_TaskP_Et_over_period_range_segs:
+                    t_seg_min = t['period'] * seg[0]
+                    t_seg_max = t['period'] * seg[1]
+                    if t['execution_time_min'] is None or t_seg_min < t['execution_time_min']:
+                        t['execution_time_min'] = t_seg_min
+                    if t['execution_time_max'] is None or t_seg_max > t['execution_time_max']:
+                        t['execution_time_max'] = t_seg_max
+                    t_s = t_seg_min
 
-                #n_steps = 9 # 0.1 to 1
-                n_steps = g_n_perf_entries-1
+                    # i.e. 0.1 to 0.8, that's 7 steps
+                    # 0.8 to 1.0, that's 2 steps
+                    n_steps = int(round((seg[3]-seg[2]) / 0.1,0))
+                    step = (t_seg_max - t_seg_min) / n_steps
 
-                performance_records_time = []
-                performance_records_perf = []
-
-                if True:
-                    t['execution_time_max'] = t['period'] * g_final_Et_over_period_range[1]
-                    t['execution_time_min'] = t['period'] * g_final_Et_over_period_range[0]
-                    step = (t['execution_time_max'] - t['execution_time_min']) / n_steps
-                    t_s = t['execution_time_min']
-                else:
-                    t_s = t['period']*0.1
-                    if t_s > t['execution_time_min']:
-                        t_s = t['execution_time_min']
-                    if t_s<1:
-                        t_s = 1
-                    step = (t['period'] - t_s) / n_steps
-            
-                #if step >= g_min_performance_records_time_step and \
-                #    t['period'] >= g_min_prd_with_perf_records and \
-                #    n_perf_added < g_sel_n_perf_record_task:
-                #if i in perf_sel:
-                for ii in range(1,n_steps+2):
-                    performance_records_time.append(t_s)
-                    performance_records_perf.append(ii*0.1)
-                    t_s += step    
+                    for ii in range(0,n_steps+1):
+                        performance_records_time[idx+ii] = t_s
+                        performance_records_perf[idx+ii] = (idx+1+ii)*0.1
+                        t_s += step    
+                    
+                    idx += n_steps
 
                 performance_records_time_s = " ".join(f"{x:.3f}" for x in performance_records_time)
                 performance_records_perf_s = " ".join(f"{x:.1f}" for x in performance_records_perf)
                 t['performance_records_time'] = performance_records_time_s
                 t['performance_records_perf'] = performance_records_perf_s
-
-                #t['sp_weight'] = 2
-                #total_weights += 1
-                total_weights -= t['sp_weight']
-                t['sp_weight'] = g_perf_task_weight_scale * t['sp_weight']
-                total_weights += t['sp_weight']
-
+                t['sp_weight'] = 2
+                total_weights += 1
                 #n_perf_added += 1
 
         out['tasks'].append(t)
 
     # normalize weights
+    total_weights = n + len(perf_sel)
     if total_weights != g_total_weights:
-        for i in range(n):
+        n1 = len(out['tasks'])
+        for i in range(n1):
             out['tasks'][i]['sp_weight'] *= g_total_weights/total_weights
 
     return out,perf_sel
@@ -1129,6 +1166,7 @@ class SpaceSeparatedListDumper(yaml.Dumper):
 def gen_taskset_param(cfgs,dump_dir=None,save_task_Et_plot=False,n_sec=None):
     global gaussian_task_params_in_mix_gaussian_task
     global g_n_tasks, g_n_big_periods, g_n_small_periods
+    global g_n_processors
 
     # generate task until total utilization >= cpu_util
     cpu_util = cfgs['MEAN_CPU_UTIL']
@@ -1153,29 +1191,50 @@ def gen_taskset_param(cfgs,dump_dir=None,save_task_Et_plot=False,n_sec=None):
         taskset_param.append(task_param)
         total_util += task_param['Et_mean']/task_param['period']
     
-    # sort taskset_param by period
-    # why!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    # because BR and INCR scheduler not have a chance to explore different priorities when there are too many tasks
-    # so, just make they sorted by period so that they will try RM first
-    taskset_param = sorted(taskset_param, key=lambda x: x['period'])
-    #print(json.dumps(taskset_param,indent=4,ensure_ascii=False)) 
-    #for t in taskset_param:
-    #    print('period:',t['period'],'Et_mean:',t['Et_mean'],'Et_sigma:',t['Et_sigma'])
-    #    print(t)
-    #quit()
-
     # scale Et of every individual gaussian task, and re-generate the whole taskset_param
-    util_scale_factor = cpu_util/total_util
+    # util_scale_factor = cpu_util/total_util
+    if g_n_processors>1:
+        # allocate task to each processor 
+        processorId = 0
+        total_utils = [0] * g_n_processors
+        util_scale_factors = [0] * g_n_processors
+        for i in range(g_n_tasks):
+            taskset_param[i]['processorId'] = processorId
+            total_utils[processorId] += taskset_param[i]['Et_mean']/taskset_param[i]['period']
+            processorId += 1
+            if processorId == g_n_processors:
+                processorId = 0
+        
+        max_utils = float(np.max(total_utils))
+        avg_utils = float(np.mean(total_utils))
+        common_scale_factor = cpu_util/avg_utils
+        for i in range(g_n_processors):
+            if total_utils[i]==0.0:
+                util_scale_factors[i] = 1.0
+            else:
+                util_scale_factors[i] = common_scale_factor # cpu_util/total_utils[i]
+    else:
+        for i in range(g_n_tasks):
+            taskset_param[i]['processorId'] = 0
+        
+        if total_util==0.0:
+            util_scale_factors = [1.0]
+        else:
+            util_scale_factors = [cpu_util/total_util]
+
     # print(f'util_scale_factor={util_scale_factor}')
     n_tasks = len(taskset_param)
     for i in range(n_tasks):
         n_weights = taskset_param[i]['n_weights']
         period = taskset_param[i]['period']
+        processorId = taskset_param[i]['processorId']
         Et_mean_new = 0.0
         for k in range(n_weights):
             #print(f'i={i}, k={k}, old Et_mean={taskset_param[i]["tasks"][k]["Et_mean"]}, old Et_sigma={taskset_param[i]["tasks"][k]["Et_sigma"]}')
-            Et_mean    = taskset_param[i]['tasks'][k]['Et_mean'] * util_scale_factor
-            Et_sigma   = taskset_param[i]['tasks'][k]['Et_sigma'] * util_scale_factor
+            #Et_mean    = taskset_param[i]['tasks'][k]['Et_mean'] * util_scale_factor
+            #Et_sigma   = taskset_param[i]['tasks'][k]['Et_sigma'] * util_scale_factor
+            Et_mean    = taskset_param[i]['tasks'][k]['Et_mean'] * util_scale_factors[processorId]
+            Et_sigma   = taskset_param[i]['tasks'][k]['Et_sigma'] * util_scale_factors[processorId]  
             task_param = gen_gaussian_task_param(cfgs,period=period,Et_mean=Et_mean,Et_sigma=Et_sigma)
 
             if dump_dir is not None and save_task_Et_plot:
@@ -1274,6 +1333,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_update_mean_sigma_interval_s
     global g_gen_Et_by_mean_only
+    global g_n_processors
 
     # figure out start path_idx (path_x.png)
     if path_idx is None:
@@ -1359,6 +1419,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
 
     cb = gen_et_cb
     for k in range(path_idx,n_path_per_task+path_idx):
+        # one for each processor
         cpu_util_lst_1 = []
 
         ###################### for each path ######################
@@ -1373,7 +1434,12 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
         for si in range(n_inst_per_path):
             ###################### for each instance of this path ######################
             cpu_util_step = g_update_mean_sigma_interval_s
-            cpu_utils = [0]*math.ceil(n_sec/cpu_util_step)
+
+            # cpu_utils needs to be for each processor 
+            cpu_utils = []
+            for pp in range(g_n_processors):
+                cpu_utils1 = [0]*math.ceil(n_sec/cpu_util_step)
+                cpu_utils.append(cpu_utils1)
             
             i = 0 # i is task index
             for task in params['tasks']:
@@ -1382,8 +1448,10 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
                 if dir_path is None:
                     dump_path = None
                 else:
+                    # taskid, pathid, interval
                     dump_path = os.path.join(dir_path, f"path_Et_task_{i}_{k}_{si}.txt")
 
+                processorId= task['processorId']
                 prd = task['period']
                 n_steps = int(n_ms/prd)
                 print(f'generating Et for task {i}, {n_steps} steps, {k}th path, {si}th instance')
@@ -1403,16 +1471,17 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
                 for ii in range(len(steps)):
                     f = steps[ii][2]
                     idx = int(ii*prd/(1000*cpu_util_step))
-                    cpu_utils[idx] += f
+                    cpu_utils[processorId][idx] += f
                     task_Ets[i][idx]['Ets'].append(f)
 
                 i+=1
 
-            ss = ''
-            for idx in range(len(cpu_utils)):
-                cpu_utils[idx] /= (1000*cpu_util_step)
-                ss += f'{cpu_utils[idx]:.2f}, '
-            print(f"path {k} cpu utils: {ss}")
+            for pp in range(g_n_processors):
+                ss = ''
+                for idx in range(len(cpu_utils[pp])):
+                    cpu_utils[pp][idx] /= (1000*cpu_util_step)
+                    ss += f'{cpu_utils[pp][idx]:.2f}, '
+                print(f"path {k} processor {pp} cpu utils: {ss}")
 
             # ax.plot(xx,cpu_utils, label=f"path_{k}_inst_{si}")
             # plt.show()
@@ -1431,12 +1500,14 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     for i in range(nn):
         xx.append(g_update_mean_sigma_interval_s * i)
 
-    k = 0
-    for c in cpu_util_lst:
-        si = 0
-        for cc in c:
-            ax.plot(xx,cc, label=f"path_{k}_inst_{si}")
-            si+=1
+    k = 0 # path index
+    # cpu_util_lst: [path][inst][processor][1000/10 segs]
+    for c in cpu_util_lst: # c is cpu_util_lst1
+        si = 0 # instance index
+        for si_c in c:
+            for pp in range(g_n_processors):
+                ax.plot(xx,si_c[pp], label=f"path_{k}_inst_{si}_processor_{pp}")
+            si += 1
         k+=1
     ax.set_xlabel('time')
     ax.set_ylabel('cpu util')
@@ -1448,7 +1519,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
 
     perf_sel = None
     for k in range(n_intervals):
-        ok = 1
+        ok = 1  
         for i in range(n_tasks):
             if len(task_Ets[i][k]['Ets'])>=2:
                 task_Ets[i][k]['Et_mean'] = float(np.mean(task_Ets[i][k]['Ets']))
@@ -1460,25 +1531,27 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
             else:
                 ok = 0
                 break
+
         if ok:
             for i in range(n_tasks):
                 params['tasks'][i]['Et_actual'] = task_Ets[i][k]
 
             if dir_path is not None:
-                old_task_char,perf_sel = conv_taskset_param_to_old_fmt(params,n_sec=n_sec,
-                    add_perf_records=add_perf_records,perf_sel=perf_sel)
                 os.makedirs(dir_path, exist_ok=True)
-                dump_yml_fpath = os.path.join(dir_path, f"taskset_characteristics_{k}.yaml")
-                with open(dump_yml_fpath, "w") as f:
-                    yaml.dump(old_task_char, f, sort_keys=False,default_flow_style=False, width=float("inf"), 
-                        Dumper=SpaceSeparatedListDumper)  
+                for pp in range(g_n_processors):
+                    old_task_char,perf_sel = conv_taskset_param_to_old_fmt(params,n_sec=n_sec,
+                        add_perf_records=add_perf_records,perf_sel=perf_sel,iprocessorId=pp)
+                    dump_yml_fpath = os.path.join(dir_path, f"taskset_characteristics_i{k}_p{pp}.yaml")
+                    with open(dump_yml_fpath, "w") as f:
+                        yaml.dump(old_task_char, f, sort_keys=False,default_flow_style=False, width=float("inf"), 
+                            Dumper=SpaceSeparatedListDumper)  
         else:
             if k==0:
                 print('error, no valid interval to compute taskset_characteristics, exiting')
                 sys.exit(1)
             else:
                 print(f'{k} intervals found, only {i} are valid')
-            break
+                break
 
     #if dir_path is not None:
     #    old_task_char,perf_sel = conv_taskset_param_to_old_fmt(params,n_sec=n_sec,add_perf_records=add_perf_records)
@@ -1540,9 +1613,9 @@ if __name__ == "__main__":
 
     dbg = False # windows debug, not to turn on for release
     if dbg:
-        cfg_file = 'TaskData/taskset_cfg_4_2.json'
+        cfg_file = 'TaskData/taskset_cfg_10_1.json'
         n_sec = 1000
-        dir_path = 'TaskData/taskset_cfg_4_2_gen_1'
+        dir_path = 'TaskData/taskset_cfg_10_1_gen_1'
         add_perf_records = True
         interact = False
         n_path_per_task = 1
