@@ -36,6 +36,9 @@ UPDATE 20250216
 - select 2 having performance_records_time/perf
   -- min is 10% of prd, and max is 100% of prd, and fill randomly in the middle
 
+UPDATE 20250322
+- 4 tasks to support multi core simulation
+
 '''
 
 from re import T

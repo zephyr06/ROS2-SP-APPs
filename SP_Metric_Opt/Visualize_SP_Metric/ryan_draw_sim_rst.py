@@ -8,6 +8,7 @@ import subprocess
 from SP_draw_fig_utils import *
 from visualize_SP_distribution import *
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 
 '''
 python ryan_draw_sim_rst.py --sim_rst_dir TaskData/taskset_cfg_1_gen_1 --method INCR
@@ -79,6 +80,9 @@ quit()
 
 def main():
     dbg = False
+    
+    # Set custom y-axis tick locator for fewer intervals
+    # ax.yaxis.set_major_locator(ticker.MaxNLocator(5))
     #if os.name == 'nt':
     #    print("Running on Windows")
     #elif os.name == 'posix':

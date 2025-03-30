@@ -1,6 +1,6 @@
 %YAML:1.0
 # the time limit to run optimization for one time
-TIME_LIMIT: 10 # seconds
+TIME_LIMIT: 100 # seconds
 
 # must be no less than 1, granularity balences accuracy and speed;
 Granularity: 5
