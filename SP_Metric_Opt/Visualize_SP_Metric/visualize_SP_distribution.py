@@ -74,10 +74,12 @@ def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name
 
     # Transpose SP values to get values at each time point for all series
     sp_values_at_times = np.array([np.array(t[1]) for t in data])  # Transpose to group SP values by time
+
     min_sp_length = min(len(sublist) for sublist in sp_values_at_times)
     sp_values_at_times = np.array([sublist[:min_sp_length] for sublist in sp_values_at_times])
     time_series = time_series[:min_sp_length]
     sp_values_at_times = sp_values_at_times / normalize_coeff
+
     # sp_values_at_times =[x/normalize_coeff for x in sp_values_at_times]
     # Create the box plot
     # plt.figure(figsize=(10, 6))
