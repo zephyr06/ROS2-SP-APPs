@@ -1,0 +1,68 @@
+  tasks:
+    - id: 0
+      gid: 1
+      execution_time_mu: 274.29200688696545
+      execution_time_sigma: 227.06610761554185
+      execution_time_min: 100.0
+      execution_time_max: 983.4756080351767
+      period: 2000
+      deadline: 2000
+      processorId: 1
+      name: task_2
+      sp_threshold: 0.6700857754118805
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 1
+      gid: 3
+      execution_time_mu: 1.9089327278103023
+      execution_time_sigma: 1.2174198843371016
+      execution_time_min: 1.0
+      execution_time_max: 8.89814237356652
+      period: 20
+      deadline: 20
+      processorId: 1
+      name: task_4
+      sp_threshold: 0.7734257547440839
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 2
+      gid: 5
+      execution_time_mu: 13.121911107284236
+      execution_time_sigma: 9.938293780488022
+      execution_time_min: 10.0
+      execution_time_max: 90.0
+      period: 100
+      deadline: 100
+      processorId: 1
+      name: task_6
+      sp_threshold: 0.6107009651645834
+      sp_weight: 0.8333333333333334
+      total_running_time: 1000000
+      performance_records_time: 10.000 17.143 24.286 31.429 38.571 45.714 52.857 60.000 75.000 90.000
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+    - id: 3
+      gid: 7
+      execution_time_mu: 5.136385616197745
+      execution_time_sigma: 3.1120940574483846
+      execution_time_min: 2.5
+      execution_time_max: 20.36870645782998
+      period: 50
+      deadline: 50
+      processorId: 1
+      name: task_8
+      sp_threshold: 0.52307561059367
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 4
+      gid: 9
+      execution_time_mu: 17.316687067534666
+      execution_time_sigma: 10.858876431609007
+      execution_time_min: 5.0
+      execution_time_max: 58.33893000319962
+      period: 100
+      deadline: 100
+      processorId: 1
+      name: task_10
+      sp_threshold: 0.7369131807605755
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000

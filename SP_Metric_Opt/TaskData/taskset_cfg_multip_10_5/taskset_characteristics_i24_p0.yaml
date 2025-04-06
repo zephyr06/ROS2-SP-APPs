@@ -1,0 +1,68 @@
+  tasks:
+    - id: 0
+      gid: 0
+      execution_time_mu: 263.55028410932334
+      execution_time_sigma: 112.25130210570974
+      execution_time_min: 50.0
+      execution_time_max: 674.3744003743841
+      period: 1000
+      deadline: 1000
+      processorId: 0
+      name: task_1
+      sp_threshold: 0.8997139638659718
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 1
+      gid: 2
+      execution_time_mu: 8.150583665298178
+      execution_time_sigma: 6.220594018389724
+      execution_time_min: 5.0
+      execution_time_max: 44.97282028587656
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_3
+      sp_threshold: 0.7305900682366413
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 2
+      gid: 4
+      execution_time_mu: 2.2914805974757306
+      execution_time_sigma: 1.5931464543571552
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 12.47920791070357
+      period: 33
+      deadline: 33
+      processorId: 0
+      name: task_5
+      sp_threshold: 0.8286954464178371
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 3
+      gid: 6
+      execution_time_mu: 7.172502852715107
+      execution_time_sigma: 5.141391075646651
+      execution_time_min: 5.0
+      execution_time_max: 40.83730157000426
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_7
+      sp_threshold: 0.5030705347394333
+      sp_weight: 0.4166666666666667
+      total_running_time: 1000000
+    - id: 4
+      gid: 8
+      execution_time_mu: 7.642025260280072
+      execution_time_sigma: 5.12894387317227
+      execution_time_min: 10.0
+      execution_time_max: 90.0
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_9
+      sp_threshold: 0.5873563702942222
+      sp_weight: 0.8333333333333334
+      total_running_time: 1000000
+      performance_records_time: 10.000 17.143 24.286 31.429 38.571 45.714 52.857 60.000 75.000 90.000
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0

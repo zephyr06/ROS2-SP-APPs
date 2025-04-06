@@ -36,9 +36,6 @@ UPDATE 20250216
 - select 2 having performance_records_time/perf
   -- min is 10% of prd, and max is 100% of prd, and fill randomly in the middle
 
-UPDATE 20250322
-- 4 tasks to support multi core simulation
-
 '''
 
 from optparse import NO_DEFAULT
@@ -1267,11 +1264,11 @@ def gen_taskset_param(cfgs,dump_dir=None,save_task_Et_plot=False,n_sec=None):
             test_mix_gaussian_task_Et_gen(cfgs,task_param=taskset_param[i],draw=False,save_draw_path=save_draw_path)
 
     trd_min = cfgs['SP_THRESHOLD_RANGE'][0]
-    trd_max = cfgs['SP_THRESHOLD_RANGE'][1]	
+    trd_max = cfgs['SP_THRESHOLD_RANGE'][1]    
     for i in range(len(taskset_param)):
         # generate sp_weight and sp_threshold
         taskset_param[i]['sp_weight'] = 1.0
-        taskset_param[i]['sp_threshold'] = random.uniform(trd_min, trd_max)		
+        taskset_param[i]['sp_threshold'] = random.uniform(trd_min, trd_max)        
        
     rt = {'n_tasks': n_tasks, 'cpu_util': cpu_util, 'tasks': taskset_param}
 
@@ -1520,6 +1517,28 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     cpu_util_path = os.path.join(dir_path, "cpu_util.png")
     plt.savefig(cpu_util_path)
 
+    # draw cpu util on each processor
+    for pp in range(g_n_processors):
+        fig, ax = plt.subplots()
+        nn = math.ceil(n_sec/g_update_mean_sigma_interval_s)
+
+        k = 0 # path index
+        # cpu_util_lst: [path][inst][processor][1000/10 segs]
+        for c in cpu_util_lst: # c is cpu_util_lst1
+            si = 0 # instance index
+            for si_c in c:
+                ax.plot(xx,si_c[pp], label=f"path_{k}_inst_{si}_processor_{pp}")
+                si += 1
+            k+=1
+        ax.set_xlabel('time')
+        ax.set_ylabel(f'cpu {pp} util ')
+        ax.set_title(f'cpu {pp} util')
+        ax.legend()
+        # Save the figure to a file
+        cpu_util_path = os.path.join(dir_path, f"cpu_util_{pp}.png")
+        plt.savefig(cpu_util_path)
+    
+    
     perf_sel = None
     for k in range(n_intervals):
         ok = 1  
@@ -1563,7 +1582,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     #    with open(dump_yml_fpath, "w") as f:
     #        yaml.dump(old_task_char, f, sort_keys=False,default_flow_style=False, width=float("inf"), Dumper=SpaceSeparatedListDumper)  
     #        # sort_keys=False keeps original order
-			
+            
 
 # read cfg file, generate taskset params, and paths, and dump to dir_path
 def gen_taskset_param_path(cfg_file,n_sec=1000,dir_path=None,
