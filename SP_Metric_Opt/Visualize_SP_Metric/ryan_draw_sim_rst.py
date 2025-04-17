@@ -142,6 +142,17 @@ def main():
         quit()
     print(f"number of processors: {g_num_processors}")
 
+    # total sp_weight normalize to total_weight (so calculate it)
+    total_weight = 0
+    for pp in range(g_num_processors):
+        task_config_file_path = os.path.join(sim_rst_dir, f'taskset_characteristics_i0_p{pp}.yaml')
+        if not os.path.exists(task_config_file_path):
+            print(f"task_config_file_path {task_config_file_path} does not exist")
+            quit()
+        yaml_data = yaml.safe_load(open(task_config_file_path))
+        for t in yaml_data['tasks']:
+            total_weight += t['sp_weight']
+ 
     boxplot_data = []
     for i in range(g_num_processors):
         boxplot_data.append([])
@@ -322,7 +333,8 @@ def main():
     csv_file_path = os.path.join(out_dir, f"sp_data_{method}.csv")
     print(f'\n\n######### plot_and_save_boxplot_sp data = {boxplot_data_sum}')
     plot_and_save_boxplot_sp(boxplot_data_sum, pdf_file_path, csv_file_path, method, show_fig_time=0.1
-        , normalize_coeff=5.0)
+        #, normalize_coeff=5.0)
+        , normalize_coeff = total_weight)
 
     print(f'\n\n######### done')
 
