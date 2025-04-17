@@ -1024,7 +1024,7 @@ def gen_Et_from_path(path_xys,period,ms_per_move,
 #   if None, code will select tasks randomly for all processors to add performance records
 # - processorId is the processor id of the taskset
 def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
-    perf_sel=None,iprocessorId=0):
+    perf_sel=None,iprocessorId=0,weight_dict=None):
     global g_min_performance_records_time_step
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_total_weights, g_weigths_opts
@@ -1052,7 +1052,7 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
     #    # select n_sel_perf_record_task randomly
     #    random.shuffle(inp['tasks'])
     #n_perf_added = 0
-    
+
     if perf_sel is None:
         # select tasks with performance records
         max_ptasks_per_processor = math.ceil(g_sel_n_perf_record_task/g_n_processors)
@@ -1072,7 +1072,7 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
             if n_ptasks_per_processor[processorId] >= max_ptasks_per_processor:
                 loopcnt += 1
                 continue
-            
+
             perf_sel.append(i)
             n_ptasks_per_processor[processorId] += 1
             loopcnt += 1
@@ -1105,7 +1105,10 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
         t['name'] = f'task_{i+1}'
         t['sp_threshold'] = inp['tasks'][i]['sp_threshold']
         if rand_sel_weight:
-            t['sp_weight'] = random.choice(g_weigths_opts)
+            if weight_dict is not None and t['gid'] in weight_dict:
+                t['sp_weight'] = weight_dict[t['gid']]
+            else:
+                t['sp_weight'] = random.choice(g_weigths_opts)
         else:
             t['sp_weight'] = 1
 
@@ -1136,8 +1139,8 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
                     for ii in range(0,n_steps+1):
                         performance_records_time[idx+ii] = t_s
                         performance_records_perf[idx+ii] = (idx+1+ii)*0.1
-                        t_s += step    
-                    
+                        t_s += step
+
                     idx += n_steps
 
                 performance_records_time_s = " ".join(f"{x:.3f}" for x in performance_records_time)
@@ -1145,7 +1148,7 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
                 t['performance_records_time'] = performance_records_time_s
                 t['performance_records_perf'] = performance_records_perf_s
                 if not rand_sel_weight:
-                    # previously for task with perf records, we make it fixed double weight 
+                    # previously for task with perf records, we make it fixed double weight
                     t['sp_weight'] = 2
                     total_weights += 1
                     #n_perf_added += 1
@@ -1153,7 +1156,7 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
         out['tasks'].append(t)
 
     if not rand_sel_weight:
-        # normalize weights for old case
+        # normalize weights
         # if we randomly select weights, keep weight to make it look good
         total_weights = n + len(perf_sel)
         if total_weights != g_total_weights:
@@ -1344,6 +1347,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     global g_update_mean_sigma_interval_s
     global g_gen_Et_by_mean_only
     global g_n_processors
+    global g_weigths_opts
 
     # figure out start path_idx (path_x.png)
     if path_idx is None:
@@ -1549,6 +1553,10 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
         plt.savefig(cpu_util_path)
     
     
+    weight_dict = {}
+    for i in range(n_tasks):
+        weight_dict[i] = random.choice(g_weigths_opts)
+    
     perf_sel = None
     for k in range(n_intervals):
         ok = 1  
@@ -1572,7 +1580,8 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
                 os.makedirs(dir_path, exist_ok=True)
                 for pp in range(g_n_processors):
                     old_task_char,perf_sel = conv_taskset_param_to_old_fmt(params,n_sec=n_sec,
-                        add_perf_records=add_perf_records,perf_sel=perf_sel,iprocessorId=pp)
+                        add_perf_records=add_perf_records,perf_sel=perf_sel,iprocessorId=pp,
+                        weight_dict=weight_dict)
                     dump_yml_fpath = os.path.join(dir_path, f"taskset_characteristics_i{k}_p{pp}.yaml")
                     with open(dump_yml_fpath, "w") as f:
                         yaml.dump(old_task_char, f, sort_keys=False,default_flow_style=False, width=float("inf"), 
