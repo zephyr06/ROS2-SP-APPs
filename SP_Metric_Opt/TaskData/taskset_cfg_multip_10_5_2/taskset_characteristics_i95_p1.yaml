@@ -1,0 +1,68 @@
+  tasks:
+    - id: 0
+      gid: 1
+      execution_time_mu: 106.25749871157095
+      execution_time_sigma: 71.00772711640111
+      execution_time_min: 50.0
+      execution_time_max: 279.8431908927821
+      period: 1000
+      deadline: 1000
+      processorId: 1
+      name: task_2
+      sp_threshold: 0.8092422072106977
+      sp_weight: 0.4
+      total_running_time: 1000000
+    - id: 1
+      gid: 3
+      execution_time_mu: 1.6292700675157263
+      execution_time_sigma: 1.173745093125976
+      execution_time_min: 1.0
+      execution_time_max: 11.17288227607699
+      period: 20
+      deadline: 20
+      processorId: 1
+      name: task_4
+      sp_threshold: 0.7059132493800311
+      sp_weight: 0.4
+      total_running_time: 1000000
+    - id: 2
+      gid: 5
+      execution_time_mu: 13.27430707415654
+      execution_time_sigma: 8.98178921562115
+      execution_time_min: 5.0
+      execution_time_max: 55.40928002061791
+      period: 100
+      deadline: 100
+      processorId: 1
+      name: task_6
+      sp_threshold: 0.8154197164893584
+      sp_weight: 0.8
+      total_running_time: 1000000
+    - id: 3
+      gid: 7
+      execution_time_mu: 12.581910923825772
+      execution_time_sigma: 8.544849316011268
+      execution_time_min: 5.0
+      execution_time_max: 49.81102860906732
+      period: 100
+      deadline: 100
+      processorId: 1
+      name: task_8
+      sp_threshold: 0.7409056859349086
+      sp_weight: 0.6
+      total_running_time: 1000000
+    - id: 4
+      gid: 9
+      execution_time_mu: 2.4983748272578197
+      execution_time_sigma: 1.4913304592711107
+      execution_time_min: 3.3000000000000003
+      execution_time_max: 29.7
+      period: 33
+      deadline: 33
+      processorId: 1
+      name: task_10
+      sp_threshold: 0.6764399797223553
+      sp_weight: 0.4
+      total_running_time: 1000000
+      performance_records_time: 3.300 5.657 8.014 10.371 12.729 15.086 17.443 19.800 24.750 29.700
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0

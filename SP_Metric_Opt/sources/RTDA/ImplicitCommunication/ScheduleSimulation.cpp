@@ -14,6 +14,8 @@
 
 // RYAN_CHANGE_20250207: THIS FILE
 
+#define RYAN_FIXBUG_BR_INCR_PRIO_ASSIGNMENT
+
 namespace SP_OPT_PA {
 
 // RYAN_HE: for a job which is not executed (because previous job missed deadline)
@@ -357,7 +359,11 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                     double priority = run_queue.tasks_info_.GetTask(task_id).get_priority();
                     //std::cout<<ppre<<"task "<<task_id<<"old priority = "<<priority<<std::endl;
 
+                    #if defined(RYAN_FIXBUG_BR_INCR_PRIO_ASSIGNMENT)
+                    double new_priority = tasks.size()-i-1;
+                    #else
                     double new_priority = tasks.size()-task_id-1;
+                    #endif
                     run_queue.set_task_priority(task_id, new_priority);
                     //std::cout<<ppre<<"set task "<<task_id<<" new priority = "<<new_priority<<std::endl;
 
@@ -491,6 +497,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
 
             // if any new jobs are added, we need to check if to recalculate priorities ?
             int recalced_prio = 0;
+            double util_regular_tasks = 0.0;
             if (reevaluate_prio_ms_cnt >= reevaluate_prio_interval_ms || prio_avail==0) {
                 // at beginning, or enough time passed, we need to reevaluate priorities
                 prio_avail = 1;
@@ -501,12 +508,11 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
 
                 const DAG_Model &dag_tasks_const = dag_tasks_vecs[interval_idx];
                 std::cout<<ppre<<"dag_tasks interval "<<interval_idx<<std::endl;
-                double util_regular_tasks = 0.0;
                 for (int i=0;i<ntasks;i++) {
                     if (exeSel[i]<0) {
                         double mu = dag_tasks_const.GetTask(i).getExecGaussian().mu;
                         util_regular_tasks += mu/dag_tasks_const.GetTask(i).period;
-                        // std::cout<<"regular task "<<i<<": incremental, exet="<<mu<<std::endl;
+                        //std::cout<<ppre<<"regular task "<<i<<": exet="<<mu<<", util="<<util_regular_tasks<<std::endl;
                     }
                 }                
                 sp_parameters = sp_parameters_vecs[interval_idx];
@@ -541,7 +547,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                             const_cast<SP_OPT_PA::Task&>(dag_tasks_const.GetTask(i)).setExecGaussian(g);  
                         }
                         std::cout<<ppre;
-                        printf("INCR time=%llu, regular/all cpu_util=%.2f/%.2f\n", time_now, util_regular_tasks,u);
+                        printf("INCR time=%llu, regular/all_tasks cpu_util=%.2f/%.2f\n", time_now, util_regular_tasks,u);
 
                         PriorityVec pa_opt = inc_opt.OptimizeIncre_w_TL(dag_tasks_const,
                             GlobalVariables::Layer_Node_During_Incremental_Optimization);                    
@@ -561,7 +567,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                         res = EnumeratePA_with_TimeLimits(dag_tasks_const, sp_parameters);
                     } else {
                         res = EnumeratePA_with_TimeLimits_sortOptionsFirst(dag_tasks_const, sp_parameters);
-                    }
+                    }                 
                     for (int i=0;i<ntasks;i++) {
                         if ( res.id2time_limit[i]>0 ) {
                             std::cout<<ppre<<"task "<<i<<": BR return exet="<<res.id2time_limit[i]<<std::endl;
@@ -571,6 +577,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
             }
 
             // try to re-set its execution time since this task has different configuration
+            double total_cpu_util = util_regular_tasks;
             for (int i=0; i<added_task_ids.size(); i++) {
                 int task_id = added_task_ids[i];
                 //std::cout<<ppre<<"set perf et for task "<<task_id<<", time_lmt "<<res.id2time_limit[task_id]<<std::endl;
@@ -584,6 +591,9 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
 
                     int newexetime_i = res.id2time_limit[task_id]; // RYAN_HE: MAY BE ADD SOME VARIATION ??
                     int newexetime = newexetime_i;
+                    double dlt = ((double)newexetime_i)/dag_tasks_vecs[interval_idx-1].GetTask(task_id).period;
+                    //std::cout<<ppre<<"--- task "<<task_id<<": inc util="<<dlt<<", new exetime="<<newexetime<<std::endl;
+                    total_cpu_util += dlt;
 #if defined(RYAN_HE_CHANGE_DEBUG)   
                     int prt = 0;
                     if ( task_id<10 && last_perf_record_t[task_id]!=newexetime_i) {
@@ -604,13 +614,20 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                 }
             }
 
+            //if (added_task_ids.size()>0 && util_regular_tasks>0.0 ) {
+            //    std::cout << ppre << "!!!!regular/all_tasks cpu_util = " << util_regular_tasks << "/" << total_cpu_util << "\n";
+            //}
 
             // if recalced_prio==1, we need to update priorities
             if (1) {
                 PriorityVec pa_opt = res.priority_vec;
 
                 if (recalced_prio==1) {
-                    std::cout << ppre << "recalced_prio at " << time_now << " ms ...\n";
+                    std::cout << ppre << "recalced_prio at " << time_now << " ms, priority_vec: ";
+                    for (int i = 0; i < pa_opt.size(); i++) {
+                        std::cout << pa_opt[i] << " ";
+                    }
+                    std::cout << "\n";
                 }
 
                 // update priorities
@@ -623,7 +640,11 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     double priority = run_queue.tasks_info_.GetTask(task_id).get_priority();
                     //std::cout<<ppre<<"task "<<task_id<<" old priority = "<<priority<<std::endl;
 
+                    #if defined(RYAN_FIXBUG_BR_INCR_PRIO_ASSIGNMENT)
+                    double new_priority = tasks.size()-i-1;
+                    #else
                     double new_priority = tasks.size()-task_id-1;
+                    #endif
                     run_queue.set_task_priority(task_id, new_priority);
                     //std::cout<<ppre<<"set task "<<task_id<<" new priority = "<<new_priority<<std::endl;
 

@@ -91,6 +91,27 @@ class TaskSetForTest_taskset_cfg_4_5_gen_1 : public ::testing::Test {
     int N = dag_tasks.tasks.size();
 };
 
+class TaskSetForTest_taskset_cfg_multip_4_2 : public ::testing::Test {
+    public:
+     void SetUp() override {
+         std::string file_name = "taskset_characteristics_i0_p0";
+         std::string path = GlobalVariables::PROJECT_PATH +
+                            "TaskData/taskset_cfg_multip_4_2/" + file_name +
+                            ".yaml";
+         file_path = path;
+         // dag_tasks = ReadDAG_Tasks(path, 5);
+         dag_tasks = ReadDAG_Tasks(path);
+         // sp_parameters = SP_Parameters(dag_tasks);
+         sp_parameters = ReadSP_Parameters(path);
+     }
+ 
+     // data members
+     string file_path;
+     DAG_Model dag_tasks;
+     SP_Parameters sp_parameters;
+     int N = dag_tasks.tasks.size();
+ };
+
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
@@ -631,6 +652,140 @@ TEST_F(TestDDLMissLessTasks, test_ddl_miss) {
         }
     }
 }
+
+
+// bigger priority is higher priority
+static void print_prio(std::string name, TaskSet &tasks, ResourceOptResult & res) {
+    // highest task at front (i.e. 3 1 2 0 means task3 has highest priority and task0 has lowest priority)
+    //std::cout<<name<<" prio_vecs: ";
+    //for (uint i = 0; i < res.priority_vec.size(); i++) {
+    //    std::cout << res.priority_vec[i] << " ";
+    //}    
+    //std::cout << std::endl;
+    std::cout<<name<<" prios: (larger means higher priority)"<<std::endl;
+    std::cout<<"    ";
+    for (uint i = 0; i < res.priority_vec.size(); i++) {
+        int task_id = i;
+        int prio = res.id2priority[task_id];
+        std::cout << "task" << task_id << "_prio=" << prio << "; ";
+    }
+    std::cout << std::endl;
+}
+
+// check priority assignment, execution time selection
+TEST_F(TaskSetForTest_taskset_cfg_multip_4_2, check_et_priority) {
+    // this task has configurable execution time
+    int task_wPerf = 0;  
+
+    std::cout << "\ncheck priority assignement and execution time selection; compare BR and INCR\n";
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    int n = GlobalVariables::Layer_Node_During_Incremental_Optimization;
+
+    // -------------------- interval 0: 
+
+    // calculate cpu_util for all regular tasks
+    double regular_cpu_util = 0.0;
+    int prdPerf;
+    for (int i = 0; i < 4; i++) {
+        const Task t = dag_tasks.GetTask(i);
+        int prd = t.period;
+        if (i == task_wPerf) {
+            prdPerf = prd;
+            continue;
+        }
+        GaussianDist g_et = t.getExecGaussian();
+        double mu = g_et.mu;
+        regular_cpu_util += mu / prd;
+    }
+    
+    // INCR scheduler result 
+    opt.OptimizeFromScratch_w_TL(n);
+    ResourceOptResult res_opt = opt.CollectResults();
+
+    // print cpu_util, and id2time_limit for task 0 (which has configurable execution time)
+    double total_cpu_util = regular_cpu_util + res_opt.id2time_limit[task_wPerf] / prdPerf;
+    printf("---------------- %02d ----------------\n",0);
+    printf( "INCR cpu_util for regular/all_tasks=%.4f/%.4ff, exe_time_for_task_%d=%.4f\n",
+        regular_cpu_util, total_cpu_util, task_wPerf, res_opt.id2time_limit[task_wPerf]);
+    print_prio("INCR", dag_tasks.tasks, res_opt); // print sp_value 
+    double cpu_util_dlt_trd = 0.25;
+    EXPECT_NEAR(total_cpu_util, 1.0, cpu_util_dlt_trd); // expect using 1.0 +/- cpu_util_dlt_trd 
+
+    // BR scheduler result£¬
+    ResourceOptResult res_opt_br = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    total_cpu_util = regular_cpu_util + res_opt_br.id2time_limit[task_wPerf] / prdPerf;
+    printf("BR   cpu_util for regular/all_tasks=%.4f/%.4ff, exe_time_for_task_%d=%.4f\n",
+        regular_cpu_util, total_cpu_util, task_wPerf, res_opt_br.id2time_limit[task_wPerf]);
+    print_prio("BR  ", dag_tasks.tasks, res_opt_br);
+    EXPECT_NEAR(total_cpu_util, 1.0, cpu_util_dlt_trd); // expect using 1.0 +/- cpu_util_dlt_trd 
+    std::cout<<"\n";
+
+
+    for (int k = 1; k <= 20; k++) {
+        // -------------------- interval k:
+        
+        // read next tasket_cfg file
+        std::string file_name = "taskset_characteristics_i" + std::to_string(k) + "_p0";
+        std::string path = GlobalVariables::PROJECT_PATH +
+                           "TaskData/taskset_cfg_multip_4_2/" + file_name +
+                           ".yaml";
+        DAG_Model dag_tasks_updated = ReadDAG_Tasks(path);
+        sp_parameters = SP_Parameters(dag_tasks_updated);
+
+        // calc BR scheduler result
+        res_opt_br = EnumeratePA_with_TimeLimits(dag_tasks_updated, sp_parameters);
+
+        // update execution_time_dist for task_wPerf in dag_tasks_updated
+        // this is necessary for INCR scheduler
+        double mu = res_opt.id2time_limit[task_wPerf];
+        GaussianDist g = GaussianDist(mu, 0.01);
+        FiniteDist eTDist = FiniteDist(g, mu, mu, 1);
+        const_cast<SP_OPT_PA::Task&>(dag_tasks_updated.GetTask(task_wPerf))
+            .set_execution_time_dist(eTDist);
+        const_cast<SP_OPT_PA::Task&>(dag_tasks_updated.GetTask(task_wPerf))
+            .setExecGaussian(g);
+
+        // calc INCR scheduler result
+        opt.OptimizeIncre_w_TL(dag_tasks_updated, n);
+        res_opt = opt.CollectResults();
+
+        // collect cpu_util for regular tasks
+        regular_cpu_util = 0.0;
+        for (int i = 0; i < 4; i++) {
+            if (i == task_wPerf) continue;
+            const Task t = dag_tasks_updated.GetTask(i);
+            int prd = t.period;
+            GaussianDist g_et = t.getExecGaussian();
+            double mu = g_et.mu;
+            regular_cpu_util += mu / prd;
+        }
+
+        // calc total cpu_util for INCR scheduler
+        total_cpu_util = regular_cpu_util + res_opt.id2time_limit[task_wPerf] / prdPerf;
+        printf("---------------- %02d ----------------\n",k);
+        printf(
+            "INCR cpu_util for regular/all=%.4f/%.4ff, exe_time_for_task_%d=%.4f\n",
+            regular_cpu_util, total_cpu_util,
+            task_wPerf, res_opt.id2time_limit[task_wPerf]);
+        print_prio("INCR", dag_tasks_updated.tasks, res_opt);
+        std::cout<<"INCR sp_opt="<<res_opt.sp_opt<<"\n";     
+        EXPECT_NEAR(total_cpu_util, 1.0, cpu_util_dlt_trd);
+
+        // calc total cpu_util for BR scheduler
+        total_cpu_util = regular_cpu_util + res_opt_br.id2time_limit[task_wPerf] / prdPerf;
+        printf(
+            "BR   cpu_util for regular/all=%.4f/%.4ff, exe_time_for_task_%d=%.4f\n",
+            regular_cpu_util, total_cpu_util,
+            task_wPerf, res_opt_br.id2time_limit[task_wPerf]);        
+        print_prio("BR   ", dag_tasks_updated.tasks, res_opt_br);
+        std::cout<<"BR   sp_opt="<<res_opt_br.sp_opt<<"\n";     
+        EXPECT_NEAR(total_cpu_util, 1.0, cpu_util_dlt_trd);
+
+        std::cout<<"\n";
+    }
+}
+
 
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);

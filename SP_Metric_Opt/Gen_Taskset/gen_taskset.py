@@ -57,6 +57,7 @@ g_min_performance_records_time_step = 0.5
 g_sel_n_perf_record_task = 2
 g_min_prd_with_perf_records = 100
 g_total_weights = 5
+g_weigths_opts = [0.2,0.4,0.6,0.8,1.0] # allow select weight
 
 g_n_tasks = 10
 g_n_big_periods = 2
@@ -1026,12 +1027,14 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
     perf_sel=None,iprocessorId=0):
     global g_min_performance_records_time_step
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
-    global g_total_weights
+    global g_total_weights, g_weigths_opts
     global g_final_Et_over_period_range
     global g_TaskP_Et_over_period_range_segs
     global g_n_processors
 
-    ############### weight is fixed to 1 and 2 (for tasks with performance records)
+    ############### weight is fixed to 1 and 2 (for tasks with performance records) before
+    ############### now select in g_weigths_opts
+    rand_sel_weight = True
 
     out = {'tasks': []}
     n = len(inp['tasks'])
@@ -1101,7 +1104,10 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
         t['processorId'] = inp['tasks'][i]['processorId']
         t['name'] = f'task_{i+1}'
         t['sp_threshold'] = inp['tasks'][i]['sp_threshold']
-        t['sp_weight'] = 1
+        if rand_sel_weight:
+            t['sp_weight'] = random.choice(g_weigths_opts)
+        else:
+            t['sp_weight'] = 1
 
         total_weights += t['sp_weight']
         t['total_running_time'] = n_ms
@@ -1138,18 +1144,22 @@ def conv_taskset_param_to_old_fmt(inp,n_sec=None,add_perf_records=True,
                 performance_records_perf_s = " ".join(f"{x:.1f}" for x in performance_records_perf)
                 t['performance_records_time'] = performance_records_time_s
                 t['performance_records_perf'] = performance_records_perf_s
-                t['sp_weight'] = 2
-                total_weights += 1
-                #n_perf_added += 1
+                if not rand_sel_weight:
+                    # previously for task with perf records, we make it fixed double weight 
+                    t['sp_weight'] = 2
+                    total_weights += 1
+                    #n_perf_added += 1
 
         out['tasks'].append(t)
 
-    # normalize weights
-    total_weights = n + len(perf_sel)
-    if total_weights != g_total_weights:
-        n1 = len(out['tasks'])
-        for i in range(n1):
-            out['tasks'][i]['sp_weight'] *= g_total_weights/total_weights
+    if not rand_sel_weight:
+        # normalize weights for old case
+        # if we randomly select weights, keep weight to make it look good
+        total_weights = n + len(perf_sel)
+        if total_weights != g_total_weights:
+            n1 = len(out['tasks'])
+            for i in range(n1):
+                out['tasks'][i]['sp_weight'] *= g_total_weights/total_weights
 
     return out,perf_sel
 

@@ -238,7 +238,12 @@ int main(int argc, char *argv[]) {
             int nn = config.size();
             for (int c1=0;c1<nn;c1++) {
                 //double deadline = chain_node["deadline"].as<double>();
-                int gid = config[c1]["gid"].as<int>();
+				
+				// to be compatible with old .yaml file
+                int gid = config[c1]["id"].as<int>();
+                if (config[c1]["gid"]) {
+                    gid = config[c1]["gid"].as<int>();
+                }
                 //std::cout<<"found task gid "<<gid<<std::endl;
                 task_gids_in_processor.push_back(gid);
                 n_tasks_in_processor += 1;
