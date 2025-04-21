@@ -96,6 +96,12 @@ def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name
     # Select approximately 10 x-ticks (adjust if fewer points exist)
     num_xticks = 10
     tick_spacing = max(1, len(time_series) // num_xticks)  # Ensure spacing is at least 1
+
+    #print(time_series)
+    #print(len(time_series))
+    #quit()
+    tick_spacing = 10
+    
     selected_ticks = np.arange(0, len(time_series), tick_spacing)
 
     # Set the x-ticks as integers, showing only a subset of labels to avoid crowding
