@@ -1336,6 +1336,214 @@ def load_and_fill_taskset_param_file(taskset_param_fpath):
 
 ################################ main api ################################
 
+'''
+def redraw_cpu_utils(dirpath):
+    proc_cpu_util_lst = []
+    for itv in range(100):    
+        p = 0
+        
+        while True:
+            fpath = f"taskset_characteristics_i{itv}_p{p}.yaml"
+            fpath = os.path.join(dirpath,fpath)
+            if not os.path.exists(fpath):
+                #print(fpath,'not exist')
+                break
+
+            if itv == 0:
+                proc_cpu_util_lst.append([])
+
+            with open(fpath, "r") as f:
+                # load params
+                taskchar_param = yaml.safe_load(f)
+                n_tasks = len(taskchar_param['tasks'])
+                cpu_util = 0
+                for i in range(0,n_tasks):
+                    et = taskchar_param['tasks'][i]['execution_time_mu']
+                    prd = taskchar_param['tasks'][i]['period']
+                    cpu_util += et/prd
+                
+                #print(f'itv={itv}, proc={p}, cpu_util={cpu_util}')
+                proc_cpu_util_lst[p].append(cpu_util)
+                
+                p += 1
+    
+    for c in proc_cpu_util_lst:
+        print(c)
+'''
+
+
+# tasks is like
+# tasks = [
+#    {'period': 20, 'execution_times': [4, 3, 5, 4, 3]},  # Task 1, execution times for each period
+#    {'period': 30, 'execution_times': [6, 5, 4, 7, 6]},  # Task 2
+#    {'period': 50, 'execution_times': [10, 9, 8, 10, 9]}  # Task 3
+# ]
+# interval = 10
+# max_times = 1000
+def calculate_cpu_utilization(tasks, interval, max_time):
+    utilizations = [] # 每个interval的cpu_util
+    
+    for t in range(0, max_time, interval):
+        utilizations.append(0)
+    
+    # 每个task, execution time spread into utilizations
+    for task in tasks:
+        period = task['period'] / 1000 # convert ms to s
+        execution_times = task['execution_times']
+        
+        for i in range(len(execution_times)):
+            # period is ms, convert to s
+            idx = int( (period*i) // interval )
+            # interval is idx*interval, (idx+1)*interval
+            t_in_idx_interval =  (idx+1)*interval - (period*i)
+            r = t_in_idx_interval / period
+            if r>1.0:
+                r = 1.0
+            utilizations[idx] += execution_times[i]/1000*r
+            if idx<len(utilizations)-1:
+                utilizations[idx+1] += execution_times[i]/1000*(1-r)         
+    
+    for i in range(len(utilizations)):
+        utilizations[i] = utilizations[i] / interval    
+
+    return utilizations
+
+def redraw_cpu_utils(dirpath):
+    # draw cpu util for each processor each path instance
+    # path_Et_task_gid_0_inst.txt: x,y,et
+    
+    global g_update_mean_sigma_interval_s
+    n_sec = 1000
+    
+    # figure out n_proc and gids on each processor
+    gid_prds = []
+    n_proc = 0
+    while True:
+        fpath = f"taskset_characteristics_i0_p{n_proc}.yaml"
+        fpath = os.path.join(dirpath,fpath)
+        if not os.path.exists(fpath):
+            #print(fpath,'not exist')
+            break
+        
+        gid_prds.append([])
+        with open(fpath, "r") as f:
+            # load params
+            taskchar_param = yaml.safe_load(f)
+            n_tasks = len(taskchar_param['tasks'])        
+            for i in range(0,n_tasks):
+                gid = taskchar_param['tasks'][i]['gid']
+                prd = taskchar_param['tasks'][i]['period']
+                e = {'gid':gid,'period':prd}
+                gid_prds[n_proc].append(e)
+            
+            n_proc += 1
+    
+    # figure out n_inst_per_path
+    n_inst = 0
+    while True:
+        fpath = f"path_Et_task_0_0_{n_inst}.txt"
+        fpath = os.path.join(dirpath,fpath)
+        if not os.path.exists(fpath):
+            #print(fpath,'not exist')
+            break
+        n_inst += 1
+    
+    print(n_inst)
+    
+    def read_ets(fpath):
+        # Open the file in read mode
+        ets = []
+        with open(fpath, 'r') as file:
+            # Loop through each line in the file
+            for line in file:
+                # Strip leading/trailing whitespace and split the line by commas
+                values = line.strip().split(',')
+                
+                # Convert the values to the appropriate types
+                int1 = int(values[0])
+                int2 = int(values[1])
+                float_value = float(values[2])
+                ets.append(float_value)
+            
+        return ets
+        
+    #print(gid_prds)
+    cpu_util_inst_processors = []
+    for p in range(n_proc):
+        cpu_util_insts = []
+        for inst in range(n_inst):
+            
+            tasks = [] # all tasks for this processor, this instance
+            for gid_prd in gid_prds[p]:
+                gid = gid_prd['gid']
+                prd = gid_prd['period']
+                fpath = f"path_Et_task_{gid}_0_{inst}.txt"
+                fpath = os.path.join(dirpath,fpath)
+                ets = read_ets(fpath)
+                
+                tasks.append( {'period':prd,'execution_times':ets} )
+            
+            utilizations = calculate_cpu_utilization(tasks,g_update_mean_sigma_interval_s,n_sec)
+            #print(utilizations)
+            cpu_util_insts.append(utilizations)
+            
+        cpu_util_inst_processors.append(cpu_util_insts)
+    
+    #print(cpu_util_inst_processors)
+    
+    nn = math.ceil(n_sec/g_update_mean_sigma_interval_s)    
+    xx = []
+    for i in range(nn):
+        xx.append(g_update_mean_sigma_interval_s * i)
+    max_utilization = max([max([max(cpu_util_inst_processors[pp][si]) for si in range(n_inst)]) for pp in range(n_proc)])
+    
+    # draw for each processor
+    for pp in range(n_proc):
+        fig, ax = plt.subplots()
+        for si in range(n_inst):
+            print('len xx is',len(xx))
+            print('len util is',len(cpu_util_inst_processors[pp][si]))
+            print('util',cpu_util_inst_processors[pp][si])
+            ax.plot(xx,cpu_util_inst_processors[pp][si], label=f"path_0_inst_{si}_processor_{pp}")
+            si += 1
+            #break
+
+        ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+        ax.set_ylim(0, max_utilization)
+
+        ax.set_xlabel('time')
+        ax.set_ylabel('cpu util')
+        ax.set_title(f'cpu {pp} util')
+        ax.legend()
+        # Save the figure to a file
+        cpu_util_path = os.path.join(dirpath, f"cpu_util_new_{pp}.png")
+        plt.savefig(cpu_util_path)
+
+    # draw all processor together
+    fig, ax = plt.subplots()
+    for pp in range(n_proc):
+        for si in range(n_inst):
+            print('len xx is',len(xx))
+            print('len util is',len(cpu_util_inst_processors[pp][si]))
+            print('util',cpu_util_inst_processors[pp][si])
+            ax.plot(xx,cpu_util_inst_processors[pp][si], label=f"path_0_inst_{si}_processor_{pp}")
+            si += 1
+            #break
+
+    ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+    ax.set_ylim(0, max_utilization)
+
+    ax.set_xlabel('time')
+    ax.set_ylabel('cpu util')
+    ax.set_title('cpu util')
+    ax.legend()
+    # Save the figure to a file
+    cpu_util_path = os.path.join(dirpath, f"cpu_util_new.png")
+    plt.savefig(cpu_util_path)
+
+
+#redraw_cpu_utils('../TaskData/taskset_cfg_multip_10_5_2')
+#quit()
 
 # generte path and Et 
 # if path_idx is not None, continue generating path_Et from that path_idx
@@ -1499,7 +1707,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
 
             # ax.plot(xx,cpu_utils, label=f"path_{k}_inst_{si}")
             # plt.show()
-            cpu_util_lst_1.append(cpu_utils)
+            cpu_util_lst_1.append( )
 
             #cpu_util_path = os.path.join(dir_path, f"path_cpu_util_path_{k}.txt")
             #with open(cpu_util_path, 'w') as f:
@@ -1523,6 +1731,9 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
                 ax.plot(xx,si_c[pp], label=f"path_{k}_inst_{si}_processor_{pp}")
             si += 1
         k+=1
+
+    ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+
     ax.set_xlabel('time')
     ax.set_ylabel('cpu util')
     ax.set_title('cpu util')
@@ -1544,6 +1755,10 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
                 ax.plot(xx,si_c[pp], label=f"path_{k}_inst_{si}_processor_{pp}")
                 si += 1
             k+=1
+        
+        # Set x-axis labels every 100 units
+        ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+
         ax.set_xlabel('time')
         ax.set_ylabel(f'cpu {pp} util ')
         ax.set_title(f'cpu {pp} util')
