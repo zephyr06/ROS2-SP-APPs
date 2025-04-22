@@ -102,10 +102,14 @@ def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name
     #quit()
     tick_spacing = 10
     
-    selected_ticks = np.arange(0, len(time_series), tick_spacing)
-
+    #selected_ticks = np.arange(0, len(time_series), tick_spacing)
     # Set the x-ticks as integers, showing only a subset of labels to avoid crowding
-    plt.xticks(ticks=selected_ticks, labels=[int(time_series[i]) for i in selected_ticks])
+    #plt.xticks(ticks=selected_ticks, labels=[int(time_series[i]) for i in selected_ticks])
+	
+    selected_ticks = np.arange(0, len(time_series)+tick_spacing, tick_spacing)
+    dlt = time_series[selected_ticks[1]] - time_series[selected_ticks[0]]
+    labels=[int(time_series[0]+i/tick_spacing*dlt) for i in selected_ticks]
+    plt.xticks(ticks=selected_ticks, labels=labels)
 
 
     # Customize the plot
