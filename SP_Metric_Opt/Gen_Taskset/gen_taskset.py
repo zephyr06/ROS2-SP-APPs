@@ -1495,8 +1495,11 @@ def redraw_cpu_utils(dirpath):
     xx = []
     for i in range(nn):
         xx.append(g_update_mean_sigma_interval_s * i)
-    max_utilization = max([max([max(cpu_util_inst_processors[pp][si]) for si in range(n_inst)]) for pp in range(n_proc)])
-    
+    # max_utilization = max([max([max(cpu_util_inst_processors[pp][si]) for si in range(n_inst)]) for pp in range(n_proc)])
+    max_utilization = 180
+
+    add_legend = False
+
     # draw for each processor
     for pp in range(n_proc):
         fig, ax = plt.subplots()
@@ -1504,19 +1507,27 @@ def redraw_cpu_utils(dirpath):
             print('len xx is',len(xx))
             print('len util is',len(cpu_util_inst_processors[pp][si]))
             print('util',cpu_util_inst_processors[pp][si])
-            ax.plot(xx,cpu_util_inst_processors[pp][si], label=f"path_0_inst_{si}_processor_{pp}")
+            multiplied_list = [x * 100 for x in cpu_util_inst_processors[pp][si]]
+            if add_legend:
+                ax.plot(xx,multiplied_list, label=f"path_0_inst_{si}_processor_{pp}")
+            else:
+                ax.plot(xx,multiplied_list)
             si += 1
             #break
 
-        ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+        #ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+        ax.set_xticks(range(0, int(xx[-1]+100), 100))  # Create ticks at intervals of 100
         ax.set_ylim(0, max_utilization)
 
         ax.set_xlabel('time')
-        ax.set_ylabel('cpu util')
-        ax.set_title(f'cpu {pp} util')
-        ax.legend()
+        ax.set_ylabel('CPU Utilization (%)')
+        #ax.set_title(f'cpu {pp} util')
+
+        if add_legend:
+            ax.legend()
+
         # Save the figure to a file
-        cpu_util_path = os.path.join(dirpath, f"cpu_util_new_{pp}.png")
+        cpu_util_path = os.path.join(dirpath, f"cpu_util_new_{pp}.pdf")
         plt.savefig(cpu_util_path)
 
     # draw all processor together
@@ -1526,24 +1537,33 @@ def redraw_cpu_utils(dirpath):
             print('len xx is',len(xx))
             print('len util is',len(cpu_util_inst_processors[pp][si]))
             print('util',cpu_util_inst_processors[pp][si])
-            ax.plot(xx,cpu_util_inst_processors[pp][si], label=f"path_0_inst_{si}_processor_{pp}")
+            multiplied_list = [x * 100 for x in cpu_util_inst_processors[pp][si]]
+            if add_legend:
+                ax.plot(xx,multiplied_list, label=f"path_0_inst_{si}_processor_{pp}")
+            else:
+                ax.plot(xx,multiplied_list)
             si += 1
             #break
 
-    ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+    #ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+    ax.set_xticks(range(0, int(xx[-1]+100), 100))  # Create ticks at intervals of 100
     ax.set_ylim(0, max_utilization)
 
     ax.set_xlabel('time')
-    ax.set_ylabel('cpu util')
-    ax.set_title('cpu util')
-    ax.legend()
+    #ax.set_ylabel('cpu util')
+    ax.set_ylabel('CPU Utilization (%)')
+    #ax.set_title('cpu util')
+
+    if add_legend:
+        ax.legend()
+
     # Save the figure to a file
-    cpu_util_path = os.path.join(dirpath, f"cpu_util_new.png")
+    cpu_util_path = os.path.join(dirpath, f"cpu_util_new.pdf")
     plt.savefig(cpu_util_path)
 
 
-#redraw_cpu_utils('../TaskData/taskset_cfg_multip_10_5_2')
-#quit()
+redraw_cpu_utils('../TaskData/taskset_cfg_multip_10_5_2')
+quit()
 
 # generte path and Et 
 # if path_idx is not None, continue generating path_Et from that path_idx
