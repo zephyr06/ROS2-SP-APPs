@@ -1929,6 +1929,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
             # Set x-axis labels every 100 units
             #ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
             ax.set_xticks(range(0, int(xx[-1]+100), 100))  # Create ticks at intervals of 100
+            ax.set_ylim(0, max_utilization)
 
             ax.set_xlabel('time')
             #ax.set_ylabel(f'cpu {pp} util ')
