@@ -47,6 +47,7 @@ import matplotlib.pyplot as plt
 import random
 import argparse
 import math
+import shutil
 
 # make sure min execution time is at least (mean - 2*sigma)
 # otherwise we often found min execution time is 1
@@ -82,6 +83,9 @@ g_update_mean_sigma_interval_s = 10 # how often to re-generate mean and sigma fo
 g_gen_Et_by_mean_only = False
 
 g_n_processors = 1
+
+# when plot cpu utilization, add legend
+add_legend = False
 
 ###################################################################################################
 # utility functions
@@ -993,6 +997,7 @@ def gen_Et_from_path(path_xys,period,ms_per_move,
             path_idx += 1
             if path_idx >= n_path:
                 path_idx = 0
+            t_ms += period # bug fix
         else:
             t_ms += period
 
@@ -1413,6 +1418,7 @@ def redraw_cpu_utils(dirpath):
     # path_Et_task_gid_0_inst.txt: x,y,et
     
     global g_update_mean_sigma_interval_s
+    global add_legend
     n_sec = 1000
     
     # figure out n_proc and gids on each processor
@@ -1498,8 +1504,6 @@ def redraw_cpu_utils(dirpath):
     # max_utilization = max([max([max(cpu_util_inst_processors[pp][si]) for si in range(n_inst)]) for pp in range(n_proc)])
     max_utilization = 180
 
-    add_legend = False
-
     # draw for each processor
     for pp in range(n_proc):
         fig, ax = plt.subplots()
@@ -1562,20 +1566,126 @@ def redraw_cpu_utils(dirpath):
     plt.savefig(cpu_util_path)
 
 
-redraw_cpu_utils('../TaskData/taskset_cfg_multip_10_5_2')
-quit()
+#redraw_cpu_utils('../TaskData/taskset_cfg_multip_10_5_2')
+#quit()
+
+def save_step_path_file(dir_path,prd_max,coordinates,path_idx):
+    fpath = os.path.join(dir_path, f'step_path_{path_idx}.txt')
+    with open(fpath, 'w') as file:
+        # write prd to file
+        file.write(f'{prd_max}\n')
+        # write coordinates to file
+        for coord in coordinates:
+            file.write(f'{coord[0]},{coord[1]}\n')
+
+def load_step_path_file(dir_path,path_idx):
+    fpath = os.path.join(dir_path, f'step_path_{path_idx}.txt')
+    if not os.path.exists(fpath):
+        return None,None
+
+    with open(fpath, 'r') as file:
+        # read prd from file
+        prd_max = int(file.readline().strip())
+        # read coordinates from file
+        coordinates = []
+        for line in file:
+            values = line.strip().split(',')
+            int1 = int(values[0])
+            int2 = int(values[1])
+            coordinates.append((int1, int2))
+        return prd_max, coordinates
+    
+    return None,None
+
+def load_reinterpret_step_path(curr_prd_max,dir_path,path_idx):
+    prd_max,coordinates = load_step_path_file(dir_path,path_idx)
+    if prd_max is None:
+        return None,None
+    
+    if curr_prd_max == prd_max:
+        return prd_max,coordinates
+    
+    new_coordinates = []
+    t = 0
+    t_max = len(coordinates)*prd_max
+    while t < t_max:
+        idx = t//prd_max
+        new_coordinates.append(coordinates[idx])
+        t += curr_prd_max
+    
+    return curr_prd_max,new_coordinates
+
+# test
+#curr_prd_max,coordinates = load_reinterpret_step_path(2000,'../TaskData/taskset_cfg_multip_10_5_3',0)
+#print(curr_prd_max,coordinates)
+#curr_prd_max,coordinates = load_reinterpret_step_path(8000,'../TaskData/taskset_cfg_multip_10_5_3',0)
+#print(curr_prd_max,coordinates)
+#quit()
+
+# if exist, should read coordinates from it
+def find_paths_from_existing_rst(dir_path,path_idx=0):
+    prd_max, coordinates = load_step_path_file(dir_path,path_idx)
+    if prd_max is not None:
+        return prd_max,coordinates
+
+    # step_path.txt not exist
+    fpath = os.path.join(dir_path, 'taskset_param.yaml')
+    params = load_and_fill_taskset_param_file(fpath)
+    # get biggest period
+    prd_max = 0
+    gid = -1
+    i = 0
+    for task in params['tasks']:
+        prd = task['period']
+        if prd>prd_max:
+            prd_max = prd
+            gid = i
+        i += 1
+    print(f'prd_max={prd_max},gid={gid}')
+
+    def read_coordinate_in_ets(fpath):
+        # Open the file in read mode
+        coordinates = []
+        with open(fpath, 'r') as file:
+            # Loop through each line in the file
+            for line in file:
+                # Strip leading/trailing whitespace and split the line by commas
+                values = line.strip().split(',')
+                
+                # Convert the values to the appropriate types
+                int1 = int(values[0])
+                int2 = int(values[1])
+                coordinates.append((int1, int2))
+            
+        return coordinates
+
+    fpath = os.path.join(dir_path, f'path_Et_task_{gid}_0_0.txt')
+    coordinates = read_coordinate_in_ets(fpath)
+    print(coordinates)
+
+    save_step_path_file(dir_path,prd_max,coordinates,path_idx)
+ 
+    return prd_max,coordinates
+
+#find_paths_from_existing_rst('../TaskData/taskset_cfg_multip_10_5_2')
+#quit()
+
 
 # generte path and Et 
-# if path_idx is not None, continue generating path_Et from that path_idx
+# if step_path_dir is not None, using the step_path_0.txt from that dir
+# generate tasks
 def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     path_idx=None,
-    n_sec=1000,add_perf_records=True,interact=False):
+    n_sec=1000,add_perf_records=True,interact=False,
+    step_path_dir = None):
     global g_n_big_periods, g_n_small_periods, g_n_tasks
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_update_mean_sigma_interval_s
     global g_gen_Et_by_mean_only
     global g_n_processors
     global g_weigths_opts
+    global add_legend
+
 
     # figure out start path_idx (path_x.png)
     if path_idx is None:
@@ -1657,30 +1767,43 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
         for k in range(n_intervals):
             task_Ets[i].append({'Ets':[], 'Et_mean': 0, 'Et_sigma': 0, 'Et_min': 0, 'Et_max': 0})
 
-    cpu_util_lst = []
+    cpu_util_lst = [] # cpu_util for all paths
 
     cb = gen_et_cb
     for k in range(path_idx,n_path_per_task+path_idx):
-        # one for each processor
-        cpu_util_lst_1 = []
+        cpu_util_lst_1 = [] # one for each path, including all instances
 
         ###################### for each path ######################
         if dir_path is None:
             pic_path = None
         else:
             pic_path = os.path.join(dir_path, f"path_{k}.png")
+        
+        ######### 用最大周期的task, 生成path
+        # path_xys是list of [x,y]
+        # 每个[x,y]代表这个task的每个execution的坐标
+        # 对于其它task, 可能有多个execution在同一个坐标
         n_steps = int(n_ms/prd_max)
-        path_xys = gen_path_only(cfgs,stops,
-            n_steps=n_steps,reverse_prob=0.2,draw=draw,pic_path=pic_path)
 
+        if step_path_dir is not None: 
+            prd_max, path_xys = load_reinterpret_step_path(prd_max,step_path_dir,0)
+            if prd_max is None:
+                path_xys = gen_path_only(cfgs,stops,
+                    n_steps=n_steps,reverse_prob=0.2,draw=draw,pic_path=pic_path)
+        else:
+            path_xys = gen_path_only(cfgs,stops,
+                n_steps=n_steps,reverse_prob=0.2,draw=draw,pic_path=pic_path)
+
+        save_step_path_file(dir_path,prd_max,path_xys,k)
+ 
         for si in range(n_inst_per_path):
             ###################### for each instance of this path ######################
             cpu_util_step = g_update_mean_sigma_interval_s
 
             # cpu_utils needs to be for each processor 
-            cpu_utils = []
+            cpu_utils = [] # [processor][interval], this is the cpu_util for this instance
             for pp in range(g_n_processors):
-                cpu_utils1 = [0]*math.ceil(n_sec/cpu_util_step)
+                cpu_utils1 = [0]*math.ceil(n_sec/cpu_util_step) # number of intervals
                 cpu_utils.append(cpu_utils1)
             
             i = 0 # i is task index
@@ -1725,15 +1848,18 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
                     ss += f'{cpu_utils[pp][idx]:.2f}, '
                 print(f"path {k} processor {pp} cpu utils: {ss}")
 
+                # save cpu_utils[pp]
+                cpu_util_path = os.path.join(dir_path, f"cpu_util_path{k}_inst{si}_proc{pp}.txt")
+                with open(cpu_util_path, 'w') as f:
+                    for c in cpu_utils[pp]:
+                        f.write(f'{c:.2f}\n')
+
             # ax.plot(xx,cpu_utils, label=f"path_{k}_inst_{si}")
             # plt.show()
-            cpu_util_lst_1.append( )
 
-            #cpu_util_path = os.path.join(dir_path, f"path_cpu_util_path_{k}.txt")
-            #with open(cpu_util_path, 'w') as f:
-            #    f.write(ss)
+            cpu_util_lst_1.append(cpu_utils) # append the cpu utils for this instance
 
-        cpu_util_lst.append(cpu_util_lst_1)
+        cpu_util_lst.append(cpu_util_lst_1) # append the cpu utils for this path
 
     # draw cpu util 
     fig, ax = plt.subplots()
@@ -1742,52 +1868,82 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     for i in range(nn):
         xx.append(g_update_mean_sigma_interval_s * i)
 
-    k = 0 # path index
-    # cpu_util_lst: [path][inst][processor][1000/10 segs]
-    for c in cpu_util_lst: # c is cpu_util_lst1
-        si = 0 # instance index
-        for si_c in c:
-            for pp in range(g_n_processors):
-                ax.plot(xx,si_c[pp], label=f"path_{k}_inst_{si}_processor_{pp}")
-            si += 1
-        k+=1
+    max_utilization = 180
 
-    ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
-
-    ax.set_xlabel('time')
-    ax.set_ylabel('cpu util')
-    ax.set_title('cpu util')
-    ax.legend()
-    # Save the figure to a file
-    cpu_util_path = os.path.join(dir_path, "cpu_util.png")
-    plt.savefig(cpu_util_path)
-
-    # draw cpu util on each processor
-    for pp in range(g_n_processors):
-        fig, ax = plt.subplots()
-        nn = math.ceil(n_sec/g_update_mean_sigma_interval_s)
-
+    for legend in range(2): # legend/no_legend
+        if legend == 0:
+            w_legend = True
+            path_name = 'cpu_util.pdf'
+        else:
+            w_legend = False
+            path_name = 'cpu_util_wolegend.pdf'
+        
         k = 0 # path index
         # cpu_util_lst: [path][inst][processor][1000/10 segs]
         for c in cpu_util_lst: # c is cpu_util_lst1
             si = 0 # instance index
             for si_c in c:
-                ax.plot(xx,si_c[pp], label=f"path_{k}_inst_{si}_processor_{pp}")
+                for pp in range(g_n_processors):
+                    multiplied_list = [x * 100 for x in si_c[pp]]       
+                    if w_legend:
+                        ax.plot(xx, multiplied_list, label=f"path_{k}_inst_{si}_processor_{pp}")
+                    else:
+                        ax.plot(xx, multiplied_list)
                 si += 1
             k+=1
-        
-        # Set x-axis labels every 100 units
-        ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+
+        #ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+        ax.set_xticks(range(0, int(xx[-1]+100), 100))  # Create ticks at intervals of 100
+        ax.set_ylim(0, max_utilization)
 
         ax.set_xlabel('time')
-        ax.set_ylabel(f'cpu {pp} util ')
-        ax.set_title(f'cpu {pp} util')
-        ax.legend()
+        #ax.set_ylabel('cpu util')
+        ax.set_ylabel('CPU Utilization (%)')
+        #ax.set_title('cpu util')
+        if w_legend:
+            ax.legend()
         # Save the figure to a file
-        cpu_util_path = os.path.join(dir_path, f"cpu_util_{pp}.png")
+        cpu_util_path = os.path.join(dir_path, path_name)
         plt.savefig(cpu_util_path)
+
+
+
+        # draw cpu util on each processor
+        for pp in range(g_n_processors):
+            fig, ax = plt.subplots()
+            nn = math.ceil(n_sec/g_update_mean_sigma_interval_s)
+
+            k = 0 # path index
+            # cpu_util_lst: [path][inst][processor][1000/10 segs]
+            for c in cpu_util_lst: # c is cpu_util_lst1
+                si = 0 # instance index
+                for si_c in c:
+                    multiplied_list = [x * 100 for x in si_c[pp]]
+                    if w_legend:
+                        ax.plot(xx, multiplied_list, label=f"path_{k}_inst_{si}_processor_{pp}")
+                    else:
+                        ax.plot(xx, multiplied_list)
+                    si += 1
+                k+=1
+            
+            # Set x-axis labels every 100 units
+            #ax.set_xticks(range(0, int(xx[-1]), 100))  # Create ticks at intervals of 100
+            ax.set_xticks(range(0, int(xx[-1]+100), 100))  # Create ticks at intervals of 100
+
+            ax.set_xlabel('time')
+            #ax.set_ylabel(f'cpu {pp} util ')
+            ax.set_ylabel('CPU Utilization (%)')
+            #ax.set_title(f'cpu {pp} util')
+            if w_legend:
+                ax.legend()
+            # Save the figure to a file
+            if w_legend:
+                cpu_util_path = os.path.join(dir_path, f"cpu_util_{pp}.pdf")
+            else:
+                cpu_util_path = os.path.join(dir_path, f"cpu_util_{pp}_wolegend.pdf")
+            plt.savefig(cpu_util_path)
     
-    
+
     weight_dict = {}
     for i in range(n_tasks):
         weight_dict[i] = random.choice(g_weigths_opts)
@@ -1840,7 +1996,8 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
 
 # read cfg file, generate taskset params, and paths, and dump to dir_path
 def gen_taskset_param_path(cfg_file,n_sec=1000,dir_path=None,
-                           add_perf_records=True,interact=False,n_path_per_task=4,n_inst_per_path=8):
+                           add_perf_records=True,interact=False,n_path_per_task=4,n_inst_per_path=8,
+                           param_dir=None,step_path_dir=None):
     global g_n_big_periods, g_n_small_periods, g_n_tasks
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
 
@@ -1880,24 +2037,55 @@ def gen_taskset_param_path(cfg_file,n_sec=1000,dir_path=None,
         os.makedirs(dir_path, exist_ok=True)
 
     # generate taskset params
-    params = gen_taskset_param(cfgs,dir_path,save_task_Et_plot=True,n_sec=n_sec)
+    if param_dir is not None:
+        fpath = os.path.join(param_dir, 'taskset_param.yaml')
+        params = load_and_fill_taskset_param_file(fpath)
+        if params is None:
+            print(f'{fpath} not exist; gen {fpath}')
+            params = gen_taskset_param(cfgs,dir_path,save_task_Et_plot=True,n_sec=n_sec)
+        else:
+            # copy it to this dir
+            shutil.copy(fpath, os.path.join(dir_path,'taskset_param.yaml'))
+    else:
+        params = gen_taskset_param(cfgs,dir_path,save_task_Et_plot=True,n_sec=n_sec)
 
-    cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,path_idx=0)
+    cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,path_idx=0,
+                           step_path_dir=step_path_dir)
 
 if __name__ == "__main__":
     OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     dbg = False # windows debug, not to turn on for release
     if dbg:
-        cfg_file = 'TaskData/taskset_cfg_10_1.json'
+        cfg_file = 'TaskData/taskset_cfg_multip_10_5.json'
         n_sec = 1000
-        dir_path = 'TaskData/taskset_cfg_10_1_gen_1'
+        dir_path = 'TaskData/taskset_cfg_multip_10_5_4'
         add_perf_records = True
         interact = False
         n_path_per_task = 1
         n_inst_per_path = 8
 
+        # if None, generate path
+        # otherwise, using step_path_0.txt there
+        step_path_dir = 'TaskData/taskset_cfg_multip_10_5_3' 
+        #
+        # if None, generate taskset param (prd, period, weight ...)
+        # otherwise, use taskset_param.yaml in this dir
+        param_dir = step_path_dir 
+
+        #step_path_dir = None
+        #param_dir = None
+
         gen_path_for_taskset = False
+
+        if step_path_dir is not None:
+            if not step_path_dir.startswith('/'):
+                step_path_dir = os.path.join(OPT_SP_PROJECT_PATH, step_path_dir)
+
+        if param_dir is not None:
+            if not param_dir.startswith('/'):
+                param_dir = os.path.join(OPT_SP_PROJECT_PATH, param_dir)
+
         if gen_path_for_taskset:
             if cfg_file is None:
                 print(f'cannot find config file: {cfg_file}')
@@ -1932,7 +2120,8 @@ if __name__ == "__main__":
         else:
             gen_taskset_param_path(cfg_file, n_sec=n_sec, dir_path=dir_path, 
                 add_perf_records=add_perf_records, interact=interact,
-                n_path_per_task=n_path_per_task,n_inst_per_path=n_inst_per_path)
+                n_path_per_task=n_path_per_task,n_inst_per_path=n_inst_per_path,
+                param_dir=param_dir,step_path_dir=step_path_dir)
         
     else:
         # Set up argument parser
@@ -1962,8 +2151,21 @@ if __name__ == "__main__":
         # Optional argument: gen_path_only (boolean flag)
         parser.add_argument("--gen_path_for_taskset", action="store_true", help="Only generate paths, do not generate taskset params")
 
+        # Optional argument: step_path_dir (str)
+        parser.add_argument("--step_path_dir", type=str, help="step_path_0.txt dir if to use the path",default=None)
+        parser.add_argument("--param_dir", type=str, help="taskset_param.yaml dir if to use the taskset parma",default=None)
+
         # Parse arguments
         args = parser.parse_args()
+
+
+        if args.step_path_dir is not None:
+            if not args.step_path_dir.startswith('/'):
+                args.step_path_dir = os.path.join(OPT_SP_PROJECT_PATH, args.step_path_dir)
+        print('args.step_path_dir:',args.step_path_dir)
+        if args.param_dir is not None:
+            if not args.param_dir.startswith('/'):
+                args.param_dir = os.path.join(OPT_SP_PROJECT_PATH, args.param_dir)
 
         # Call the main function with parsed arguments
         if args.gen_path_for_taskset:
@@ -1996,11 +2198,13 @@ if __name__ == "__main__":
 
             cont_gen_path_Et(cfgs,args.dir_path,args.n_path_per_task,args.n_inst_per_path,
                 path_idx=None,
-                n_sec=args.n_sec, add_perf_records=args.add_perf_records, interact=args.interact)
+                n_sec=args.n_sec, add_perf_records=args.add_perf_records, interact=args.interact,
+                step_path_dir=args.step_path_dir)
         else:
             gen_taskset_param_path(args.cfg_file, n_sec=args.n_sec, dir_path=args.dir_path, 
                 add_perf_records=args.add_perf_records, interact=args.interact,
-                n_path_per_task=args.n_path_per_task,n_inst_per_path=args.n_inst_per_path)
+                n_path_per_task=args.n_path_per_task,n_inst_per_path=args.n_inst_per_path,
+                param_dir=args.param_dir,step_path_dir=args.step_path_dir)
 
 
 # run
