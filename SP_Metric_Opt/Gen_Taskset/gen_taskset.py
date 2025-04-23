@@ -1678,6 +1678,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     path_idx=None,
     n_sec=1000,add_perf_records=True,interact=False,
     step_path_dir = None):
+
     global g_n_big_periods, g_n_small_periods, g_n_tasks
     global g_sel_n_perf_record_task, g_min_prd_with_perf_records
     global g_update_mean_sigma_interval_s
@@ -1862,7 +1863,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
         cpu_util_lst.append(cpu_util_lst_1) # append the cpu utils for this path
 
     # draw cpu util 
-    fig, ax = plt.subplots()
+    #fig, ax = plt.subplots()
     nn = math.ceil(n_sec/g_update_mean_sigma_interval_s)
     xx = []
     for i in range(nn):
@@ -1871,6 +1872,7 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     max_utilization = 180
 
     for legend in range(2): # legend/no_legend
+        fig, ax = plt.subplots()
         if legend == 0:
             w_legend = True
             path_name = 'cpu_util.pdf'
@@ -1946,8 +1948,33 @@ def cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,
     
 
     weight_dict = {}
-    for i in range(n_tasks):
-        weight_dict[i] = random.choice(g_weigths_opts)
+    gen_sp_weight = True
+    if step_path_dir is not None: 
+        # using previous sp_weight
+        n_sp_weight_found = 0 
+        for pp in range(g_n_processors):
+            fpath = os.path.join(step_path_dir,f'taskset_characteristics_i0_p{pp}.yaml')
+            with open(fpath, "r") as f:
+                # load params
+                taskchar_param = yaml.safe_load(f)
+                n_tasks_this = len(taskchar_param['tasks'])        
+                for i in range(0,n_tasks_this):
+                    gid = taskchar_param['tasks'][i]['gid']
+                    w = taskchar_param['tasks'][i]['sp_weight']
+                    weight_dict[gid] = w
+                    n_sp_weight_found += 1
+        
+        print(f'found {n_sp_weight_found} old sp_weight')
+        print(weight_dict)
+        if n_sp_weight_found == n_tasks:
+            gen_sp_weight = False
+                    
+    if gen_sp_weight:
+        weight_dict = {}
+        for i in range(n_tasks):
+            weight_dict[i] = random.choice(g_weigths_opts)
+    
+    #quit()
     
     perf_sel = None
     for k in range(n_intervals):
@@ -2051,7 +2078,7 @@ def gen_taskset_param_path(cfg_file,n_sec=1000,dir_path=None,
         params = gen_taskset_param(cfgs,dir_path,save_task_Et_plot=True,n_sec=n_sec)
 
     cont_gen_path_Et(cfgs,dir_path,n_path_per_task,n_inst_per_path,path_idx=0,
-                           step_path_dir=step_path_dir)
+                     step_path_dir=step_path_dir)
 
 if __name__ == "__main__":
     OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
