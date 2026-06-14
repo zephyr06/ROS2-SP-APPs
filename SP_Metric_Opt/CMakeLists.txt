@@ -69,7 +69,6 @@ target_link_libraries(${CONVENIENCE_LIB_NAME} yaml-cpp)
 target_link_libraries(${CONVENIENCE_LIB_NAME} "stdc++fs")
 target_link_libraries(${CONVENIENCE_LIB_NAME} gtest_main)
 target_link_libraries(${CONVENIENCE_LIB_NAME}  gmock)
-# target_link_libraries(${CONVENIENCE_LIB_NAME}  GTest::GTest)
 find_package(Eigen3 REQUIRED)
 include_directories(${EIGEN3_INCLUDE_DIR})
 
