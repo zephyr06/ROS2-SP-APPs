@@ -47,7 +47,9 @@ void PriorityPartialPath::UpdateSP(int task_id) {
     TaskSet hp_tasks;
     hp_tasks.reserve(tasks_to_assign.size());
     for (int task_hp_id : tasks_to_assign) {
-        hp_tasks.push_back(dag_tasks.tasks[task_hp_id]);
+        if (dag_tasks.tasks[task_id].processorId ==
+            dag_tasks.tasks[task_hp_id].processorId)
+            hp_tasks.push_back(dag_tasks.tasks[task_hp_id]);
     }
     FiniteDist rta_curr = GetRTA_OneTask(dag_tasks.tasks[task_id], hp_tasks);
     // sp +=
@@ -90,8 +92,8 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
                 pq.push(new_path);
                 if (GlobalVariables::debugMode) {
                     std::cout << "Priority " << curr_priority << ":\n";
-                    std::cout << "partial paths:\n";
                     std::cout << "SP lost: " << new_path.sp_lost << " ";
+                    std::cout << "partial paths:\n";
                     for (int j = 0; j < new_path.pa_vec_lower_pri.size(); j++) {
                         std::cout << new_path.pa_vec_lower_pri[j] << " ";
                     }

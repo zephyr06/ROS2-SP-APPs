@@ -37,6 +37,7 @@ inline double interpolate_sp_for_test(double x) {
     return (x - minval) / (maxval - minval);
 }
 TEST_F(TaskSetForTest_2tasks, SP_Calculation) {
+    GlobalVariables::Granularity = 10;
     double sp_actual = ObtainSP_TaskSet(tasks, sp_parameters);
     // double sp_expected = log(1 + 0.5) + log(1 + 0.5 - 0.0012);
     double sp_norm =

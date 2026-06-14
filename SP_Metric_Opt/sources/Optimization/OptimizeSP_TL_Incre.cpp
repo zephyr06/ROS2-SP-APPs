@@ -103,6 +103,7 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
 }
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
+    opt_sp_ = 0;
     dag_tasks_ = dag_tasks_update;
     time_limit_option_for_each_task_ =
         RecordCloseTimeLimitOptions(dag_tasks_update);

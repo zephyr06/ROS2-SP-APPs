@@ -161,7 +161,7 @@ def plot_avg_line_for_all_methods(scheduler_names,plot_file_path,show_fig_time=3
 if __name__ =="__main__":
     scheduler_names = ["RM_Slow", "RM_Fast",  "CFS",  "optimizerIncremental", "optimizerBF"]
     # scheduler_names = ["optimizerIncremental", "optimizerBF"]
-    # scheduler_names = ["RM_Slow", "RM_Fast", "CFS"]
+    scheduler_names = ["optimizerIncremental"]
 
     analyze_all_schedulers(scheduler_names)
     plot_avg_line_for_all_methods(scheduler_names,plot_file_path=os.path.join(OPT_SP_PROJECT_PATH, "../Experiments","average_all.pdf"))
