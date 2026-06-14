@@ -53,6 +53,11 @@ target_include_directories(${CONVENIENCE_LIB_NAME} PUBLIC
   ${EIGEN3_INCLUDE_DIR}
 )
 
+target_include_directories(${CONVENIENCE_LIB_NAME} BEFORE PUBLIC
+  ${googletest_SOURCE_DIR}/googletest/include
+  ${googletest_SOURCE_DIR}/googlemock/include
+)
+
 # linking with dependencies
 target_link_libraries(${CONVENIENCE_LIB_NAME} ${Boost_LIBRARIES})
 # target_link_libraries(${CONVENIENCE_LIB_NAME} CppUnitLite)
