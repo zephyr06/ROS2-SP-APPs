@@ -5,7 +5,6 @@ set (CMAKE_CXX_STANDARD 17)
 # set(CMAKE_BUILD_TYPE Release)
   
   
-include_directories(${CMAKE_SOURCE_DIR})
 # for unittest scripts
 set(CMAKE_WARN_DEPRECATED OFF)
 set(CMAKE_ERROR_DEPRECATED OFF)
@@ -17,9 +16,8 @@ unset(CMAKE_WARN_DEPRECATED)
 find_package(Boost 1.65 REQUIRED)
 # find_package(CppUnitLite REQUIRED)
 find_package(yaml-cpp 0.5.2 REQUIRED)
-include_directories(${Boost_INCLUDE_DIR})
-include_directories(includeMoe)
-include_directories(/usr/local/lib)
+find_package(Eigen3 REQUIRED)
+
 # file(GLOB sources "sources/*.cpp" "sources/*.h")
 file(GLOB_RECURSE sources "sources/*.cpp" "sources/*.h")
 set(CONVENIENCE_LIB_NAME ${PROJECT_NAME})
@@ -48,6 +46,13 @@ include(GoogleTest)
 
 add_library(${CONVENIENCE_LIB_NAME} SHARED ${sources})
 
+target_include_directories(${CONVENIENCE_LIB_NAME} PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${Boost_INCLUDE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/includeMoe
+  ${EIGEN3_INCLUDE_DIR}
+)
+
 # linking with dependencies
 target_link_libraries(${CONVENIENCE_LIB_NAME} ${Boost_LIBRARIES})
 # target_link_libraries(${CONVENIENCE_LIB_NAME} CppUnitLite)
@@ -56,9 +61,7 @@ target_link_libraries(${CONVENIENCE_LIB_NAME} "stdc++fs")
 target_link_libraries(${CONVENIENCE_LIB_NAME} gtest_main)
 target_link_libraries(${CONVENIENCE_LIB_NAME}  gmock)
 # target_link_libraries(${CONVENIENCE_LIB_NAME}  GTest::GTest)
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
 
 add_subdirectory(sources)
 add_subdirectory(tests)
-add_subdirectory(applications)
+# add_subdirectory(applications)
