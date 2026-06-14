@@ -1,0 +1,16 @@
+	\section{Background}
+    % organization:
+    % - what is scheduling
+    % - why do we care about scheduling
+    % - what's the implication for robotics area?
+
+
+    Most computing systems such as embedded systems need to run multiple tasks. Due to the limited computation resources available on these platforms, deciding the appropriate running order for all the tasks is critical to achieving the expected performance.
+    Scheduling algorithms design and analysis have long been critical topics in the computer systems community. In many general-purpose computing platforms, such as Linux, the default scheduling algorithm is Complete Fairness Scheduling (CFS)~\cite{Bovet2000UnderstandingTL}. These algorithms aim to distribute computational resources evenly among all running tasks but provide no guarantees on meeting timing constraints. This lack of schedulability guarantees can be especially dangerous in safety-critical robotic systems such as autonomous vehicles, where limited computational resources must be carefully managed to ensure safe and timely execution of essential tasks. 
+
+    Real-time systems (RTS) are computing systems with strong timing guarantees for computation tasks. Most real-world robotic systems require some levels of timing guarantee to be applicable, because a robotic task, such as SLAM~\cite{Dellaert2017FactorGF} and motion planning~\cite{Mukadam18ar_steap, Zhang2024SelfAdaptiveRM, Mo2024PrecisionKP} provides no realistic values if they require a very long time to run and potentially put the robot systems into danger.
+
+    In real-time systems, one of the most widely used and reliable scheduling algorithms is \textit{fixed-task priority}(FTP) scheduling, where each tasks with higher priority always execute earlier than tasks with lower priority. The central part of FTP is assigning priorities to tasks. Most works assume static priorities, making it ineffective for robotic systems where task requirements and environmental conditions vary dynamically. 
+    
+	
+	% \todo check all the notations in all equations are well defined!!!

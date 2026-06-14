@@ -1,0 +1,15 @@
+    \section{Simulation Experiment Result Analysis}
+    \label{section: simulation_exp}
+    
+    Fig.~\ref{figs_cpu_sim} shows how the 10 tasks' \textit{expected} execution time changes as the robot moves in the simulation environment. 
+    The word ``expected'' means that the figure shows the average CPU utilization under the hypothetical situations with no computation resource limits. Therefore, it is possible for the CPU utilization to exceed 100\% at certain times. In reality, however, the CPU utilization can never exceed 100\% because some tasks cannot be finished under the ``expected'' execution time and also miss their deadline under such times.
+    
+    It can be seen that most tasks' execution time varies in a similar way. Basically, under an environment that is considered computationally expensive, all the tasks will have a higher execution time, and vice versa. We believe this is more like the real-world scenarios, such as autonomous driving vehicles operated under crowded city environments versus rural areas.
+
+    The simulation results should be analyzed depending on whether the CPU is overloaded, \ie whether the expected CPU utilization is smaller than 100\% or not. If the CPU overload is light (\eg the low peaks in figure~\ref{fig_sim_cpu0}, such as when the time is around 180, 520, 700), most schedulers, especially RM, could perform reasonably well. However, the proposed schedulers still outperform the CFS and RM schedulers because the proposed schedulers considered both schedulability constraints and execution time optimization to better utilize the CPU. Especially, when the CPU overload is light, the proposed schedulers will assign a higher execution time to the any-time algorithms and therefore achieve better overall system performance.
+
+    When the CPU is highly overloaded (\eg the high peaks in figure~\ref{fig_sim_cpu0}, such as when the time is around 80, 280), the proposed schedulers typically achieve better performance than the baseline algorithms because they automatically prioritize safety-critical tasks over soft tasks. The baseline algorithms, such as CFS and RM, only considered schedulability while failing to take into account the tasks' criticality to the overall systems.
+
+    Overall, the proposed schedulers typically outperform the baseline schedulers in experiments because they can dynamically adjust computational resource allocation based on environment changes, while baseline schedulers could only perform well in specific scenarios.
+    
+   

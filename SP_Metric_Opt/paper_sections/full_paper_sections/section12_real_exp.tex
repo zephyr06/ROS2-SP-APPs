@@ -1,0 +1,153 @@
+
+    \section{Real-World Experiments}
+	\subsection{Experiment configurations}
+        
+    We implemented the proposed scheduler on Ubuntu 18 and tested it on an embedded system, the NVIDIA Jetson AGX Xavier. While the system features an eight-core high-performance CPU, we restricted our experiments to only two CPU cores for executing all computation tasks to simulate a more realistic resource-constrained platform. This setting also artificially simulates a system with more computation loads that do not have much flexibility in scheduling, such as computer vision tasks that require delicate collaboration between CPU and GPU.
+    An additional core was dedicated to running the scheduler, enabling precise measurement of overhead. However, please note that this is not necessary as the computation required for the scheduler is light in real experiments. All experiment results are reproducible with our released code\footnote{\githubLink{}}. 
+    % \todo{Update the repository name later.}
+    
+	Conducting comprehensive experiments to cover all possible scenarios is infeasible in practice. Therefore, we designed the runtime configuration parameters based on Sifat~\etal~\cite{Ash23RAL} and the semantic meanings of the tasks, ensuring diverse scenarios are represented. The runtime configuration parameters are summarized in Table~\ref{table_exp_config}. These configurations are representative of various real-world scenarios. Below, we explain each parameter in detail:
+    \begin{itemize}
+        \item Tasks. The experiments include four common robotic tasks: SLAM, RRT, MPC, and TSP. These tasks are further described in Section~\ref{section_computation_tasks}.
+    
+        \item Deadline miss ratio. Safety-critical tasks like MPC and SLAM are assigned higher deadline miss thresholds to reflect their importance. Non-safety-critical tasks, such as TSP and RRT, are modeled to simulate scenarios with more diverse requirements.
+    
+        \item Weight. Weight reflects the importance of individual tasks within the overall system. SLAM is assigned the highest weight, as accurate localization is critical for physical safety. Such a setting also simulates a realistic task set with a mix of critical and non-critical tasks.
+        \item Performance function. Among the tasks, only TSP uses an anytime algorithm, resulting in a non-constant performance metric. While RRT could also adopt an anytime implementation, we let RRT run to completion to model tasks with highly variable execution times.
+        \item Period. Task periods are set longer than their worst-case execution times and rounded to convenient, “nice” values (e.g., integers), as is common in real-world systems. 
+        Since developing highly efficient application algorithms and implementation is not the focus of this paper, some applications, such as SLAM, may have a larger period compared with real-world applications.
+        \item CPU ID. Safety-critical tasks (MPC and SLAM) are assigned to separate CPU cores to avoid resource contention. Additionally, each core is assigned multiple tasks to simulate realistic scheduling conditions.
+    \end{itemize}
+    
+	\begin{table}[]
+    \centering
+    \caption{Experiment Configurations}
+    \label{table_exp_config}
+\begin{tabular}{@{}llllll@{}}
+\toprule
+     & \begin{tabular}[c]{@{}l@{}}Miss deadline \\ threshold\end{tabular} & Weight & \begin{tabular}[c]{@{}l@{}}Performance\\ Function\end{tabular} & Period (ms) & \begin{tabular}[c]{@{}l@{}}CPU \\ ID\end{tabular} \\ \midrule
+SLAM & 0.9                                                                & 2      & Constant                                                       & 2000        & 0                                                 \\
+TSP  & 0.5                                                                & 1      & Varied                                                         & 1500        & 0                                                 \\
+RRT  & 0.5                                                                & 1      & Constant                                                       & 4000        & 1                                                 \\
+MPC  & 0.99                                                               & 1      & Constant                                                       & 10          & 1                                                 \\ \bottomrule
+\end{tabular}
+\end{table}
+	
+	\subsection{Scheduling algorithms in experiments}
+    We tested five scheduling algorithms in our experiments:
+	\begin{itemize}
+		\item Complete Fair Scheduling (CFS). CFS is the default scheduling algorithm in most Linux systems. It balances CPU utilization among all running tasks based on their importance and aims to achieve fair resource sharing. However, CFS is not a real-time scheduling algorithm and cannot provide performance guarantees.
+        \Sen{To Prof. Zeng: in my opinion, we should emphasize to the robotics community that RM is the optimal scheduling algorithm under static environments, despite its simplicity. Therefore, RM is indeed a good baseline algorithm from the existing literature. Do you agree with this argument?}
+		\item Rate Monotonic (RM). RM is a widely used real-time scheduling algorithm that prioritizes tasks based on their periods. Tasks with shorter periods are scheduled before those with longer periods. RM is provably \textbf{optimal} for single-core, preemptive platforms when tasks’ deadlines equal their periods.  
+    In our experiments, we evaluated two variants of RM:     \begin{itemize}
+        \item RM-Fast: The TSP task's execution time is set to its shortest duration, corresponding to the minimum performance metric value.
+        \item RM-Slow: The TSP task's execution time is set to its longest duration, corresponding to the maximum performance metric value.
+    \end{itemize}
+		\item Brute-Force scheduler. 
+        This scheduler uses the brute-force optimization algorithms introduced in Section~\ref{section_bf_pa} and Section~\ref{section_config_opt} as a baseline method.
+		\item Incremental scheduler. 
+        This scheduler applies the incremental optimization algorithms described in Section~\ref{section_increment_pa} and Section~\ref{section_config_opt}, optimizing both priority assignments and task configurations.
+	\end{itemize}
+	
+    
+    Figure~\ref{fig_et_all} shows box plots of task execution time variations. Most measurements represent CPU time, excluding preemption effects. For the scheduler, where precise CPU time measurement is challenging, we used end-to-end time as an upper bound, ensuring a conservative but safe estimate.
+
+	
+\subsection{Results}
+    Most experimental results are presented via box plots to reduce the influence of random factors and improve reproducibility. The same code that runs under identical conditions may exhibit execution time and start/finish time variations due to factors such as operating system behaviors and hardware states. To account for this variability, all results are based on 50 experimental runs. Results are shown as averages or box plot distributions under the same conditions.
+    
+    All box plots are generated using the Seaborn library, which provides the following visualization details:
+    ``The box shows the quartiles of the dataset, while the whiskers extend to show the rest of the distribution, except for points identified as `outliers' using a method based on the inter-quartile range.''
+    
+    The experimental results are shown in Fig.~\ref{fig_et_all} and Fig.~\ref{figs_exp_results_all_cps}. In Fig.~\ref{fig_box_et_TSP}, some TSP tasks are not run, so there are some data points with 0 execution time. 
+
+    % \todo consider why CFS and RM-Slow miss a few data points at the end
+    % In Fig.~\ref{fig_cfs_perf} and \ref{fig_rm_slow}, at the end of experiments (around 830s), some data points are missing due to the high system utilization and uneven distribution of work loads, so some applications 
+	\begin{figure*}[ht!]
+		\centering 
+		
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_ET_data_SLAM_optimizerIncremental.pdf}
+			\caption{SLAM, incremental optimizer}
+			\label{fig_box_et_SLAM}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_ET_data_TSP_optimizerIncremental.pdf}
+			\caption{TSP, incremental scheduler}
+			\label{fig_box_et_TSP}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_ET_data_RRT_optimizerIncremental.pdf}
+			\caption{RRT}
+			\label{fig_box_et_RRT}
+		\end{subfigure}
+		
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_ET_data_MPC_optimizerIncremental.pdf}
+			\caption{MPC}
+			\label{fig_box_et_MPC}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_ET_data_SCHEDULER_PUER_OPT_optimizerBF.pdf}
+			\caption{Brute-Force Scheduler}
+			\label{fig_box_et_bf}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_ET_data_SCHEDULER_PUER_OPT_optimizerIncremental.pdf}
+			\caption{Incremental scheduler}
+			\label{fig_box_et_incremental}
+		\end{subfigure}
+		\caption{Execution time variation at different time during experiments} 
+		\label{fig_et_all}
+	\end{figure*}
+
+    
+	\begin{figure*}[ht!]
+		\centering 
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_CFS.pdf}
+			\caption{CFS}
+			\label{fig_cfs_perf}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth}
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_RM_Fast.pdf}
+			\caption{RM\_Fast}
+			\label{fig_rm_fast}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_RM_Slow.pdf}
+			\caption{RM\_Slow}
+			\label{fig_rm_slow}
+		\end{subfigure}
+		
+		\begin{subfigure}[c]{0.32\textwidth}
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_optimizerBF.pdf}
+			\caption{Brute-Force Scheduler}
+			\label{fig_opt_bf}
+		\end{subfigure}
+		\begin{subfigure}[c]{0.32\textwidth}
+			\centering
+			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_optimizerIncremental.pdf}
+			\caption{Incremental Scheduler}
+			\label{fig_opt_incre}
+		\end{subfigure}
+		% \begin{subfigure}[c]{0.32\textwidth}
+		% 	\centering
+  %           \includegraphics[width=\textwidth]{pictures/average_all.pdf}
+		% 	\caption{Avergage of all methods}
+		% 	\label{fig_avg_all}
+		% \end{subfigure}
+		
+		\caption{The SP metric of different scheduling methods} 
+		\label{figs_exp_results_all_cps}
+	\end{figure*}

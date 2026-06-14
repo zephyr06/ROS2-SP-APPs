@@ -1,0 +1,41 @@
+
+    \section{Complexity Analysis}
+	\label{section_complexity_analysis}
+
+
+This section analyzes the time complexity of the proposed algorithms. Let $N$ denote the number of tasks to schedule. The brute-force algorithm, while serving as a baseline, has exponential complexity due to the enumeration of all possible priority assignments. As such, we omit the detailed analysis of its complexity and focus on analyzing the modified Audsley's algorithm and the incremental optimization algorithm.
+
+
+The following complexity analysis is based on estimating the number of response time analysis (RTA) because more than 90\% of computation is about estimating RTA. We denote the complexity of performing a single probabilistic RTA for a single task as $\orta{}$.
+    
+
+\subsection{Complexity Analysis of the Response Time Analysis}
+    The worst-case run-time complexity of RTA \eqref{eq: rta_scalar} is pseudo-polynomial because it depends on the number of fixed-point iterations. The worst-case complexity analysis of probabilistic RTA could be higher than pseudo-polynomial because performing a single convolution requires only polynomial run-time complexity, while the total number of convolutions to perform depends on the specific parameters of the task set. More detailed analysis can be found in Section 4 in Maxim~\etal~\cite{Maxim2022ProbabilisticA}.
+    
+    However, despite the high worst-case runtime complexity, RTA in practice only requires a few iterations. Furthermore, in terms of estimating the probabilistic response time distribution, resampling (``quantize the values to some multiple of a base quantum'', \cite{Maxim2022ProbabilisticA}) can be used to significantly reduce the computation cost.
+    Therefore, the average cost of probabilistic RTA $\orta{}$ is much better than its worst-case complexity and is typically affordable in resource-constrained embedded systems.
+
+\subsection{The number of Probabilistic Response Time Analysis during Optimization}
+\subsubsection{The modified Audsley's algorithm in Section~\ref{section_audsley_pa}}
+Denote the number of partial priority assignment paths retained in each iteration as $m$. The total number of RTA calls is $O(m \times N^2)$. Other operations, such as evaluating SP loss or sorting, require significantly less time than RTA and thus have negligible impact on overall complexity.
+
+\subsubsection{Incremental optimization}	
+The incremental optimization algorithm consists of two steps: incremental priority assignments and incremental task configuration optimization: \begin{itemize}
+    \item \textit{Incremental Priority Assignments:} This step evaluates the response time of the entire task set twice, resulting in $O(N)$ number of response time analysis. 
+    \item \textit{Incremental Task Configuration Optimization:} Similarly, this step evaluates task configurations 3 times, and also has $O(N)$ number of response time analysis.
+\end{itemize}
+To summarize, the incremental optimization algorithm's run-time complexity is $O(N \times \orta{} )$. Although the worst-case run-time complexity of the probabilistic response time analysis $\orta{}$ is high, its average-case run-time complexity is much shorter and can be further reduced via re-sampling. The actual run-time complexity may be close to $O(1)$ by limiting the number of probability-value pairs to describe a probability mass function into a small number.
+
+\subsection{Reducing optimization overhead by changing its running frequency}
+In practice, the computation overhead posed by the proposed algorithm is decided by both the one-time overhead, and its running frequency.
+Although the one-time optimization overhead may be high sometimes, the overall overhead can be reduced by lowering the scheduler's running frequency when necessary.
+
+In practice, the optimization algorithm only needs to run when the environment changes, which may not happen frequently, depending on the robot's moving speed and the environment's changing speed. 
+
+
+	
+	
+	
+	
+
+

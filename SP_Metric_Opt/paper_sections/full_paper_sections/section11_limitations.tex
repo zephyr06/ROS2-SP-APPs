@@ -1,0 +1,45 @@
+    \section{Potential Limitations and Assumption Relaxation}
+
+    \rkw{we can place this section in an appendix.}
+    \Sen{I'm okay either way. But I want to mention that many other sections referred to the subsections many times, so it may be a little bit weird. But I don't have much writing experience, so it's up to you.}
+    
+    \subsection{How to handle the smooth environment assumption}
+    \label{section: relax_smooth_assumption}
+    
+    This project uses Gaussian Process Regression (GPR) to predict tasks' execution time distribution when the robot is operated under different environments. 
+    Typically, GPR assumes that the environment changes smoothly when the robot is moving. Although such an assumption may not always hold, it is necessary to make the computation of an online optimization algorithm tractable. 
+
+    If the environment does not change smoothly, it is expected that the GPR may make wrong predictions. However, unless the environment keeps having ``discrete'' changes, GPR is expected to quickly adapt and make more accurate predictions because the environment may still be smooth in small local regions.
+
+    Another way to improve the accuracy of execution time distribution prediction is by utilizing offline profiling. This is possible if the robots' working environments can be partially predicted or known before deployment. However, this method may raise further concerns about how to detect and match the new environment with the offline recorded data.
+	\subsection{Non-Gaussian Execution Time Distribution}
+    In experiments, we assumed the execution time follows a Gaussian distribution to simplify the computation. However, in practice, the execution time may not follow a Gaussian distribution well. In this case, the prediction accuracy for the execution time distribution may become lower.
+    However, predicting the execution time distribution accurately in unknown and potentially non-smooth environments is very difficult and computationally expensive. 
+	
+    If high prediction accuracy is required, one potential solution is applying data transformation (such as logarithm) or performing ``piece-wise'' prediction. These may be helpful when the execution time follows a long-tail distribution.
+
+    \subsection{Multi-core Tasks Scheduling}
+    \label{section: gang}
+    In Section~\ref{section: system_model_tasks}, we assumed that each computation task only occupies one single CPU core during its execution. 
+    Such kind of task model includes both single-thread tasks and some multi-thread tasks that do not need to run more than one threads in parallel.
+    These tasks are very similar to single-thread tasks from the scheduling purposes.
+    
+    Other types of multi-thread tasks may include those that need to run more than one threads in parallel. These tasks can be modelled as gang tasks~\cite{Goossens2010GangFS}. 
+    The proposed optimization framework in this paper can work with gang tasks if their response time distribution analysis is available. However, such analysis could be complicated and computationally expensive. 
+
+    Therefore, to incorporate the gang tasks into our system, it is easier to treat the gang tasks as single-thread tasks from the scheduling perspective. This can be done by ``merging'' the multiple computation cores required by the gang tasks into one computation core during scheduling. 
+    These ``merged'' cores will not be allocated to more than one task each time, and therefore behave similarly to a single core.
+    This method works well for GPU tasks that run on embedded systems, one of the major applications of gang tasks. This is because that GPU tasks typically cannot run in parallel due to the high context switch overhead in low-end GPUs~\cite{Olmedo2020DissectingTC} in embedded systems.
+
+    
+\subsection{Addressing Incremental Optimization Drift}  
+\label{sec: drift}
+One potential drawback of incremental optimization is that it cannot guarantee an optimal solution after adjustments, potentially causing a ``drift'' from the optimal configuration over time. To address this, a hybrid approach that combines incremental optimization and the modified Audsley's algorithm can be considered:
+\begin{itemize}
+    \item Use the modified Audsley's algorithm when the scheduler runs for the first time or after passing a long period.
+    \item Employ incremental optimization for subsequent scheduler runs.
+\end{itemize}
+This strategy leverages the strengths of both methods, ensuring efficient runtime performance while maintaining overall system stability.
+
+In our experiments, we used the modified Audsley's algorithm when the scheduler runs for the first time, and then used the incremental optimization algorithm for the following runs.
+    
