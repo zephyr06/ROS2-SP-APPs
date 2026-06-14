@@ -11,7 +11,6 @@ set (CMAKE_CXX_STANDARD 17)
 add_definitions(-DRYAN_HE_CHANGE)
 add_definitions(-DRYAN_HE_CHANGE_DEBUG)
 
-include_directories(${CMAKE_SOURCE_DIR})
 # for unittest scripts
 set(CMAKE_WARN_DEPRECATED OFF)
 set(CMAKE_ERROR_DEPRECATED OFF)
@@ -24,13 +23,7 @@ unset(CMAKE_WARN_DEPRECATED)
 find_package(Boost 1.65 REQUIRED)
 # find_package(CppUnitLite REQUIRED)
 find_package(yaml-cpp 0.5.2 REQUIRED)
-include_directories(${Boost_INCLUDE_DIR})
-include_directories(includeMoe)
-include_directories(/usr/local/lib)
-#include_directories(/mnt/d/robotics_research/ORB_SLAM2/include)
-#include_directories(/mnt/d/robotics_research/ORB_SLAM2)
-include_directories(/mnt/f/explore/ROS2-SP-APPs/ORB_SLAM2/include)
-include_directories(/mnt/f/explore/ROS2-SP-APPs/ORB_SLAM2)
+find_package(Eigen3 REQUIRED)
 
 # file(GLOB sources "sources/*.cpp" "sources/*.h")
 file(GLOB_RECURSE sources "sources/*.cpp" "sources/*.h")
@@ -60,7 +53,17 @@ include(GoogleTest)
 
 add_library(${CONVENIENCE_LIB_NAME} SHARED ${sources})
 
+target_include_directories(${CONVENIENCE_LIB_NAME} PUBLIC
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${Boost_INCLUDE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/includeMoe
+  ${EIGEN3_INCLUDE_DIR}
+)
 
+target_include_directories(${CONVENIENCE_LIB_NAME} BEFORE PUBLIC
+  ${googletest_SOURCE_DIR}/googletest/include
+  ${googletest_SOURCE_DIR}/googlemock/include
+)
 
 # linking with dependencies
 target_link_libraries(${CONVENIENCE_LIB_NAME} ${Boost_LIBRARIES})
@@ -69,9 +72,8 @@ target_link_libraries(${CONVENIENCE_LIB_NAME} yaml-cpp)
 target_link_libraries(${CONVENIENCE_LIB_NAME} "stdc++fs")
 target_link_libraries(${CONVENIENCE_LIB_NAME} gtest_main)
 target_link_libraries(${CONVENIENCE_LIB_NAME}  gmock)
-find_package(Eigen3 REQUIRED)
-include_directories(${EIGEN3_INCLUDE_DIR})
+# target_link_libraries(${CONVENIENCE_LIB_NAME}  GTest::GTest)
 
 add_subdirectory(sources)
 add_subdirectory(tests)
-add_subdirectory(applications)
+# add_subdirectory(applications)
