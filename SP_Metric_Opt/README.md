@@ -71,6 +71,10 @@ You can modify the yaml file which describes the task set settings. Time units a
 - Incremental optimzier partially relies on detecting the execution time distribution difference, which can be controlled by adjusting the thresholds in `Probabiliy.h` (`approx_equal()` and `FiniteDist::operator==()` function), 
 
 
+# Simulation Experiments
+For detailed codebase evaluations and step-by-step instructions on generating tasksets, running the scheduler simulation, and visualizing the SP-Metric results, please see the dedicated [SIMULATION_EXPERIMENTS.md](file:///home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/SIMULATION_EXPERIMENTS.md) document.
+
+
 # Run unit tests/check code usage
 ```
 cd SP_Metric_Opt

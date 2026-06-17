@@ -1,0 +1,16 @@
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Taskset generation example & test outputs
+Gen_Taskset/examples/output_example/
+Gen_Taskset/tests/test_output/
+
+# CMake / C++ build outputs
+build/
+release/
+bin/
+lib/
+obj/
