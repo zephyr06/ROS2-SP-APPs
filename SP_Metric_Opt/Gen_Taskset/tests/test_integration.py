@@ -77,7 +77,7 @@ def test_integration_pipeline():
         # All tasks must have valid execution bounds
         assert t["execution_time_min"] >= 1.0
         assert t["execution_time_max"] >= t["execution_time_min"]
-        assert t["deadline"] == t["period"]
+        assert 0.5 * t["period"] <= t["deadline"] <= t["period"]
         
         if "performance_records_time" in t:
             soft_tasks.append(t)

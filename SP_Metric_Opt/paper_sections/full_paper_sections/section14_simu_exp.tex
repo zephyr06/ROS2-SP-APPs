@@ -9,10 +9,10 @@
     For simplicity, the 2D environment is limited to a square of width $\hat{W}$ and height $\hat{H}$.
     During operation, the robot needs to run several computational tasks to ensure both safety and functionality. These tasks in our simulation experiments are generated randomly to cover different scenarios. The task set generation follows the typical real-time systems' experiments design~\cite{Wang2023RTAS, Zhao2020AnOF} based on Uunifast~\cite{Davis2008EfficientES}.
     Specifically, each random task set has 10 tasks scheduled to be executed by 2 CPU cores independently, the tasks' periods are randomly selected from a limited set based on the real-world systems~\cite{Percept21_RTSS, Kramer15benchmark}: [20, 33, 50, 100, 200, 500, 1000] ms. Then the Uunifast algorithm is used to generate the \textit{average} execution time for each task. 
-    In each task set, 2 random tasks' execution times are assumed to be dependent on the environments and vary spatially. The SP weights of all the tasks are randomly generated from 50\% to 100\% relative to the tasks' periods. The SP thresholds of each task are randomly selected from a limited set: $[0.2, 0.4, 0.6, 0.8, 1.0]$ to simulate a real-world setting with both safety-critical tasks and soft tasks that do not have a major influence to the overall system's safety and functionality. The soft tasks can be discarded when the system is under high computation load to make sure the safety-critical tasks can finish before deadline. 
+    In each task set, 2 random tasks' execution times are assumed to be dependent on the environments and vary spatially. The SP deadline thresholds of all the tasks are randomly generated from 50\% to 100\% relative to the tasks' periods. The SP thresholds of each task are randomly selected from a limited set: $[0.2, 0.4, 0.6, 0.8, 1.0]$ to simulate a real-world setting with both safety-critical tasks and soft tasks that do not have a major influence to the overall system's safety and functionality. The soft tasks can be discarded when the system is under high computation load to make sure the safety-critical tasks can finish before deadline. 
 
     
-    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location\footnote{We used Cartesian coordinates in the formulas because it's easier to understand. In implementation, we actually used polar coordinates instead of Cartesian coordinates, but the math basically remains the same. Please check our released the code\footnote{\githubLink{}} for more details.}, $(x, y)$ and each task's execution time distribution $C_i$ follows a joint 3D Gaussian distribution, the probability density function $f^{E}()$ is assumed to be
+    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location\footnote{We used Cartesian coordinates in the formulas because it's easier to understand. In implementation, we actually used polar coordinates instead of Cartesian coordinates, but the math basically remains the same. Please check our released code\footnote{\githubLink{}} for more details.}, $(x, y)$ and each task's execution time distribution $C_i$ follows a joint 3D Gaussian distribution, the probability density function $f^{E}()$ is assumed to be
     \begin{equation}
         f^{E}(x, y, C_i) =\mathcal{N}(\boldsymbol{\mu}^E, \boldsymbol{\Sigma}^E)
         \label{eq: pdf_gmm}
@@ -78,7 +78,7 @@
         \caption{CPU 1 Utilization}
         \label{fig_sim_cpu1}
     \end{subfigure}
-    \caption{``Expected'' CPU Utilization variation of 100 random tasks during simulation experiments (See more in Section~\ref{section: simulation_exp}.} 
+    \caption{``Expected'' CPU Utilization variation of 100 random tasks during simulation experiments (See more in Section~\ref{section: simulation_exp}).} 
     \label{figs_cpu_sim}
 \end{figure*}
 

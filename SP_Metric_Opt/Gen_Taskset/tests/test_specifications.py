@@ -134,7 +134,7 @@ def test_all_configurations_specifications(config_path):
     n_cores = cfgs.get("N_CORES", 2 if cfgs["MEAN_CPU_UTIL"] > 1.0 else 1)
     for t in char_data["tasks"]:
         assert 0 <= t["processorId"] < n_cores
-        assert t["deadline"] == t["period"]
+        assert 0.5 * t["period"] <= t["deadline"] <= t["period"]
         
         # Verify SP thresholds bounds
         sp_thresholds_set = cfgs.get("SP_THRESHOLDS_SET")
