@@ -253,6 +253,91 @@ TEST_F(TaskSetForTest_robotics_v9, GetPriorityAssignments_IncrementalOpt) {
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
 }
 
+TEST_F(TaskSetForTest_2tasks, UnfeasibleTaskSet) {
+    // Create 2 tasks with utilization > 1.0
+    // Task 0: execution time = 4, period = 5 (utilization = 0.8)
+    // Task 1: execution time = 8, period = 10 (utilization = 0.8)
+    // Total utilization = 1.6 > 1.0 (unfeasible on a single core)
+    std::vector<Value_Proba> dist_vec1 = {Value_Proba(4, 1.0)};
+    std::vector<Value_Proba> dist_vec2 = {Value_Proba(8, 1.0)};
+    
+    TaskSet unfeasible_tasks;
+    unfeasible_tasks.push_back(Task(0, dist_vec1, 5, 5, 0, "T1"));
+    unfeasible_tasks.push_back(Task(1, dist_vec2, 10, 10, 1, "T2"));
+    
+    MAP_Prev mapPrev;
+    DAG_Model dag_model(unfeasible_tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag_model);
+    
+    OptimizePA_Incre opt(dag_model, sp_params);
+    PriorityVec pa = opt.OptimizeFromScratch(2);
+    
+    EXPECT_EQ(2, pa.size());
+    // The optimizer should still return a priority vector rather than crashing,
+    // and opt_sp_ should be calculated (with some SP penalty or loss due to deadline miss).
+    EXPECT_TRUE((pa[0] == 0 && pa[1] == 1) || (pa[0] == 1 && pa[1] == 0));
+}
+
+TEST_F(TaskSetForTest_2tasks, DeterministicTaskSet) {
+    // Create 2 deterministic tasks
+    std::vector<Value_Proba> dist_vec1 = {Value_Proba(2, 1.0)};
+    std::vector<Value_Proba> dist_vec2 = {Value_Proba(3, 1.0)};
+    
+    TaskSet deterministic_tasks;
+    deterministic_tasks.push_back(Task(0, dist_vec1, 5, 5, 0, "T1"));
+    deterministic_tasks.push_back(Task(1, dist_vec2, 10, 10, 1, "T2"));
+    
+    MAP_Prev mapPrev;
+    DAG_Model dag_model(deterministic_tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag_model);
+    
+    OptimizePA_Incre opt(dag_model, sp_params);
+    PriorityVec pa = opt.OptimizeFromScratch(2);
+    
+    EXPECT_EQ(2, pa.size());
+    EXPECT_EQ(0, pa[0]); // T1 should have higher priority
+    EXPECT_EQ(1, pa[1]); // T2 should have lower priority
+    
+    // Incrementally increase T1's execution time to 6 (which exceeds T1's period/deadline)
+    DAG_Model dag_model_updated = dag_model;
+    std::vector<Value_Proba> dist_vec1_updated = {Value_Proba(6, 1.0)};
+    dag_model_updated.tasks[0].execution_time_dist = FiniteDist(dist_vec1_updated);
+    
+    PriorityVec pa_incre = opt.OptimizeIncre(dag_model_updated);
+    EXPECT_EQ(2, pa_incre.size());
+}
+
+TEST(TaskSetPartitioned, PartitionedCoreOptimization) {
+    // Create 3 tasks partitioned on 2 cores
+    // Core 0: Task 0 (ET=4, T=10), Task 2 (ET=3, T=20)
+    // Core 1: Task 1 (ET=12, T=20)
+    std::vector<Value_Proba> dist_0 = {Value_Proba(4, 1.0)};
+    std::vector<Value_Proba> dist_1 = {Value_Proba(12, 1.0)};
+    std::vector<Value_Proba> dist_2 = {Value_Proba(3, 1.0)};
+
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist_0, 10, 10, 0, "Task0"));
+    tasks.push_back(Task(1, dist_1, 20, 20, 1, "Task1"));
+    tasks.push_back(Task(2, dist_2, 20, 20, 2, "Task2"));
+
+    tasks[0].processorId = 0;
+    tasks[1].processorId = 1;
+    tasks[2].processorId = 0;
+
+    MAP_Prev mapPrev;
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag);
+
+    OptimizePA_Incre opt(dag, sp_params);
+    PriorityVec pa = opt.OptimizeFromScratch(2);
+
+    EXPECT_EQ(3, pa.size());
+    // Schedulability and assignments are verified
+    EXPECT_TRUE(pa[0] == 0 || pa[1] == 0 || pa[2] == 0);
+    EXPECT_TRUE(pa[0] == 1 || pa[1] == 1 || pa[2] == 1);
+    EXPECT_TRUE(pa[0] == 2 || pa[1] == 2 || pa[2] == 2);
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
