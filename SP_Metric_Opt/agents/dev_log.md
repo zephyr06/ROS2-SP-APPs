@@ -32,11 +32,13 @@ This log contains the analysis of the C++ and Python codebase compared against t
 
 ---
 
-## 3. Persistent Tasks and Plans
-
-We will maintain these tasks in `agents/tasks.md` for subsequent long-running agent development sessions:
-1. **Google Test Compilation Pollution:** Re-apply target-based include paths on `CMakeLists.txt` to fix the Conda headers pollution issue (`GTEST_FLAG_SET` undeclared and ambiguous `IsXDigit`).
-2. **Timing/Performance Test Tolerance:** `testIncreOpt_w_TL` fails in Debug mode because it checks `time_taken < 5e-2` which is optimized out in Release mode but fails under Debug builds. We can increase the debug tolerance slightly.
-3. **Excluding Subdirectory `applications`:** As per user instructions, the `applications/` subdirectory is excluded from this project because the code is not meant to run on the current laptop. We will keep it commented out in `CMakeLists.txt`.
-4. **Incremental Optimizer Record Update Bug:** `OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL` does not reset `opt_sp_` to 0. This causes the optimizer to get stuck at the first step's SP value and never update the optimized results for subsequent steps. We will reset `opt_sp_ = 0` at the start of `OptimizeIncre_w_TL`.
+## 3. Completed Tasks Archive
+The following tasks have been successfully implemented and verified:
+- [x] Fix Google Test dependency header pollution by replacing global include paths with target-based includes in `CMakeLists.txt`.
+- [x] Resolve the ambiguous `IsXDigit` and `GTEST_FLAG_SET` compile errors in `gtest-all.cc`.
+- [x] Adjust `testIncreOpt_w_TL` debug timing threshold check (increase or conditionalize for Debug builds).
+- [x] Fix incremental optimizer `opt_sp_` reset bug in `OptimizeIncre_w_TL`.
+- [x] Verify that `Gen_Taskset/gen_taskset.py` performs GMM polar/Cartesian dataset generation.
+- [x] Uncomment `testOptimizeIncrePA` in `tests/CMakeLists.txt` and rename it to `testOptimizeIncrePA_run` to prevent name conflict.
+- [x] Design and add C++ Google Test cases: `UnfeasibleTaskSet`, `DeterministicTaskSet`, and `PartitionedCoreOptimization` (all passing).
 

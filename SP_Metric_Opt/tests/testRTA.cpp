@@ -125,6 +125,103 @@ TEST_F(TaskSetv9, RTA_w_processor_assignment) {
     // RT distribution from 200 to 600
     EXPECT_NEAR(0.588, GetDDL_MissProbability(rtas[1], 400), 1e-3);
 }
+
+TEST(RTA_EdgeCases, DeterministicTaskSet) {
+    // 2 tasks: T0 (ET=3, P=10), T1 (ET=4, P=20)
+    std::vector<Value_Proba> dist0 = {Value_Proba(3, 1.0)};
+    std::vector<Value_Proba> dist1 = {Value_Proba(4, 1.0)};
+    
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist0, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist1, 20, 20, 1, "T1"));
+    
+    // Core 0 for both
+    tasks[0].processorId = 0;
+    tasks[1].processorId = 0;
+    
+    // Set priorities (small index has higher priority: FTP)
+    tasks[0].priority = 0;
+    tasks[1].priority = 1;
+    
+    vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet_SingleCore(tasks);
+    
+    ASSERT_EQ(2, rtas.size());
+    // T0 (highest priority): Response time must be exactly 3 with probability 1.0
+    EXPECT_EQ(1, rtas[0].distribution.size());
+    EXPECT_NEAR(3.0, rtas[0].distribution[0].value, 1e-6);
+    EXPECT_NEAR(1.0, rtas[0].distribution[0].probability, 1e-6);
+    
+    // T1 (lowest priority): worst-case response time under critical instant:
+    // It is preempted by T0.
+    // In traditional RTA: R_1 = C_1 + ceil(R_1 / T_0) * C_0
+    // Try R_1 = 4 + ceil(R_1/10)*3. If R_1=7: 4 + 1*3 = 7. Match!
+    // So response time for T1 must be exactly 7 with probability 1.0
+    EXPECT_EQ(1, rtas[1].distribution.size());
+    EXPECT_NEAR(7.0, rtas[1].distribution[0].value, 1e-6);
+    EXPECT_NEAR(1.0, rtas[1].distribution[0].probability, 1e-6);
+}
+
+TEST(RTA_EdgeCases, OverloadedSystem) {
+    // T0 (ET=8, P=10), T1 (ET=8, P=15)
+    // Total utilization = 8/10 + 8/15 = 0.8 + 0.533 = 1.333 > 1.0 on a single core
+    std::vector<Value_Proba> dist0 = {Value_Proba(8, 1.0)};
+    std::vector<Value_Proba> dist1 = {Value_Proba(8, 1.0)};
+    
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist0, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist1, 15, 15, 1, "T1"));
+    
+    tasks[0].processorId = 0;
+    tasks[1].processorId = 0;
+    
+    tasks[0].priority = 0;
+    tasks[1].priority = 1;
+    
+    // In an overloaded system, RTA should calculate high miss probabilities.
+    vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
+    
+    ASSERT_EQ(2, rtas.size());
+    // For T1, the response time should exceed its deadline (15).
+    // Let's check the deadline miss probability
+    double miss_prob = GetDDL_MissProbability(rtas[1], 15);
+    EXPECT_GE(miss_prob, 0.99); // It should miss deadline with high probability
+}
+
+TEST(RTA_EdgeCases, MultiCorePartitioning) {
+    // 3 tasks partitioned on 2 cores
+    // Core 0: Task 0 (ET=4, P=10), Task 2 (ET=3, P=20)
+    // Core 1: Task 1 (ET=12, P=20) - which would normally conflict if on the same core
+    std::vector<Value_Proba> dist_0 = {Value_Proba(4, 1.0)};
+    std::vector<Value_Proba> dist_1 = {Value_Proba(12, 1.0)};
+    std::vector<Value_Proba> dist_2 = {Value_Proba(3, 1.0)};
+
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist_0, 10, 10, 0, "Task0"));
+    tasks.push_back(Task(1, dist_1, 20, 20, 1, "Task1"));
+    tasks.push_back(Task(2, dist_2, 20, 20, 2, "Task2"));
+
+    tasks[0].processorId = 0;
+    tasks[1].processorId = 1;
+    tasks[2].processorId = 0;
+
+    tasks[0].priority = 0;
+    tasks[1].priority = 0; // Highest on core 1
+    tasks[2].priority = 1;
+
+    vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
+
+    ASSERT_EQ(3, rtas.size());
+    // Task 1 runs independently on core 1. Its response time should be exactly 12 (its ET).
+    EXPECT_NEAR(12.0, rtas[1].distribution[0].value, 1e-6);
+    EXPECT_NEAR(1.0, rtas[1].distribution[0].probability, 1e-6);
+
+    // Task 0 runs highest priority on core 0: response time exactly 4.
+    EXPECT_NEAR(4.0, rtas[0].distribution[0].value, 1e-6);
+
+    // Task 2 runs lowest priority on core 0: response time: 3 + ceil(R/10)*4 = 7.
+    EXPECT_NEAR(7.0, rtas[2].distribution[0].value, 1e-6);
+}
+
 int main(int argc, char **argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

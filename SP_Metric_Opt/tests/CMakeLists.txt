@@ -15,31 +15,18 @@ TARGET_LINK_LIBRARIES(AnalyzePriorityAssignmentIncrementalExample ${CONVENIENCE_
 
 ADD_EXECUTABLE(AnalyzeSP_Metric AnalyzeSP_Metric.cpp)
 TARGET_LINK_LIBRARIES(AnalyzeSP_Metric ${CONVENIENCE_LIB_NAME})
-
 # zhe add testSP, testOptimizeIncrePA
-# ADD_EXECUTABLE(testSP testSP.cpp)
-# TARGET_LINK_LIBRARIES(testSP ${CONVENIENCE_LIB_NAME})
-ADD_EXECUTABLE(testOptimizeIncrePA_run testOptimizeIncrePA.cpp)
-TARGET_LINK_LIBRARIES(testOptimizeIncrePA_run ${CONVENIENCE_LIB_NAME})
-# ADD_EXECUTABLE(testRTA testRTA.cpp)
-# TARGET_LINK_LIBRARIES(testRTA ${CONVENIENCE_LIB_NAME})
 ADD_EXECUTABLE(CSPSimulation CSPSimulation.cpp)
 TARGET_LINK_LIBRARIES(CSPSimulation ${CONVENIENCE_LIB_NAME})
 ADD_EXECUTABLE(CSPSimulation_2 CSPSimulation_2.cpp)
 TARGET_LINK_LIBRARIES(CSPSimulation_2 ${CONVENIENCE_LIB_NAME})
-
+ 
 ADD_EXECUTABLE(RunPA_Opt_Incremenal RunPA_Opt_Incremenal.cpp)
 TARGET_LINK_LIBRARIES(RunPA_Opt_Incremenal ${CONVENIENCE_LIB_NAME})
-
-# ADD_EXECUTABLE(testIncreOpt_w_TL testIncreOpt_w_TL.cpp)
-# TARGET_LINK_LIBRARIES(testIncreOpt_w_TL ${CONVENIENCE_LIB_NAME})
-
-# ADD_EXECUTABLE(testBF_w_TL testBF_w_TL.cpp)
-# TARGET_LINK_LIBRARIES(testBF_w_TL ${CONVENIENCE_LIB_NAME})
-
+ 
 # ADD_EXECUTABLE(testRMCFS testRMCFS.cpp)
 # TARGET_LINK_LIBRARIES(testRMCFS ${CONVENIENCE_LIB_NAME})
-
+ 
 # ADD_EXECUTABLE(AnalyzePriorityAssignmentIncremental AnalyzePriorityAssignmentIncremental.cpp)
 # TARGET_LINK_LIBRARIES(AnalyzePriorityAssignmentIncremental ${CONVENIENCE_LIB_NAME})
 

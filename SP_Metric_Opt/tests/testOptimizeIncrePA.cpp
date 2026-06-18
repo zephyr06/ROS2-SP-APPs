@@ -3,6 +3,8 @@
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
+#include "sources/Optimization/OptimizeSP_TL_BF.h"
+#include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/Utils/Parameters.h"
 
 using ::testing::AtLeast;  // #1
@@ -336,6 +338,140 @@ TEST(TaskSetPartitioned, PartitionedCoreOptimization) {
     EXPECT_TRUE(pa[0] == 0 || pa[1] == 0 || pa[2] == 0);
     EXPECT_TRUE(pa[0] == 1 || pa[1] == 1 || pa[2] == 1);
     EXPECT_TRUE(pa[0] == 2 || pa[1] == 2 || pa[2] == 2);
+}
+
+TEST(OptimizePA_Consistency, CompareIncreAndBF) {
+    // List of test files to run the comparison on
+    std::vector<std::string> test_files = {
+        "test_robotics_v6",
+        "test_robotics_v7",
+        "test_robotics_v9"
+    };
+
+    for (const auto& file_name : test_files) {
+        std::string path = GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        DAG_Model dag_tasks = ReadDAG_Tasks(path, 5);
+        SP_Parameters sp_parameters = SP_Parameters(dag_tasks);
+
+        // Run Brute Force
+        OptimizePA_BF opt_bf(dag_tasks, sp_parameters);
+        PriorityVec pa_bf = opt_bf.Optimize();
+        double sp_bf = opt_bf.opt_sp_;
+
+        // Run Incremental
+        OptimizePA_Incre opt_inc(dag_tasks, sp_parameters);
+        PriorityVec pa_inc = opt_inc.OptimizeFromScratch(2);
+        double sp_inc = opt_inc.opt_sp_;
+
+        // They should find the same or very close SP value
+        EXPECT_NEAR(sp_bf, sp_inc, 1e-3);
+    }
+}
+
+TEST(OptimizePA_Consistency, CompareIncreAndBF_w_TL) {
+    std::vector<std::string> test_files = {
+        "test_robotics_v18",
+        "test_robotics_v19"
+    };
+
+    for (const auto& file_name : test_files) {
+        std::string path = GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        DAG_Model dag_tasks = ReadDAG_Tasks(path, 5);
+        SP_Parameters sp_parameters = ReadSP_Parameters(path);
+
+        // Run Brute Force with Time Limits
+        ResourceOptResult res_bf = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+
+        // Run Incremental with Time Limits
+        OptimizePA_Incre_with_TimeLimits opt_inc_tl(dag_tasks, sp_parameters);
+        opt_inc_tl.OptimizeFromScratch_w_TL(2);
+        ResourceOptResult res_inc = opt_inc_tl.CollectResults();
+
+        // Check consistency of SP metric (heuristic optimization with K=2 can deviate slightly from global optimum)
+        EXPECT_NEAR(res_bf.sp_opt, res_inc.sp_opt, 2.0);
+        EXPECT_GE(res_bf.sp_opt, res_inc.sp_opt - 1e-3);
+    }
+}
+
+TEST(OptimizeIncrePA_Helpers, RemoveOneTask) {
+    PriorityVec pa = {0, 1, 2, 3};
+
+    // Remove start
+    EXPECT_THAT(RemoveOneTask(pa, 0), testing::ElementsAre(1, 2, 3));
+
+    // Remove middle
+    EXPECT_THAT(RemoveOneTask(pa, 2), testing::ElementsAre(0, 1, 3));
+
+    // Remove end
+    EXPECT_THAT(RemoveOneTask(pa, 3), testing::ElementsAre(0, 1, 2));
+
+#if defined(GTEST_HAS_DEATH_TEST)
+    EXPECT_DEATH(RemoveOneTask(pa, 99), ".*");
+#endif
+}
+
+TEST(OptimizeIncrePA_Helpers, FindTaskWithDifferentEt_EdgeCases) {
+    // 2 tasks: T0 (ET=3, P=10), T1 (ET=4, P=20)
+    std::vector<Value_Proba> dist0 = {Value_Proba(3, 1.0)};
+    std::vector<Value_Proba> dist1 = {Value_Proba(4, 1.0)};
+    
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist0, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist1, 20, 20, 1, "T1"));
+    
+    MAP_Prev mapPrev;
+    DAG_Model dag1(tasks, mapPrev, 0, 0);
+    DAG_Model dag2(tasks, mapPrev, 0, 0);
+
+    // Identical: diff size should be 0
+    std::vector<DiffObj> diff_same = FindTaskWithDifferentEt(dag1, dag2);
+    EXPECT_EQ(0, diff_same.size());
+
+    // Decrease T1 execution time to 2
+    DAG_Model dag_dec = dag1;
+    std::vector<Value_Proba> dist_dec = {Value_Proba(2, 1.0)};
+    dag_dec.tasks[1].execution_time_dist = FiniteDist(dist_dec);
+
+    std::vector<DiffObj> diff_dec = FindTaskWithDifferentEt(dag1, dag_dec);
+    ASSERT_EQ(1, diff_dec.size());
+    EXPECT_EQ(1, diff_dec[0].task_id);
+    EXPECT_FALSE(diff_dec[0].increase);
+
+    // Increase T0 execution time to 5
+    DAG_Model dag_inc = dag1;
+    std::vector<Value_Proba> dist_inc = {Value_Proba(5, 1.0)};
+    dag_inc.tasks[0].execution_time_dist = FiniteDist(dist_inc);
+
+    std::vector<DiffObj> diff_inc = FindTaskWithDifferentEt(dag1, dag_inc);
+    ASSERT_EQ(1, diff_inc.size());
+    EXPECT_EQ(0, diff_inc[0].task_id);
+    EXPECT_TRUE(diff_inc[0].increase);
+}
+
+TEST(OptimizeIncrePA_Helpers, PriorityPartialPath_Getters) {
+    // Setup simple taskset
+    std::vector<Value_Proba> dist0 = {Value_Proba(3, 1.0)};
+    std::vector<Value_Proba> dist1 = {Value_Proba(5, 1.0)};
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist0, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist1, 20, 20, 1, "T1"));
+    
+    MAP_Prev mapPrev;
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag);
+    sp_params.weights_node[0] = 7;
+    sp_params.weights_node[1] = 9;
+
+    PriorityPartialPath path(dag, sp_params);
+    path.AssignAndUpdateSP(0); // Assign task 0 as lowest priority
+
+    ASSERT_EQ(1, path.pa_vec_lower_pri.size());
+    EXPECT_EQ(0, path.pa_vec_lower_pri[0]);
+
+    // Check getters
+    EXPECT_EQ(7, path.GetTaskWeight(0));
+    EXPECT_EQ(10, path.GetTaskPeriod(0));
+    EXPECT_EQ(3, path.GetTaskMinEt(0));
 }
 
 int main(int argc, char** argv) {
