@@ -414,7 +414,8 @@ TEST_F(Test_testAnalyzeSP, GetAvgTaskPerfTerm) {
       std::cout << "ext_path = " << ext_path << ", weight = " << weight
                 << std::endl;
       printf("timePerformancePairs: (time_limit, performance) ...\n");
-      for (int k = 0; k < dag_tasks.tasks[i].timePerformancePairs.size(); k++) {
+      for (uint k = 0; k < dag_tasks.tasks[i].timePerformancePairs.size();
+           k++) {
         printf("(%.2f,%.1f) ",
                dag_tasks.tasks[i].timePerformancePairs[k].time_limit,
                dag_tasks.tasks[i].timePerformancePairs[k].performance);
