@@ -83,7 +83,7 @@ def combine_processor_results(sched_dir, scheduler, inst, n_cores, yaml_tasks, r
     with open(log_file, 'w') as f:
         f.writelines(combined_log_lines)
 
-def run_single_simulation(sim_bin_path, taskset_dir, sched_dir, simt, scheduler, inst):
+def run_single_simulation(sim_bin_path, taskset_dir, sched_dir, simt, scheduler, inst, verbose=1):
     sim_cmd = [
         sim_bin_path,
         "--input_folder", taskset_dir,
@@ -95,9 +95,15 @@ def run_single_simulation(sim_bin_path, taskset_dir, sched_dir, simt, scheduler,
         "--verbose", "0"
     ]
     # Print a quick progress message
-    print(f"  [Sim] Starting {scheduler} instance {inst}...")
-    subprocess.run(sim_cmd, check=True)
-    print(f"  [Sim] Finished {scheduler} instance {inst}.")
+    if verbose >= 1:
+        print(f"  [Sim] Starting {scheduler} instance {inst}...")
+    
+    stdout_dest = None if verbose >= 2 else subprocess.DEVNULL
+    stderr_dest = None if verbose >= 2 else subprocess.DEVNULL
+    subprocess.run(sim_cmd, check=True, stdout=stdout_dest, stderr=stderr_dest)
+    
+    if verbose >= 1:
+        print(f"  [Sim] Finished {scheduler} instance {inst}.")
 
 def analyze_single_instance(taskset_dir, scheduler, inst, config_dict, yaml_data, task_deadlines, analyze_bin_path, horizon_granularity):
     sched_dir = os.path.join(taskset_dir, scheduler)
@@ -195,10 +201,11 @@ def analyze_single_instance(taskset_dir, scheduler, inst, config_dict, yaml_data
 
     return scheduler, miss_rate, sp_values_run, run_intervals_data
 
-def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs, horizon_granularity):
+def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs, horizon_granularity, verbose=1):
     # Output Consolidated CSV Summary
     summary_csv_path = os.path.join(output_dir_abs, "comparison_summary.csv")
-    print(f"Writing summary statistics to: {summary_csv_path}")
+    if verbose >= 1:
+        print(f"Writing summary statistics to: {summary_csv_path}")
     with open(summary_csv_path, 'w') as csv_file:
         csv_file.write("Scheduler,Mean_SP_Metric,Std_SP_Metric,Mean_Miss_Rate,Std_Miss_Rate\n")
         for scheduler in schedulers:
@@ -216,7 +223,8 @@ def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs, ho
 
     # Generate Consolidated Comparison Plots
     plots_path = os.path.join(output_dir_abs, "comparison_plots.png")
-    print(f"Generating comparison plots at: {plots_path}")
+    if verbose >= 1:
+        print(f"Generating comparison plots at: {plots_path}")
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
@@ -253,7 +261,7 @@ def main():
                         help="Output directory to save experiments data")
     parser.add_argument("-n", "--n_tasksets", type=int, default=5,
                         help="Number of task sets to generate and simulate")
-    parser.add_argument("-s", "--schedulers", nargs="+", default=["INCR", "BR", "RM_FAST", "RM_SLOW", "CFS"],
+    parser.add_argument("-s", "--schedulers", nargs="+", default=["INCR", "INCR_SWAP", "BR", "RM_FAST", "RM_SLOW", "CFS"],
                         help="List of schedulers to run")
     parser.add_argument("-t", "--n_sec", type=int, default=1000,
                         help="GMM trace path duration in seconds")
@@ -265,7 +273,15 @@ def main():
                         help="Directory containing release C++ binaries")
     parser.add_argument("--base_seed", type=int, default=100,
                         help="Base random seed for generating unique tasksets")
+    parser.add_argument("--num_tasks", type=int, choices=[4, 6, 8], default=None,
+                        help="Number of tasks (4, 6, 8) to automatically select paper config and output folder")
+    parser.add_argument("-v", "--verbose", type=int, choices=[0, 1, 2], default=1,
+                        help="Verbosity level (0: minimal/silent, 1: progress prints, 2: debug C++ simulator output)")
     args = parser.parse_args()
+
+    if args.num_tasks is not None:
+        args.config_file = f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{args.num_tasks}.json"
+        args.output_dir = f"TaskData/experiment_{args.num_tasks}_tasks"
 
     # Resolve paths
     config_file_abs = args.config_file if args.config_file.startswith('/') else os.path.join(PROJECT_ROOT, args.config_file)
@@ -283,8 +299,9 @@ def main():
         print(f"Error: AnalyzeSP_Metric binary not found at {analyze_bin_path}. Compile in release mode first.")
         sys.exit(1)
 
-    print(f"Starting pipeline run on {args.n_tasksets} tasksets...")
-    print(f"Schedulers to evaluate: {args.schedulers}")
+    if args.verbose >= 1:
+        print(f"Starting pipeline run on {args.n_tasksets} tasksets...")
+        print(f"Schedulers to evaluate: {args.schedulers}")
 
     # Set TIME_LIMIT in sources/parameters.yaml temporarily for speedup
     param_yaml_path = os.path.join(PROJECT_ROOT, "sources/parameters.yaml")
@@ -304,13 +321,15 @@ def main():
         modified_content = re.sub(r'TIME_LIMIT:\s*\d+', f'TIME_LIMIT: {limit_val}', original_yaml_content)
         with open(param_yaml_path, 'w') as f:
             f.write(modified_content)
-        print(f"Temporarily adjusted TIME_LIMIT in parameters.yaml to {limit_val}s for simulation speedup.")
+        if args.verbose >= 1:
+            print(f"Temporarily adjusted TIME_LIMIT in parameters.yaml to {limit_val}s for simulation speedup.")
         
         import atexit
         def restore_yaml():
             with open(param_yaml_path, 'w') as f:
                 f.write(original_yaml_content)
-            print("Restored original parameters.yaml content.")
+            if args.verbose >= 1:
+                print("Restored original parameters.yaml content.")
         atexit.register(restore_yaml)
 
     # Temporary directory for JSON configs with seeds
@@ -322,7 +341,8 @@ def main():
     horizon_granularity = 10 # 10-second intervals
 
     for idx in range(args.n_tasksets):
-        print(f"\n==================== TASKSET {idx} / {args.n_tasksets-1} ====================")
+        if args.verbose >= 1:
+            print(f"\n==================== TASKSET {idx} / {args.n_tasksets-1} ====================")
         taskset_dir = os.path.join(output_dir_abs, f"taskset_{idx}")
         os.makedirs(taskset_dir, exist_ok=True)
 
@@ -340,16 +360,30 @@ def main():
             json.dump(config_dict, f, indent=4)
 
         # 2. Run GMM generation pipeline
-        print("Running taskset generation pipeline...")
-        run_full_generation_pipeline(
-            cfg_file=temp_cfg_path,
-            n_sec=args.n_sec,
-            dir_path=taskset_dir,
-            add_perf_records=True,
-            interact=False,
-            n_path_per_task=1,
-            n_inst_per_path=args.n_inst
-        )
+        if args.verbose >= 1:
+            print("Running taskset generation pipeline...")
+            run_full_generation_pipeline(
+                cfg_file=temp_cfg_path,
+                n_sec=args.n_sec,
+                dir_path=taskset_dir,
+                add_perf_records=True,
+                interact=False,
+                n_path_per_task=1,
+                n_inst_per_path=args.n_inst
+            )
+        else:
+            import contextlib
+            with open(os.devnull, 'w') as devnull:
+                with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                    run_full_generation_pipeline(
+                        cfg_file=temp_cfg_path,
+                        n_sec=args.n_sec,
+                        dir_path=taskset_dir,
+                        add_perf_records=True,
+                        interact=False,
+                        n_path_per_task=1,
+                        n_inst_per_path=args.n_inst
+                    )
 
         # Read task definitions and deadlines
         char_fpath = os.path.join(taskset_dir, "taskset_characteristics_0.yaml")
@@ -366,19 +400,22 @@ def main():
             os.makedirs(sched_dir, exist_ok=True)
 
         # Run all simulations in parallel
-        print("  --> Executing scheduler simulations in parallel...")
+        if args.verbose >= 1:
+            print("  --> Executing scheduler simulations in parallel...")
         sim_futures = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             for scheduler in args.schedulers:
                 for inst in range(args.n_inst):
                     sched_dir = os.path.join(taskset_dir, scheduler)
-                    sim_futures.append(executor.submit(run_single_simulation, sim_bin_path, taskset_dir, sched_dir, args.simt, scheduler, inst))
+                    sim_futures.append(executor.submit(run_single_simulation, sim_bin_path, taskset_dir, sched_dir, args.simt, scheduler, inst, args.verbose))
             # Wait for all simulations to complete
             concurrent.futures.wait(sim_futures)
-        print("  --> All simulations completed. Starting analysis...")
+        if args.verbose >= 1:
+            print("  --> All simulations completed. Starting analysis...")
 
         # Run all analyses in parallel
-        print("  --> Analyzing simulation results in parallel...")
+        if args.verbose >= 1:
+            print("  --> Analyzing simulation results in parallel...")
         analysis_futures = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
             for scheduler in args.schedulers:
@@ -398,14 +435,17 @@ def main():
                         results_by_scheduler[scheduler]['intervals'][interval].append(sp_val)
                 except Exception as e:
                     print(f"Error during analysis future execution: {e}")
-        print("  --> Analysis completed.")
+        if args.verbose >= 1:
+            print("  --> Analysis completed.")
 
     # Clean up temp configs dir
     shutil.rmtree(temp_dir, ignore_errors=True)
 
-    print("\n==================== SUMMARIZING RESULTS ====================")
-    write_summary_and_plots(results_by_scheduler, args.schedulers, output_dir_abs, horizon_granularity)
-    print("\nConsolidated analysis and plots generated.")
+    if args.verbose >= 1:
+        print("\n==================== SUMMARIZING RESULTS ====================")
+    write_summary_and_plots(results_by_scheduler, args.schedulers, output_dir_abs, horizon_granularity, args.verbose)
+    if args.verbose >= 1:
+        print("\nConsolidated analysis and plots generated.")
 
 if __name__ == "__main__":
     main()
