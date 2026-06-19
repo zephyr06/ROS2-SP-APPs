@@ -183,4 +183,44 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     return opt_pa_;
 }
 
+bool TaskSortingHeuristic::operator()(size_t idx1, size_t idx2) const {
+    const auto& t1 = dag_tasks.tasks[idx1];
+    const auto& t2 = dag_tasks.tasks[idx2];
+    
+    double w1 = 1.0;
+    if (sp_parameters.weights_node.count(t1.id)) {
+        w1 = sp_parameters.weights_node.at(t1.id);
+    }
+    double w2 = 1.0;
+    if (sp_parameters.weights_node.count(t2.id)) {
+        w2 = sp_parameters.weights_node.at(t2.id);
+    }
+
+    if (w1 != w2) {
+        return w1 > w2;
+    }
+
+    double th1 = 0.5;
+    if (sp_parameters.thresholds_node.count(t1.id)) {
+        th1 = sp_parameters.thresholds_node.at(t1.id);
+    }
+    double th2 = 0.5;
+    if (sp_parameters.thresholds_node.count(t2.id)) {
+        th2 = sp_parameters.thresholds_node.at(t2.id);
+    }
+
+    if (th1 != th2) {
+        return th1 < th2;
+    }
+
+    return t1.id < t2.id;
+}
+
+PriorityVec PerformOptimizePA_Incre_w_TimeLimits(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    return opt.OptimizeFromScratch(
+        GlobalVariables::Layer_Node_During_Incremental_Optimization);
+}
+
 }  // namespace SP_OPT_PA

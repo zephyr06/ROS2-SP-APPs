@@ -436,7 +436,7 @@ TEST_F(Test_testAnalyzeSP, GetAvgTaskPerfTerm) {
   }
 
   std::vector<FiniteDist> node_rts_dists;
-  for (int i = 0; i < dag_tasks.tasks.size(); i++) {
+  for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
     std::string rst_path =
         data_dir + dag_tasks.tasks[i].name + "_response_time.txt";
     std::vector<double> rst_data = ReadTxtFile(rst_path);
