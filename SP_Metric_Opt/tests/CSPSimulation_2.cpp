@@ -130,6 +130,18 @@ int main(int argc, char *argv[]) {
     string sched_policy_name = program.get<std::string>("--scheduler");
     string sched_policy = sched_policy_name;
 
+    string simt_s = program.get<std::string>("--simt");
+    int simt = atoi(simt_s.c_str());
+
+    string path_idx_s = program.get<std::string>("--path_idx");
+    int path_idx = atoi(path_idx_s.c_str());
+
+    string inst_idx_s = program.get<std::string>("--inst_idx");
+    int inp_inst_idx = atoi(inst_idx_s.c_str());
+
+    string calc_prio_interval_ms_s = program.get<std::string>("--calc_prio_interval_ms");
+    int calc_prio_interval_ms = atoi(calc_prio_interval_ms_s.c_str());
+
     // Parse suffixes for ablation configurations
     if (sched_policy.size() > 5 && sched_policy.substr(sched_policy.size() - 5) == "_WCET") {
         GlobalVariables::use_wcet_execution_time = true;
@@ -147,6 +159,23 @@ int main(int argc, char *argv[]) {
         std::cout << "Ablation Mode: Sorting Heuristic in CD disabled." << std::endl;
     }
 
+    // Parse adaptation interval suffix (e.g., _int20s)
+    size_t int_pos = sched_policy.find("_int");
+    if (int_pos != std::string::npos) {
+        size_t s_pos = sched_policy.find("s", int_pos);
+        if (s_pos != std::string::npos) {
+            std::string interval_str = sched_policy.substr(int_pos + 4, s_pos - (int_pos + 4));
+            try {
+                int interval_sec = std::stoi(interval_str);
+                calc_prio_interval_ms = interval_sec * 1000;
+                std::cout << "Ablation Mode: Custom adaptation interval set to " << calc_prio_interval_ms << " ms." << std::endl;
+            } catch (const std::exception& e) {
+                std::cerr << "Error parsing adaptation interval: " << e.what() << std::endl;
+            }
+            sched_policy = sched_policy.substr(0, int_pos) + sched_policy.substr(s_pos + 1);
+        }
+    }
+
     if ( sched_policy == "BR" || sched_policy == "BROPT" || sched_policy == "INCR" || sched_policy == "INCR_SWAP" || sched_policy == "RM" || 
          sched_policy == "RM_FAST" || sched_policy == "RM_SLOW" || sched_policy == "CFS" ) {
         std::cout << "Scheduler type: " << sched_policy << std::endl;
@@ -158,17 +187,7 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    string simt_s = program.get<std::string>("--simt");
-    int simt = atoi(simt_s.c_str());
 
-    string path_idx_s = program.get<std::string>("--path_idx");
-    int path_idx = atoi(path_idx_s.c_str());
-
-    string inst_idx_s = program.get<std::string>("--inst_idx");
-    int inp_inst_idx = atoi(inst_idx_s.c_str());
-
-    string calc_prio_interval_ms_s = program.get<std::string>("--calc_prio_interval_ms");
-    int calc_prio_interval_ms = atoi(calc_prio_interval_ms_s.c_str());
 
     string output_job_not_executed_s = program.get<std::string>("--output_job_not_executed");
     int output_job_not_executed = atoi(output_job_not_executed_s.c_str());

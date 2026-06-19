@@ -73,3 +73,9 @@ This file tracks the proposed ideas for improving the scheduler (specifically IN
 - **Proposed Solution**: Override task execution time distributions to a constant value equal to their WCET (`execution_time_max`), and simulate/optimize under this deterministic model.
 - **Complexity**: Zero variance distribution reduces SP-Metric RTA calculation complexity to deterministic checks.
 - **Status**: Completed (implemented as `INCR_WCET` and `BR_WCET`).
+
+## Idea 13: Adaptation Frequency Study (Ablation Method 4: INTERVAL)
+- **Problem**: Need to find the optimal balance between priority reevaluation frequency and computational overhead.
+- **Proposed Solution**: Sweep priority recalculation intervals (`calc_prio_interval_ms`) across 1s, 10s, 20s, 30s, and 60s to measure Safety-Performance (SP) gains and CPU execution time overhead.
+- **Complexity**: O(N) evaluation at each interval. Longer intervals linearly reduce total C++ scheduling overhead.
+- **Status**: Completed (implemented via `_int<X>s` suffix configuration).
