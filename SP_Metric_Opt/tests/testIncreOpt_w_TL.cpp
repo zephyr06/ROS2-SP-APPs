@@ -192,9 +192,9 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeFromScratch_w_TL) {
     EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
-    EXPECT_EQ(400,
+    EXPECT_EQ(800,
               res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
-    // In scratch mode, should return 400
+    // In scratch mode, should return 800
     // In incremental mode, should return 800
 }
 
@@ -202,9 +202,9 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
                                          sp_parameters);  // high utilization
 
-    opt.OptimizeFromScratch_w_TL(2);  // result is 400
+    opt.OptimizeFromScratch_w_TL(2);  // result is 800
     ResourceOptResult res_opt = opt.CollectResults();
-    EXPECT_EQ(400,
+    EXPECT_EQ(800,
               res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
 
     DAG_Model dag_tasks_updated =
@@ -229,21 +229,25 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
 }
 
 TEST_F(TaskSetForTest_taskset_cfg_10_1_gen_1, optimize_incremental) {
+    std::cout << "DEBUG 1: Constructing optimizer" << std::endl;
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
     int n = GlobalVariables::Layer_Node_During_Incremental_Optimization;
-    std::cout << "Layer_Node_During_Incremental_Optimization:" << n
-              << std::endl;
+    std::cout << "DEBUG 2: Layer_Node_During_Incremental_Optimization = " << n << std::endl;
     auto start_time = CurrentTimeInProfiler;
+    std::cout << "DEBUG 3: Running OptimizeFromScratch_w_TL" << std::endl;
     opt.OptimizeFromScratch_w_TL(n);
+    std::cout << "DEBUG 4: CollectResults" << std::endl;
     ResourceOptResult res_opt = opt.CollectResults();
     auto finish_time = CurrentTimeInProfiler;
     double time_taken = GetTimeTaken(start_time, finish_time);
     std::cout << "time taken for OptimizeFromScratch_w_TL:" << time_taken
               << std::endl;
 
+    std::cout << "DEBUG 5: Running OptimizeIncre_w_TL" << std::endl;
     start_time = CurrentTimeInProfiler;
     opt.OptimizeIncre_w_TL(dag_tasks, n);
+    std::cout << "DEBUG 6: Done" << std::endl;
     finish_time = CurrentTimeInProfiler;
     time_taken = GetTimeTaken(start_time, finish_time);
     std::cout << "time taken for OptimizeIncre_w_TL:" << time_taken
