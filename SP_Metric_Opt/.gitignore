@@ -16,6 +16,14 @@ lib/
 obj/
 
 # Simulation Experiment Outputs & Configs
-TaskData/experiment_*/
-TaskData/taskset_cfg_*
+TaskData/*/
+TaskData/*.txt
+TaskData/*.json
 temp_experiment_configs/
+temp/
+
+# Binary / Output / Log formats
+*.log
+*.pdf
+*.png
+*.csv
