@@ -46,8 +46,11 @@ bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
 void PriorityPartialPath::UpdateSP(int task_id) {
     TaskSet hp_tasks;
     hp_tasks.reserve(tasks_to_assign.size());
+    int curr_processorId = dag_tasks.tasks[task_id].processorId;
     for (int task_hp_id : tasks_to_assign) {
-        hp_tasks.push_back(dag_tasks.tasks[task_hp_id]);
+        if (dag_tasks.tasks[task_hp_id].processorId == curr_processorId) {
+            hp_tasks.push_back(dag_tasks.tasks[task_hp_id]);
+        }
     }
     FiniteDist rta_curr = GetRTA_OneTask(dag_tasks.tasks[task_id], hp_tasks);
     // sp +=

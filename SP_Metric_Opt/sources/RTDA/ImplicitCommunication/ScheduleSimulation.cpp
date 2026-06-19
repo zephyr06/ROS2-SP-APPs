@@ -348,7 +348,7 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                     double priority = run_queue.tasks_info_.GetTask(task_id).get_priority();
                     //std::cout<<ppre<<"task "<<task_id<<"old priority = "<<priority<<std::endl;
 
-                    double new_priority = tasks.size()-task_id-1;
+                    double new_priority = tasks.size()-i-1;
                     run_queue.set_task_priority(task_id, new_priority);
                     //std::cout<<ppre<<"set task "<<task_id<<" new priority = "<<new_priority<<std::endl;
 
@@ -578,7 +578,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                     double priority = run_queue.tasks_info_.GetTask(task_id).get_priority();
                     //std::cout<<ppre<<"task "<<task_id<<"old priority = "<<priority<<std::endl;
 
-                    double new_priority = tasks.size()-task_id-1;
+                    double new_priority = tasks.size()-i-1;
                     run_queue.set_task_priority(task_id, new_priority);
                     //std::cout<<ppre<<"set task "<<task_id<<" new priority = "<<new_priority<<std::endl;
 
