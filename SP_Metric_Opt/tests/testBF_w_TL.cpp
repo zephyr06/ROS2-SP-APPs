@@ -72,7 +72,6 @@ class TaskSetForTest_taskset_cfg_4_5_gen_1 : public ::testing::Test {
     SP_Parameters sp_parameters;
     int N = dag_tasks.tasks.size();
 };
-
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
@@ -320,7 +319,6 @@ TEST_F(TaskSetForTest_taskset_cfg_4_5_gen_1, check_id2time_limit) {
         //     cpu_util,task_wPerf,res_opt.id2time_limit[task_wPerf]);
     }
 }
-
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

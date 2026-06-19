@@ -1,4 +1,4 @@
-  tasks:
+tasks:
     - id: 0
       execution_time_mu: 1.1113841360040957
       execution_time_sigma: 0.19520624937085143
@@ -121,4 +121,3 @@
       total_running_time: 1000000
       performance_records_time: 100.000 288.889 477.778 666.667 855.556 1044.444 1233.333 1422.222 1611.111 1800.000
       performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
-

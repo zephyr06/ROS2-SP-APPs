@@ -5,7 +5,6 @@
 
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/testMy.h"
-
 #if defined(RYAN_HE_CHANGE)
 #include <random>
 #endif
@@ -17,14 +16,14 @@ namespace SP_OPT_PA {
 double getRandomValueByMuSigma(double mu, double std, double* minVal,
                                double* maxVal);
 #endif
-
 class ProbabilityDistributionBase {
    public:
     ProbabilityDistributionBase() {}
 
     double CDF(double x) const;
 
-    // virtual void UpdateDistribution(std::vector<double> execution_time_data);
+    // virtual void UpdateDistribution(std::vector<double>
+    // execution_time_data);
 
     // data members
 };
@@ -222,8 +221,8 @@ class FiniteDist : public ProbabilityDistributionBase {
     double GetAvgValue() const;
 
     // data members
-    // saves the probability that x<= value, this is probability mass function
-    // rather than cumulative function
+    // saves the probability that x<= value, this is probability mass
+    // function rather than cumulative function
     std::vector<Value_Proba> distribution;
     double min_time;
     double max_time;

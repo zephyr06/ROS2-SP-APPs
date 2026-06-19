@@ -186,4 +186,4 @@ if __name__ =="__main__":
     scheduler_names = ["optimizerIncremental", "optimizerBF"]
 
     analyze_all_schedulers(scheduler_names)
-    # plot_avg_line_for_all_methods(scheduler_names,plot_file_path=os.path.join(OPT_SP_PROJECT_PATH, "../Experiments","average_all.pdf"))
+    plot_avg_line_for_all_methods(scheduler_names,plot_file_path=os.path.join(OPT_SP_PROJECT_PATH, "../Experiments","average_all.pdf"))
