@@ -58,6 +58,10 @@ void PriorityPartialPath::UpdateSP(int task_id) {
                              {sp_parameters.thresholds_node[task_id]},
                              {1.0 * sp_parameters.weights_node[task_id]});
     sp_lost += 1.0 * sp_parameters.weights_node[task_id] - sp_cur;
+    std::cout << "DEBUG UpdateSP: task_id=" << task_id << " name=" << dag_tasks.tasks[task_id].name
+              << " processorId=" << curr_processorId
+              << " hp_tasks_size=" << hp_tasks.size() << " rta_curr.max_time=" << rta_curr.max_time
+              << " sp_cur=" << sp_cur << " sp_lost=" << sp_lost << std::endl;
 }
 
 void PriorityPartialPath::AssignAndUpdateSP(int task_id) {
