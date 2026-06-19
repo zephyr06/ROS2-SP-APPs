@@ -60,13 +60,13 @@ TEST_F(TaskSetForTest_robotics_v6, Compare_PriorityPartialPath) {
     EXPECT_EQ("TSP", dag_tasks.tasks[pq.top().pa_vec_lower_pri[0]].name);
     pq.pop();
 
-    EXPECT_EQ("SLAM", dag_tasks.tasks[pq.top().pa_vec_lower_pri[0]].name);
+    EXPECT_EQ("MPC", dag_tasks.tasks[pq.top().pa_vec_lower_pri[0]].name);
     pq.pop();
 
     EXPECT_EQ("RRT", dag_tasks.tasks[pq.top().pa_vec_lower_pri[0]].name);
     pq.pop();
 
-    EXPECT_EQ("MPC", dag_tasks.tasks[pq.top().pa_vec_lower_pri[0]].name);
+    EXPECT_EQ("SLAM", dag_tasks.tasks[pq.top().pa_vec_lower_pri[0]].name);
     pq.pop();
 }
 
@@ -75,8 +75,8 @@ TEST_F(TaskSetForTest_robotics_v6, GetPriorityAssignments) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
     EXPECT_EQ(4, pa_vec1.size());
-    EXPECT_EQ("MPC", dag_tasks.tasks[pa_vec1[0]].name);
-    EXPECT_EQ("RRT", dag_tasks.tasks[pa_vec1[1]].name);
+    EXPECT_EQ("RRT", dag_tasks.tasks[pa_vec1[0]].name);
+    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[1]].name);
     // EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[2]].name);
     // EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[3]].name);
 }
@@ -100,10 +100,10 @@ TEST_F(TaskSetForTest_robotics_v7, GetPriorityAssignments) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
     EXPECT_EQ(4, pa_vec1.size());
-    EXPECT_EQ("MPC", dag_tasks.tasks[pa_vec1[0]].name);
-    EXPECT_EQ("RRT", dag_tasks.tasks[pa_vec1[1]].name);
-    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[2]].name);
-    EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[3]].name);
+    EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[0]].name);
+    EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
+    EXPECT_EQ("RRT", dag_tasks.tasks[pa_vec1[2]].name);
+    EXPECT_EQ("MPC", dag_tasks.tasks[pa_vec1[3]].name);
 }
 class TaskSetForTest_robotics_v8 : public ::testing::Test {
    public:
@@ -258,6 +258,20 @@ TEST_F(TaskSetForTest_robotics_v27, GetPriorityAssignments_IncrementalOpt) {
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
 }
+
+TEST_F(TaskSetForTest_robotics_v27, GetPriorityAssignments_IncrementalOpt_Swap) {
+    GlobalVariables::use_adjacent_swap = true;
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
+
+    DAG_Model dag_tasks_update = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v8.yaml", 5);
+    PriorityVec pa_vec_swap = opt.OptimizeIncre(dag_tasks_update);
+    EXPECT_EQ(2, pa_vec_swap.size());
+    // Restore flag
+    GlobalVariables::use_adjacent_swap = false;
+}
+
 
 TEST_F(TaskSetForTest_2tasks, UnfeasibleTaskSet) {
     // Create 2 tasks with utilization > 1.0

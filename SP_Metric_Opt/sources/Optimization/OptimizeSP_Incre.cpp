@@ -22,7 +22,7 @@ PriorityPartialPath::PriorityPartialPath(const DAG_Model& dag_tasks,
 
 bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
                                   const PriorityPartialPath& rhs) const {
-    if (std::abs((lhs.sp_lost - rhs.sp_lost)) > 5e-2) {
+    if (std::abs((lhs.sp_lost - rhs.sp_lost)) > 1e-2) {
         return lhs.sp_lost > rhs.sp_lost;  // small sp value first
     } else {
         for (int i = 0; i < lhs.pa_vec_lower_pri.size(); i++) {
@@ -33,9 +33,11 @@ bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
                                                   // to tasks with small
                                                   // weight
                 } else {
-                    return lhs.GetTaskMinEt(i) <
-                           rhs.GetTaskMinEt(i);  // assign low priority
-                                                 // to tasks with long ET
+                    const Task& task_lhs = lhs.dag_tasks.GetTask(lhs.pa_vec_lower_pri[i]);
+                    const Task& task_rhs = rhs.dag_tasks.GetTask(rhs.pa_vec_lower_pri[i]);
+                    double slack_lhs = (task_lhs.deadline - task_lhs.execution_time_dist.GetAvgValue()) / task_lhs.deadline;
+                    double slack_rhs = (task_rhs.deadline - task_rhs.execution_time_dist.GetAvgValue()) / task_rhs.deadline;
+                    return slack_lhs < slack_rhs;  // assign low priority to task with more relative slack (slack-rich)
                 }
             }
         }
@@ -58,10 +60,12 @@ void PriorityPartialPath::UpdateSP(int task_id) {
                              {sp_parameters.thresholds_node[task_id]},
                              {1.0 * sp_parameters.weights_node[task_id]});
     sp_lost += 1.0 * sp_parameters.weights_node[task_id] - sp_cur;
-    std::cout << "DEBUG UpdateSP: task_id=" << task_id << " name=" << dag_tasks.tasks[task_id].name
-              << " processorId=" << curr_processorId
-              << " hp_tasks_size=" << hp_tasks.size() << " rta_curr.max_time=" << rta_curr.max_time
-              << " sp_cur=" << sp_cur << " sp_lost=" << sp_lost << std::endl;
+    if (GlobalVariables::debugMode) {
+        std::cout << "DEBUG UpdateSP: task_id=" << task_id << " name=" << dag_tasks.tasks[task_id].name
+                  << " processorId=" << curr_processorId
+                  << " hp_tasks_size=" << hp_tasks.size() << " rta_curr.max_time=" << rta_curr.max_time
+                  << " sp_cur=" << sp_cur << " sp_lost=" << sp_lost << std::endl;
+    }
 }
 
 void PriorityPartialPath::AssignAndUpdateSP(int task_id) {
@@ -233,32 +237,74 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
     if (opt_pa_.size() == 0) {
         CoutError("OptimizeIncre called before OptimizeFromScratch");
     }
+    std::vector<DiffObj> tasks_with_diff_et =
+        FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
+    if (tasks_with_diff_et.empty()) {
+        return opt_pa_;
+    }
     // reset optimal sp
     opt_sp_ =
         EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_);
     // std::cout << "Ryan: Initial SP before incremental optimziation is: " <<
     // opt_sp_
     //           << "\n";
-    std::vector<DiffObj> tasks_with_diff_et =
-        FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
 
-    for (DiffObj task_diff_obj : tasks_with_diff_et) {
-        int task_id = task_diff_obj.task_id;
-        bool et_increased = task_diff_obj.increase;
+    if (GlobalVariables::use_adjacent_swap) {
+        for (DiffObj task_diff_obj : tasks_with_diff_et) {
+            int task_id = task_diff_obj.task_id;
+            int pos = GetProrityIndex(opt_pa_, task_id);
+            bool improved = true;
+            while (improved) {
+                improved = false;
+                // Try swapping with higher priority (left neighbor)
+                if (pos > 0) {
+                    PriorityVec pa_new = opt_pa_;
+                    std::swap(pa_new[pos], pa_new[pos - 1]);
+                    double sp_eval = EvaluateSPWithPriorityVec(
+                        dag_tasks_update, sp_parameters_, pa_new);
+                    if (sp_eval > opt_sp_) {
+                        opt_sp_ = sp_eval;
+                        opt_pa_ = pa_new;
+                        pos = pos - 1;
+                        improved = true;
+                        continue;
+                    }
+                }
+                // Try swapping with lower priority (right neighbor)
+                if (pos < static_cast<int>(opt_pa_.size()) - 1) {
+                    PriorityVec pa_new = opt_pa_;
+                    std::swap(pa_new[pos], pa_new[pos + 1]);
+                    double sp_eval = EvaluateSPWithPriorityVec(
+                        dag_tasks_update, sp_parameters_, pa_new);
+                    if (sp_eval > opt_sp_) {
+                        opt_sp_ = sp_eval;
+                        opt_pa_ = pa_new;
+                        pos = pos + 1;
+                        improved = true;
+                        continue;
+                    }
+                }
+            }
+        }
+    } else {
+        for (DiffObj task_diff_obj : tasks_with_diff_et) {
+            int task_id = task_diff_obj.task_id;
+            bool et_increased = task_diff_obj.increase;
 
-        // TODO!!!!
-        std::vector<PriorityVec> pa_vec_variations =
-            FindPriorityVec1D_Variations(
-                opt_pa_, task_id,
-                AnalyzePriorityChangeStatus(sp_parameters_, task_id,
-                                            et_increased));
-        for (const PriorityVec& priority_assignment : pa_vec_variations) {
-            double sp_eval = EvaluateSPWithPriorityVec(
-                dag_tasks_update, sp_parameters_, priority_assignment);
-            PrintPA_IfDebugMode(priority_assignment, sp_eval);
-            if (sp_eval > opt_sp_) {
-                opt_sp_ = sp_eval;
-                opt_pa_ = priority_assignment;
+            // TODO!!!!
+            std::vector<PriorityVec> pa_vec_variations =
+                FindPriorityVec1D_Variations(
+                    opt_pa_, task_id,
+                    AnalyzePriorityChangeStatus(sp_parameters_, task_id,
+                                                et_increased));
+            for (const PriorityVec& priority_assignment : pa_vec_variations) {
+                double sp_eval = EvaluateSPWithPriorityVec(
+                    dag_tasks_update, sp_parameters_, priority_assignment);
+                PrintPA_IfDebugMode(priority_assignment, sp_eval);
+                if (sp_eval > opt_sp_) {
+                    opt_sp_ = sp_eval;
+                    opt_pa_ = priority_assignment;
+                }
             }
         }
     }

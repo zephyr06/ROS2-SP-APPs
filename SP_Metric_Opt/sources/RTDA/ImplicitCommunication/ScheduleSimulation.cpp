@@ -267,7 +267,7 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                 }
                 
                 // we need to run BF or incremental alg to sort priorities
-                if (priority_policy == "INCR") {
+                if (priority_policy == "INCR" || priority_policy == "INCR_SWAP") {
                     if (time_now==0) {
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
                         PriorityVec pa_opt = inc_opt.OptimizeFromScratch_w_TL(
@@ -519,7 +519,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                 }
 
                 // we need to run BF or incremental alg to sort priorities
-                if (priority_policy == "INCR") {
+                if (priority_policy == "INCR" || priority_policy == "INCR_SWAP") {
                     if (time_now==0) {
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
@@ -878,7 +878,7 @@ Schedule SimulatedCSP_SingleCore(const DAG_Model &dag_tasks,
         }
     }
 
-    if (priority_policy == "BR" || priority_policy == "INCR") {
+    if (priority_policy == "BR" || priority_policy == "INCR" || priority_policy == "INCR_SWAP") {
         return SimulatedCSP_SingleCore_CSP(dag_tasks, tasks_info, sp_parameters, processor_id, 
                                            simt, priority_policy, fout, task_Ets, &task_Et_idx,flog,
                                            reevaluate_prio_interval_ms);
@@ -932,7 +932,7 @@ Schedule SimulatedCSP_SingleCore_vecs(std::vector<DAG_Model> &dag_tasks_vecs,
         }
     }
 
-    if (priority_policy == "BR" || priority_policy == "BROPT" ||  priority_policy == "INCR") {
+    if (priority_policy == "BR" || priority_policy == "BROPT" ||  priority_policy == "INCR" || priority_policy == "INCR_SWAP") {
         return SimulatedCSP_SingleCore_CSP_vecs(dag_tasks_vecs, tasks_info_vecs, sp_parameters_vecs, processor_id, 
                                                 simt, priority_policy, fout, task_Ets, &task_Et_idx,flog,
                                                 reevaluate_prio_interval_ms);

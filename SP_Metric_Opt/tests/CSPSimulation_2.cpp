@@ -128,9 +128,12 @@ int main(int argc, char *argv[]) {
     GlobalVariables::debugMode = verbose;
      
     string sched_policy = program.get<std::string>("--scheduler");
-    if ( sched_policy == "BR" || sched_policy == "BROPT" || sched_policy == "INCR" || sched_policy == "RM" || 
+    if ( sched_policy == "BR" || sched_policy == "BROPT" || sched_policy == "INCR" || sched_policy == "INCR_SWAP" || sched_policy == "RM" || 
          sched_policy == "RM_FAST" || sched_policy == "RM_SLOW" || sched_policy == "CFS" ) {
         std::cout << "Scheduler type: " << sched_policy << std::endl;
+        if (sched_policy == "INCR_SWAP") {
+            GlobalVariables::use_adjacent_swap = true;
+        }
     } else {
         std::cout << "Unknown scheduler type: " << sched_policy << std::endl;
         exit(0);
