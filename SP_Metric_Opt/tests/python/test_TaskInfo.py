@@ -1,5 +1,13 @@
+import sys
+import os
 import pytest
 import numpy as np
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, PROJECT_ROOT)
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "Visualize_SP_Metric"))
+sys.path.insert(0, os.path.join(PROJECT_ROOT, "Visualize_SP_Metric", "util_scripts_for_old_functionality"))
+
 from SP_draw_fig_utils import *
 from slam_analysis_utils import *
 
@@ -144,7 +152,7 @@ def test_read_xyz_from_slam_dict():
 
 def test_calculate_trajectory_error2():
     association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
-    ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
+    ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "util_scripts_for_old_functionality", "slam_ground_truth_tum.txt")
     slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
 
     time_stamps = read_time_stamps_from_association(association_file_path)
@@ -159,7 +167,7 @@ def test_calculate_trajectory_error2():
 
 def test_get_trajectory_error_list():
     association_file_path = "/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/data_for_test/fr3_walking_xyz.txt"
-    ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "slam_ground_truth_tum.txt")
+    ground_truth_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "util_scripts_for_old_functionality", "slam_ground_truth_tum.txt")
     slam_output_file_path = os.path.join(OPT_SP_PROJECT_PATH, "Visualize_SP_Metric", "data", "CameraTrajectory_bf.txt")
 
     time_stamps = read_time_stamps_from_association(association_file_path)
