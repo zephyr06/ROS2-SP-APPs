@@ -1,0 +1,68 @@
+  tasks:
+    - id: 0
+      gid: 1
+      execution_time_mu: 265.1034664209566
+      execution_time_sigma: 178.19831231999314
+      execution_time_min: 100.0
+      execution_time_max: 799.2725454238298
+      period: 2000
+      deadline: 2000
+      processorId: 1
+      name: task_2
+      sp_threshold: 0.5909977691423121
+      sp_weight: 1.0
+      total_running_time: 1000000
+    - id: 1
+      gid: 3
+      execution_time_mu: 2.6981402044959504
+      execution_time_sigma: 1.6739684719184635
+      execution_time_min: 1.0
+      execution_time_max: 10.939782999452301
+      period: 20
+      deadline: 20
+      processorId: 1
+      name: task_4
+      sp_threshold: 0.522496789538704
+      sp_weight: 0.6
+      total_running_time: 1000000
+    - id: 2
+      gid: 5
+      execution_time_mu: 5.262546721180528
+      execution_time_sigma: 3.3035013372414075
+      execution_time_min: 2.5
+      execution_time_max: 20.66561017939234
+      period: 50
+      deadline: 50
+      processorId: 1
+      name: task_6
+      sp_threshold: 0.5520988628619243
+      sp_weight: 0.4
+      total_running_time: 1000000
+    - id: 3
+      gid: 7
+      execution_time_mu: 13.404396271551954
+      execution_time_sigma: 9.010730266603183
+      execution_time_min: 10.0
+      execution_time_max: 90.0
+      period: 100
+      deadline: 100
+      processorId: 1
+      name: task_8
+      sp_threshold: 0.7471309945591514
+      sp_weight: 0.8
+      total_running_time: 1000000
+      performance_records_time: 10.000 17.143 24.286 31.429 38.571 45.714 52.857 60.000 75.000 90.000
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+    - id: 4
+      gid: 9
+      execution_time_mu: 4.081401898043667
+      execution_time_sigma: 2.5154754531903407
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 14.681420413940948
+      period: 33
+      deadline: 33
+      processorId: 1
+      name: task_10
+      sp_threshold: 0.6245505591659947
+      sp_weight: 0.8
+      total_running_time: 1000000

@@ -93,8 +93,8 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
                 pq.push(new_path);
                 if (GlobalVariables::debugMode) {
                     std::cout << "Priority " << curr_priority << ":\n";
-                    std::cout << "partial paths:\n";
                     std::cout << "SP lost: " << new_path.sp_lost << " ";
+                    std::cout << "partial paths:\n";
                     for (int j = 0; j < new_path.pa_vec_lower_pri.size(); j++) {
                         std::cout << new_path.pa_vec_lower_pri[j] << " ";
                     }
@@ -232,13 +232,16 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
     // reset optimal sp
     opt_sp_ =
         EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_);
-    // std::cout << "Initial SP before incremental optimziation is: " << opt_sp_
+    // std::cout << "Ryan: Initial SP before incremental optimziation is: " <<
+    // opt_sp_
     //           << "\n";
     std::vector<DiffObj> tasks_with_diff_et =
         FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
+
     for (DiffObj task_diff_obj : tasks_with_diff_et) {
         int task_id = task_diff_obj.task_id;
         bool et_increased = task_diff_obj.increase;
+
         // TODO!!!!
         std::vector<PriorityVec> pa_vec_variations =
             FindPriorityVec1D_Variations(

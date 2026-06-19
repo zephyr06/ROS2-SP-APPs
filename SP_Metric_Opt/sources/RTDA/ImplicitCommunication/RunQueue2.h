@@ -42,7 +42,7 @@ class RunQueue2 {
           std::cout<<"####RunQueue2 RunJobHigestPriority: time_now="<<time_now<<", "<<size()<<" jobs, still run curr, taskId="<<job_info.job.taskId<<", jobId="<<job_info.job.jobId<<std::endl;
         }	  
         return;
-	  }
+	    }
       else {
         if (dbg){
           std::cout<<"####RunQueue2 RunJobHigestPriority: time_now="<<time_now<<", "<<size()<<" jobs, preempt curr and run new"<<std::endl;
@@ -50,7 +50,7 @@ class RunQueue2 {
         PreemptJob(time_now);  // preempty running jobs, if any
         if (!RunJob(0, time_now)) {
           CoutError("Error in RunQueue2 RunJobHigestPriority!");
-		}
+		    }
       }
     }
   }

@@ -74,10 +74,12 @@ def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name
 
     # Transpose SP values to get values at each time point for all series
     sp_values_at_times = np.array([np.array(t[1]) for t in data])  # Transpose to group SP values by time
+
     min_sp_length = min(len(sublist) for sublist in sp_values_at_times)
     sp_values_at_times = np.array([sublist[:min_sp_length] for sublist in sp_values_at_times])
     time_series = time_series[:min_sp_length]
     sp_values_at_times = sp_values_at_times / normalize_coeff
+
     # sp_values_at_times =[x/normalize_coeff for x in sp_values_at_times]
     # Create the box plot
     # plt.figure(figsize=(10, 6))
@@ -94,10 +96,20 @@ def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name
     # Select approximately 10 x-ticks (adjust if fewer points exist)
     num_xticks = 10
     tick_spacing = max(1, len(time_series) // num_xticks)  # Ensure spacing is at least 1
-    selected_ticks = np.arange(0, len(time_series), tick_spacing)
 
+    #print(time_series)
+    #print(len(time_series))
+    #quit()
+    tick_spacing = 10
+    
+    #selected_ticks = np.arange(0, len(time_series), tick_spacing)
     # Set the x-ticks as integers, showing only a subset of labels to avoid crowding
-    plt.xticks(ticks=selected_ticks, labels=[int(time_series[i]) for i in selected_ticks])
+    #plt.xticks(ticks=selected_ticks, labels=[int(time_series[i]) for i in selected_ticks])
+	
+    selected_ticks = np.arange(0, len(time_series)+tick_spacing, tick_spacing)
+    dlt = time_series[selected_ticks[1]] - time_series[selected_ticks[0]]
+    labels=[int(time_series[0]+i/tick_spacing*dlt) for i in selected_ticks]
+    plt.xticks(ticks=selected_ticks, labels=labels)
 
 
     # Customize the plot

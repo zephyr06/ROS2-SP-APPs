@@ -1,5 +1,6 @@
 {
     "DESC": "Et_SCALE_FACTOR small, SIGMA_OVER_Et_RANGE high, CPU util mean high, good",
+	"N_PROCESSORS": 1,
 
     "SMALL_PERIOD_HZ": [10, 20, 30, 50],
     "BIG_PERIOD_HZ": [0.25, 0.5, 1],

@@ -1,0 +1,68 @@
+  tasks:
+    - id: 0
+      gid: 0
+      execution_time_mu: 231.22590537745862
+      execution_time_sigma: 155.0067923309688
+      execution_time_min: 100.0
+      execution_time_max: 1096.4602097407633
+      period: 2000
+      deadline: 2000
+      processorId: 0
+      name: task_1
+      sp_threshold: 0.6893653466252185
+      sp_weight: 0.6
+      total_running_time: 1000000
+    - id: 1
+      gid: 2
+      execution_time_mu: 14.432675246121807
+      execution_time_sigma: 10.019531450315817
+      execution_time_min: 5.0
+      execution_time_max: 61.322095938341604
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_3
+      sp_threshold: 0.5364099055179077
+      sp_weight: 1.0
+      total_running_time: 1000000
+    - id: 2
+      gid: 4
+      execution_time_mu: 6.194330394603363
+      execution_time_sigma: 4.261151799368541
+      execution_time_min: 5.0
+      execution_time_max: 45.0
+      period: 50
+      deadline: 50
+      processorId: 0
+      name: task_5
+      sp_threshold: 0.6328092805094272
+      sp_weight: 1.0
+      total_running_time: 1000000
+      performance_records_time: 5.000 8.571 12.143 15.714 19.286 22.857 26.429 30.000 37.500 45.000
+      performance_records_perf: 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0
+    - id: 3
+      gid: 6
+      execution_time_mu: 9.411042757813068
+      execution_time_sigma: 5.543937961635171
+      execution_time_min: 5.0
+      execution_time_max: 41.236358828711246
+      period: 100
+      deadline: 100
+      processorId: 0
+      name: task_7
+      sp_threshold: 0.8327023379949142
+      sp_weight: 0.6
+      total_running_time: 1000000
+    - id: 4
+      gid: 8
+      execution_time_mu: 4.775022084046994
+      execution_time_sigma: 3.276034302632225
+      execution_time_min: 1.6500000000000001
+      execution_time_max: 25.424628082258977
+      period: 33
+      deadline: 33
+      processorId: 0
+      name: task_9
+      sp_threshold: 0.6272265560937064
+      sp_weight: 0.4
+      total_running_time: 1000000

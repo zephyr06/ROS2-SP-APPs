@@ -3,6 +3,20 @@
 
 namespace SP_OPT_PA {
 
+/*************  ✨ Codeium Command ⭐  *************/
+/**
+ * Finds the index of the time-performance pair with the closest time limit to
+ * the specified time limit.
+ *
+ * @param time_perf_pairs A vector of TimePerfPair objects, representing
+ * time-performance pairs.
+ * @param time_limit The time limit to find the closest match for.
+ * @return The index of the time-performance pair with the time limit closest to
+ * the specified time limit. Returns -1 if the vector of time-performance pairs
+ * is empty.
+ */
+
+/******  0c1172ad-094a-43b3-9598-b58b8470a98f  *******/
 size_t Find_Close_ExecutionTime(
     const std::vector<TimePerfPair>& time_perf_pairs, double time_limit) {
     if (time_perf_pairs.size() == 0) return -1;
@@ -43,37 +57,59 @@ std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
 void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     if (optimizer.opt_sp_ > opt_sp_) {
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+            printf("DBG_PRT_MSK_DBG_DDL_SP %s: optimizer.opt_sp_=%f > opt_sp=%f, update!\n", __func__,
+                optimizer.opt_sp_, opt_sp_);
+        }
+
         opt_sp_ = optimizer.opt_sp_;
         opt_pa_ = optimizer.opt_pa_;
 
         res_opt_.SaveTimeLimits(dag_tasks_.tasks, time_limits);
         res_opt_.UpdatePriorityVec(opt_pa_);
         res_opt_.sp_opt = opt_sp_;
-
         if (GlobalVariables::debugMode) {
             std::cout << "Time limit: \n";
             for (double time : time_limits) std::cout << time << " ";
             std::cout << "TraverseTimeLimitOptions: "
                       << "opt_sp_ = " << opt_sp_ << std::endl;
         }
+    } else {
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+            printf("DBG_PRT_MSK_DBG_DDL_SP %s: optimizer.opt_sp_=%f <= opt_sp=%f, NOT update!\n",
+                __func__, optimizer.opt_sp_, opt_sp_);
+        }
     }
 }
 
 void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
     int K, uint task_id, std::vector<double>& time_limits) {
+    // time_limits len is #tasks
     if (task_id == dag_tasks_.tasks.size()) {
         auto start_time = CurrentTimeInProfiler;
         SP_Parameters sp_para_cur =
             AddWeightsFromTimeLimits(dag_tasks_, sp_parameters_, time_limits);
         DAG_Model dag_tasks_cur =
             UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
+        if (GlobalVariables::debugMode) {
+            std::cout << "\n Current time limit options: \n";
+            for (int i = 0; i < time_limits.size(); i++)
+                printf("%.2f ", time_limits[i]);
+        }
         if (timelimit2optimizer_.count(time_limits)) {
+            if (GlobalVariables::debugMode & DBG_PRT_MSK_DBG_DDL_SP) {
+                printf("DBG_PRT_MSK_DBG_DDL_SP %s : OptimizeIncre...\n", __func__);
+                for (int i = 0; i < time_limits.size(); i++)
+                    printf("%.2f ", time_limits[i]);
+                printf("\n");
+            }
             OptimizePA_Incre& optimizer = timelimit2optimizer_[time_limits];
             optimizer.OptimizeIncre(
                 dag_tasks_cur);  // enforce the current time limit option
             UpdateRecords(optimizer, time_limits);
             optimizer.UpdateDAG(dag_tasks_cur);
         } else {
+            // printf("%s Ryan: scratch ...\n",__func__);
             OptimizePA_Incre optimizer(dag_tasks_cur, sp_para_cur);
             optimizer.OptimizeFromScratch(K);
             timelimit2optimizer_[time_limits] = optimizer;
@@ -81,7 +117,9 @@ void OptimizePA_Incre_with_TimeLimits::TraverseTimeLimitOptions(
         }
         auto finish_time = CurrentTimeInProfiler;
         double time_taken = GetTimeTaken(start_time, finish_time);
-        // CoutWarning("Time taken for evaluating one time limit option: " + std::to_string(time_taken));
+        // printf("---- %s Ryan: evaluating one time limit option
+        // %f\n",__func__,time_taken); CoutWarning("Time taken for evaluating
+        // one time limit option: " + std::to_string(time_taken));
         return;
     } else {
         for (double time_limit : time_limit_option_for_each_task_[task_id]) {
@@ -97,11 +135,14 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
     std::vector<double> time_limits;
     time_limits.reserve(dag_tasks_.tasks.size());
     TraverseTimeLimitOptions(K, 0, time_limits);
-    std::cout << "************Finish running the scratch run***************\n";
+    // std::cout << "************Finish running the scratch
+    // run***************\n";
     return opt_pa_;
 }
+
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
+    // bugfix: reset opt_sp_ to -1.0 so the records get updated even in overloaded systems where all SP values are 0.0
     opt_sp_ = -1.0;
     dag_tasks_ = dag_tasks_update;
     time_limit_option_for_each_task_ =
@@ -109,6 +150,7 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
 
     std::vector<double> time_limits;
     time_limits.reserve(dag_tasks_.tasks.size());
+    // printf("%s RYAN: K=%d\n",__func__,K);
     TraverseTimeLimitOptions(K, 0, time_limits);
     return opt_pa_;
 }

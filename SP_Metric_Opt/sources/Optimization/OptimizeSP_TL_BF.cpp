@@ -1,6 +1,10 @@
 
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 
+#include <algorithm>
+#include <vector>
+
+#include "sources/Optimization/OptUtilsFunctionsFromRyan.h"
 #include "sources/Utils/Parameters.h"
 
 namespace SP_OPT_PA {
@@ -59,6 +63,12 @@ DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
 
 std::vector<std::vector<double>> RecordTimeLimitOptions(
     const DAG_Model& dag_tasks) {
+    double util_regular_tasks = 0.0;
+    for (int i = 0; i < dag_tasks.tasks.size(); i++) {
+        double mu = dag_tasks.tasks[i].getExecGaussian().mu;
+        double prd = dag_tasks.tasks[i].period;
+    }
+
     std::vector<std::vector<double>> time_limit_option_for_each_task;
     time_limit_option_for_each_task.reserve(dag_tasks.tasks.size());
     for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
@@ -72,55 +82,105 @@ std::vector<std::vector<double>> RecordTimeLimitOptions(
             time_limit_option_for_each_task[i].push_back(-1);
         }
     }
+#if 0
+    printf("Ryan %s: \n",__func__);
+    for (uint i = 0; i < time_limit_option_for_each_task.size(); i++) {
+        for (int k=0;k<time_limit_option_for_each_task[i].size();k++) {
+            printf("%.2f ",time_limit_option_for_each_task[i][k]);
+        }
+        printf("\n");
+    }
+#endif
+
     return time_limit_option_for_each_task;
+}
+
+// RYAN_20250309
+// Function to insert a new subsequence while keeping the sequence sorted
+void insert_sorted(
+    std::vector<std::pair<std::vector<double>, double>>& sequences,
+    const std::vector<double>& new_tasks, double utilization) {
+    if (sequences.size() == 0) {
+        sequences.push_back({new_tasks, utilization});
+        return;
+    }
+
+    // Use binary search to find the correct insertion point
+    auto pos = lower_bound(
+        sequences.begin(), sequences.end(), utilization,
+        [](const std::pair<std::vector<double>, double>& a, double value) {
+            return fabs(a.second - 1.0) < fabs(value - 1.0);
+        });
+
+    // Insert at the correct position
+    sequences.insert(pos, {new_tasks, utilization});
+}
+
+// RYAN_20250309
+
+void OptimizePA_with_TimeLimitsStatus::OptimizeDo(
+    std::vector<double>& time_limit_for_task) {
+// call when (trav_task_index == time_limit_option_for_each_task.size())
+#ifdef RYAN_HE_CHANGE_DEBUG
+    if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF)
+        std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: "
+                     "EVALUATE PA ..."
+                  << std::endl;
+#endif
+#if 0
+    printf("%s Ryan: OptimizePA_with_TimeLimitsStatus::Optimize...\n",__func__);
+    for (int i=0;i<time_limit_for_task.size();i++) {
+        printf("%.2f ",time_limit_for_task[i]);
+    }
+    printf("\n");
+#endif
+
+    SP_Parameters sp_para_cur =
+        AddWeightsFromTimeLimits(dag_tasks, sp_parameters, time_limit_for_task);
+    DAG_Model dag_tasks_cur =
+        UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limit_for_task);
+
+#ifdef RYAN_HE_CHANGE_DEBUG
+    if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF)
+        std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: "
+                     "OptimizePA_BruteForce ..."
+                  << std::endl;
+#endif
+    ResourceOptResult res_cur =
+        OptimizePA_BruteForce(dag_tasks_cur, sp_para_cur);
+    res_cur.SaveTimeLimits(dag_tasks.tasks, time_limit_for_task);
+    if (res_cur.sp_opt > res_opt.sp_opt) {
+#ifdef RYAN_HE_CHANGE_DEBUG
+        if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF) {
+            std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: "
+                         "new PA found, sp_opt="
+                      << res_cur.sp_opt << std::endl;
+            std::cout << "########PriorityVec: TASK[priorityVec[i]]'s "
+                         "priority is i"
+                      << std::endl;
+            for (int i = 0; i < res_cur.priority_vec.size(); i++) {
+                std::cout << res_cur.priority_vec[i] << " ";
+            }
+            std::cout << std::endl;
+        }
+#endif
+        res_opt = res_cur;
+    }
 }
 
 void OptimizePA_with_TimeLimitsStatus::Optimize(
     uint trav_task_index, std::vector<double>& time_limit_for_task) {
     if (ifTimeout(start_time_)) return;
     if (trav_task_index == time_limit_option_for_each_task.size()) {
-#ifdef RYAN_HE_CHANGE_DEBUG
-        if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF)
-            std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: "
-                         "EVALUATE PA ..."
-                      << std::endl;
-#endif
-        SP_Parameters sp_para_cur = AddWeightsFromTimeLimits(
-            dag_tasks, sp_parameters, time_limit_for_task);
-        DAG_Model dag_tasks_cur =
-            UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limit_for_task);
-
-#ifdef RYAN_HE_CHANGE_DEBUG
-        if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF)
-            std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: "
-                         "OptimizePA_BruteForce ..."
-                      << std::endl;
-#endif
-        ResourceOptResult res_cur =
-            OptimizePA_BruteForce(dag_tasks_cur, sp_para_cur);
-        res_cur.SaveTimeLimits(dag_tasks.tasks, time_limit_for_task);
-        if (res_cur.sp_opt > res_opt.sp_opt) {
-#ifdef RYAN_HE_CHANGE_DEBUG
-            if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF) {
-                std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: "
-                             "new PA found, sp_opt="
-                          << res_cur.sp_opt << std::endl;
-                std::cout << "########PriorityVec: TASK[priorityVec[i]]'s "
-                             "priority is i"
-                          << std::endl;
-                for (int i = 0; i < res_cur.priority_vec.size(); i++) {
-                    std::cout << res_cur.priority_vec[i] << " ";
-                }
-                std::cout << std::endl;
-            }
-#endif
-            res_opt = res_cur;
-        }
+        OptimizeDo(time_limit_for_task);
         return;
     } else {
         std::vector<double>& time_limit_options =
             time_limit_option_for_each_task[trav_task_index];
+
         for (double option : time_limit_options) {
+            // printf("Ryan %s: trav_task_index=%d,
+            // option=%.2f\n",__func__,trav_task_index,option);
             time_limit_for_task[trav_task_index] = option;
             Optimize(trav_task_index + 1, time_limit_for_task);
         }
@@ -138,6 +198,64 @@ void OptimizePA_with_TimeLimitsStatus::Optimize() {
     Optimize(0, time_limit_for_task);
 }
 
+ResourceOptResult EnumeratePA_with_TimeLimits_sortOptionsFirst(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
+#ifdef RYAN_HE_CHANGE_DEBUG
+    if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF)
+        std::cout << "####EnumeratePA_with_TimeLimits: call "
+                     "OptimizePA_with_TimeLimitsStatus.optimize ..."
+                  << std::endl;
+#endif
+
+    OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
+
+    // find all sequences
+    std::vector<std::vector<double>> options =
+        enumerate_all_exeTOptions(dag_tasks);
+    for (int i = 0; i < options.size(); i++) {
+        printf("Ryan %s %d ...\n", __func__, i);
+        for (int k = 0; k < options[i].size(); k++) {
+            printf("%.2f ", options[i][k]);
+        }
+        printf("\n");
+        optimizer.OptimizeDo(options[i]);
+        if (ifTimeout(optimizer.start_time_)) break;
+    }
+
+#ifdef RYAN_HE_CHANGE_DEBUG
+    if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF) {
+        // optimizer.res_opt is a PriorityVec which is int vector
+        // print it
+        std::cout << "####EnumeratePA_with_TimeLimits: "
+                     "OptimizePA_with_TimeLimitsStatus.optimize DONE. "
+                  << std::endl;
+        std::cout << "########PriorityVec: TASK[priorityVec[i]]'s priority is i"
+                  << std::endl;
+        for (int i = 0; i < optimizer.res_opt.priority_vec.size(); i++) {
+            std::cout << optimizer.res_opt.priority_vec[i] << " ";
+        }
+        std::cout << std::endl;
+        std::cout << "########sp_opt:" << optimizer.res_opt.sp_opt << std::endl;
+        std::cout << "########id2priority (not sure where it is used):"
+                  << std::endl;
+        for (int i = 0; i < optimizer.res_opt.id2priority.size(); i++) {
+            std::cout << optimizer.res_opt.id2priority[i] << " ";
+        }
+        std::cout << std::endl;
+
+        // this is important for TSP like performance_records_time
+        std::cout << "########id2time_limit (task[i] select execution time "
+                     "id2time_limit[i]):"
+                  << std::endl;
+        for (int i = 0; i < optimizer.res_opt.id2time_limit.size(); i++) {
+            std::cout << optimizer.res_opt.id2time_limit[i] << " ";
+        }
+        std::cout << std::endl;
+    }
+#endif
+    return optimizer.res_opt;
+}
+
 ResourceOptResult EnumeratePA_with_TimeLimits(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
 #ifdef RYAN_HE_CHANGE_DEBUG
@@ -147,6 +265,7 @@ ResourceOptResult EnumeratePA_with_TimeLimits(
                   << std::endl;
 #endif
     OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
+    // printf("Ryan %s: res_opt.sp_opt=%f\n",__func__,optimizer.res_opt.sp_opt);
     optimizer.Optimize();
 #ifdef RYAN_HE_CHANGE_DEBUG
     if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF) {
