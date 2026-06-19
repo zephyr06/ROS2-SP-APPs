@@ -25,10 +25,10 @@ This document outlines the three major tasks to complete and verify the safety-p
   2. **Batch Simulation Runner (`run_experiments.py`)**: Iterates through each generated task set, runs `CSPSimulation_2` for all target schedulers (`INCR`, `BR`, `RM_FAST`, `RM_SLOW`, `CFS`), and saves intermediate results (e.g. response time traces, scheduler logs) systematically to preserve debug context.
   3. **SP-Metric Evaluator & Plotter**: Invokes `AnalyzeSP_Metric` on the output folders, compiles a unified comparison table `comparison_summary.csv`, and draws side-by-side comparison charts `comparison_plots.png` comparing SP values and deadline miss rates across all schedulers.
 * **Sub-Tasks Checklist**:
-  - `[ ]` Design and implement `Visualize_SP_Metric/run_sim_experiments.py` orchestrator script.
-  - `[ ]` Implement robust structured directory saving for debug trace outputs.
-  - `[ ]` Write side-by-side plotting utilities.
-  - `[ ]` Write Python integration tests verifying the entire simulation pipeline end-to-end.
+  - `[x]` Design and implement `Visualize_SP_Metric/run_sim_experiments.py` orchestrator script.
+  - `[x]` Implement robust structured directory saving for debug trace outputs.
+  - `[x]` Write side-by-side plotting utilities.
+  - `[x]` Verify the entire simulation pipeline end-to-end on 4-task and 6-task configurations.
 
 ---
 

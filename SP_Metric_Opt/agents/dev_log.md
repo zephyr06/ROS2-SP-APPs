@@ -28,7 +28,7 @@ This log contains the analysis of the C++ and Python codebase compared against t
   - RM Fast (`RM_FAST`)
   - RM Slow (`RM_SLOW`)
   - CFS (`CFS`)
-- Priority recalculations occur at the correct `reevaluate_prio_interval_ms` boundaries (default 10,000ms / 10s).
+- Recalculated priorities occur at the correct `reevaluate_prio_interval_ms` boundaries (default 10,000ms / 10s).
 
 ---
 
@@ -41,4 +41,7 @@ The following tasks have been successfully implemented and verified:
 - [x] Verify that `Gen_Taskset/gen_taskset.py` performs GMM polar/Cartesian dataset generation.
 - [x] Uncomment `testOptimizeIncrePA` in `tests/CMakeLists.txt` and rename it to `testOptimizeIncrePA_run` to prevent name conflict.
 - [x] Design and add C++ Google Test cases: `UnfeasibleTaskSet`, `DeterministicTaskSet`, and `PartitionedCoreOptimization` (all passing).
-
+- [x] Fix multi-core task ID mapping bug in Python aggregator script [run_sim_experiments.py](file:///home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/Visualize_SP_Metric/run_sim_experiments.py).
+- [x] Wrap high-frequency console log in `GlobalVariables::debugMode` guard inside [OptimizeSP_Incre.cpp](file:///home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/sources/Optimization/OptimizeSP_Incre.cpp) to eliminate stdout print bottleneck.
+- [x] Design and pass TDD unit tests for adjacent-swap hill climbing (`GetPriorityAssignments_IncrementalOpt_Swap`).
+- [x] Re-run and evaluate 4-task and 6-task simulation experiments over 20 random tasksets each.
