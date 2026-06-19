@@ -5,7 +5,7 @@
 namespace SP_OPT_PA {
 
 bool ifTimeout(TimerType start_time) {
-    auto curr_time = std::chrono::system_clock::now();
+    auto curr_time = std::chrono::steady_clock::now();
     if (std::chrono::duration_cast<std::chrono::seconds>(curr_time - start_time)
             .count() >= GlobalVariables::TIME_LIMIT) {
         if (GlobalVariables::debugMode == 1) {

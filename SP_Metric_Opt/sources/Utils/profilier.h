@@ -15,9 +15,9 @@
 
 #define PROFILE_CODE
 
-#define CurrentTimeInProfiler std::chrono::high_resolution_clock::now()
+#define CurrentTimeInProfiler std::chrono::steady_clock::now()
 
-typedef std::chrono::time_point<std::chrono::high_resolution_clock> TimerType;
+typedef std::chrono::time_point<std::chrono::steady_clock> TimerType;
 // #define BeginTimerAppInProfiler BeginTimer(__FUNCTION__);
 // #define EndTimerAppInProfiler EndTimer(__FUNCTION__);
 extern std::mutex mtx_profiler;
@@ -27,8 +27,8 @@ struct ProfilerData {
     double accum;
     int call_time;
     ProfilerData()
-        : begin(std::chrono::high_resolution_clock::now()),
-          end(std::chrono::high_resolution_clock::now()),
+        : begin(std::chrono::steady_clock::now()),
+          end(std::chrono::steady_clock::now()),
           accum(0),
           call_time(0) {}
     inline void UpdateAccum() {
@@ -54,16 +54,16 @@ void PrintTimer();
 
 class TimerFunc {
    public:
-    TimerFunc() : begin(std::chrono::high_resolution_clock::now()) {}
+    TimerFunc() : begin(std::chrono::steady_clock::now()) {}
     ~TimerFunc() {
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::high_resolution_clock::now() - begin);
+            std::chrono::steady_clock::now() - begin);
         std::cout << "Accumulated time during the execution is: "
                   << double(duration.count()) / 1e6 << " seconds!\n";
     }
 
    private:
-    typedef std::chrono::time_point<std::chrono::high_resolution_clock>
+    typedef std::chrono::time_point<std::chrono::steady_clock>
         TimerType;
     TimerType begin;
 };

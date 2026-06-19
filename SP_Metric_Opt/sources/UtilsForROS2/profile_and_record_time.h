@@ -9,9 +9,9 @@
 #include <iostream>
 #include <ratio>
 #include <string>
-#define CurrentTimeInProfiler std::chrono::high_resolution_clock::now()
+#define CurrentTimeInProfiler std::chrono::steady_clock::now()
 
-typedef std::chrono::time_point<std::chrono::high_resolution_clock> TimerType;
+typedef std::chrono::time_point<std::chrono::steady_clock> TimerType;
 
 // return in microseconds
 inline double getDuration(TimerType start_time, TimerType end_time) {

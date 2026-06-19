@@ -28,7 +28,7 @@ class OptimizePA_with_TimeLimitsStatus {
         : dag_tasks(dag_tasks),
           sp_parameters(sp_parameters),
           N(dag_tasks.tasks.size()),
-          start_time_((std::chrono::high_resolution_clock::now())) {
+          start_time_((std::chrono::steady_clock::now())) {
         res_opt.sp_opt = INT_MIN;
         time_limit_option_for_each_task = RecordTimeLimitOptions(dag_tasks);
     }

@@ -550,6 +550,28 @@ TEST(OptimizePA_Incre_with_TimeLimits_TDD, ComplexityLinear_3N) {
     EXPECT_GT(evaluated_count, 0);
 }
 
+TEST(OptimizePA_BF_TDD, ClockMonotonicityVerification) {
+    std::string path = GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v6.yaml";
+    DAG_Model dag_tasks = ReadDAG_Tasks(path, 5);
+    SP_Parameters sp_parameters = SP_Parameters(dag_tasks);
+
+    int orig_limit = GlobalVariables::TIME_LIMIT;
+    GlobalVariables::TIME_LIMIT = 5; // set to 5 seconds
+
+    OptimizePA_BF opt_bf(dag_tasks, sp_parameters);
+    
+    // The brute force optimizer must use a steady (monotonic) clock for timeout tracking.
+    // In the old code, TimerType used high_resolution_clock (which is non-steady system_clock on Linux GCC).
+    // This assertion directly inspects the clock type associated with the brute force optimizer's start_time_.
+    EXPECT_TRUE(decltype(opt_bf.start_time_)::clock::is_steady);
+    
+    PriorityVec opt_pa = opt_bf.Optimize();
+    
+    GlobalVariables::TIME_LIMIT = orig_limit;
+    
+    EXPECT_EQ(opt_pa.size(), dag_tasks.tasks.size());
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
