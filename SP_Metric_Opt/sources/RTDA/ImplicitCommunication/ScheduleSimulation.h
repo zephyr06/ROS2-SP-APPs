@@ -105,4 +105,6 @@ Schedule SimulateCSPSched_vecs(std::vector<DAG_Model> &dag_tasks_vecs,
 
 #endif
 
+extern double g_last_avg_sched_time;
+
 }  // namespace SP_OPT_PA

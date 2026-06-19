@@ -21,7 +21,10 @@ namespace SP_OPT_PA {
 // RYAN_HE: for a job which is not executed (because previous job missed deadline)
 // write the following to output file: 
 // taskId,jobId,start,finish=deadline+1,exe_time=1
+#include <chrono>
+
 static int g_output_job_not_executed = 1;
+double g_last_avg_sched_time = 0.0;
 
 void AddTasksToRunQueue(RUNQUEUE &run_queue, 
 						const DAG_Model &dag_tasks,
@@ -227,6 +230,9 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
     // RYAN_HE: for INCR only
     OptimizePA_Incre_with_TimeLimits inc_opt(dag_tasks, sp_parameters);
 
+    double total_optimizer_time = 0.0;
+    int optimizer_call_count = 0;
+
     // start simulation loop ...
     int reevaluate_prio_ms_cnt = 0;
     int prio_avail = 0;
@@ -267,6 +273,7 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                 }
                 
                 // we need to run BF or incremental alg to sort priorities
+                auto start_opt = std::chrono::steady_clock::now();
                 if (priority_policy == "INCR" || priority_policy == "INCR_SWAP") {
                     if (time_now==0) {
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
@@ -286,6 +293,9 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
                         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
                     }
                 }
+                auto end_opt = std::chrono::steady_clock::now();
+                total_optimizer_time += std::chrono::duration_cast<std::chrono::microseconds>(end_opt - start_opt).count() / 1e6;
+                optimizer_call_count++;
             }
 
             // try to re-set its execution time since this task has different configuration
@@ -397,6 +407,8 @@ Schedule SimulatedCSP_SingleCore_CSP(const DAG_Model &dag_tasks,
     }
 #endif
 
+    g_last_avg_sched_time = optimizer_call_count > 0 ? total_optimizer_time / optimizer_call_count : 0.0;
+
     return run_queue.GetSchedule();
 }
 
@@ -451,6 +463,9 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
 
     // RYAN_HE: for INCR only
     OptimizePA_Incre_with_TimeLimits inc_opt(dag_tasks, sp_parameters);
+
+    double total_optimizer_time = 0.0;
+    int optimizer_call_count = 0;
 
     // get tasks allowing selecting execution time
     int ntasks = tasks.size();
@@ -519,6 +534,7 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                 }
 
                 // we need to run BF or incremental alg to sort priorities
+                auto start_opt = std::chrono::steady_clock::now();
                 if (priority_policy == "INCR" || priority_policy == "INCR_SWAP") {
                     if (time_now==0) {
                         //std::cout<<ppre<<"INCR time=0, calc prio ..."<<std::endl;
@@ -570,6 +586,9 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
                         }
                     }                    
                 }
+                auto end_opt = std::chrono::steady_clock::now();
+                total_optimizer_time += std::chrono::duration_cast<std::chrono::microseconds>(end_opt - start_opt).count() / 1e6;
+                optimizer_call_count++;
             }
 
             // try to re-set its execution time since this task has different configuration
@@ -673,6 +692,8 @@ Schedule SimulatedCSP_SingleCore_CSP_vecs(std::vector<DAG_Model> &dag_tasks_vecs
         std::cout<<"\n\n"<<ppre<<"DONE. schedule size="<<run_queue.GetSchedule().size()<<std::endl;
     }
 #endif
+
+    g_last_avg_sched_time = optimizer_call_count > 0 ? total_optimizer_time / optimizer_call_count : 0.0;
 
     return run_queue.GetSchedule();
 }
@@ -1045,6 +1066,7 @@ Schedule SimulateCSPSched_vecs(std::vector<DAG_Model> &dag_tasks_vecs,
                                ) {
 
     g_output_job_not_executed = output_job_not_executed;
+    g_last_avg_sched_time = 0.0;
 
     // RYAN_HE: better to use a map to store dags for each processor
     // so that BR will be much faster!

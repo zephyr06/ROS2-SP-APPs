@@ -199,7 +199,24 @@ def analyze_single_instance(taskset_dir, scheduler, inst, config_dict, yaml_data
     # Clean up instance calculation temp folders
     shutil.rmtree(temp_sp_calc_dir, ignore_errors=True)
 
-    return scheduler, miss_rate, sp_values_run, run_intervals_data
+    # Read average scheduler execution times and remove temp files
+    sched_times = []
+    for p in range(n_cores):
+        time_file = os.path.join(sched_dir, f"sched_exe_time_{scheduler}_{inst}_p{p}.txt")
+        if os.path.exists(time_file):
+            with open(time_file, 'r') as tf:
+                try:
+                    val = float(tf.read().strip())
+                    sched_times.append(val)
+                except ValueError:
+                    pass
+            try:
+                os.remove(time_file)
+            except OSError:
+                pass
+    avg_sched_time = np.mean(sched_times) if len(sched_times) > 0 else 0.0
+
+    return scheduler, miss_rate, sp_values_run, run_intervals_data, avg_sched_time
 
 def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs, horizon_granularity, verbose=1):
     # Output Consolidated CSV Summary
@@ -207,19 +224,21 @@ def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs, ho
     if verbose >= 1:
         print(f"Writing summary statistics to: {summary_csv_path}")
     with open(summary_csv_path, 'w') as csv_file:
-        csv_file.write("Scheduler,Mean_SP_Metric,Std_SP_Metric,Mean_Miss_Rate,Std_Miss_Rate\n")
+        csv_file.write("Scheduler,Mean_SP_Metric,Std_SP_Metric,Mean_Miss_Rate,Std_Miss_Rate,Mean_Scheduler_Execution_Time_s\n")
         for scheduler in schedulers:
             s_data = results_by_scheduler[scheduler]
             sp_arr = np.array(s_data['sp_values'])
             miss_arr = np.array(s_data['miss_rates'])
+            sched_arr = np.array(s_data.get('sched_times', []))
 
             mean_sp = np.mean(sp_arr) if len(sp_arr) > 0 else 0.0
             std_sp = np.std(sp_arr) if len(sp_arr) > 0 else 0.0
             mean_miss = np.mean(miss_arr) if len(miss_arr) > 0 else 0.0
             std_miss = np.std(miss_arr) if len(miss_arr) > 0 else 0.0
+            mean_sched = np.mean(sched_arr) if len(sched_arr) > 0 else 0.0
 
-            csv_file.write(f"{scheduler},{mean_sp:.6f},{std_sp:.6f},{mean_miss:.6f},{std_miss:.6f}\n")
-            print(f"Scheduler {scheduler}: SP = {mean_sp:.4f} ± {std_sp:.4f}, Miss Rate = {mean_miss*100:.2f}% ± {std_miss*100:.2f}%")
+            csv_file.write(f"{scheduler},{mean_sp:.6f},{std_sp:.6f},{mean_miss:.6f},{std_miss:.6f},{mean_sched:.6f}\n")
+            print(f"Scheduler {scheduler}: SP = {mean_sp:.4f} ± {std_sp:.4f}, Miss Rate = {mean_miss*100:.2f}% ± {std_miss*100:.2f}%, Avg Sched Time = {mean_sched:.6f}s")
 
     # Generate Consolidated Comparison Plots
     plots_path = os.path.join(output_dir_abs, "comparison_plots.png")
@@ -337,7 +356,7 @@ def main():
     os.makedirs(temp_dir, exist_ok=True)
 
     # Dictionary to collect results across all tasksets
-    results_by_scheduler = {s: {'sp_values': [], 'miss_rates': [], 'intervals': {}} for s in args.schedulers}
+    results_by_scheduler = {s: {'sp_values': [], 'miss_rates': [], 'intervals': {}, 'sched_times': []} for s in args.schedulers}
     horizon_granularity = 10 # 10-second intervals
 
     for idx in range(args.n_tasksets):
@@ -425,8 +444,9 @@ def main():
             # Gather and aggregate results as they complete
             for fut in concurrent.futures.as_completed(analysis_futures):
                 try:
-                    scheduler, miss_rate, sp_values_run, run_intervals_data = fut.result()
+                    scheduler, miss_rate, sp_values_run, run_intervals_data, avg_sched_time = fut.result()
                     results_by_scheduler[scheduler]['miss_rates'].append(miss_rate)
+                    results_by_scheduler[scheduler]['sched_times'].append(avg_sched_time)
                     for sp_val in sp_values_run:
                         results_by_scheduler[scheduler]['sp_values'].append(sp_val)
                     for interval, sp_val in run_intervals_data:

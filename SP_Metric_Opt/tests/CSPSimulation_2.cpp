@@ -352,6 +352,14 @@ int main(int argc, char *argv[]) {
                 delete log_file;
             }
 
+            // Write average scheduler execution time to file
+            std::string time_file_path = output_folder + "/sched_exe_time_" + sched_policy + "_" + std::to_string(sim_inst_idx) + "_p" + std::to_string(p) + ".txt";
+            std::ofstream time_file(time_file_path);
+            if (time_file.is_open()) {
+                time_file << g_last_avg_sched_time << "\n";
+                time_file.close();
+            }
+
             if (GlobalVariables::debugMode & DBG_PRT_MSK_MAIN) {
                 std::cout << "######## simulation of "<< sim_api << " DONE for path="<<path_idx<<
                     ", instance=" << sim_inst_idx << ", processor=" << p << std::endl;        
