@@ -189,6 +189,17 @@ void OptimizePA_with_TimeLimitsStatus::Optimize(
 
 void OptimizePA_with_TimeLimitsStatus::Optimize() {
     std::vector<double> time_limit_for_task(N, -1);
+    if (GlobalVariables::disable_time_limit_opt) {
+        for (int i = 0; i < N; i++) {
+            if (time_limit_option_for_each_task[i].empty()) {
+                time_limit_for_task[i] = -1.0;
+            } else {
+                time_limit_for_task[i] = time_limit_option_for_each_task[i].back();
+            }
+        }
+        OptimizeDo(time_limit_for_task);
+        return;
+    }
 #ifdef RYAN_HE_CHANGE_DEBUG
     if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_TL_BF)
         std::cout << "####OptimizePA_with_TimeLimitsStatus::Optimize: " << N

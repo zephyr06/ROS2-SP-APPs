@@ -62,4 +62,14 @@ This file tracks the proposed ideas for improving the scheduler (specifically IN
 - **Complexity**: O(1) comparison check.
 - **Status**: Proposed.
 
+## Idea 11: Priority-Only Optimization (Ablation Method 1: NO_TL)
+- **Problem**: Need to isolate the contribution of task configuration (time limit budget) optimization from priority assignment optimization.
+- **Proposed Solution**: Fix the task execution time budgets (time limits) at their maximum default limits, and optimize only the priority assignments.
+- **Complexity**: Bypasses the coordinate descent/enumeration search over budget levels, reducing overhead.
+- **Status**: Completed (implemented as `INCR_NO_TL` and `BR_NO_TL`).
 
+## Idea 12: Deterministic WCET Modeling (Ablation Method 2: WCET)
+- **Problem**: Need to measure the benefit of exploiting statistical execution time distributions versus designing for pessimistic Worst-Case Execution Times (WCET).
+- **Proposed Solution**: Override task execution time distributions to a constant value equal to their WCET (`execution_time_max`), and simulate/optimize under this deterministic model.
+- **Complexity**: Zero variance distribution reduces SP-Metric RTA calculation complexity to deterministic checks.
+- **Status**: Completed (implemented as `INCR_WCET` and `BR_WCET`).

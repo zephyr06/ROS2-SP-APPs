@@ -79,7 +79,9 @@ std::vector<int> AddTasksToCSPRunQueue(RunQueueCSP &run_queue,
 
                 int executionTime;
                 double execution_time;
-                if (task_Ets != NULL && task_Ets->size() > task_id && (*task_Ets)[task_id].size() > 0) {
+                if (GlobalVariables::use_wcet_execution_time) {
+                    execution_time = task_curr.getExecutionTimeFromDistMax();
+                } else if (task_Ets != NULL && task_Ets->size() > task_id && (*task_Ets)[task_id].size() > 0) {
                     int idx = (*task_Et_idx)[task_id];
                     //std::cout<<task_id<<", Et_idx="<<idx<<std::endl;
                     execution_time = (*task_Ets)[task_id][idx];
@@ -110,7 +112,9 @@ std::vector<int> AddTasksToCSPRunQueue(RunQueueCSP &run_queue,
                     // taskId,jobId,start,finish=deadline+1,exe_time=1
                     //std::cout<<"####AddTasksToCSPRunQueue: job not executed"<<std::endl;
                     int execution_time;
-                    if (task_Ets != NULL && task_Ets->size() > task_id && (*task_Ets)[task_id].size() > 0) {
+                    if (GlobalVariables::use_wcet_execution_time) {
+                        execution_time = 1;
+                    } else if (task_Ets != NULL && task_Ets->size() > task_id && (*task_Ets)[task_id].size() > 0) {
                         int idx = (*task_Et_idx)[task_id];
                         //execution_time = (int)( (*task_Ets)[task_id][idx] + 0.5 );
                         execution_time = 1; // the task not even have a chance to run, just make minimum execution time 1

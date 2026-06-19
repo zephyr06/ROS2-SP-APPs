@@ -127,7 +127,26 @@ int main(int argc, char *argv[]) {
     int verbose = atoi(verbose_s.c_str());
     GlobalVariables::debugMode = verbose;
      
-    string sched_policy = program.get<std::string>("--scheduler");
+    string sched_policy_name = program.get<std::string>("--scheduler");
+    string sched_policy = sched_policy_name;
+
+    // Parse suffixes for ablation configurations
+    if (sched_policy.size() > 5 && sched_policy.substr(sched_policy.size() - 5) == "_WCET") {
+        GlobalVariables::use_wcet_execution_time = true;
+        sched_policy = sched_policy.substr(0, sched_policy.size() - 5);
+        std::cout << "Ablation Mode: WCET Constant Execution Time enabled." << std::endl;
+    }
+
+    if (sched_policy == "INCR_NO_TL" || sched_policy == "BR_NO_TL") {
+        GlobalVariables::disable_time_limit_opt = true;
+        sched_policy = sched_policy.substr(0, sched_policy.size() - 6);
+        std::cout << "Ablation Mode: Task Budget (Time Limit) Optimization disabled." << std::endl;
+    } else if (sched_policy == "INCR_NO_SORT") {
+        GlobalVariables::disable_sorting_heuristic = true;
+        sched_policy = "INCR";
+        std::cout << "Ablation Mode: Sorting Heuristic in CD disabled." << std::endl;
+    }
+
     if ( sched_policy == "BR" || sched_policy == "BROPT" || sched_policy == "INCR" || sched_policy == "INCR_SWAP" || sched_policy == "RM" || 
          sched_policy == "RM_FAST" || sched_policy == "RM_SLOW" || sched_policy == "CFS" ) {
         std::cout << "Scheduler type: " << sched_policy << std::endl;
@@ -216,6 +235,15 @@ int main(int argc, char *argv[]) {
 
             //std::cout<<"read taskset_characteristics "<<interval_idx<<std::endl;
             DAG_Model dag_tasks = ReadDAG_Tasks(file_path);
+            if (GlobalVariables::use_wcet_execution_time) {
+                for (int i = 0; i < dag_tasks.tasks.size(); i++) {
+                    double max_et = dag_tasks.tasks[i].execution_time_dist.getMaxValue();
+                    GaussianDist g = GaussianDist(max_et, 0.01);
+                    FiniteDist eTDist = FiniteDist(g, max_et, max_et, 1);
+                    dag_tasks.tasks[i].set_execution_time_dist(eTDist);
+                    dag_tasks.tasks[i].setExecGaussian(g);
+                }
+            }
             SP_Parameters sp_parameters = ReadSP_Parameters(file_path);
             const TaskSet& tasks = dag_tasks.GetTaskSet();
             TaskSetInfoDerived tasks_info(tasks);
@@ -307,7 +335,7 @@ int main(int argc, char *argv[]) {
             //    std::cout << "Task " << i << " has " << task_Ets[tp].size() << " Ets" << std::endl;
             //}
 
-            string output_file_path = output_folder + "/sim_res_" + sched_policy + "_" 
+            string output_file_path = output_folder + "/sim_res_" + sched_policy_name + "_" 
                 + std::to_string(sim_inst_idx) + "_p" + std::to_string(p) + ".txt";
             std::ofstream *output_file = nullptr;
             output_file = new std::ofstream(output_file_path);
@@ -318,7 +346,7 @@ int main(int argc, char *argv[]) {
                 return 1; // Exit with an error code
             }
 
-            string log_file_path = output_folder + "/sim_log_" + sched_policy + "_" 
+            string log_file_path = output_folder + "/sim_log_" + sched_policy_name + "_" 
                 + std::to_string(sim_inst_idx) + "_p" + std::to_string(p) + ".txt";
             std::ofstream *log_file = nullptr;
             log_file = new std::ofstream(log_file_path);
@@ -353,7 +381,7 @@ int main(int argc, char *argv[]) {
             }
 
             // Write average scheduler execution time to file
-            std::string time_file_path = output_folder + "/sched_exe_time_" + sched_policy + "_" + std::to_string(sim_inst_idx) + "_p" + std::to_string(p) + ".txt";
+            std::string time_file_path = output_folder + "/sched_exe_time_" + sched_policy_name + "_" + std::to_string(sim_inst_idx) + "_p" + std::to_string(p) + ".txt";
             std::ofstream time_file(time_file_path);
             if (time_file.is_open()) {
                 time_file << g_last_avg_sched_time << "\n";

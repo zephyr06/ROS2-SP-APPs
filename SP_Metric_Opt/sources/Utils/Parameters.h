@@ -41,4 +41,7 @@ extern int Granularity;
 extern int Layer_Node_During_Incremental_Optimization;
 extern double Dist_compress_threshold;
 extern bool use_adjacent_swap;
+extern bool disable_time_limit_opt;
+extern bool use_wcet_execution_time;
+extern bool disable_sorting_heuristic;
 }  // namespace GlobalVariables

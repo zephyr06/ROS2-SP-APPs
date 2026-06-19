@@ -572,6 +572,54 @@ TEST(OptimizePA_BF_TDD, ClockMonotonicityVerification) {
     EXPECT_EQ(opt_pa.size(), dag_tasks.tasks.size());
 }
 
+TEST(OptimizePA_Ablation_TDD, DisableTimeLimitOpt) {
+    std::vector<Value_Proba> dist = {Value_Proba(1, 1.0)};
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist, 10, 10, 1, "T1"));
+
+    tasks[0].timePerformancePairs = {TimePerfPair(10, 0.5), TimePerfPair(20, 0.7), TimePerfPair(30, 0.9)};
+    tasks[1].timePerformancePairs = {TimePerfPair(15, 0.5), TimePerfPair(25, 0.7), TimePerfPair(35, 0.9)};
+
+    MAP_Prev mapPrev;
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag);
+
+    GlobalVariables::disable_time_limit_opt = true;
+    OptimizePA_Incre_with_TimeLimits optimizer(dag, sp_params);
+    optimizer.OptimizeFromScratch_w_TL(2);
+    GlobalVariables::disable_time_limit_opt = false;
+
+    // The selected time limit for task 0 should be its max option (30.0)
+    EXPECT_DOUBLE_EQ(30.0, optimizer.res_opt_.id2time_limit[0]);
+    // The selected time limit for task 1 should be its max option (35.0)
+    EXPECT_DOUBLE_EQ(35.0, optimizer.res_opt_.id2time_limit[1]);
+}
+
+TEST(OptimizePA_Ablation_TDD, DisableSortingHeuristic) {
+    std::vector<Value_Proba> dist = {Value_Proba(1, 1.0)};
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist, 10, 10, 1, "T1"));
+
+    tasks[0].timePerformancePairs = {TimePerfPair(10, 0.5), TimePerfPair(20, 0.7), TimePerfPair(30, 0.9)};
+    tasks[1].timePerformancePairs = {TimePerfPair(15, 0.5), TimePerfPair(25, 0.7), TimePerfPair(35, 0.9)};
+
+    MAP_Prev mapPrev;
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag);
+
+    sp_params.weights_node[0] = 1.0;
+    sp_params.weights_node[1] = 5.0;
+
+    GlobalVariables::disable_sorting_heuristic = true;
+    OptimizePA_Incre_with_TimeLimits optimizer(dag, sp_params);
+    optimizer.OptimizeFromScratch_w_TL(2);
+    GlobalVariables::disable_sorting_heuristic = false;
+
+    EXPECT_GT(optimizer.timelimit2optimizer_.size(), 0);
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

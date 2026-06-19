@@ -117,15 +117,26 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
         if (time_limit_option_for_each_task_[i].empty()) {
             time_limits[i] = -1.0;
         } else {
-            size_t mid_idx = time_limit_option_for_each_task_[i].size() / 2;
-            time_limits[i] = time_limit_option_for_each_task_[i][mid_idx];
+            if (GlobalVariables::disable_time_limit_opt) {
+                time_limits[i] = time_limit_option_for_each_task_[i].back();
+            } else {
+                size_t mid_idx = time_limit_option_for_each_task_[i].size() / 2;
+                time_limits[i] = time_limit_option_for_each_task_[i][mid_idx];
+            }
         }
+    }
+
+    if (GlobalVariables::disable_time_limit_opt) {
+        EvaluateTimeLimitConfig(K, time_limits);
+        return opt_pa_;
     }
 
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
     std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
-    std::sort(sorted_indices.begin(), sorted_indices.end(),
-              TaskSortingHeuristic{dag_tasks_, sp_parameters_});
+    if (!GlobalVariables::disable_sorting_heuristic) {
+        std::sort(sorted_indices.begin(), sorted_indices.end(),
+                  TaskSortingHeuristic{dag_tasks_, sp_parameters_});
+    }
 
     for (size_t idx : sorted_indices) {
         double best_sp = -2.0;
@@ -156,15 +167,26 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
         if (time_limit_option_for_each_task_[i].empty()) {
             time_limits[i] = -1.0;
         } else {
-            size_t mid_idx = time_limit_option_for_each_task_[i].size() / 2;
-            time_limits[i] = time_limit_option_for_each_task_[i][mid_idx];
+            if (GlobalVariables::disable_time_limit_opt) {
+                time_limits[i] = time_limit_option_for_each_task_[i].back();
+            } else {
+                size_t mid_idx = time_limit_option_for_each_task_[i].size() / 2;
+                time_limits[i] = time_limit_option_for_each_task_[i][mid_idx];
+            }
         }
+    }
+
+    if (GlobalVariables::disable_time_limit_opt) {
+        EvaluateTimeLimitConfig(K, time_limits);
+        return opt_pa_;
     }
 
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
     std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
-    std::sort(sorted_indices.begin(), sorted_indices.end(),
-              TaskSortingHeuristic{dag_tasks_, sp_parameters_});
+    if (!GlobalVariables::disable_sorting_heuristic) {
+        std::sort(sorted_indices.begin(), sorted_indices.end(),
+                  TaskSortingHeuristic{dag_tasks_, sp_parameters_});
+    }
 
     for (size_t idx : sorted_indices) {
         double best_sp = -2.0;
