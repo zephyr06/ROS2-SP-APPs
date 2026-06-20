@@ -10,6 +10,7 @@ void OptimizePA_BF::IterateAllPAs(
     if (ifTimeout(start_time_))
         return;
     if (start == N) {
+        eval_priority_count++;
         // if(priority_assignment[0]!=1)
         //     return;
         // TaskSet tasks_eval =
@@ -31,7 +32,10 @@ void OptimizePA_BF::IterateAllPAs(
                                                    priority_assignment);
                                               
         PrintPA_IfDebugMode(priority_assignment, sp_eval);
-        if (sp_eval > opt_sp_) {
+        double tolerance = 1e-9;
+        if (sp_eval > opt_sp_ + tolerance || (tie_break_type_ == 1 &&
+                                  std::abs(sp_eval - opt_sp_) <= tolerance && 
+                                  BetterPriorityAssignment(priority_assignment, opt_pa_))) {
 #if defined(RYAN_HE_CHANGE_DEBUG)
             if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_BF) {
                 std::cout << "####OptimizePA_BF::IterateAllPAs: to EvaluateSPWithPriorityVec DONE. New PA = ";
@@ -59,6 +63,31 @@ void OptimizePA_BF::IterateAllPAs(
     }
 }
 
+bool OptimizePA_BF::BetterPriorityAssignment(const PriorityVec& pa1, const PriorityVec& pa2) const {
+    if (pa2.empty()) return true;
+    int n = pa1.size();
+    for (int i = n - 1; i >= 0; i--) {
+        if (pa1[i] != pa2[i]) {
+            double w1 = 1.0;
+            if (sp_parameters_.weights_node.count(pa1[i])) {
+                w1 = sp_parameters_.weights_node.at(pa1[i]);
+            }
+            double w2 = 1.0;
+            if (sp_parameters_.weights_node.count(pa2[i])) {
+                w2 = sp_parameters_.weights_node.at(pa2[i]);
+            }
+            if (w1 != w2) {
+                return w1 < w2;
+            } else {
+                const Task& task1 = dag_tasks_.GetTask(pa1[i]);
+                const Task& task2 = dag_tasks_.GetTask(pa2[i]);
+                return task1.deadline > task2.deadline;
+            }
+        }
+    }
+    return false;
+}
+
 PriorityVec OptimizePA_BF::Optimize() {
     if(GlobalVariables::debugMode==1)
         BeginTimer("OptimizeBF_All");
@@ -71,6 +100,7 @@ PriorityVec OptimizePA_BF::Optimize() {
     if (GlobalVariables::debugMode & DBG_PRT_MSK_OptimizeSP_BF)
         std::cout << "####OptimizePA_BF::Optimize: initial_sp = " << initial_sp << std::endl;
 #endif      
+    eval_priority_count = 0;
     PriorityVec pa = {};
     std::unordered_set<int> tasks_assigned_priority;
     opt_sp_ = initial_sp;

@@ -151,6 +151,71 @@ TEST_F(TaskSetForTest_robotics_v19, EnumeratePA_with_TimeLimits) {
     // done"<<std::endl;
 }
 
+TEST_F(TaskSetForTest_robotics_v19, VerifyBruteForceSearchCompleteness) {
+    OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
+    optimizer.Optimize();
+
+    // 1. Calculate expected search space
+    // expected priority assignments: N! = 4! = 24
+    int expected_p_perms = 24; 
+
+    // expected time limit combinations:
+    // for task 0 (TSP): 4 options (400 600 800 1000)
+    // for other 3 tasks: 1 option (-1)
+    // total expected = 4 * 1 * 1 * 1 = 4
+    int expected_t_limits = 4;
+
+    int expected_total_evals = expected_t_limits * expected_p_perms;
+
+    std::cout << "DEBUG VerifyBruteForceSearchCompleteness: N=" << N << std::endl;
+    std::cout << "DEBUG VerifyBruteForceSearchCompleteness: eval_time_limits_count=" << optimizer.eval_time_limits_count << std::endl;
+    std::cout << "DEBUG VerifyBruteForceSearchCompleteness: total_priority_evals=" << optimizer.total_priority_evals << std::endl;
+
+    EXPECT_EQ(expected_t_limits, optimizer.eval_time_limits_count);
+    EXPECT_EQ(expected_total_evals, optimizer.total_priority_evals);
+}
+
+TEST_F(TaskSetForTest_robotics_v19, VerifyBruteForceSearchCompletenessAndTieBreaking) {
+    // 1. Test completeness directly on OptimizePA_BF
+    OptimizePA_BF opt_bf_0(dag_tasks, sp_parameters, 0); // tie_break_type = 0
+    PriorityVec pa_0 = opt_bf_0.Optimize();
+    
+    // N! = 4! = 24
+    EXPECT_EQ(24, opt_bf_0.eval_priority_count);
+
+    OptimizePA_BF opt_bf_1(dag_tasks, sp_parameters, 1); // tie_break_type = 1
+    PriorityVec pa_1 = opt_bf_1.Optimize();
+
+    EXPECT_EQ(24, opt_bf_1.eval_priority_count);
+
+    std::cout << "DEBUG VerifyBruteForceSearchCompletenessAndTieBreaking:" << std::endl;
+    std::cout << "pa_0 (no tie-break): ";
+    for (int p : pa_0) std::cout << p << " ";
+    std::cout << std::endl;
+
+    std::cout << "pa_1 (with tie-break): ";
+    for (int p : pa_1) std::cout << p << " ";
+    std::cout << std::endl;
+}
+
+TEST_F(TaskSetForTest_robotics_v19, CompareBRvsINCRUnderFairRTA) {
+    // 1. Run Brute-Force with time limits
+    GlobalVariables::bf_tie_break_type = 1;
+    ResourceOptResult res_br = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+
+    // 2. Run Incremental with time limits
+    OptimizePA_Incre_with_TimeLimits opt_incr(dag_tasks, sp_parameters);
+    opt_incr.OptimizeFromScratch_w_TL(2);
+    ResourceOptResult res_incr = opt_incr.CollectResults();
+
+    std::cout << "DEBUG CompareBRvsINCRUnderFairRTA:" << std::endl;
+    std::cout << "BR SP Opt: " << res_br.sp_opt << std::endl;
+    std::cout << "INCR SP Opt: " << res_incr.sp_opt << std::endl;
+
+    EXPECT_NEAR(res_br.sp_opt, res_incr.sp_opt, 1e-5);
+}
+
+
 TEST_F(TaskSetForTest_robotics_v19, EnumeratePA_with_TimeLimits_2) {
     ResourceOptResult res_opt =
         EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
