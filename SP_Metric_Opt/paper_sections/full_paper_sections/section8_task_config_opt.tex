@@ -27,6 +27,15 @@
         During the last iteration, if the running time limit is 300ms, and assume $\delta=150$ in equation~\eqref{eq: incremental_configuration}. In this case, we only consider 2 potential solution candidates: $200,300$ to be selected from.
     \end{Example}
 
+    \agent{To solve this optimization problem efficiently, we implement a linear-time sequential coordinate descent algorithm instead of an exponential exhaustive search over the local search space. The algorithm proceeds as follows:
+    \begin{enumerate}
+        \item \textbf{Initialization:} The initial execution time limit configuration $\boldsymbol{\lambda}^{(0)}$ is set to match the closest valid execution time limit options corresponding to the pre-optimization execution time (ET) configuration.
+        \item \textbf{Prioritized Task Ordering:} Rather than updating variables in an arbitrary order, the tasks are sorted and processed according to a heuristic. Specifically, tasks are ordered in descending order of their weights, ascending order of their deadlines, and ascending order of their IDs. This prioritization ensures that tasks with higher importance and tighter deadlines are optimized first.
+        \item \textbf{Coordinate Descent:} For each task in the sorted list, we evaluate all its available time limit options (either the full set in the scratch mode or the local candidate set constrained by $\delta$ in the incremental mode) one-by-one while keeping the configuration of all other tasks fixed. The option yielding the highest SP metric is chosen.
+        \item \textbf{Resource-Aware Tie-Breaking:} If multiple time limit options yield the same optimal SP metric, we select the option that minimizes the sum of the tasks' execution time limits. This tie-breaker rule prioritizes configurations with lower execution times to conserve computational resources.
+    \end{enumerate}
+    By optimizing each task sequentially, the complexity is reduced from exponential in the number of tasks, $O(M^N)$, to linear, $O(M \cdot N)$, where $M$ is the number of options per task and $N$ is the number of tasks.}
+
     \rkwprev{Can we prove anything about the complexity or solution quality of the above algorithms?}
     \Sen{The algorithm run-time complexity analysis is presented in the next section. As for solution quality, I think it is very hard due to the black-box probabilistic response time analysis part}
     

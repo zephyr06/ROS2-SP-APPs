@@ -19,6 +19,13 @@ struct HashKey4Vector {
     }
 };
 
+struct TaskSortingHeuristic {
+    const DAG_Model& dag_tasks;
+    const SP_Parameters& sp_parameters;
+
+    bool operator()(size_t idx1, size_t idx2) const;
+};
+
 class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
    public:
    OptimizePA_Incre_with_TimeLimits(){};
@@ -36,6 +43,11 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     void UpdateRecords(const OptimizePA_Incre& optimizer,
                        const std::vector<double>& time_limits);
+
+    double EvaluateTimeLimitConfig(int K, const std::vector<double>& time_limits);
+
+    std::vector<double> InitializeTimeLimitsFromETConfig();
+    void PerformCoordinateDescentForTaskConfigOpt(int K, std::vector<double>& time_limits);
 
     inline ResourceOptResult CollectResults() const { return res_opt_; }
 

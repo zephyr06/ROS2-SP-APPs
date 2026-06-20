@@ -3,6 +3,7 @@
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
+#include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/Utils/Parameters.h"
 
 using ::testing::AtLeast;  // #1
@@ -255,6 +256,63 @@ TEST_F(TaskSetForTest_robotics_v27, GetPriorityAssignments_IncrementalOpt) {
     pa_vec1 = opt.OptimizeIncre(dag_tasks_update);
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
+}
+
+TEST(OptimizePA_Incre_with_TimeLimits_TDD, SortingHeuristic) {
+    std::vector<Value_Proba> dist = {Value_Proba(1, 1.0)};
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist, 10, 10, 1, "T1"));
+    tasks.push_back(Task(2, dist, 10, 10, 2, "T2"));
+    tasks.push_back(Task(3, dist, 10, 10, 3, "T3"));
+
+    MAP_Prev mapPrev;
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag);
+
+    sp_params.weights_node[0] = 2.0;
+    sp_params.thresholds_node[0] = 1.0;
+
+    sp_params.weights_node[1] = 5.0;
+    sp_params.thresholds_node[1] = 2.0;
+
+    sp_params.weights_node[2] = 5.0;
+    sp_params.thresholds_node[2] = 0.5;
+
+    sp_params.weights_node[3] = 2.0;
+    sp_params.thresholds_node[3] = 0.5;
+
+    std::vector<size_t> indices = {0, 1, 2, 3};
+    std::sort(indices.begin(), indices.end(), TaskSortingHeuristic{dag, sp_params});
+
+    EXPECT_EQ(2, indices[0]);
+    EXPECT_EQ(1, indices[1]);
+    EXPECT_EQ(3, indices[2]);
+    EXPECT_EQ(0, indices[3]);
+}
+
+TEST(OptimizePA_Incre_with_TimeLimits_TDD, ComplexityLinear_3N) {
+    std::vector<Value_Proba> dist = {Value_Proba(1, 1.0)};
+    TaskSet tasks;
+    tasks.push_back(Task(0, dist, 10, 10, 0, "T0"));
+    tasks.push_back(Task(1, dist, 10, 10, 1, "T1"));
+    tasks.push_back(Task(2, dist, 10, 10, 2, "T2"));
+
+    tasks[0].timePerformancePairs = {TimePerfPair(10, 0.5), TimePerfPair(20, 0.7), TimePerfPair(30, 0.9)};
+    tasks[1].timePerformancePairs = {TimePerfPair(15, 0.5), TimePerfPair(25, 0.7), TimePerfPair(35, 0.9)};
+    tasks[2].timePerformancePairs = {TimePerfPair(20, 0.5), TimePerfPair(30, 0.7), TimePerfPair(40, 0.9)};
+
+    MAP_Prev mapPrev;
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp_params(dag);
+
+    OptimizePA_Incre_with_TimeLimits optimizer(dag, sp_params);
+    optimizer.OptimizeFromScratch_w_TL(2);
+
+    size_t evaluated_count = optimizer.timelimit2optimizer_.size();
+
+    EXPECT_LE(evaluated_count, 10);
+    EXPECT_GT(evaluated_count, 0);
 }
 
 int main(int argc, char** argv) {
