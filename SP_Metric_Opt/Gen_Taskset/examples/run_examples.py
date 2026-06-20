@@ -28,7 +28,7 @@ def main():
         add_perf_records=True,
         interact=False,
         n_path_per_task=2,
-        n_inst_per_path=2
+        n_inst_per_path=1
     )
     
     print("Loading generated taskset parameters...")

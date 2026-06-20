@@ -284,7 +284,7 @@ def main():
                         help="List of schedulers to run")
     parser.add_argument("-t", "--n_sec", type=int, default=1000,
                         help="GMM trace path duration in seconds")
-    parser.add_argument("--n_inst", type=int, default=8,
+    parser.add_argument("--n_inst", type=int, default=1,
                         help="Number GMM trace instances per path")
     parser.add_argument("--simt", type=int, default=1000000,
                         help="C++ simulation execution time in ms")
@@ -300,7 +300,7 @@ def main():
 
     if args.num_tasks is not None:
         args.config_file = f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{args.num_tasks}.json"
-        args.output_dir = f"TaskData/experiment_{args.num_tasks}_tasks"
+        args.output_dir = f"Gen_Taskset/simulation_tasksets/experiment_{args.num_tasks}_tasks"
 
     # Resolve paths
     config_file_abs = args.config_file if args.config_file.startswith('/') else os.path.join(PROJECT_ROOT, args.config_file)

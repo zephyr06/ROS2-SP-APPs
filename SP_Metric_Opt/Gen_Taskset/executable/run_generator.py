@@ -17,7 +17,7 @@ def main():
     # Execution options
     parser.add_argument("--n_sec", type=int, default=1000, help="Duration of simulation trace in seconds")
     parser.add_argument("--n_path_per_task", type=int, default=1, help="Number of trajectories (paths) to simulate")
-    parser.add_argument("--n_inst_per_path", type=int, default=8, help="Number of trace instances to simulate per path")
+    parser.add_argument("--n_inst_per_path", type=int, default=1, help="Number of trace instances to simulate per path")
     parser.add_argument("--dir_path", type=str, default=None, help="Output destination folder path")
     
     # Boolean flags
