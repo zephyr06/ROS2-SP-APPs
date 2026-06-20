@@ -1,0 +1,34 @@
+	\section{Task configuration Optimization}
+	\label{section_config_opt}
+    
+    
+    We consider two strategies for task configuration optimization: \textit{brute-force} and \textit{incremental}. The brute-force strategy enumerates all possible task configuration parameters and selects the configuration that maximizes the SP metric. While exhaustive, this approach is computationally expensive and impractical for online optimization due to the large search space.
+
+    The incremental strategy assumes that the environment changes smoothly and that the influence of environments to the optimal task configuration also changes smoothly. Although these two assumptions may not always hold true in all the environments, they provide a good trade-off between optimality and the low run-time complexity requirements.
+    Section~\ref{section: relax_smooth_assumption} discusses more about relaxing these two assumptions.
+    
+    Under the smooth assumption, the incremental optimization algorithm only performs a local search for each optimization variable each time.
+    More specifically, during the \ith{k} iteration, denote the optimization variables from the task set $\boldsymbol{\tau}$ as $\boldsymbol{\lambda}$, and denote its initial value before the optimization as $\boldsymbol{\lambda}^{(k)}$, the incremental optimization solves the following problem:
+	\begin{equation}
+		\max_{\boldsymbol{\lambda}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k) 
+	\end{equation}
+    
+	\begin{equation}
+		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\lambda_i), \hptasks{i})
+	\end{equation}
+
+    \begin{equation}
+        \|\boldsymbol{\lambda} - \boldsymbol{\lambda}^{(k)} \| \leq \delta
+        \label{eq: incremental_configuration}
+    \end{equation}
+    where $\delta$ controls the tradeoff between run-time complexity and the solution quality.
+    \begin{Example}
+        Consider the running time optimization for the traveling salesman problem (TSP). There are only a few running-time limit options to choose from: [100, 200, 300, 500], where longer running time implies shorter solution path. 
+        During the last iteration, if the running time limit is 300ms, and assume $\delta=150$ in equation~\eqref{eq: incremental_configuration}. In this case, we only consider 2 potential solution candidates: $200,300$ to be selected from.
+    \end{Example}
+
+    \rkwprev{Can we prove anything about the complexity or solution quality of the above algorithms?}
+    \Sen{The algorithm run-time complexity analysis is presented in the next section. As for solution quality, I think it is very hard due to the black-box probabilistic response time analysis part}
+    
+    
+	

@@ -1,0 +1,66 @@
+
+	\section{Introduction}
+	% \IEEEPARstart{T}{his} file~\cite{Baruah2015MultiprocessorSF}.
+	
+	
+	% Introduce big problem
+	% •	Software supports robotics
+	% •	Real-world robot systems need to run multiple tasks simultaneously
+	% •	In embedded systems, computation resource is limited, but performance guarantees often arise in many safety-critical applications/real-time systems
+	% •	Therefore, scheduling and resource allocation algorithms are the key for such guarantee
+	
+	% •	Robotics: 
+	% o	Violating DDL is a new safety issue when computation resources are limited, and providing such support in the robotic community is less studied;
+	% o	A good system should have both safety and performance, and providing such guarantee is important in safety-critical systems:
+	% Hard guarantee has been studied in hard RTS;
+	% Soft guarantee is more flexible, general, and allows better resource utilization
+	% o	No prior work has studied safety and performance guarantee under dynamic environment context
+	% o	Side note: “real-time” support/features are often about running fast rather than providing system-level performance and safety guarantees; 
+	
+	% Dynamic environments
+	% •	Robot is operated under changing/dynamic environment
+	% •	Computation tasks’ input highly depends on environment, and its internal states
+	% •	Resource requirements vary both temporally and spatially
+	% •	To guarantee safety and performance, scheduling algorithms should be optimized based on resource needs
+	% Available/related work/knowledge gap
+	
+	
+	% In this work, we propose new scheduling/resource allocation algorithms to provide such guarantee under dynamic environments: 
+	% •	Safety and performance analysis, new SP metric based on previous work
+	% •	SP optimization: priority assignments and ET optimization
+	% Experiments show good results, summarize contributions.
+
+
+    
+	As robotics systems continue to evolve and proliferate, they increasingly rely on software and embedded systems to perform complex and mission-critical operations. Real-world robotic applications, from autonomous vehicles to industrial robots, often need to run multiple tasks simultaneously, each with specific performance and safety requirements~\cite{Heintzman2021-mw, Percept21_RTSS, Ash23RAL} \rkwprev{Need to add several citations here; before submissions I will add several from my lab's applications in aerial robots as they fit this work very well.  You should look for citations in other applications that you list}. However, embedded systems—the backbone of these robotic platforms—typically operate under constrained computational resources. Many safety-critical applications require not only high performance but also stringent performance and safety guarantees. Achieving such guarantees necessitates a careful and comprehensive modeling of computational systems.
+	
+
+    A significant safety issue arises in resource-constrained systems: safety-critical tasks may produce reliable outputs but take prohibitively long to do so. Such delays can have catastrophic consequences if not addressed adequately. For instance, consider an autonomous vehicle whose pedestrian detection algorithm generates a positive result only after the vehicle has already collided with a pedestrian. Addressing these challenges traditionally falls within the domain of real-time systems rather than robotics. However, computational resources influence not only low-level scheduling but also high-level robotic behaviors and performance. 
+    In this paper, performance of robotic tasks mostly refer to their output quality, such as more accurate localization for SLAM or shorter moving distance in terms of path planning.
+    Tasks' performance may be limited by the available computation resources.
+    For example, anytime algorithms for high-level robot planning (\eg \cite{Huang23ICRA_TSP}) can achieve better performance if allocated additional computational resources (\ie longer runtime). However, the system will become unsafe if doing so causes safety-critical tasks to not have enough computation resources. This highlights the tight coupling between performance and safety, particularly when resources are limited. This paper advocates for an integrated approach to address these issues holistically and provide unified performance guarantees.
+	
+
+    The challenges grow even more complex when robots operate in dynamic and unpredictable environments. Under varying spatial and temporal conditions, tasks may follow different execution paths and require different amounts of computational resources~\cite{Ash23RAL, Sifat2021TowardsCA}. 
+    For example, SLAM may require a longer execution time when working under a crowded city environment than in a sparse rural environment. 
+    A simplistic but overly conservative solution might involve provisioning sufficient computational resources to handle the worst-case scenario. However, such an approach often results in resource waste and can negatively impact performance metrics such as battery life~\cite{Maxim2022ProbabilisticA}. Providing consistent safety and performance guarantees under stringent resource constraints and dynamic environments remains a critical yet underexplored research topic.
+
+    Therefore, a good scheduling algorithm is necessary for the robotic systems to achieve good safety and performance. Task scheduling typically involves deciding the tasks' running order and computation resource allocation.
+    In this paper, we propose a novel framework to analyze and optimize the safety and performance of robotic systems in dynamic environments. First, we enhance the Safety-Performance (SP) metric introduced by Sifat~\cite{Ash23RAL}, improving its formal definition and interpretability. Next, we develop theoretical and experimental methods to quantitatively evaluate system safety and performance under dynamic conditions. 
+    Finally, we propose online scheduling algorithms to optimize task priority assignments and runtime configurations—particularly execution time limits—based on the SP metric. 
+    To minimize the overhead of these online algorithms, we introduce an incremental optimization strategy that balances computational cost and performance. 
+    
+    We evaluated our framework on a robotic system equipped with common robotic tasks, including path planning, control, Simultaneous Localization and Mapping (SLAM), and traveling salesman planning (TSP). The experiments demonstrated 20–50\% safety-performance improvements over baseline scheduling algorithms.
+	
+	
+	\textbf{Major contributions} are summarized as follows:
+	\begin{itemize}
+		\item We enhance the SP metric proposed in \cite{Ash23RAL}, improving its formal definition and interpretability.
+        \item We develop theoretical models based on Gaussian processes to analyze the SP metric in dynamic environments based on probabilistic response time analysis. 
+        \item We formulate an online optimization problem to improve the SP metric under dynamic environmental conditions. 
+        \item We propose novel incremental optimization algorithms for task priority assignments and runtime configurations, achieving low-overhead performance improvements. 
+        \item We designed, implemented, and tested a robotic computing system on an embedded system, and released the code\footnote{\githubLink{}} to encourage further experiments.
+	\end{itemize}
+
+	
+	

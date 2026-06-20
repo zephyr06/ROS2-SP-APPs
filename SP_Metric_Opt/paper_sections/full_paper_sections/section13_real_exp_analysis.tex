@@ -1,0 +1,84 @@
+	\section{Real-World Experiment Result Analysis}
+	
+	\subsection{Intuitive explanation of SP metric in the real-world experiment figures}
+    % The SP metric values in Fig.~\ref{figs_exp_results_all_cps} provide an intuitive representation of the system's status. 
+    Although it is hard to use one number to describe all the status information in a complicated system, the SP value does provide an intuitive representation of the overall system status, as shown in Fig.~\ref{figs_exp_results_all_cps}
+    For instance, in Fig.~\ref{fig_cfs_perf}, an average SP metric value of $0.75$ indicates that tasks, on average, achieve 75\% of their best possible performance, such as meeting 100\% deadline and achieving 75\% best possible output quality, or meeting 75\% deadline but achieving 100\% output quality, or somewhere in between. 
+
+    Additionally, plotting individual SP metric curves for each task could offer deeper insights into the system. Each SP value serves as a lower bound on both the task’s safety and performance metrics, highlighting the balance between resource allocation and task requirements.
+
+    
+	\subsection{What happened during the experiments?}
+    The behavior of tasks during the experiments can be understood by analyzing their execution time distribution plot at different times. From Fig.~\ref{fig_et_all}, the execution time distributions of TSP and RRT are relatively stable, with RRT exhibiting slightly higher variance. Notable observations are found in the behaviors of SLAM and TSP:
+    \begin{itemize}
+    \item SLAM Execution Time:  
+    As the experiments progress, SLAM’s overall execution time gradually increases and then decreases. This reflects the changing computational demands of SLAM. For example, if the system needs to run loop closure, it will add some extra computation cost. Another possible reason is that performing optimization on a larger set of frames requires more computation resources, resulting in longer execution times. This trend continues until the system reaches a different state where the computation demand may decrease.
+
+    \item TSP Execution Time:  
+    TSP’s execution time is determined by its runtime parameters and shows stable probability distributions under CFS, RM-Slow, and RM-Fast schedulers. These algorithms do not optimize TSP’s runtime configurations (\eg execution time limits).  
+    However, when scheduled by the brute-force or incremental optimizers, TSP’s execution time distribution is decided by the proposed scheduler and varies over time. These variations are closely linked to the changing computational demands of other tasks, particularly SLAM. For example, at around 650 seconds, as SLAM’s resource requirements increase, TSP sacrifices its execution time to accommodate SLAM’s higher priority.
+\end{itemize}
+
+	
+	\subsection{What happened during the scheduling of each scheduler}
+	\textbf{CFS.} The Completely Fair Scheduler (CFS) is not designed for real-time scheduling. Its primary goal is to allocate CPU time fairly among all tasks. When overall CPU utilization is low, CFS achieves a good balance in system performance. However, as SLAM's execution time increases and overall CPU utilization rises, CFS does not adapt to the tasks' differing importance or resource requirements. Instead, it continues to distribute resources evenly across tasks. Consequently, SLAM frequently misses its deadlines, leading to a gradual degradation of overall system performance.
+    
+	
+	\textbf{RM-Fast, RM-Slow.} Rate Monotonic (RM) scheduling is a real-time algorithm that prioritizes tasks with shorter periods. In this case, TSP is assigned a higher priority than SLAM because of its shorter period.
+    
+    In RM-Fast, TSP is allocated the shortest possible running time limit, increasing the likelihood that all tasks meet their deadlines. However, this comes at the cost of TSP's performance metric, which is the lowest among the tested configurations. 
+    
+    In contrast, in RM-Slow, TSP is allocated a longer running time limit, improving its performance metric but making the overall system harder to schedule. While this initially leads to better performance for RM-Slow compared to RM-Fast, due to SLAM's shorter initial running time, it becomes less effective as SLAM's execution time increases. 
+    
+    Both RM-Fast and RM-Slow fail to adapt to the changes in the environments or the computation tasks, and therefore cannot exploit the full computation capabilities provided by the computing system.
+	
+	\textbf{Optimizer-BF, incremental.} 
+    The proposed optimizer addresses the limitations of the baseline schedulers by dynamically adjusting task priorities and running time limits in response to changes in resource requirements.
+    At the start of the experiments, when SLAM has a shorter execution time, the optimizer assigns higher priority and a longer running time limit to TSP, maximizing TSP's performance metric.
+    As SLAM's execution time increases, the optimizer reassigns higher priority to SLAM, ensuring it meets its deadlines, given its greater importance (as indicated by SLAM's weight parameter and safety threshold). Concurrently, TSP's running time limit is reduced based on system resource availability, optimizing overall system performance.
+    This adaptive approach not only improves overall performance compared to baseline methods but also ensures greater stability and robustness under dynamic conditions.
+
+    Readers may be curious whether the same effect can be achieved by always assigning high-criticality tasks higher priorities in the experiments. Unfortunately, this simple method fails to consider schedulability during priority assignments, and may provide poor (computational) safety performance in some overloaded systems, especially if some low-criticality tasks have shorter running periods than some high-criticality tasks.
+
+	
+	
+	\subsection{Proposed Schedulers' Performance Comparison}
+    
+    A noteworthy observation is that the brute-force optimizer sometimes performs worse than the incremental optimizer in terms of overall system performance. While the brute-force scheduler can find optimal solutions for priority assignments and task time limits, it has a significant drawback: long execution time. This drawback negatively impacts the system in two ways:
+    (1) The scheduler's long execution time increases its own resource demands and may cause competition in some computation resources such as memory and I/O. This may influence the primary tasks in high-utilization systems, which degrades performance.
+    (2) The delay in updating task priorities and configurations limits the system's ability to respond quickly to changes in task demands or environmental conditions.
+    
+    The incremental optimizer, on the other hand, delivers better and more robust performance because it dynamically adjusts task scheduling decisions in real-time, maintaining adaptability across a wide range of scenarios. This dynamic capability enables the incremental optimizer to outperform baseline schedulers, which are designed for static environments and are only effective under limited conditions.
+
+As shown in Fig.~\ref{figs_exp_results_all_cps}, standard schedulers like CFS and RM fail to achieve optimal or stable performance in dynamic environments without significant modifications or system-level enhancements. Such static scheduling algorithms typically only work the best under specific situations.
+The proposed optimization-based scheduler, by contrast, demonstrates both improved performance and greater robustness, offering a practical solution for achieving near-optimal system performance in dynamic conditions.
+	
+	
+	% \todo show RM/CFS overhead?
+	
+	\subsection{Scalability Analysis}
+    
+    Fig.~\ref{fig_et_all} and \ref{figs_exp_results_all_cps} show that the incremental scheduler runs 10x faster than the brute-force scheduler while maintaining similar or better performance, except when running for the first time. 
+    In practice, due to the very low running frequency, the overhead brought by running the modified Audsley's algorithm could be negligible.
+    The results successfully validated the good performance of the proposed incremental scheduler.
+    % Section~\ref{section_complexity_analysis} shows that the incremental optimization algorithm has linear runtime complexity relative to the number of tasks, comparable to standard scheduling algorithms like RM and CFS. This ensures excellent scalability.
+
+While our experiments involve a limited number of tasks, we expect greater performance improvements between the incremental and the brute-force schedulers in systems with more tasks because:
+(1) Higher scheduling complexity: Larger systems offer more opportunities for optimization.
+(2) Low computational cost: The linear complexity ensures that scaling up remains cost-effective compared to baseline methods.
+This makes the incremental algorithm highly suitable for complex scheduling scenarios.
+
+	
+    \subsection{Can we provide a safety-performance guarantee?}
+
+
+    In real-time systems, providing guarantees typically involves ensuring that a target metric—such as schedulability—is met under worst-case scenarios. These guarantees rely on offline analysis of worst-case conditions, as they serve as the foundation for establishing system performance bounds. Without such assumptions, guarantees become infeasible.
+
+    This paper can provide safety-performance guarantee if the execution time distribution in the online environments can be upper-bounded and the estimation is known in advance. 
+    Although this assumption is in some conflict with our original proposal about working in an unknown environment, there are no way to provide any performance guarantee if such worst-case information cannot be obtained offline.
+    However, the proposed optimization framework will still be useful in soft real-time systems where strict performance guarantee is not required.
+    
+    While existing scheduling methods like Completely Fair Scheduling (CFS) or Rate Monotonic (RM) can also provide guarantees within this framework, the proposed optimization framework achieves significantly higher SP metric values. This improvement underscores one of the key contributions of this work: a new, and stronger safety-performance guarantee that surpasses traditional methods in both safety and performance dimensions.
+
+    Furthermore, the framework offers flexibility by allowing additional constraints to be incorporated for individual tasks. This enables the creation of fine-grained guarantees tailored to specific safety or performance requirements, making the approach adaptable to diverse real-time system needs.
+

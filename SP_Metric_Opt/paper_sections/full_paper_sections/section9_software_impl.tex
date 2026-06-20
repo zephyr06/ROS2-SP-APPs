@@ -1,0 +1,165 @@
+	\section{Software Systems and Implementation}
+	\label{section_implementation}
+	\subsection{System Overview}
+    We designed and implemented a prototype system based on Linux, incorporating two types of periodic tasks: robotic application tasks and a scheduler task. All tasks are scheduled using FIFO, Linux's real-time fixed-task priority scheduling algorithm. The scheduler task is assigned the highest priority, and it optimizes the priority assignments and runtime configurations of robotic tasks based on the proposed algorithms.
+
+    The scheduler task executes once every $T$ time units. During each execution, it:
+    \begin{itemize}
+        \item Collects recently recorded execution time data from each robotic task.
+        \item Predicts execution time distributions for the next period.
+        \item Performs incremental optimization of priority assignments and task configurations.
+        \item Updates the tasks' priority assignments and configurations using user-space APIs.
+    \end{itemize}
+
+    To simplify implementation, all computations are performed in user space rather than kernel space. Although user-space implementation introduces higher overhead, it remains lightweight and practical because of our lightweight optimization algorithm design. Further optimizations could significantly reduce this overhead, such as enhancing task communication mechanisms (\eg replacing the current local text file approach with more efficient alternatives). Nonetheless, the current implementation is adequate for validating the proposed concepts within the scope of this research.
+
+    \subsection{Using approximation to predict tasks' execution time distribution}	
+    \label{section: predict_ET_exp}
+    Due to the highly limited computation resources available to perform online scheduling and resource allocation optimization, we use a simple heuristic to predict tasks' execution time distribution online by assuming the robot's working environment will not have a significant change within each short time interval. Although this assumption may not hold true in discrete environments, it provides a good trade-off in balancing prediction accuracy and computation cost. 
+
+    Specifically, under this assumption, we use $T^W$ to denote the length of the time interval where we assume the environment $\textbf{E}$'s changes can be upper-bounded by $\Theta^W$:
+    \begin{equation}
+        \|\textbf{E}_{t_0+T^W} - \textbf{E}_{t_0} \| \leq \Theta^W
+    \end{equation}
+    where $\textbf{E}_{t_0+t}$ denotes the environment vector at time $t_0+t$.
+
+    Under the assumption that the environment changes smoothly, there always exist a time window of length $T^W$ such that $\Theta^W \approx 0$ if only $T^W$ is small enough.
+    In this case, given a task $\tau_i$, its execution time distribution during the time window $[t_0 + T^W/2, t_0 + T^W]$ can be predicted based on the measured execution time data during the time interval $t_0, t_0 + T^W/w$. 
+    
+    In our experiments, we assume that $\Theta^W \approx 0$ when the length of time window $T^W$ equals the task $\tau_i$'s release period $T_i$. Under this assumption, we can obtain multiple execution time measurements, and therefore establish a probability distribution.
+
+
+    To further reduce the computation cost, we assume each task's execution time distribution follows normal distribution, and only use the measurement data's mean, variance, minimum, and maximum values to characterize its probability distribution. Therefore, the overall computation cost is reduced into linear complexity. In experiments, the time window $T^W$ is set to be the same as the proposed scheduler's running period for simplicity.
+
+    
+    However, the assumptions above may not always hold in all situations, especially when the environment does not change smoothly. This will lead to inaccurate execution time distribution prediction. However, as will be emphasized in Section~\ref{section: relax_smooth_assumption}, such error is the necessary cost for low computation cost. Furthermore, such errors can be automatically corrected as long as the environment does not keep changing un-smoothly. The proposed framework may not work well in those kinds of extremely unsmooth situations.
+    
+    \subsection{Computation tasks}
+	\label{section_computation_tasks}
+    
+    All tasks are modeled as periodic tasks. A new job of a task $\tau_i$ is released for execution if:
+    \begin{itemize}
+        \item The previous released job instance has completed execution.
+        \item The new job's release time has passed.
+    \end{itemize}
+    
+    Jobs that miss their deadlines are not discarded, as even slightly delayed jobs remain valuable in soft real-time systems.
+    
+    Following the approach in Sifat~\etal~\cite{Ash23RAL}, our system includes the following robotic tasks:
+    
+    \textit{Simultaneous Localization and Mapping (SLAM):}  
+    We based our implementation on ORB-SLAM2~\cite{murORB2}, a well-known real-time visual SLAM system. The original ORB-SLAM2 implementation uses multiple threads for sub-tasks (\eg tracking, loop closure, and visualization), some of which involve infinite loops. To align with our real-time systems model, we modified the SLAM implementation without influencing its functionality:
+    \begin{itemize}
+        \item Replaced infinite loops with periodic tasks.
+        \item Merged multiple threads into a single main thread.
+        \item Disabled real-time map visualization to improve execution time predictability.
+    \end{itemize}
+    These modifications preserve core functionality while enabling easier theoretical performance analysis and guarantees. If multi-threaded implementation is required, techniques such as gang task scheduling and response time analysis models~\cite{Sun2024StrictPF} can be used to analyze response time distributions.
+    
+    \textit{Traveling Salesperson Problem (TSP):}  
+    We adopted the anytime algorithm implementation from Huang~\etal~\cite{Huang23ICRA_TSP}. The running time limit for TSP is treated as a configurable optimization variable in our system, where longer time limits yield shorter output paths.
+
+    
+    \textit{Path Planning:}  
+    Our implementation of the rapidly-exploring random tree (RRT) algorithm~\cite{LaValle1998RapidlyexploringRT} is based on~\cite{rrt_github}. The RRT's execution time varies from 1 to 3 seconds, depending on input map configurations and the algorithm's inherent randomness.
+
+    \textit{Model Predictive Controller (MPC):}  
+    We implemented a constrained linear-quadratic MPC using the OSQP solver~\cite{stellato18OSQP}. MPC exhibits relatively stable execution times, ranging from 5 ms to 9 ms.
+    
+	
+	
+    \subsection{Mapping priority assignments to priority values}
+    \label{section_pa_values}
+    While the priority assignment algorithm determines the relative priority order of tasks, Linux requires assigning specific \textit{priority values} to implement these assignments. In Linux, real-time processes have priority values ranging from 0 to 99, where larger numbers indicate higher priority. For example, a priority assignment order such as ``MPC $>$ RRT $>$ TSP $>$ SLAM'' (MPC has the highest priority, and SLAM has the lowest priority) could map to priority values such as MPC=7, RRT=6, TSP=5, and SLAM=4. Theoretically, any mapping that adheres to the priority assignment order is valid.
+
+    However, we hope to reduce the potential scheduling overhead. Changing priority values involves numerous low-level operations within the operating system (OS). This overhead increases for multi-threaded tasks, as all threads of a task must simultaneously update their priority values. While more granular scheduling at the thread level is possible, determining optimal priority assignments for threads would be computationally prohibitive for online systems.
+    
+    To mitigate scheduling overhead, we adopt the following strategy:
+    \begin{itemize}
+        \item Select the task with the largest number of threads as the \textit{reference task}. The reference task is assigned a fixed priority value.
+        \item Compute the priority values for all other tasks relative to the reference task, following the priority assignment order.
+    \end{itemize}
+    
+    This approach minimizes the need to change the priority value of the reference task, thereby reducing scheduling overhead. If another task's thread count surpasses that of the reference task during runtime, the new task can be dynamically designated as the reference task.
+    
+    This strategy generalizes well to multi-core systems, where each core typically schedules tasks independently with its own running queue in Linux. Using partitioned scheduling, a fixed priority value can be locked for one task on each core, further minimizing overhead.
+    
+    \begin{Example}
+    Suppose the scheduler determines the priority order as: MPC $>$ RRT $>$ TSP $>$ SLAM, and SLAM has the highest number of threads. We can assign SLAM a fixed priority value of 5. An acceptable priority mapping for the other tasks could be: MPC=8, RRT=7, TSP=6, and SLAM=5.
+    \end{Example}
+
+	
+\subsection{Performance Metric Function}
+	\label{section_generate_tsp_perf}
+    This section provides further details about the performance metric function implementation. 
+    
+    Some tasks' output quality is either unaffected by hyper-parameters or a good set of hyper-parameter configurations have already been determined offline, making online adjustments unnecessary. In such cases, the performance metric function outputs a constant value of $1.0$.
+
+    Other tasks' optimal configurations (such as their hyper-parameters) may depend on the environments and the computation resources available from the computing systems. In this case, it will be more beneficial to perform online optimization. To that end, we need to define the performance function properly to measure the solution quality and required computation resources under different hyper-parameter configurations.
+
+    Next, we use the TSP as an example to illustrate how we designed the performance function in our experiments. The TSP is implemented by an anytime algorithm, which implies that longer running time limits could lead into better solution qualities.
+    We conducted profiling experiments using different running time limits and recorded the length of the paths found by the TSP algorithm. 
+    The collected data for the TSP task is detailed in Table~\ref{table_tsp_perf}. 
+    
+    To determine the performance function, there are several steps:
+\begin{enumerate}
+    \item \textit{Running Time Profiling:}  
+    The running time limits started at 50 ms and increased by 50 ms until further increases no longer produced shorter paths. To minimize the impact of randomness, each configuration was tested 10 times, and the average path length was recorded.
+
+    \item \textit{Handling Non-Monotonic Improvements:}  
+    In cases where small increases in the time limit did not improve the path length, the best result for that configuration was selected and added to the results. Consequently, the running time values in Table~\ref{table_tsp_perf} did not increase strictly in increments of 50 ms.
+
+    \item \textit{Normalization:}  
+    The path lengths were normalized to a range of $[0, 1.0]$, where:
+    \begin{itemize}
+        \item The longest path was assigned a score of 0.1.
+        \item The shortest path was assigned a score of 1.0.
+    \end{itemize}
+    where the longest path was not assigned a performance score of 0.0 because it still represents a ``usable'' solution. A score of 0.0 is reserved for cases where no valid output is generated. Finally, linear interpolation was applied to calculate performance scores for intermediate path lengths.
+\end{enumerate}
+
+	\begin{table*}[]
+    \centering
+		\caption{TSP's performance metric function with different running time limits.}
+		\begin{tabular}{@{}llllllllllllll@{}}
+			\toprule
+			Running Time Limit(ms)       & 150   & 250   & 300   & 450   & 850   & 900   & 950   & 1000  & 1050  & 1100  & 1200  & 1500   \\ \midrule
+			Physical Distance  & 61551 & 52027 & 50969 & 50097 & 49759 & 49397 & 48915 & 48794 & 48527 & 48366 & 48244 & 48093 \\
+			Performance Function & 0.1   & 0.73  & 0.80 & 0.86  & 0.88  & 0.91  & 0.94  & 0.95  & 0.97  & 0.98  & 0.99  & 1        \\ \bottomrule
+		\end{tabular}
+		\label{table_tsp_perf}
+	\end{table*}
+
+    Compared with the performance metric definition in Definition~\ref{def_perf_metric}, the TSP metric does not include the ``environment'' factor for the sake of simplicity. However, it is important to note that environmental influences can be incorporated into the performance metric without affecting the overall optimization framework. 
+    % Determining whether explicitly integrating environment variables into the performance metric is beneficial in general cases remains an open question.
+	
+	% \subsection{Modeling DDL miss}
+
+
+	
+    
+    
+	\subsection{Hyperparameter Configuration}
+
+    There are only a few hyperparameters that need to be configured during implementation:
+    \begin{itemize}
+        \item The number of value-probability pairs to describe a probability mass function when performing the fixed-point iteration following Equation~\eqref{eq_prob_rta}.
+        \item The number of partial priority assignments to keep during priority assignment optimization ($Section~\ref{section_audsley_pa}$, $m$ in Algorithm~\ref{alg:modified_audsley}).
+        \item The local search radius $\delta$ in equation~\eqref{eq: incremental_configuration}. 
+        \item The scheduler's period $T$ in Section~\ref{section_implementation}. 
+    \end{itemize}
+    The first parameter controls the trade-off between computation cost and modelling accuracy. In our experiments, we use 10 because there are no observable performance improvements but extra computation cost for larger values.
+    
+    The second parameter controls the tradeoff between computation cost and optimization performance. This parameter should be set mostly based on the acceptable computation overhead for the scheduling algorithm. In our case, to control the overall overhead below 1\%, we set the number as 2.
+
+    For the third parameter, we set $\delta$ such that the optimization only considers 3 candidates each time.
+
+    For the fourth parameter, we use the lowest possible values that could control the overhead caused by the scheduler to fall below 1$\%$, 15s in our real-world experiments.
+
+    % Similarly, SP metric parameters, such as deadline miss thresholds and task weights, alter the absolute metric values but have little impact on relative performance trends. Due to space limitations, we have not shown results for all configurations, but our released code allows readers to explore these parameters further.
+
+    
+\subsection{Other implementation details to improve performance}
+   To enhance the system's predictability, input data is pre-loaded into memory whenever it is possible and does not violate the experiments' authenticity. This reduces potential Input/Output (I/O) resource contention and minimizes variations in execution time distribution.
+
+    

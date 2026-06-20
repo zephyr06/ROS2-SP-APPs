@@ -1,0 +1,124 @@
+    \section{Simulation Experiments}
+    \label{section: simulation}
+    In addition to the experiment conducted on the real embedded board above, we also designed simulation experiments to evaluate the system performance more comprehensively. Different from the real-world experiments, the simulation experiment results are obtained based on the average and the distribution of a large number of random task sets to cover a wider range of scenarios.
+    
+    \subsection{Simulated Task Sets Generation}
+
+
+    In simulation, we assume the robot is operated in a two-dimensional environment where we can use the \textit{x} and \textit{y} coordinates to describe a robot's location. 
+    For simplicity, the 2D environment is limited to a square of width $\hat{W}$ and height $\hat{H}$.
+    During operation, the robot needs to run several computational tasks to ensure both safety and functionality. These tasks in our simulation experiments are generated randomly to cover different scenarios. The task set generation follows the typical real-time systems' experiments design~\cite{Wang2023RTAS, Zhao2020AnOF} based on Uunifast~\cite{Davis2008EfficientES}.
+    Specifically, each random task set has 10 tasks scheduled to be executed by 2 CPU cores independently, the tasks' periods are randomly selected from a limited set based on the real-world systems~\cite{Percept21_RTSS, Kramer15benchmark}: [20, 33, 50, 100, 200, 500, 1000] ms. Then the Uunifast algorithm is used to generate the \textit{average} execution time for each task. 
+    In each task set, 2 random tasks' execution times are assumed to be dependent on the environments and vary spatially. The SP deadline thresholds of all the tasks are randomly generated from 50\% to 100\% relative to the tasks' periods. The SP thresholds of each task are randomly selected from a limited set: $[0.2, 0.4, 0.6, 0.8, 1.0]$ to simulate a real-world setting with both safety-critical tasks and soft tasks that do not have a major influence to the overall system's safety and functionality. The soft tasks can be discarded when the system is under high computation load to make sure the safety-critical tasks can finish before deadline. 
+
+    
+    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location\footnote{We used Cartesian coordinates in the formulas because it's easier to understand. In implementation, we actually used polar coordinates instead of Cartesian coordinates, but the math basically remains the same. Please check our released code\footnote{\githubLink{}} for more details.}, $(x, y)$ and each task's execution time distribution $C_i$ follows a joint 3D Gaussian distribution, the probability density function $f^{E}()$ is assumed to be
+    \begin{equation}
+        f^{E}(x, y, C_i) =\mathcal{N}(\boldsymbol{\mu}^E, \boldsymbol{\Sigma}^E)
+        \label{eq: pdf_gmm}
+    \end{equation}
+    \begin{equation}
+        \boldsymbol{\mu}^E = \begin{bmatrix}
+            \mu^E_x & \mu^E_y & \mu^E_{c,i}
+        \end{bmatrix}
+    \end{equation}
+    
+\begin{equation}
+    \boldsymbol{\Sigma}^E =
+    \begin{bmatrix}
+        \sigma_x^2 & 0 & \rho_{x,c,i} \sigma_x \sigma_{c,i} \\
+        0 & \sigma_y^2 & \rho_{y,c,i} \sigma_y \sigma_{c,i} \\
+        \rho_{x,c,i} \sigma_x \sigma_{c,i} & \rho_{y,c,i} \sigma_y \sigma_{c,i} & \sigma_{c,i}^2
+    \end{bmatrix}
+\end{equation}
+
+    The values of the mean vector $\boldsymbol{\mu}^E$ and the covariance matrix $ \boldsymbol{\Sigma}^E$ in the probability density function~\eqref{eq: pdf_gmm} are decided as follows. 
+    Firstly, notice that the robot is assumed to be operated in a 2D square of width $W^E$ and height $H^E$. Therefore, by placing the coordinate origin at the upper-left corner, and assuming the probability density function covers 95\% confidence interval, and that gives us:
+    \begin{equation}
+        \mu^E_x = W^E/2, \sigma_x = W^E/4
+    \end{equation}
+    \begin{equation}
+        \mu^E_y = H^E/2, \sigma_y = H^E/4
+    \end{equation}
+    As for the execution time $C_i$ of the task $\tau_i$, its average execution time $\mu^E_{c,i}$ is assumed to be generated from the Uunifast algorithm, its standard variance $\sigma_{c,i}$ is assumed to be a random portion of its average execution time: $\sigma_{c,i}=k\mu^E_{c,i}$. Based on our experiment measurements, the ratio $k$ is generated randomly from $50\%$ to $60\%$.
+    In the covariance matrix $\boldsymbol{\Sigma}^E$, the covariance ratios $\rho_{x,c,i}, \rho_{y,c,i}$ are randomly generated in the range $[-1,1]$. These two parameters capture the execution time distribution $C_i$'s dependency on the physical environment.
+    
+    \subsection{Results}
+    The following results are aggregated based on 100 randomly generated task sets. 
+	% \begin{figure*}[ht!]
+	% 	\begin{subfigure}[c]{0.32\textwidth}
+	% 		\centering
+	% 		\includegraphics[width=\textwidth]{pictures/simulation/cpu_util_0_wolegend.pdf}
+	% 		\caption{CPU 0 Utilization}
+	% 		\label{fig_sim_cpu0}
+	% 	\end{subfigure}
+	% 	\begin{subfigure}[c]{0.32\textwidth}
+	% 		\centering
+	% 		\includegraphics[width=\textwidth]{pictures/simulation/cpu_util_1_wolegend.pdf}
+	% 		\caption{CPU 1 Utilization}
+	% 		\label{fig_sim_cpu}
+	% 	\end{subfigure}
+    
+		
+	% 	\caption{``Expected'' CPU Utilization variation of 100 random tasks during simulation experiments (See more in Section~\ref{section: simulation_exp}.} 
+	% 	\label{figs_cpu_sim}
+	% \end{figure*}
+
+\begin{figure*}[ht!]
+    \centering
+    \begin{subfigure}[c]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{pictures/simulation/cpu_util_0_wolegend.pdf}
+        \caption{CPU 0 Utilization}
+        \label{fig_sim_cpu0}
+    \end{subfigure}
+    \begin{subfigure}[c]{0.32\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{pictures/simulation/cpu_util_1_wolegend.pdf}
+        \caption{CPU 1 Utilization}
+        \label{fig_sim_cpu1}
+    \end{subfigure}
+    \caption{``Expected'' CPU Utilization variation of 100 random tasks during simulation experiments (See more in Section~\ref{section: simulation_exp}).} 
+    \label{figs_cpu_sim}
+\end{figure*}
+
+    
+	\begin{figure*}[ht!]
+		\centering 
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/simulation/box_plot_of_all_data_CFS.pdf}
+			\caption{CFS}
+			\label{fig_cfs_perf_sim}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth}
+			\centering
+			\includegraphics[width=\textwidth]{pictures/simulation/box_plot_of_all_data_RM_FAST.pdf}
+			\caption{RM\_Fast}
+			\label{fig_rm_fast_sim}
+		\end{subfigure}
+		\begin{subfigure}[t]{0.32\textwidth} 
+			\centering
+			\includegraphics[width=\textwidth]{pictures/simulation/box_plot_of_all_data_RM_SLOW.pdf}
+			\caption{RM\_Slow}
+			\label{fig_rm_slow_sim}
+		\end{subfigure}
+		
+		\begin{subfigure}[c]{0.32\textwidth}
+			\centering
+			\includegraphics[width=\textwidth]{pictures/simulation/box_plot_of_all_data_BR.pdf}
+			\caption{Brute-Force Scheduler}
+			\label{fig_opt_bf_sim}
+		\end{subfigure}
+		\begin{subfigure}[c]{0.32\textwidth}
+			\centering
+			\includegraphics[width=\textwidth]{pictures/simulation/box_plot_of_all_data_INCR.pdf}
+			\caption{Incremental Scheduler}
+			\label{fig_opt_incre_sim}
+		\end{subfigure}
+		
+		\caption{The SP metric of different scheduling methods during the simulation experiments} 
+		\label{figs_exp_results_all_sim}
+	\end{figure*}
+	
+        
