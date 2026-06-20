@@ -43,6 +43,7 @@ TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule) {
     EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
     EXPECT_EQ(3, schedule[JobCEC(2, 0)].start);
     EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v2) {
     dag_tasks.tasks[0].priority = 3;
@@ -54,6 +55,7 @@ TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v2) {
     EXPECT_EQ(3, schedule[JobCEC(1, 0)].start);
     EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
     EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v3) {
     dag_tasks.tasks[0].processorId = 1;
@@ -63,6 +65,59 @@ TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v3) {
     EXPECT_EQ(0, schedule[JobCEC(1, 0)].start);
     EXPECT_EQ(2, schedule[JobCEC(2, 0)].start);
     EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
+}
+TEST_F(TaskSetForTest_scheduling_v1, simulate_cfs_schedule) {
+    Schedule schedule = SimulateCFSSched(dag_tasks, tasks_info);
+    EXPECT_EQ(4, schedule.size());
+    EXPECT_EQ(2, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+
+    EXPECT_EQ(3, schedule[JobCEC(0, 0)].finish);
+    EXPECT_EQ(5, schedule[JobCEC(1, 0)].finish);
+    EXPECT_EQ(6, schedule[JobCEC(2, 0)].finish);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
+}
+TEST_F(TaskSetForTest_scheduling_v1, simulate_cfs_et_larger_than_period) {
+    dag_tasks.tasks[0].setExecutionTime(12);
+    dag_tasks.tasks[1].setExecutionTime(2);
+    dag_tasks.tasks[2].setExecutionTime(3);
+
+    TaskSetInfoDerived new_tasks_info(dag_tasks.tasks);
+
+    Schedule schedule = SimulateCFSSched(dag_tasks, new_tasks_info);
+
+    EXPECT_EQ(2, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(17, schedule[JobCEC(0, 0)].finish);
+
+    EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(5, schedule[JobCEC(1, 0)].finish);
+
+    EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(7, schedule[JobCEC(2, 0)].finish);
+
+    EXPECT_EQ(17, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(-1, schedule[JobCEC(0, 1)].finish);
+}
+TEST_F(TaskSetForTest_scheduling_v1, simulate_cfs_deadline_miss) {
+    dag_tasks.tasks[0].setExecutionTime(4);
+    dag_tasks.tasks[0].deadline = 3.0;
+    dag_tasks.tasks[1].setExecutionTime(2);
+    dag_tasks.tasks[2].setExecutionTime(3);
+
+    TaskSetInfoDerived new_tasks_info(dag_tasks.tasks);
+
+    Schedule schedule = SimulateCFSSched(dag_tasks, new_tasks_info);
+
+    EXPECT_EQ(9, schedule[JobCEC(0, 0)].finish);
+    double ddl = GetDeadline(JobCEC(0, 0), new_tasks_info);
+    EXPECT_EQ(3, ddl);
+    EXPECT_TRUE(schedule[JobCEC(0, 0)].finish > ddl);
+
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(14, schedule[JobCEC(0, 1)].finish);
 }
 int main(int argc, char **argv) {
     // ::testing::InitGoogleTest(&argc, argv);

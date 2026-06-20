@@ -17,4 +17,11 @@ Schedule SimulatedFTP_SingleCore(const DAG_Model &dag_tasks,
 Schedule SimulateFixedPrioritySched(const DAG_Model &dag_tasks,
                                     const TaskSetInfoDerived &tasks_info);
 
+Schedule SimulatedCFS_SingleCore(const DAG_Model &dag_tasks,
+                                 const TaskSetInfoDerived &tasks_info,
+                                 int processor_id);
+
+Schedule SimulateCFSSched(const DAG_Model &dag_tasks,
+                          const TaskSetInfoDerived &tasks_info);
+
 }  // namespace SP_OPT_PA
