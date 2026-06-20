@@ -1,0 +1,40 @@
+{
+    "DESC": "parameters for generating tasksets",
+
+    "HZ": [0.25, 0.5, 1, 10, 20, 30, 50],
+    "HZ_DESC": "task period selection, in Hz; don't have too many small prd task since we need a small prd with perf records",
+
+    "Et_OVER_PERIOD_RANGE": [0.15,0.3],
+    "Et_OVER_PERIOD_DESC": "range of mean_execution_time/period; if it is too big, then we don't have many tasks in system",
+    
+    "SIGMA_OVER_Et_RANGE": [0.1,0.4],
+    "SIGMA_OVER_Et_DESC": "range of sigma/mean_execution_time; larger value means task execution time is more volatile",
+
+    "RO_1_Et_RANGE": [-0.9,-0.7],
+    "RO_1_Et_DESC": "correlation between dimension 1 and Et; in range [-1,1]; negative correlation means center location has larger Et",
+
+    "RO_2_Et_RANGE": [-0.2,0.2],
+    "RO_2_Et_DESC": "correlation between dimension 2 and Et; uncorrelated",
+
+    "D1_RANGE": [-100,100],
+    "D1_DESC": "range of dimension_1; radius <= 100",
+
+    "D2_RANGE": [0,360],
+    "D2_DESC": "range of dimension_2; angle from 0 to 360 degrees",
+
+    "N_MIX_WEIGHTS_PER_TASK": 4,
+    "N_MIX_WEIGHTS_PER_TASK_DESC": "number of weights for each task; for gaussian mixture model distribution",
+
+	"SP_THRESHOLD_RANGE": [0.5,0.9],
+	"SP_THRESHOLD_RANGE_DESC": "saftety metric thresold range",
+	
+	"SP_WEIGHT_RANGE": [0.5, 1.5],
+	"SP_WEIGHT_RANGE_DESC": "safety metric weight range",
+	
+    "MEAN_CPU_UTIL": 0.75,
+    "MEAN_CPU_UTIL_DESC": "mean cpu utilization for all tasks",  
+	
+	"CPU_UTIL_TEMPORAL_VARIANCE_RANGE": [0.0, 1.0],
+	"CPU_UTIL_TEMPORAL_VARIANCE_T_DLT": 5,
+	"CPU_UTIL_TEMPORAL_VARIANCE_DESC": "basically for every CPU_UTIL_TEMPORAL_VARIANCE_T_DLT, overall CPU utilization change by CPU_UTIL_TEMPORAL_VARIANCE_RANGE"
+}
