@@ -37,6 +37,7 @@ MPC  & 0.99                                                               & 1   
     We tested five scheduling algorithms in our experiments:
 	\begin{itemize}
 		\item Complete Fair Scheduling (CFS). CFS is the default scheduling algorithm in most Linux systems. It balances CPU utilization among all running tasks based on their importance and aims to achieve fair resource sharing. However, CFS is not a real-time scheduling algorithm and cannot provide performance guarantees.
+		\agent{implmentation, CFS tracks virtual runtime at the level of task rather than jobs (threads) to improve CFS's performance in real-time systems.}
         \Sen{To Prof. Zeng: in my opinion, we should emphasize to the robotics community that RM is the optimal scheduling algorithm under static environments, despite its simplicity. Therefore, RM is indeed a good baseline algorithm from the existing literature. Do you agree with this argument?}
 		\item Rate Monotonic (RM). RM is a widely used real-time scheduling algorithm that prioritizes tasks based on their periods. Tasks with shorter periods are scheduled before those with longer periods. RM is provably \textbf{optimal} for single-core, preemptive platforms when tasks’ deadlines equal their periods.  
     In our experiments, we evaluated two variants of RM:     \begin{itemize}
