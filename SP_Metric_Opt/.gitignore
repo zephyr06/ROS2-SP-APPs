@@ -16,6 +16,7 @@ lib/
 obj/
 
 # Simulation Experiment Outputs & Configs
+!TaskData/AnalyzeSP_Metric/*
 TaskData/*/
 TaskData/*.txt
 TaskData/*.json
