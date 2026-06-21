@@ -17,4 +17,5 @@ int Layer_Node_During_Incremental_Optimization =
     loaded_doc["Layer_Node_During_Incremental_Optimization"].as<int>();
 double Dist_compress_threshold =
     loaded_doc["Dist_compress_threshold"].as<double>();
+bool disable_time_limit_opt = false;
 }  // namespace GlobalVariables

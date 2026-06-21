@@ -47,6 +47,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     double EvaluateTimeLimitConfig(int K, const std::vector<double>& time_limits);
 
     std::vector<double> InitializeTimeLimitsFromETConfig();
+    void InitializeTimeLimitsToSmallest(std::vector<double>& time_limits);
     void PerformCoordinateDescentForTaskConfigOpt(int K, std::vector<double>& time_limits);
 
     inline ResourceOptResult CollectResults() const { return res_opt_; }

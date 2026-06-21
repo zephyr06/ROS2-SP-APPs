@@ -87,6 +87,60 @@ TEST_F(TaskSetForTest_robotics_v18, optimize) {
     EXPECT_EQ(1000, res_opt.id2time_limit[0]);  // SLAM+TSP have low utilization
 }
 
+TEST_F(TaskSetForTest_robotics_v18, optimize_no_tl) {
+    // 1. Run with TL optimization enabled (default behavior)
+    GlobalVariables::disable_time_limit_opt = false;
+    OptimizePA_Incre_with_TimeLimits opt_with_tl(dag_tasks, sp_parameters);
+    opt_with_tl.OptimizeFromScratch_w_TL(2);
+    ResourceOptResult res_opt = opt_with_tl.CollectResults();
+    double opt_sp = res_opt.sp_opt;
+    
+    // Get the smallest possible time limits to compare
+    std::vector<double> smallest_time_limits(dag_tasks.tasks.size());
+    for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
+        if (dag_tasks.tasks[i].timePerformancePairs.empty()) {
+            smallest_time_limits[i] = -1.0;
+        } else {
+            smallest_time_limits[i] = dag_tasks.tasks[i].timePerformancePairs[0].time_limit;
+        }
+    }
+
+    // Verify that task 0's optimized time limit is 1000
+    EXPECT_EQ(1000, res_opt.id2time_limit[0]);
+
+    // Verify that at least one task's time limit changed from the smallest setting during optimization
+    bool tl_changed = false;
+    for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
+        if (res_opt.id2time_limit[i] != smallest_time_limits[i]) {
+            tl_changed = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(tl_changed);
+
+    // 2. Run with TL optimization disabled
+    GlobalVariables::disable_time_limit_opt = true;
+    OptimizePA_Incre_with_TimeLimits opt_no_tl(dag_tasks, sp_parameters);
+    opt_no_tl.OptimizeFromScratch_w_TL(2);
+    ResourceOptResult res_no_tl = opt_no_tl.CollectResults();
+    double no_tl_sp = res_no_tl.sp_opt;
+
+    // Restore default behavior immediately
+    GlobalVariables::disable_time_limit_opt = false;
+
+    // Check that task 0's time limit under disabled optimization is the smallest option (400)
+    EXPECT_EQ(400, res_no_tl.id2time_limit[0]);
+
+    // Check that all tasks' time limits match their smallest possible time limits
+    for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
+        EXPECT_EQ(smallest_time_limits[i], res_no_tl.id2time_limit[i]);
+    }
+
+    // Check that SP obtained without TL optimization is lower than optimized SP
+    EXPECT_LT(no_tl_sp, opt_sp);
+}
+
+
 class TaskSetForTest_robotics_v19 : public ::testing::Test {
    public:
     void SetUp() override {

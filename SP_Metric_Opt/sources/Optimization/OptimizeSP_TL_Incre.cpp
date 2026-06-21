@@ -179,6 +179,11 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
     opt_sp_ = -1.0;
     time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
+    if (GlobalVariables::disable_time_limit_opt) {
+        InitializeTimeLimitsToSmallest(time_limits);
+        EvaluateTimeLimitConfig(K, time_limits);
+        return opt_pa_;
+    }
     PerformCoordinateDescentForTaskConfigOpt(K, time_limits);
     return opt_pa_;
 }
@@ -190,8 +195,23 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     time_limit_option_for_each_task_ =
         RecordCloseTimeLimitOptions(dag_tasks_update);
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
+    if (GlobalVariables::disable_time_limit_opt) {
+        InitializeTimeLimitsToSmallest(time_limits);
+        EvaluateTimeLimitConfig(K, time_limits);
+        return opt_pa_;
+    }
     PerformCoordinateDescentForTaskConfigOpt(K, time_limits);
     return opt_pa_;
+}
+
+void OptimizePA_Incre_with_TimeLimits::InitializeTimeLimitsToSmallest(std::vector<double>& time_limits) {
+    for (size_t i = 0; i < time_limits.size(); i++) {
+        if (dag_tasks_.tasks[i].timePerformancePairs.empty()) {
+            time_limits[i] = -1.0;
+        } else {
+            time_limits[i] = dag_tasks_.tasks[i].timePerformancePairs[0].time_limit;
+        }
+    }
 }
 
 }  // namespace SP_OPT_PA
