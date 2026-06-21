@@ -70,9 +70,29 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
     return sp_overall;
 }
 
+TaskSet ApplyTimeLimitsToTasksExecutionTime(
+    const TaskSet& tasks, const std::vector<double>& time_limits) {
+    TaskSet tasks_upd = tasks;
+    for (int i = 0; i < static_cast<int>(tasks.size()); i++) {
+        if (time_limits[i] != -1) {
+            tasks_upd[i].execution_time_dist =
+                GetUnitExecutionTimeDist(time_limits[i]);
+        }
+    }
+    return tasks_upd;
+}
+
+double ObtainSP_TaskSet_And_TimeLimits(const TaskSet& tasks,
+                                       const SP_Parameters& sp_parameters,
+                                       const std::vector<double>& time_limits) {
+    return ObtainSP_TaskSet(
+        ApplyTimeLimitsToTasksExecutionTime(tasks, time_limits), sp_parameters);
+}
+
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters) {
-    if (GlobalVariables::debugMode == 1) BeginTimer("ObtainSP_DAG");
+    if (GlobalVariables::debugMode == 1)
+        BeginTimer("ObtainSP_DAG");
     double sp_overall = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 
     std::vector<FiniteDist> reaction_time_dists =
@@ -88,8 +108,24 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
                       sp_parameters.weights_path.at(chain_id);
     }
 
-    if (GlobalVariables::debugMode == 1) EndTimer("ObtainSP_DAG");
+    if (GlobalVariables::debugMode == 1)
+        EndTimer("ObtainSP_DAG");
     return sp_overall;
+}
+
+double ObtainSP_DAG(const DAG_Model& dag_tasks,
+                    const SP_Parameters& sp_parameters,
+                    const std::vector<double>& time_limits) {
+    DAG_Model dag_tasks_upd = dag_tasks;
+    // for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
+    //     if (time_limits[i] != -1) {
+    //         dag_tasks_upd.tasks[i].execution_time_dist =
+    //             GetUnitExecutionTimeDist(time_limits[i]);
+    //     }
+    // }
+    dag_tasks_upd.tasks =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, time_limits);
+    return ObtainSP_DAG(dag_tasks_upd, sp_parameters);
 }
 
 double ObtainSP_DAG_From_Dists(
@@ -128,7 +164,8 @@ double GetTaskPerfTerm(
     if (itr == timePerformancePairs_Sorted.begin()) {  // should never happen
         return timePerformancePairs_Sorted.begin()->performance;
     }
-    if (ext_time_single == itr->time_limit) return itr->performance;
+    if (ext_time_single == itr->time_limit)
+        return itr->performance;
     auto itr_prev = itr - 1;
     if (itr_prev->time_limit <= ext_time_single &&
         ext_time_single < itr->time_limit) {

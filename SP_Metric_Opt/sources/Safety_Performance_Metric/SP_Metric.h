@@ -54,8 +54,20 @@ double GetAvgTaskPerfTerm(std::string& ext_file_path,
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters);
 
+// Apply time limits to task execution_time_dist (unit distribution at time limit),
+// then compute SP. time_limit[i] == -1 means no limit for that task.
+double ObtainSP_TaskSet_And_TimeLimits(
+    const TaskSet& tasks, const SP_Parameters& sp_parameters,
+    const std::vector<double>& time_limits);
+
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters);
+
+// Apply time limits to task execution_time_dist (unit distribution at time limit),
+// then compute DAG-level SP. time_limit[i] == -1 means no limit for that task.
+double ObtainSP_DAG(const DAG_Model& dag_tasks,
+                    const SP_Parameters& sp_parameters,
+                    const std::vector<double>& time_limits);
 
 // assume the order of all the vectors are matched!!!
 double ObtainSP_DAG_From_Dists(

@@ -46,6 +46,30 @@ TEST_F(TaskSetForTest_2tasks, SP_Calculation) {
     EXPECT_NEAR(sp_norm, sp_actual, 1e-6);
 }
 
+TEST_F(TaskSetForTest_2tasks, ObtainSP_TaskSet_And_TimeLimits_NoLimits) {
+    GlobalVariables::Granularity = 10;
+    std::vector<double> time_limits = {-1, -1};
+    double sp_no_limits =
+        ObtainSP_TaskSet_And_TimeLimits(tasks, sp_parameters, time_limits);
+    double sp_ref = ObtainSP_TaskSet(tasks, sp_parameters);
+    EXPECT_NEAR(sp_ref, sp_no_limits, 1e-9);
+}
+
+TEST_F(TaskSetForTest_2tasks, ObtainSP_TaskSet_And_TimeLimits_WithLimit) {
+    GlobalVariables::Granularity = 10;
+    // Apply a time limit of 2 to task 0, which replaces its distribution
+    // with a unit distribution at value 2.
+    std::vector<double> time_limits = {2, -1};
+    double sp_limited =
+        ObtainSP_TaskSet_And_TimeLimits(tasks, sp_parameters, time_limits);
+
+    // Manually build the expected task set with the same replacement
+    TaskSet tasks_expected = tasks;
+    tasks_expected[0].execution_time_dist = GetUnitExecutionTimeDist(2);
+    double sp_expected = ObtainSP_TaskSet(tasks_expected, sp_parameters);
+    EXPECT_NEAR(sp_expected, sp_limited, 1e-9);
+}
+
 class TaskSetForTest_2tasks1chain : public ::testing::Test {
    public:
     void SetUp() override {
@@ -97,6 +121,27 @@ TEST_F(TaskSetForTest_2tasks1chain, SP_Calculation_dag) {
         interpolate_sp_for_test(log(1 + 0.5 - 0.003)) +
         interpolate_sp_for_test(-0.01 * exp(10 * abs(penalty)));
     EXPECT_NEAR(sp_expected_dag, sp_actual_dag, 1e-3);
+}
+
+TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_And_TimeLimits_NoLimits) {
+    std::vector<double> time_limits = {-1, -1};
+    double sp_no_limits =
+        ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
+    double sp_ref = ObtainSP_DAG(dag_tasks, sp_parameters);
+    EXPECT_NEAR(sp_ref, sp_no_limits, 1e-9);
+}
+
+TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_And_TimeLimits_WithLimit) {
+    // Apply a time limit of 2 to task 0, replacing its distribution with a
+    // unit distribution at value 2.
+    std::vector<double> time_limits = {2, -1};
+    double sp_limited =
+        ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
+
+    DAG_Model dag_expected = dag_tasks;
+    dag_expected.tasks[0].execution_time_dist = GetUnitExecutionTimeDist(2);
+    double sp_expected = ObtainSP_DAG(dag_expected, sp_parameters);
+    EXPECT_NEAR(sp_expected, sp_limited, 1e-9);
 }
 
 class TaskSetForTest_robotics_v1 : public ::testing::Test {
