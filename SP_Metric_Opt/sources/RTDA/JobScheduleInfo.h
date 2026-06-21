@@ -6,7 +6,8 @@
 namespace SP_OPT_PA {
 struct JobStartFinish {
     JobStartFinish() {}
-    JobStartFinish(int s, int f) : start(s), finish(f) {}
+    JobStartFinish(int s, int f) : start(s), finish(f), executionTime(0) {}
+    JobStartFinish(int s, int f, int e) : start(s), finish(f), executionTime(e) {}
 
     inline bool operator==(const JobStartFinish &other) const {
         return start == other.start && finish == other.finish;
@@ -17,14 +18,26 @@ struct JobStartFinish {
     // data members
     int start;
     int finish;
+    int executionTime = 0;
 };
 
 typedef std::unordered_map<JobCEC, JobStartFinish> Schedule;
 
 struct JobScheduleInfo {
-    JobScheduleInfo(JobCEC job) : job(job), accum_run_time(0) {}
+    JobScheduleInfo(JobCEC job) : job(job), accum_run_time(0), deadlineJob(0), executionTime(0) {}
+    JobScheduleInfo(JobCEC job, LLint deadlineJob, int executionTime)
+        : job(job), accum_run_time(0), deadlineJob(deadlineJob), executionTime(executionTime) {}
+    JobScheduleInfo(JobCEC job, LLint deadlineJob)
+        : job(job), accum_run_time(0), deadlineJob(deadlineJob), executionTime(0) {}
+
+    inline bool IfFinished() const {
+        return accum_run_time >= executionTime;
+    }
 
     inline bool IfFinished(const TaskSetInfoDerived &tasks_info) const {
+        if (executionTime > 0) {
+            return accum_run_time >= executionTime;
+        }
         return accum_run_time >= tasks_info.GetTask(job.taskId).getExecutionTime();
     }
 
@@ -46,6 +59,8 @@ struct JobScheduleInfo {
     int start_time_last;
     int accum_run_time;
     bool running = false;
+    LLint deadlineJob;
+    int executionTime = 0;
 };
 
 struct IndexInfoMultiHp {
