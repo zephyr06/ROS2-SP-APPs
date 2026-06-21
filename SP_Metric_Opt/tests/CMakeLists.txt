@@ -16,6 +16,9 @@ TARGET_LINK_LIBRARIES(AnalyzePriorityAssignmentIncrementalExample ${CONVENIENCE_
 ADD_EXECUTABLE(AnalyzeSP_Metric AnalyzeSP_Metric.cpp)
 TARGET_LINK_LIBRARIES(AnalyzeSP_Metric ${CONVENIENCE_LIB_NAME})
 
+ADD_EXECUTABLE(RunOrchestrator RunOrchestrator.cpp)
+TARGET_LINK_LIBRARIES(RunOrchestrator ${CONVENIENCE_LIB_NAME})
+
 # ADD_EXECUTABLE(AnalyzePriorityAssignmentIncremental AnalyzePriorityAssignmentIncremental.cpp)
 # TARGET_LINK_LIBRARIES(AnalyzePriorityAssignmentIncremental ${CONVENIENCE_LIB_NAME})
 

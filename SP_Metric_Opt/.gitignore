@@ -23,6 +23,8 @@ TaskData/*.json
 temp_experiment_configs/
 temp/
 Gen_Taskset/simulation_tasksets/
+tests/comparison_runs/*
+tests/test_output*
 
 # Binary / Output / Log formats
 *.log
