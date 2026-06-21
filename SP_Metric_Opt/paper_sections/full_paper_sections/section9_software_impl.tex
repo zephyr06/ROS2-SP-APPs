@@ -24,7 +24,7 @@
     where $\textbf{E}_{t_0+t}$ denotes the environment vector at time $t_0+t$.
 
     Under the assumption that the environment changes smoothly, there always exist a time window of length $T^W$ such that $\Theta^W \approx 0$ if only $T^W$ is small enough.
-    In this case, given a task $\tau_i$, its execution time distribution during the time window $[t_0 + T^W/2, t_0 + T^W]$ can be predicted based on the measured execution time data during the time interval $t_0, t_0 + T^W/w$. 
+    In this case, given a task $\tau_i$, its execution time distribution during the time window $[t_0 + T^W/2, t_0 + T^W]$ can be predicted based on the measured execution time data during the time interval $[t_0, t_0 + T^W/w]$. 
     
     In our experiments, we assume that $\Theta^W \approx 0$ when the length of time window $T^W$ equals the task $\tau_i$'s release period $T_i$. Under this assumption, we can obtain multiple execution time measurements, and therefore establish a probability distribution.
 

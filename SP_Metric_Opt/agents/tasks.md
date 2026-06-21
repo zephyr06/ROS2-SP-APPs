@@ -6,9 +6,9 @@ High-level Task list:
     - [x] add python simulated environment that evaluates different schedulers' performance on the simulated dataset
     - [x] add pipeline script to generate python simulated task set from given configuration files end-to-end
 - add ablation study baseline (check simulation_exp branch):
-    * INCR_NO_TL
-    * INCR_WCET
-    * INCR_SATIC_ET
+    * [x] INCR_NO_TL
+    * [x] INCR_WCET
+- [x] add GP-based ET distribution prediction, if needed.
 - add end-to-end task set execution schedule code in c++. the code should read from each individual task set at different time stamps, then run different scheduler method, and monitor overall SP metric (check simulation_exp branch for basic ideas of related code)
 - add any missed baselines for simulation experiments such as CFS
 - add more types of reulst visualization figure plots(check simulation_exp branch):
