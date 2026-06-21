@@ -85,13 +85,18 @@ class RunQueue {
         if (itr ==
             schedule_
                 .end()) {  // record the start time only when first accessing it
-            JobStartFinish job_sf(time_now, -1);
+            JobStartFinish job_sf(time_now, -1, job_info.executionTime);
             schedule_[job_info.job] = job_sf;
+        }
+
+        int exec_time = job_info.executionTime;
+        if (exec_time <= 0) {
+            exec_time = tasks_info_.GetTask(job_info.job.taskId).getExecutionTime();
         }
 
         next_free_time_ =
             time_now +
-            tasks_info_.GetTask(job_info.job.taskId).getExecutionTime() -
+            exec_time -
             job_info.accum_run_time;
         return true;
     }
@@ -106,6 +111,7 @@ class RunQueue {
                 if (job_info.running) {
                     job_info.running = false;
                     schedule_[job_info.job].finish = time_now;
+                    schedule_[job_info.job].executionTime = job_info.executionTime;
                     processor_free_ = true;
                 }
                 job_queue_.erase(job_queue_.begin() + i);
