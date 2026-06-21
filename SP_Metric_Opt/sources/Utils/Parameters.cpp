@@ -18,4 +18,5 @@ int Layer_Node_During_Incremental_Optimization =
 double Dist_compress_threshold =
     loaded_doc["Dist_compress_threshold"].as<double>();
 bool disable_time_limit_opt = false;
+bool use_wcet_execution_time = false;
 }  // namespace GlobalVariables
