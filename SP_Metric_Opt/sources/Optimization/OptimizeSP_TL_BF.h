@@ -3,11 +3,10 @@
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 
 namespace SP_OPT_PA {
-// -1 time limit means no time limit
-SP_Parameters AddWeightsFromTimeLimits(
-    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
-    const std::vector<double> time_limit_for_task);
-
+/**
+ * Replace each task's execution_time_dist with a unit distribution at the given
+ * time limit.  time_limit[i] == -1 means the task is left unchanged.
+ */
 DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
                                         const std::vector<double>& time_limit);
 

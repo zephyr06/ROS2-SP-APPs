@@ -231,7 +231,7 @@ TEST_F(TaskSetForTest_robotics_v18, calcluate_perf_term) {
         TimePerfPair(3, 3), TimePerfPair(4, 4), TimePerfPair(5, 5)};
     EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, -1));
     EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, 0));
-    EXPECT_EQ(0.5, GetPerfTerm(timePerformancePairs, 0.5));
+    EXPECT_EQ(0, GetPerfTerm(timePerformancePairs, 0.5));  // floor to 0
     EXPECT_EQ(1, GetPerfTerm(timePerformancePairs, 1));
     EXPECT_EQ(5, GetPerfTerm(timePerformancePairs, 6));
 }
@@ -391,6 +391,150 @@ TEST_F(TaskSetForTest_robotics_v20, ObtainSPFromRTAFiles) {
                              tsp_ext_path, chain0_path, file_path_ref);
     EXPECT_EQ(2.0, sp_value_overall);
 }
+// --- Unit Tests for GetPerfCoefficient and SP with Performance Factors ---
+
+TEST(GetPerfCoefficient, EmptyPairs_ReturnsOne) {
+    std::vector<Value_Proba> dist_vec = {Value_Proba(5, 1.0)};
+    Task task(0, dist_vec, 10, 10, 0);
+    EXPECT_DOUBLE_EQ(1.0, task.GetPerfCoefficient());
+}
+
+TEST(GetPerfCoefficient, ExactMatch) {
+    // Distribution with average 5.0
+    std::vector<Value_Proba> dist_vec = {Value_Proba(5, 1.0)};
+    Task task(0, dist_vec, 10, 10, 0);
+    task.timePerformancePairs = {
+        TimePerfPair(3, 0.5), TimePerfPair(5, 0.8), TimePerfPair(7, 1.0)};
+    EXPECT_DOUBLE_EQ(0.8, task.GetPerfCoefficient());
+}
+
+TEST(GetPerfCoefficient, InBetween_FloorToLower) {
+    // Distribution with average 4.0 -> between 3(0.5) and 5(0.8)
+    // Floor behavior: return the closest lower entry (0.5)
+    std::vector<Value_Proba> dist_vec = {Value_Proba(4, 1.0)};
+    Task task(0, dist_vec, 10, 10, 0);
+    task.timePerformancePairs = {
+        TimePerfPair(3, 0.5), TimePerfPair(5, 0.8), TimePerfPair(7, 1.0)};
+    EXPECT_DOUBLE_EQ(0.5, task.GetPerfCoefficient());
+}
+
+TEST(GetPerfCoefficient, BelowSmallest_ReturnsZero) {
+    std::vector<Value_Proba> dist_vec = {Value_Proba(2, 1.0)};
+    Task task(0, dist_vec, 10, 10, 0);
+    task.timePerformancePairs = {
+        TimePerfPair(3, 0.5), TimePerfPair(5, 1.0)};
+    EXPECT_DOUBLE_EQ(0.0, task.GetPerfCoefficient());
+}
+
+TEST(GetPerfCoefficient, AboveLargest_ReturnsLast) {
+    std::vector<Value_Proba> dist_vec = {Value_Proba(10, 1.0)};
+    Task task(0, dist_vec, 10, 10, 0);
+    task.timePerformancePairs = {
+        TimePerfPair(3, 0.5), TimePerfPair(5, 1.0)};
+    EXPECT_DOUBLE_EQ(1.0, task.GetPerfCoefficient());
+}
+
+class TaskSetForTest_PerfFactor : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::vector<Value_Proba> dist_vec0 = {
+            Value_Proba(1, 0.5), Value_Proba(2, 0.3), Value_Proba(3, 0.2)};
+        std::vector<Value_Proba> dist_vec1 = {
+            Value_Proba(3, 0.5), Value_Proba(4, 0.3), Value_Proba(5, 0.2)};
+        tasks.push_back(Task(0, dist_vec0, 5, 5, 0));
+        tasks.push_back(Task(1, dist_vec1, 12, 12, 1));
+
+        // avg ET task0 = 1*0.5 + 2*0.3 + 3*0.2 = 1.7 -> floor to (1, 0.5)
+        // avg ET task1 = 3*0.5 + 4*0.3 + 5*0.2 = 3.7 -> floor to (3, 1.5)
+        tasks[0].timePerformancePairs = {
+            TimePerfPair(1, 0.5), TimePerfPair(2, 1.0), TimePerfPair(3, 1.2)};
+        tasks[1].timePerformancePairs = {
+            TimePerfPair(3, 1.5), TimePerfPair(4, 2.0), TimePerfPair(5, 2.5)};
+
+        sp_parameters = SP_Parameters(tasks);
+    }
+
+    TaskSet tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetForTest_PerfFactor, SP_Calculation_WithPerfCoefficients) {
+    // This test verifies that ObtainSP_TaskSet multiplies each task's weight
+    // by its performance coefficient derived from timePerformancePairs.
+    // Floor behavior: task0 coeff = 0.5, task1 coeff = 1.5.
+    GlobalVariables::Granularity = 10;
+
+    double sp_with_perf = ObtainSP_TaskSet(tasks, sp_parameters);
+
+    // Compute baseline manually by clearing perf pairs
+    TaskSet tasks_no_perf = tasks;
+    tasks_no_perf[0].timePerformancePairs.clear();
+    tasks_no_perf[1].timePerformancePairs.clear();
+    double sp_baseline = ObtainSP_TaskSet(tasks_no_perf, sp_parameters);
+
+    EXPECT_NE(sp_baseline, sp_with_perf)
+        << "Expected SP to differ when performance coefficients are applied;"
+        << " baseline=" << sp_baseline << " with_perf=" << sp_with_perf;
+
+    EXPECT_DOUBLE_EQ(0.5, tasks[0].GetPerfCoefficient());
+    EXPECT_DOUBLE_EQ(1.5, tasks[1].GetPerfCoefficient());
+}
+
+TEST_F(TaskSetForTest_PerfFactor, SP_Calculation_CorrectWeightedValue) {
+    // Verify the exact SP value equals the manually-weighted sum.
+    GlobalVariables::Granularity = 10;
+
+    double sp_actual = ObtainSP_TaskSet(tasks, sp_parameters);
+
+    std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
+    double sp_expected = 0.0;
+    for (size_t i = 0; i < tasks.size(); ++i) {
+        int task_id = tasks[i].id;
+        double ddl_miss = GetDDL_MissProbability(rtas[i], tasks[i].deadline);
+        double weight = sp_parameters.weights_node.at(task_id);
+        double perf_coeff = tasks[i].GetPerfCoefficient();
+        sp_expected += SP_Func(ddl_miss, sp_parameters.thresholds_node.at(task_id))
+                       * weight * perf_coeff;
+    }
+    EXPECT_NEAR(sp_expected, sp_actual, 1e-9);
+}
+
+// --- Dedicated Unit Tests for GetPerfTerm ---
+TEST(GetPerfTerm, EmptyPairs) {
+    std::vector<TimePerfPair> pairs;
+    EXPECT_DOUBLE_EQ(0.0, GetPerfTerm(pairs, 5.0));
+}
+
+TEST(GetPerfTerm, BelowSmallestTime) {
+    std::vector<TimePerfPair> pairs = {TimePerfPair(2.0, 0.4),
+                                       TimePerfPair(4.0, 0.8)};
+    EXPECT_DOUBLE_EQ(0.0, GetPerfTerm(pairs, 1.0));
+}
+
+TEST(GetPerfTerm, ExactMatches) {
+    std::vector<TimePerfPair> pairs = {
+        TimePerfPair(1.0, 0.2), TimePerfPair(2.0, 0.5), TimePerfPair(3.0, 0.9)};
+    EXPECT_DOUBLE_EQ(0.2, GetPerfTerm(pairs, 1.0));
+    EXPECT_DOUBLE_EQ(0.5, GetPerfTerm(pairs, 2.0));
+    EXPECT_DOUBLE_EQ(0.9, GetPerfTerm(pairs, 3.0));
+}
+
+TEST(GetPerfTerm, InBetween_FloorToLower) {
+    std::vector<TimePerfPair> pairs = {TimePerfPair(0.0, 0.0),
+                                       TimePerfPair(10.0, 1.0)};
+    EXPECT_DOUBLE_EQ(0.0, GetPerfTerm(pairs, 5.0));
+
+    std::vector<TimePerfPair> pairs2 = {TimePerfPair(2.0, 0.3),
+                                        TimePerfPair(4.0, 0.7)};
+    EXPECT_DOUBLE_EQ(0.3, GetPerfTerm(pairs2, 3.0));
+}
+
+TEST(GetPerfTerm, AboveLargestTime) {
+    std::vector<TimePerfPair> pairs = {TimePerfPair(1.0, 0.5),
+                                       TimePerfPair(3.0, 0.9)};
+    EXPECT_DOUBLE_EQ(0.9, GetPerfTerm(pairs, 4.0));
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

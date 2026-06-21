@@ -118,8 +118,6 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
 
 double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig(
     int K, const std::vector<double> &time_limits) {
-  SP_Parameters sp_para_cur =
-      AddWeightsFromTimeLimits(dag_tasks_, sp_parameters_, time_limits);
   DAG_Model dag_tasks_cur =
       UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
 
@@ -131,7 +129,7 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig(
     UpdateRecords(optimizer, time_limits);
     optimizer.UpdateDAG(dag_tasks_cur);
   } else {
-    OptimizePA_Incre optimizer(dag_tasks_cur, sp_para_cur);
+    OptimizePA_Incre optimizer(dag_tasks_cur, sp_parameters_);
     optimizer.OptimizeFromScratch(K);
     current_sp = optimizer.opt_sp_;
     timelimit2optimizer_[time_limits] = optimizer;

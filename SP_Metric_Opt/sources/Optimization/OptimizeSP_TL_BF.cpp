@@ -2,20 +2,6 @@
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 
 namespace SP_OPT_PA {
-// -1 time limit means no time limit
-SP_Parameters AddWeightsFromTimeLimits(
-    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
-    const std::vector<double> time_limit_for_task) {
-    SP_Parameters sp_parameters_upd = sp_parameters;
-    for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
-        if (time_limit_for_task[i] != -1) {
-            double update = GetPerfTerm(dag_tasks.tasks[i].timePerformancePairs,
-                                        time_limit_for_task[i]);
-            sp_parameters_upd.weights_node[i] *= update;
-        }
-    }
-    return sp_parameters_upd;
-}
 
 DAG_Model UpdateExtDistBasedOnTimeLimit(const DAG_Model& dag_tasks,
                                         const std::vector<double>& time_limit) {
@@ -50,12 +36,10 @@ std::vector<std::vector<double>> RecordTimeLimitOptions(
 void OptimizePA_with_TimeLimitsStatus::Optimize(
     uint trav_task_index, std::vector<double>& time_limit_for_task) {
     if (trav_task_index == time_limit_option_for_each_task.size()) {
-        SP_Parameters sp_para_cur = AddWeightsFromTimeLimits(
-            dag_tasks, sp_parameters, time_limit_for_task);
         DAG_Model dag_tasks_cur =
             UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limit_for_task);
         ResourceOptResult res_cur =
-            OptimizePA_BruteForce(dag_tasks_cur, sp_para_cur);
+            OptimizePA_BruteForce(dag_tasks_cur, sp_parameters);
         res_cur.SaveTimeLimits(dag_tasks.tasks, time_limit_for_task);
         if (res_cur.sp_opt > res_opt.sp_opt) {
             res_opt = res_cur;

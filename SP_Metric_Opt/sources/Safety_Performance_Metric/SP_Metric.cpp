@@ -17,7 +17,7 @@ double ObtainSP(const FiniteDist& dist, double deadline,
 // timePerformancePairs is required to be sorted by time
 double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
                    double time_limit) {
-    // Find the two time-performance pairs that surround the given time limit
+    // Find the first pair whose time limit is strictly greater than the query.
     auto it = std::upper_bound(timePerformancePairs.begin(),
                                timePerformancePairs.end(), time_limit,
                                [](double time, const TimePerfPair& pair) {
@@ -28,14 +28,12 @@ double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
         // The given time limit is smaller than the smallest time in the pairs
         return 0.0;
     } else if (it == timePerformancePairs.end()) {
-        // The given time limit is larger than the largest time in the pairs
+        // The given time limit is >= the largest time in the pairs
         return timePerformancePairs.back().performance;
     } else {
-        // The given time limit is between two time-performance pairs
-        auto prevPair = std::prev(it);
-        return interpolate(time_limit, prevPair->time_limit,
-                           prevPair->performance, it->time_limit,
-                           it->performance);
+        // Return the performance of the closest entry whose time limit is
+        // <= the query (floor behavior).
+        return std::prev(it)->performance;
     }
 }
 // double ObtainSP(const std::vector<FiniteDist>& dists,
@@ -55,17 +53,16 @@ double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters) {
     std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
-    // std::vector<double> deadlines = GetParameter<double>(tasks, "deadline");
-    // return ObtainSP(rtas, deadlines, sp_parameters.thresholds_node,
-    //                 sp_parameters.weights_node);
     double sp_overall = 0;
     for (int i = 0; i < tasks.size(); i++) {
         int task_id = tasks[i].id;
         double ddl_miss_chance =
             GetDDL_MissProbability(rtas[i], tasks[i].deadline);
+        double perf_coefficient = tasks[i].GetPerfCoefficient();
         sp_overall += SP_Func(ddl_miss_chance,
                               sp_parameters.thresholds_node.at(task_id)) *
-                      sp_parameters.weights_node.at(task_id);
+                      sp_parameters.weights_node.at(task_id) *
+                      perf_coefficient;
     }
     return sp_overall;
 }

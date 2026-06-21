@@ -237,20 +237,6 @@ TEST_F(TaskSetForTest_robotics_v18, RecordTimeLimitOptions) {
     EXPECT_EQ(-1, optimizer.time_limit_option_for_each_task[1][0]);
 }
 
-TEST_F(TaskSetForTest_robotics_v18, AddWeightsFromTimeLimits) {
-    vector<double> time_limit_option_for_each_task = {1000, -1, -1, -1};
-    SP_Parameters sp_parameters_cur = AddWeightsFromTimeLimits(
-        dag_tasks, sp_parameters, time_limit_option_for_each_task);
-    EXPECT_EQ(1, sp_parameters_cur.weights_node[0]);
-
-    time_limit_option_for_each_task = {400, -1, -1, -1};
-    sp_parameters_cur = AddWeightsFromTimeLimits(
-        dag_tasks, sp_parameters, time_limit_option_for_each_task);
-    EXPECT_EQ(0.5, sp_parameters_cur.weights_node[0]);
-    EXPECT_EQ(1, sp_parameters_cur.weights_node[1]);
-    EXPECT_EQ(1, sp_parameters_cur.weights_node[2]);
-    EXPECT_EQ(2, sp_parameters_cur.weights_node[3]);
-}
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
     ResourceOptResult res_opt =
         EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);

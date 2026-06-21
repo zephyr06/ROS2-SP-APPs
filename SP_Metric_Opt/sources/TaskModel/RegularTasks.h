@@ -28,6 +28,10 @@ std::vector<double> str_seq2vector(const std::string& strs);
 std::vector<TimePerfPair> AnalyzeTimePerfPair(const std::string& time_strs,
                                               const std::string& perf_strs);
 
+// Forward declaration; full declaration is in SP_Metric.h
+double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
+                   double time_limit);
+
 class Task {
    public:
     // Task() {}
@@ -73,6 +77,17 @@ class Task {
     }
 
     inline GaussianDist getExecGaussian() const { return exec_time_gauss; }
+
+    // Extract performance coefficient by matching the task's average execution
+    // time to its timePerformancePairs. Returns 1.0 if no pairs exist.
+    double GetPerfCoefficient() const {
+        if (timePerformancePairs.empty()) {
+            return 1.0;
+        }
+        double avg_et = execution_time_dist.GetAvgValue();
+        return GetPerfTerm(timePerformancePairs, avg_et);
+    }
+
     // Member list
     int id;
     FiniteDist execution_time_dist;
