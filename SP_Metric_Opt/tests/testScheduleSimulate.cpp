@@ -1,5 +1,6 @@
 // #include <gtest/gtest.h>
 
+#include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/RTDA/ImplicitCommunication/ScheduleSimulation.h"
 #include "sources/RTDA/ImplicitCommunication/SimulationOrchestrator.h"
 #include "sources/Safety_Performance_Metric/ParametersSP.h"
@@ -7,412 +8,823 @@
 #include "sources/TaskModel/RegularTasks.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/readwrite.h"
-#include "gmock/gmock.h"  // Brings in gMock.
-using ::testing::AtLeast; // #1
+using ::testing::AtLeast;  // #1
 using ::testing::Return;
 using namespace std;
 using namespace SP_OPT_PA;
 using namespace GlobalVariables;
 
 class TaskSetForTest_scheduling_v1 : public ::testing::Test {
-public:
-  void SetUp() override {
-    std::string file_name = "test_robotics_v10";
-    std::string path =
-        GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
-    dag_tasks = ReadDAG_Tasks(path);
-    tasks = dag_tasks.tasks;
-    sp_parameters = SP_Parameters(tasks);
-    AssignTaskSetPriorityById(dag_tasks.tasks);
-    tasks_info = TaskSetInfoDerived(dag_tasks.tasks);
+   public:
+    void SetUp() override {
+        std::string file_name = "test_robotics_v10";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path);
+        tasks = dag_tasks.tasks;
+        sp_parameters = SP_Parameters(tasks);
+        AssignTaskSetPriorityById(dag_tasks.tasks);
+        tasks_info = TaskSetInfoDerived(dag_tasks.tasks);
 
-    dag_tasks.tasks[0].setExecutionTime(1);
-    dag_tasks.tasks[1].setExecutionTime(2);
-    dag_tasks.tasks[2].setExecutionTime(3);
-  }
+        dag_tasks.tasks[0].setExecutionTime(1);
+        dag_tasks.tasks[1].setExecutionTime(2);
+        dag_tasks.tasks[2].setExecutionTime(3);
+    }
 
-  // data members
-  TaskSet tasks;
-  DAG_Model dag_tasks;
-  TaskSetInfoDerived tasks_info;
-  SP_Parameters sp_parameters;
+    // data members
+    TaskSet tasks;
+    DAG_Model dag_tasks;
+    TaskSetInfoDerived tasks_info;
+    SP_Parameters sp_parameters;
 };
 TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule) {
-  Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
-  EXPECT_EQ(4, schedule.size());
-  EXPECT_EQ(0, schedule[JobCEC(0, 0)].start);
-  EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
-  EXPECT_EQ(3, schedule[JobCEC(2, 0)].start);
-  EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
-  EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
+    Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
+    EXPECT_EQ(4, schedule.size());
+    EXPECT_EQ(0, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(3, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v2) {
-  dag_tasks.tasks[0].priority = 3;
-  dag_tasks.tasks[1].priority = 2;
-  dag_tasks.tasks[2].priority = 1;
-  Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
-  EXPECT_EQ(4, schedule.size());
-  EXPECT_EQ(5, schedule[JobCEC(0, 0)].start);
-  EXPECT_EQ(3, schedule[JobCEC(1, 0)].start);
-  EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
-  EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
-  EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
+    dag_tasks.tasks[0].priority = 3;
+    dag_tasks.tasks[1].priority = 2;
+    dag_tasks.tasks[2].priority = 1;
+    Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
+    EXPECT_EQ(4, schedule.size());
+    EXPECT_EQ(5, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(3, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_schedule_v3) {
-  dag_tasks.tasks[0].processorId = 1;
-  Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
-  EXPECT_EQ(4, schedule.size());
-  EXPECT_EQ(0, schedule[JobCEC(0, 0)].start);
-  EXPECT_EQ(0, schedule[JobCEC(1, 0)].start);
-  EXPECT_EQ(2, schedule[JobCEC(2, 0)].start);
-  EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
-  EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
+    dag_tasks.tasks[0].processorId = 1;
+    Schedule schedule = SimulateFixedPrioritySched(dag_tasks, tasks_info);
+    EXPECT_EQ(4, schedule.size());
+    EXPECT_EQ(0, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(0, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(2, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_cfs_schedule) {
-  Schedule schedule = SimulateCFSSched(dag_tasks, tasks_info);
-  EXPECT_EQ(4, schedule.size());
-  EXPECT_EQ(2, schedule[JobCEC(0, 0)].start);
-  EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
-  EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
-  EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    Schedule schedule = SimulateCFSSched(dag_tasks, tasks_info);
+    EXPECT_EQ(4, schedule.size());
+    EXPECT_EQ(2, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
 
-  EXPECT_EQ(3, schedule[JobCEC(0, 0)].finish);
-  EXPECT_EQ(5, schedule[JobCEC(1, 0)].finish);
-  EXPECT_EQ(6, schedule[JobCEC(2, 0)].finish);
-  EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
+    EXPECT_EQ(3, schedule[JobCEC(0, 0)].finish);
+    EXPECT_EQ(5, schedule[JobCEC(1, 0)].finish);
+    EXPECT_EQ(6, schedule[JobCEC(2, 0)].finish);
+    EXPECT_EQ(11, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_cfs_et_larger_than_period) {
-  dag_tasks.tasks[0].setExecutionTime(12);
-  dag_tasks.tasks[1].setExecutionTime(2);
-  dag_tasks.tasks[2].setExecutionTime(3);
+    dag_tasks.tasks[0].setExecutionTime(12);
+    dag_tasks.tasks[1].setExecutionTime(2);
+    dag_tasks.tasks[2].setExecutionTime(3);
 
-  TaskSetInfoDerived new_tasks_info(dag_tasks.tasks);
+    TaskSetInfoDerived new_tasks_info(dag_tasks.tasks);
 
-  Schedule schedule = SimulateCFSSched(dag_tasks, new_tasks_info);
+    Schedule schedule = SimulateCFSSched(dag_tasks, new_tasks_info);
 
-  EXPECT_EQ(2, schedule[JobCEC(0, 0)].start);
-  EXPECT_EQ(17, schedule[JobCEC(0, 0)].finish);
+    EXPECT_EQ(2, schedule[JobCEC(0, 0)].start);
+    EXPECT_EQ(17, schedule[JobCEC(0, 0)].finish);
 
-  EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
-  EXPECT_EQ(5, schedule[JobCEC(1, 0)].finish);
+    EXPECT_EQ(1, schedule[JobCEC(1, 0)].start);
+    EXPECT_EQ(5, schedule[JobCEC(1, 0)].finish);
 
-  EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
-  EXPECT_EQ(7, schedule[JobCEC(2, 0)].finish);
+    EXPECT_EQ(0, schedule[JobCEC(2, 0)].start);
+    EXPECT_EQ(7, schedule[JobCEC(2, 0)].finish);
 
-  EXPECT_EQ(17, schedule[JobCEC(0, 1)].start);
-  EXPECT_EQ(-1, schedule[JobCEC(0, 1)].finish);
+    EXPECT_EQ(17, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(-1, schedule[JobCEC(0, 1)].finish);
 }
 TEST_F(TaskSetForTest_scheduling_v1, simulate_cfs_deadline_miss) {
-  dag_tasks.tasks[0].setExecutionTime(4);
-  dag_tasks.tasks[0].deadline = 3.0;
-  dag_tasks.tasks[1].setExecutionTime(2);
-  dag_tasks.tasks[2].setExecutionTime(3);
+    dag_tasks.tasks[0].setExecutionTime(4);
+    dag_tasks.tasks[0].deadline = 3.0;
+    dag_tasks.tasks[1].setExecutionTime(2);
+    dag_tasks.tasks[2].setExecutionTime(3);
 
-  TaskSetInfoDerived new_tasks_info(dag_tasks.tasks);
+    TaskSetInfoDerived new_tasks_info(dag_tasks.tasks);
 
-  Schedule schedule = SimulateCFSSched(dag_tasks, new_tasks_info);
+    Schedule schedule = SimulateCFSSched(dag_tasks, new_tasks_info);
 
-  EXPECT_EQ(9, schedule[JobCEC(0, 0)].finish);
-  double ddl = GetDeadline(JobCEC(0, 0), new_tasks_info);
-  EXPECT_EQ(3, ddl);
-  EXPECT_TRUE(schedule[JobCEC(0, 0)].finish > ddl);
+    EXPECT_EQ(9, schedule[JobCEC(0, 0)].finish);
+    double ddl = GetDeadline(JobCEC(0, 0), new_tasks_info);
+    EXPECT_EQ(3, ddl);
+    EXPECT_TRUE(schedule[JobCEC(0, 0)].finish > ddl);
 
-  EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
-  EXPECT_EQ(14, schedule[JobCEC(0, 1)].finish);
+    EXPECT_EQ(10, schedule[JobCEC(0, 1)].start);
+    EXPECT_EQ(14, schedule[JobCEC(0, 1)].finish);
 }
 class TestOrchestrator : public FixedTaskPrioritySchedulingOrchestrator {
-public:
-  TestOrchestrator(const std::string &input_folder,
-                   const std::string &output_folder, const std::string &mode,
-                   LLint duration)
-      : FixedTaskPrioritySchedulingOrchestrator(input_folder, output_folder,
-                                                mode, duration) {}
+   public:
+    TestOrchestrator(const std::string& input_folder,
+                     const std::string& output_folder, const std::string& mode,
+                     LLint duration)
+        : FixedTaskPrioritySchedulingOrchestrator(input_folder, output_folder,
+                                                  mode, duration) {}
 
-  void TestLoadConfigs() { LoadIntervalConfigs(); }
+    void TestLoadConfigs() { LoadIntervalConfigs(); }
 
-  const std::vector<DAG_Model> &GetDagTasks() const { return dag_tasks_vecs_; }
-  const std::vector<TaskSetInfoDerived> &GetTasksInfo() const {
-    return tasks_info_vecs_;
-  }
-  const std::vector<SP_Parameters> &GetSpParameters() const {
-    return sp_parameters_vecs_;
-  }
+    const std::vector<DAG_Model>& GetDagTasks() const {
+        return dag_tasks_vecs_;
+    }
+    const std::vector<TaskSetInfoDerived>& GetTasksInfo() const {
+        return tasks_info_vecs_;
+    }
+    const std::vector<SP_Parameters>& GetSpParameters() const {
+        return sp_parameters_vecs_;
+    }
 
-  std::vector<float> TestLoadTraces(int task_id, int path_idx, int inst_idx) {
-    return LoadJobExecutionTraces(task_id, path_idx, inst_idx);
-  }
+    std::vector<float> TestLoadTraces(int task_id, int path_idx, int inst_idx) {
+        return LoadJobExecutionTraces(task_id, path_idx, inst_idx);
+    }
 };
 
 class TestCFSOrchestrator : public CFSSimulationOrchestrator {
-public:
-  TestCFSOrchestrator(const std::string &input_folder,
-                      const std::string &output_folder, LLint duration)
-      : CFSSimulationOrchestrator(input_folder, output_folder, duration) {}
+   public:
+    TestCFSOrchestrator(const std::string& input_folder,
+                        const std::string& output_folder, LLint duration)
+        : CFSSimulationOrchestrator(input_folder, output_folder, duration) {}
 
-  void TestLoadConfigs() { LoadIntervalConfigs(); }
-  const std::vector<DAG_Model> &GetDagTasks() const { return dag_tasks_vecs_; }
-  const std::vector<SP_Parameters> &GetSpParameters() const {
-    return sp_parameters_vecs_;
-  }
+    void TestLoadConfigs() { LoadIntervalConfigs(); }
+    const std::vector<DAG_Model>& GetDagTasks() const {
+        return dag_tasks_vecs_;
+    }
+    const std::vector<SP_Parameters>& GetSpParameters() const {
+        return sp_parameters_vecs_;
+    }
 };
 
 TEST(OrchestratorTest, LoadIntervalConfigs) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  TestOrchestrator orchestrator(input_dir, "", "RM", 100);
-  orchestrator.TestLoadConfigs();
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    orchestrator.TestLoadConfigs();
 
-  const auto &dags = orchestrator.GetDagTasks();
-  ASSERT_EQ(2, dags.size()); // i0 and i1
-  EXPECT_EQ(4, dags[0].tasks.size());
-  EXPECT_EQ("Task0", dags[0].tasks[0].name);
-  EXPECT_EQ(10, dags[0].tasks[0].period);
+    const auto& dags = orchestrator.GetDagTasks();
+    ASSERT_EQ(2, dags.size());  // i0 and i1
+    EXPECT_EQ(4, dags[0].tasks.size());
+    EXPECT_EQ("Task0", dags[0].tasks[0].name);
+    EXPECT_EQ(10, dags[0].tasks[0].period);
 }
 
 TEST(OrchestratorTest, LoadJobExecutionTraces) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
 
-  std::vector<float> traces = orchestrator.TestLoadTraces(0, 0, 0);
-  ASSERT_EQ(3, traces.size());
-  EXPECT_FLOAT_EQ(1.5f, traces[0]);
-  EXPECT_FLOAT_EQ(2.5f, traces[1]);
-  EXPECT_FLOAT_EQ(3.5f, traces[2]);
+    std::vector<float> traces = orchestrator.TestLoadTraces(0, 0, 0);
+    ASSERT_EQ(3, traces.size());
+    EXPECT_FLOAT_EQ(1.5f, traces[0]);
+    EXPECT_FLOAT_EQ(2.5f, traces[1]);
+    EXPECT_FLOAT_EQ(3.5f, traces[2]);
 }
 
 TEST(OrchestratorTest, RateMonotonicPriorityAssignment) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  std::string output_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_output_rm";
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_rm";
 
-  FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                       "RM", 100);
-  orchestrator.RunSimulation();
+    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
+                                                         "RM", 100);
+    orchestrator.RunSimulation();
 
-  // Verify task priorities: RM assigns highest priority (smallest value) to
-  // task with shortest period (Task0: 10) and lowest priority to task with
-  // longest period (Task3: 40)
-  const auto &history = orchestrator.GetJobHistory();
-  ASSERT_FALSE(history.empty());
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_FALSE(history.empty());
+
+    // RM does not enforce time limits → never overruns.
+    for (const auto& r : history) {
+        EXPECT_FALSE(r.isOverrun);
+    }
+
+    // Deterministic interval SP metrics (probabilistic RTA on the fixed dists).
+    // i0: Task0 avg ET=2 → perf=0.6; others perf=1.0. Task3 schedulable.
+    //     SP = 0.6 + 1.0 + 1.0 + 1.0 = 3.6
+    // i1: Task0 avg ET=3 → perf=1.0; others perf=1.0. Task3 has slight ddl-miss
+    //     probability → SP ≈ 3.89222.
+    const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
+    ASSERT_EQ(2, sp_metrics.size());
+    EXPECT_NEAR(3.6, sp_metrics[0], 1e-4);
+    EXPECT_NEAR(3.89222, sp_metrics[1], 1e-4);
 }
 
 TEST(OrchestratorTest, ExportResults) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  std::string output_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_output_export";
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export";
 
-  // Clean directory first if exists
-  std::filesystem::remove_all(output_dir);
+    // Clean directory first if exists
+    std::filesystem::remove_all(output_dir);
 
-  FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                       "RM", 100);
-  orchestrator.RunSimulation();
+    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
+                                                         "RM", 100);
+    orchestrator.RunSimulation();
 
-  // Check if the output files exist and are populated
-  std::string response_file = output_dir + "/RM/response_times_task_0.txt";
-  std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
+    // Check if the output files exist and are populated
+    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
+    std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
 
-  EXPECT_TRUE(std::filesystem::exists(response_file));
-  EXPECT_TRUE(std::filesystem::exists(metrics_file));
+    EXPECT_TRUE(std::filesystem::exists(response_file));
+    EXPECT_TRUE(std::filesystem::exists(metrics_file));
 
-  // Verify the response time file starts with correct header
-  std::ifstream file(response_file);
-  std::string line;
-  std::getline(file, line);
-  EXPECT_EQ("jobId,release_time,start_time,finish_time,response_time,execution_"
-            "time,is_overrun",
-            line);
+    // Verify the response time file starts with correct header
+    std::ifstream file(response_file);
+    std::string line;
+    std::getline(file, line);
+    EXPECT_EQ(
+        "jobId,release_time,start_time,finish_time,response_time,execution_"
+        "time,is_overrun",
+        line);
 }
 
 TEST(OrchestratorTest, CFSOrchestration) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  std::string output_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_output_cfs";
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_cfs";
 
-  CFSSimulationOrchestrator orchestrator(input_dir, output_dir, 100);
-  orchestrator.RunSimulation();
+    CFSSimulationOrchestrator orchestrator(input_dir, output_dir, 100);
+    orchestrator.RunSimulation();
 
-  const auto &history = orchestrator.GetJobHistory();
-  EXPECT_FALSE(history.empty());
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_FALSE(history.empty());
+
+    // CFS does not enforce time limits → never overruns.
+    for (const auto& r : history) {
+        EXPECT_FALSE(r.isOverrun);
+    }
+
+    // Interval SP metrics come from probabilistic RTA using the unchanged dists
+    // (same as RM because both evaluate the same raw distributions without TLs).
+    const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
+    ASSERT_EQ(2, sp_metrics.size());
+    EXPECT_NEAR(3.6, sp_metrics[0], 1e-4);
+    EXPECT_NEAR(3.89222, sp_metrics[1], 1e-4);
 }
 
 // Unit Tests for helper functions
 TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  TestOrchestrator orchestrator(input_dir, "", "RM", 100);
-  orchestrator.TestLoadConfigs();
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    orchestrator.TestLoadConfigs();
 
-  auto dags = orchestrator.GetDagTasks();
-  auto sp = orchestrator.GetSpParameters();
-  ASSERT_FALSE(dags.empty());
+    auto dags = orchestrator.GetDagTasks();
+    auto sp = orchestrator.GetSpParameters();
+    ASSERT_FALSE(dags.empty());
 
-  ResourceOptResult res =
-      orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
-  // RM sorts by period: Task0 (10), Task1 (20), Task2 (20), Task3 (40)
-  // priority_vec stores sorted indices
-  ASSERT_EQ(4, res.priority_vec.size());
-  EXPECT_EQ(0, res.priority_vec[0]); // Task0
-  EXPECT_EQ(3, res.priority_vec[3]); // Task3
-  EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[0]);
+    ResourceOptResult res =
+        orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
+    // RM sorts by period: Task0 (10), Task1 (20), Task2 (20), Task3 (40)
+    // priority_vec stores sorted indices
+    ASSERT_EQ(4, res.priority_vec.size());
+    EXPECT_EQ(0, res.priority_vec[0]);  // Task0
+    EXPECT_EQ(3, res.priority_vec[3]);  // Task3
+    EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[0]);
+}
+
+TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_FAST) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM_FAST", 100);
+    orchestrator.TestLoadConfigs();
+
+    auto dags = orchestrator.GetDagTasks();
+    auto sp = orchestrator.GetSpParameters();
+    ASSERT_FALSE(dags.empty());
+
+    ResourceOptResult res =
+        orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
+    ASSERT_EQ(4, res.priority_vec.size());
+    EXPECT_EQ(0, res.priority_vec[0]);  // Task0 shortest period
+    EXPECT_EQ(3, res.priority_vec[3]);  // Task3 longest period
+    // Task0 has perf records, shortest (first) time limit = 1
+    EXPECT_DOUBLE_EQ(1.0, res.id2time_limit[0]);
+    // Task1 has no perf records
+    EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[1]);
+}
+
+TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_SLOW) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM_SLOW", 100);
+    orchestrator.TestLoadConfigs();
+
+    auto dags = orchestrator.GetDagTasks();
+    auto sp = orchestrator.GetSpParameters();
+    ASSERT_FALSE(dags.empty());
+
+    ResourceOptResult res =
+        orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
+    ASSERT_EQ(4, res.priority_vec.size());
+    EXPECT_EQ(0, res.priority_vec[0]);  // Task0 shortest period
+    EXPECT_EQ(3, res.priority_vec[3]);  // Task3 longest period
+    // Task0 has perf records, longest (last) time limit = 3
+    EXPECT_DOUBLE_EQ(3.0, res.id2time_limit[0]);
+    // Task1 has no perf records
+    EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[1]);
 }
 
 TEST(OrchestratorTest, UnitApplyTaskConfigurations) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  TestOrchestrator orchestrator(input_dir, "", "RM", 100);
-  orchestrator.TestLoadConfigs();
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    orchestrator.TestLoadConfigs();
 
-  auto dags = orchestrator.GetDagTasks();
-  ASSERT_FALSE(dags.empty());
+    auto dags = orchestrator.GetDagTasks();
+    ASSERT_FALSE(dags.empty());
 
-  ResourceOptResult res;
-  res.priority_vec = {0, 1, 2, 3}; // Highest to lowest priority indices
-  orchestrator.ApplyTaskConfigurations(dags[0], res);
+    ResourceOptResult res;
+    res.priority_vec = {0, 1, 2, 3};  // Highest to lowest priority indices
+    orchestrator.ApplyTaskConfigurations(dags[0], res);
 
-  // Index 0 (Task0) priority should be 0
-  EXPECT_EQ(0, dags[0].tasks[0].priority);
-  // Index 3 (Task3) priority should be 3
-  EXPECT_EQ(3, dags[0].tasks[3].priority);
+    // Index 0 (Task0) priority should be 0
+    EXPECT_EQ(0, dags[0].tasks[0].priority);
+    // Index 3 (Task3) priority should be 3
+    EXPECT_EQ(3, dags[0].tasks[3].priority);
 }
 
 TEST(OrchestratorTest, UnitRecordFinishedJobs) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  TestOrchestrator orchestrator(input_dir, "", "RM", 100);
-  orchestrator.TestLoadConfigs();
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    orchestrator.TestLoadConfigs();
 
-  auto dags = orchestrator.GetDagTasks();
-  ASSERT_FALSE(dags.empty());
+    auto dags = orchestrator.GetDagTasks();
+    ASSERT_FALSE(dags.empty());
 
-  RunQueue rq(dags[0].tasks);
-  JobCEC job(0, 0);
-  JobStartFinish jsf(0, 2, 2);
-  rq.schedule_[job] = jsf;
+    RunQueue rq(dags[0].tasks);
+    JobCEC job(0, 0);
+    JobStartFinish jsf(0, 2, 2);
+    rq.schedule_[job] = jsf;
 
-  ResourceOptResult res;
-  res.id2time_limit[0] = 1.0; // Overrun threshold 1.0 < execution time 2
+    ResourceOptResult res;
+    res.id2time_limit[0] = 1.0;  // Overrun threshold 1.0 < execution time 2
 
-  orchestrator.RecordFinishedJobs(2, rq, res, dags[0]);
-  const auto &history = orchestrator.GetJobHistory();
-  ASSERT_EQ(1, history.size());
-  EXPECT_EQ(0, history[0].taskId);
-  EXPECT_EQ(0, history[0].jobId);
-  EXPECT_EQ(2, history[0].finishTime);
-  EXPECT_TRUE(history[0].isOverrun);
+    orchestrator.RecordFinishedJobs(2, rq, res, dags[0]);
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_EQ(1, history.size());
+    EXPECT_EQ(0, history[0].taskId);
+    EXPECT_EQ(0, history[0].jobId);
+    EXPECT_EQ(2, history[0].finishTime);
+    EXPECT_TRUE(history[0].isOverrun);
 }
 
 TEST(OrchestratorTest, UnitReleaseJobs) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  TestOrchestrator orchestrator(input_dir, "", "RM", 100);
-  orchestrator.TestLoadConfigs();
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    orchestrator.TestLoadConfigs();
 
-  auto dags = orchestrator.GetDagTasks();
-  ASSERT_FALSE(dags.empty());
+    auto dags = orchestrator.GetDagTasks();
+    ASSERT_FALSE(dags.empty());
 
-  RunQueue rq(dags[0].tasks);
-  ResourceOptResult res;
-  res.id2time_limit[0] = -1.0;
+    RunQueue rq(dags[0].tasks);
+    ResourceOptResult res;
+    res.id2time_limit[0] = -1.0;
 
-  std::unordered_map<int, std::vector<float>> traces;
-  std::unordered_map<int, size_t> trace_indices;
-  traces[0] = {1.5f};
-  trace_indices[0] = 0;
+    std::unordered_map<int, std::vector<float>> traces;
+    std::unordered_map<int, size_t> trace_indices;
+    traces[0] = {1.5f};
+    trace_indices[0] = 0;
 
-  // Release jobs at time 0
-  orchestrator.ReleaseJobs(0, 100, dags[0], res, rq, traces, trace_indices);
-  // Period of Task0 is 10, Task1 is 20, Task2 is 20, Task3 is 40. At time 0,
-  // all should release.
-  EXPECT_EQ(4, rq.job_queue_.size());
-  // Job 0 for Task0 should have execution time rounded to 2 (1.5 + 0.5 = 2.0)
-  EXPECT_EQ(2, rq.job_queue_[0].executionTime);
+    // Release jobs at time 0
+    orchestrator.ReleaseJobs(0, 100, dags[0], res, rq, traces, trace_indices);
+    // Period of Task0 is 10, Task1 is 20, Task2 is 20, Task3 is 40. At time 0,
+    // all should release.
+    EXPECT_EQ(4, rq.job_queue_.size());
+    // Job 0 for Task0 should have execution time rounded to 2 (1.5 + 0.5 = 2.0)
+    EXPECT_EQ(2, rq.job_queue_[0].executionTime);
 }
 
 // Integration Test checking exact values of response time, start, finish times
 TEST(OrchestratorTest, ExactResponseTimeValidation) {
-  std::string input_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-  std::string output_dir =
-      GlobalVariables::PROJECT_PATH + "tests/test_output_exact_val";
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_exact_val";
 
-  FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                       "RM", 100);
-  orchestrator.RunSimulation();
+    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
+                                                         "RM", 100);
+    orchestrator.RunSimulation();
 
-  // Print hyperperiod schedule to stdout for manual verification
-  orchestrator.PrintHyperperiodSchedule(0, 40);
+    // Print hyperperiod schedule to stdout for manual verification
+    orchestrator.PrintHyperperiodSchedule(0, 40);
 
-  // Verify response times of Task0
-  std::string response_file_0 = output_dir + "/RM/response_times_task_0.txt";
-  std::ifstream infile(response_file_0);
-  std::string line;
-  std::getline(infile, line); // Header
+    // Verify response times of Task0
+    std::string response_file_0 = output_dir + "/RM/response_times_task_0.txt";
+    std::ifstream infile(response_file_0);
+    std::string line;
+    std::getline(infile, line);  // Header
 
-  // Job 0
-  std::getline(infile, line);
-  std::stringstream ss0(line);
-  int jobId, release, start, finish, response, execution, overrun;
-  char comma;
-  ASSERT_TRUE(ss0 >> jobId >> comma >> release >> comma >> start >> comma >>
-              finish >> comma >> response >> comma >> execution >> comma >>
-              overrun);
-  EXPECT_EQ(0, jobId);
-  EXPECT_EQ(0, release);
-  EXPECT_EQ(0, start);
-  EXPECT_EQ(2, finish);
-  EXPECT_EQ(2, response);
-  EXPECT_EQ(2, execution);
+    // Job 0
+    std::getline(infile, line);
+    std::stringstream ss0(line);
+    int jobId, release, start, finish, response, execution, overrun;
+    char comma;
+    ASSERT_TRUE(ss0 >> jobId >> comma >> release >> comma >> start >> comma >>
+                finish >> comma >> response >> comma >> execution >> comma >>
+                overrun);
+    EXPECT_EQ(0, jobId);
+    EXPECT_EQ(0, release);
+    EXPECT_EQ(0, start);
+    EXPECT_EQ(2, finish);
+    EXPECT_EQ(2, response);
+    EXPECT_EQ(2, execution);
 
-  // Job 1
-  std::getline(infile, line);
-  std::stringstream ss1(line);
-  ASSERT_TRUE(ss1 >> jobId >> comma >> release >> comma >> start >> comma >>
-              finish >> comma >> response >> comma >> execution >> comma >>
-              overrun);
-  EXPECT_EQ(1, jobId);
-  EXPECT_EQ(10, release);
-  EXPECT_EQ(10, start);
-  EXPECT_EQ(13, finish);
-  EXPECT_EQ(3, response);
-  EXPECT_EQ(3, execution);
+    // Job 1
+    std::getline(infile, line);
+    std::stringstream ss1(line);
+    ASSERT_TRUE(ss1 >> jobId >> comma >> release >> comma >> start >> comma >>
+                finish >> comma >> response >> comma >> execution >> comma >>
+                overrun);
+    EXPECT_EQ(1, jobId);
+    EXPECT_EQ(10, release);
+    EXPECT_EQ(10, start);
+    EXPECT_EQ(13, finish);
+    EXPECT_EQ(3, response);
+    EXPECT_EQ(3, execution);
 
-  // Job 2
-  std::getline(infile, line);
-  std::stringstream ss2(line);
-  ASSERT_TRUE(ss2 >> jobId >> comma >> release >> comma >> start >> comma >>
-              finish >> comma >> response >> comma >> execution >> comma >>
-              overrun);
-  EXPECT_EQ(2, jobId);
-  EXPECT_EQ(20, release);
-  EXPECT_EQ(20, start);
-  EXPECT_EQ(24, finish);
-  EXPECT_EQ(4, response);
-  EXPECT_EQ(4, execution);
+    // Job 2
+    std::getline(infile, line);
+    std::stringstream ss2(line);
+    ASSERT_TRUE(ss2 >> jobId >> comma >> release >> comma >> start >> comma >>
+                finish >> comma >> response >> comma >> execution >> comma >>
+                overrun);
+    EXPECT_EQ(2, jobId);
+    EXPECT_EQ(20, release);
+    EXPECT_EQ(20, start);
+    EXPECT_EQ(24, finish);
+    EXPECT_EQ(4, response);
+    EXPECT_EQ(4, execution);
 
-  // Verify response times of Task1
-  std::string response_file_1 = output_dir + "/RM/response_times_task_1.txt";
-  std::ifstream infile_1(response_file_1);
-  std::getline(infile_1, line); // Header
-  std::getline(infile_1, line); // Job 0
-  std::stringstream ss_t1_j0(line);
-  ASSERT_TRUE(ss_t1_j0 >> jobId >> comma >> release >> comma >> start >>
-              comma >> finish >> comma >> response >> comma >> execution >>
-              comma >> overrun);
-  EXPECT_EQ(0, jobId);
-  EXPECT_EQ(0, release);
-  EXPECT_EQ(2, start);
-  EXPECT_EQ(5, finish);
-  EXPECT_EQ(5, response);
-  EXPECT_EQ(3, execution);
+    // Verify response times of Task1
+    std::string response_file_1 = output_dir + "/RM/response_times_task_1.txt";
+    std::ifstream infile_1(response_file_1);
+    std::getline(infile_1, line);  // Header
+    std::getline(infile_1, line);  // Job 0
+    std::stringstream ss_t1_j0(line);
+    ASSERT_TRUE(ss_t1_j0 >> jobId >> comma >> release >> comma >> start >>
+                comma >> finish >> comma >> response >> comma >> execution >>
+                comma >> overrun);
+    EXPECT_EQ(0, jobId);
+    EXPECT_EQ(0, release);
+    EXPECT_EQ(2, start);
+    EXPECT_EQ(5, finish);
+    EXPECT_EQ(5, response);
+    EXPECT_EQ(3, execution);
 }
 
-int main(int argc, char **argv) {
-  // ::testing::InitGoogleTest(&argc, argv);
-  ::testing::InitGoogleMock(&argc, argv);
-  return RUN_ALL_TESTS();
+TEST(OrchestratorTest, CFS_RunOrchestrator_Binary) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_cfs_binary";
+    std::filesystem::remove_all(output_dir);
+
+    std::string binary_path =
+        GlobalVariables::PROJECT_PATH + "build/tests/RunOrchestrator";
+    std::string cmd =
+        binary_path + " " + input_dir + " " + output_dir + " CFS 100";
+    int ret = std::system(cmd.c_str());
+    EXPECT_EQ(0, ret);
+
+    std::string metrics_file = output_dir + "/CFS/interval_sp_metrics.txt";
+    EXPECT_TRUE(std::filesystem::exists(metrics_file));
+
+    // Verify the interval SP metrics written by the binary are deterministic.
+    std::ifstream infile(metrics_file);
+    std::string line;
+    ASSERT_TRUE(std::getline(infile, line));
+    std::stringstream ss0(line);
+    int interval_idx;
+    double sp_val;
+    char comma;
+    ASSERT_TRUE(ss0 >> interval_idx >> comma >> sp_val);
+    EXPECT_EQ(0, interval_idx);
+    EXPECT_NEAR(3.6, sp_val, 1e-4);
+
+    ASSERT_TRUE(std::getline(infile, line));
+    std::stringstream ss1(line);
+    ASSERT_TRUE(ss1 >> interval_idx >> comma >> sp_val);
+    EXPECT_EQ(1, interval_idx);
+    EXPECT_NEAR(3.89222, sp_val, 1e-4);
+}
+
+TEST(OrchestratorTest, INCR_NO_TL_Integration) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_incr_no_tl";
+    std::filesystem::remove_all(output_dir);
+
+    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
+                                                         "INCR_NO_TL", 100);
+    orchestrator.RunSimulation();
+
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_FALSE(history.empty());
+
+    // With TL optimization disabled, Task0 gets the smallest option (TL=1).
+    // Every Task0 job is clamped to execution_time=1 and flagged as overrun.
+    int task0_count = 0;
+    for (const auto& r : history) {
+        if (r.taskId == 0) {
+            EXPECT_EQ(1, r.executionTime)
+                << "Task0 should be clamped to the smallest TL=1";
+            EXPECT_TRUE(r.isOverrun)
+                << "Task0 should always overrun with TL=1";
+            task0_count++;
+        }
+    }
+    EXPECT_EQ(20, task0_count);  // 2 intervals × 10 Task0 jobs per interval
+
+    // Deterministic interval SP metrics.
+    // Task0 with TL=1: perf=0.3, ddl_miss≈0 → SP=0.3.
+    // Tasks 1-3 have no time limits → SP=1.0 each.
+    // Total = 0.3 + 1.0 + 1.0 + 1.0 = 3.3 per interval.
+    const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
+    ASSERT_EQ(2, sp_metrics.size());
+    EXPECT_NEAR(3.3, sp_metrics[0], 1e-4);
+    EXPECT_NEAR(3.3, sp_metrics[1], 1e-4);
+}
+
+TEST(OrchestratorTest, INCR_WCET_Integration) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_incr_wcet";
+    std::filesystem::remove_all(output_dir);
+
+    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
+                                                         "INCR_WCET", 100);
+    orchestrator.RunSimulation();
+
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_FALSE(history.empty());
+
+    // Interval 0: WCET ablation sets Task0 ET to 3. The optimizer chooses TL=3,
+    // so jobs with trace values [2,3,3] (rounded) are overrun only when exec==3.
+    int task0_overrun_i0 = 0;
+    int task0_not_overrun_i0 = 0;
+    for (const auto& r : history) {
+        if (r.taskId == 0 && r.releaseTime < 100) {
+            EXPECT_TRUE(r.executionTime == 2 || r.executionTime == 3)
+                << "Interval 0 Task0 exec should be 2 or 3 with TL=3";
+            if (r.isOverrun) {
+                EXPECT_EQ(3, r.executionTime);
+                task0_overrun_i0++;
+            } else {
+                EXPECT_EQ(2, r.executionTime);
+                task0_not_overrun_i0++;
+            }
+        }
+    }
+    EXPECT_EQ(6, task0_overrun_i0);
+    EXPECT_EQ(4, task0_not_overrun_i0);
+
+    // Interval 1: WCET for Task0 becomes 4. The optimizer chooses TL=2, which
+    // clamps all trace values to exactly 2 after rounding, so every job overruns.
+    int task0_overrun_i1 = 0;
+    for (const auto& r : history) {
+        if (r.taskId == 0 && r.releaseTime >= 100) {
+            EXPECT_EQ(2, r.executionTime)
+                << "Interval 1 Task0 exec should be clamped to 2 with TL=2";
+            EXPECT_TRUE(r.isOverrun);
+            task0_overrun_i1++;
+        }
+    }
+    EXPECT_EQ(10, task0_overrun_i1);
+
+    // Deterministic interval SP metrics.
+    // i0: TL=3 → Task0 perf=1.0, total SP=4.0.
+    // i1: TL=2 → Task0 perf=0.6, total SP=3.6.
+    const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
+    ASSERT_EQ(2, sp_metrics.size());
+    EXPECT_NEAR(4.0, sp_metrics[0], 1e-4);
+    EXPECT_NEAR(3.6, sp_metrics[1], 1e-4);
+}
+
+// =============================================================================
+// RunQueue direct unit tests — verify running_job_index_ tracking, O(1)
+// RemoveFinishedJob, PreemptRunningJob, and related invariants.
+// =============================================================================
+
+// Helper to create a deterministic FiniteDist at a single value.
+static FiniteDist MakeDeterministicDist(double val) {
+    return FiniteDist(std::vector<Value_Proba>{{val, 1.0}});
+}
+
+class RunQueueTestFixture : public ::testing::Test {
+   public:
+    void SetUp() override {
+        // Build a minimal 3-task TaskSet with explicit execution times.
+        Task t0(0, MakeDeterministicDist(1.0), 10, 10, 0, "T0");
+        Task t1(1, MakeDeterministicDist(2.0), 20, 20, 1, "T1");
+        Task t2(2, MakeDeterministicDist(3.0), 30, 30, 2, "T2");
+        t0.setExecutionTime(1);
+        t1.setExecutionTime(2);
+        t2.setExecutionTime(3);
+        tasks = {t0, t1, t2};
+        tasks_info = TaskSetInfoDerived(tasks);
+    }
+
+    TaskSet tasks;
+    TaskSetInfoDerived tasks_info;
+};
+
+TEST_F(RunQueueTestFixture, RunJob_SetsRunningJobIndex) {
+    RunQueue rq(tasks_info);
+    JobCEC job0(0, 0);
+    rq.insert(job0);
+    EXPECT_EQ(-1, rq.running_job_index_);
+
+    EXPECT_TRUE(rq.RunJob(0, 0));
+    EXPECT_EQ(0, rq.running_job_index_);
+    EXPECT_FALSE(rq.processor_free_);
+    EXPECT_TRUE(rq.job_queue_[0].running);
+}
+
+TEST_F(RunQueueTestFixture, PreemptJob_ClearsRunningJobIndex) {
+    RunQueue rq(tasks_info);
+    rq.insert(JobCEC(0, 0));
+    rq.RunJob(0, 0);
+    EXPECT_EQ(0, rq.running_job_index_);
+
+    rq.PreemptJob(0, 5);
+    EXPECT_EQ(-1, rq.running_job_index_);
+    EXPECT_TRUE(rq.processor_free_);
+    EXPECT_FALSE(rq.job_queue_[0].running);
+    // accum_run_time should reflect elapsed time [0,5]
+    EXPECT_EQ(5, rq.job_queue_[0].accum_run_time);
+}
+
+TEST_F(RunQueueTestFixture, PreemptRunningJob_OnlyPreemptsRunningJob) {
+    RunQueue rq(tasks_info);
+    // Insert two jobs: job0 higher priority, then job1
+    rq.insert(JobCEC(0, 0));
+    rq.insert(JobCEC(1, 0));
+    rq.RunJob(0, 0);
+
+    rq.PreemptRunningJob(4);
+    EXPECT_EQ(-1, rq.running_job_index_);
+    EXPECT_TRUE(rq.job_queue_[0].running == false);
+    EXPECT_TRUE(rq.job_queue_[1].running == false);  // was never running
+}
+
+TEST_F(RunQueueTestFixture, RemoveFinishedJob_RemovesOnlyRunningJob) {
+    RunQueue rq(tasks_info);
+    // T0 exec=1, so it finishes at time 1
+    rq.insert(JobCEC(0, 0));
+    // T1 exec=2, remains pending
+    rq.insert(JobCEC(1, 0));
+
+    rq.RunJob(0, 0);
+    EXPECT_EQ(0, rq.running_job_index_);
+    EXPECT_EQ(2, rq.size());
+
+    // At time 1 the running job (T0) should finish, T1 stays
+    rq.RemoveFinishedJob(1);
+    EXPECT_EQ(1, rq.size());
+    EXPECT_EQ(1, rq.job_queue_[0].job.taskId);  // T1 remains
+    EXPECT_EQ(-1, rq.running_job_index_);
+    EXPECT_TRUE(rq.processor_free_);
+
+    // Schedule should record T0 finished at 1
+    auto sched = rq.GetSchedule();
+    EXPECT_EQ(1, sched[JobCEC(0, 0)].finish);
+}
+
+TEST_F(RunQueueTestFixture, RemoveFinishedJob_LeavesNonRunningJobsUntouched) {
+    RunQueue rq(tasks_info);
+    // Insert two jobs; run the first, then preempt it before it finishes
+    rq.insert(JobCEC(0, 0));  // exec=1
+    rq.insert(JobCEC(1, 0));  // exec=2
+    rq.RunJob(0, 0);
+    rq.PreemptJob(0, 0);  // preempt immediately, accumulated = 0
+
+    // At time 5 neither job has accumulated any execution time, so none finish
+    rq.RemoveFinishedJob(5);
+    EXPECT_EQ(2, rq.size());
+    EXPECT_EQ(-1, rq.running_job_index_);
+}
+
+TEST_F(RunQueueTestFixture, RemoveFinishedJob_EmptyQueueDoesNotCrash) {
+    RunQueue rq(tasks_info);
+    EXPECT_EQ(0, rq.size());
+    rq.RemoveFinishedJob(10);
+    EXPECT_EQ(0, rq.size());
+    EXPECT_EQ(-1, rq.running_job_index_);
+}
+
+TEST_F(RunQueueTestFixture, FullLifecycle_SequentialRunAndFinish) {
+    RunQueue rq(tasks_info);
+    JobCEC j0(0, 0);  // exec=1, priority=0 (highest)
+    JobCEC j1(1, 0);  // exec=2, priority=1
+    JobCEC j2(2, 0);  // exec=3, priority=2
+
+    // Insert all three in priority order; queue = [j0, j1, j2]
+    rq.insert(j0);
+    rq.insert(j1);
+    rq.insert(j2);
+
+    // j0 runs and finishes [0,1]
+    rq.RunJob(0, 0);
+    EXPECT_EQ(0, rq.running_job_index_);
+    rq.RemoveFinishedJob(1);
+    EXPECT_EQ(2, rq.size());
+
+    // j1 runs and finishes [1,3]
+    rq.RunJob(0, 1);
+    EXPECT_EQ(0, rq.running_job_index_);
+    EXPECT_EQ(1, rq.job_queue_[0].job.taskId);
+    rq.RemoveFinishedJob(3);
+    EXPECT_EQ(1, rq.size());
+
+    // j2 runs and finishes [3,6]
+    rq.RunJob(0, 3);
+    EXPECT_EQ(0, rq.running_job_index_);
+    EXPECT_EQ(2, rq.job_queue_[0].job.taskId);
+    rq.RemoveFinishedJob(6);
+    EXPECT_TRUE(rq.empty());
+
+    auto sched = rq.GetSchedule();
+    EXPECT_EQ(1, sched[j0].finish);
+    EXPECT_EQ(3, sched[j1].finish);
+    EXPECT_EQ(6, sched[j2].finish);
+}
+
+TEST_F(RunQueueTestFixture, Preemption_HigherPriorityPreemptsThenRuns) {
+    RunQueue rq(tasks_info);
+
+    // Insert only low-priority j2 and start it
+    JobCEC j2(2, 0);  // exec=3, priority=2
+    rq.insert(j2);
+    rq.RunJob(0, 0);
+    EXPECT_EQ(2, rq.job_queue_[0].job.taskId);
+    EXPECT_EQ(0, rq.running_job_index_);
+
+    // Preempt j2 at t=0 before any progress
+    rq.PreemptRunningJob(0);
+    EXPECT_EQ(-1, rq.running_job_index_);
+
+    // Insert higher-priority jobs; priority sort makes queue = [j0, j1, j2]
+    JobCEC j0(0, 0);  // exec=1, priority=0
+    JobCEC j1(1, 0);  // exec=2, priority=1
+    rq.insert(j0);
+    rq.insert(j1);
+
+    // Run highest-priority j0
+    EXPECT_EQ(0, rq.job_queue_[0].job.taskId);
+    rq.RunJob(0, 0);
+    EXPECT_EQ(0, rq.running_job_index_);
+
+    // j0 finishes [0,1]
+    rq.RemoveFinishedJob(1);
+    EXPECT_EQ(-1, rq.running_job_index_);
+    EXPECT_EQ(2, rq.size());  // j1 and j2 remain
+
+    // j1 finishes [1,3]
+    rq.RunJob(0, 1);
+    EXPECT_EQ(0, rq.running_job_index_);
+    rq.RemoveFinishedJob(3);
+    EXPECT_EQ(1, rq.size());
+
+    // j2 (already had 2 remaining) finishes [3,6]
+    rq.RunJob(0, 3);
+    EXPECT_EQ(0, rq.running_job_index_);
+    rq.RemoveFinishedJob(6);
+    EXPECT_TRUE(rq.empty());
+
+    auto sched = rq.GetSchedule();
+    EXPECT_EQ(1, sched[j0].finish);
+    EXPECT_EQ(3, sched[j1].finish);
+    EXPECT_EQ(6, sched[j2].finish);
+}
+
+TEST_F(RunQueueTestFixture, RunningJobIndex_CorrectAfterErase) {
+    RunQueue rq(tasks_info);
+    rq.insert(JobCEC(0, 0));  // exec=1
+    rq.insert(JobCEC(1, 0));  // exec=2
+
+    rq.RunJob(0, 0);
+    EXPECT_EQ(0, rq.running_job_index_);
+
+    // Remove finished running job — index should reset to -1
+    rq.RemoveFinishedJob(1);
+    EXPECT_EQ(-1, rq.running_job_index_);
+    EXPECT_EQ(1, rq.size());
+}
+
+int main(int argc, char** argv) {
+    // ::testing::InitGoogleTest(&argc, argv);
+    ::testing::InitGoogleMock(&argc, argv);
+    return RUN_ALL_TESTS();
 }

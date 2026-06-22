@@ -128,7 +128,8 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
         return;
     }
 
-    if (scheduler_mode_ == "INCR") {
+    if (scheduler_mode_ == "INCR" || scheduler_mode_ == "INCR_NO_TL" ||
+        scheduler_mode_ == "INCR_WCET") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
     }
@@ -158,6 +159,22 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
         // res = scratch_opt.CollectResults();
 
         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    } else if (scheduler_mode_ == "INCR_NO_TL") {
+        bool prev = GlobalVariables::disable_time_limit_opt;
+        GlobalVariables::disable_time_limit_opt = true;
+        incr_optimizer_.OptimizeIncre_w_TL(
+            dag_tasks,
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        res = incr_optimizer_.CollectResults();
+        GlobalVariables::disable_time_limit_opt = prev;
+    } else if (scheduler_mode_ == "INCR_WCET") {
+        bool prev = GlobalVariables::use_wcet_execution_time;
+        GlobalVariables::use_wcet_execution_time = true;
+        incr_optimizer_.OptimizeIncre_w_TL(
+            dag_tasks,
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        res = incr_optimizer_.CollectResults();
+        GlobalVariables::use_wcet_execution_time = prev;
     } else if (scheduler_mode_ == "RM") {
         std::vector<int> sorted_indices(dag_tasks.tasks.size());
         std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
@@ -169,6 +186,43 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
         for (size_t i = 0; i < sorted_indices.size(); i++) {
             res.priority_vec.push_back(sorted_indices[i]);
             res.id2time_limit[sorted_indices[i]] = -1.0;
+        }
+    } else if (scheduler_mode_ == "RM_FAST") {
+        std::vector<int> sorted_indices(dag_tasks.tasks.size());
+        std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
+        std::sort(
+            sorted_indices.begin(), sorted_indices.end(), [&](int a, int b) {
+                return dag_tasks.tasks[a].period < dag_tasks.tasks[b].period;
+            });
+
+        for (size_t i = 0; i < sorted_indices.size(); i++) {
+            res.priority_vec.push_back(sorted_indices[i]);
+            if (dag_tasks.tasks[sorted_indices[i]].timePerformancePairs.empty()) {
+                res.id2time_limit[sorted_indices[i]] = -1.0;
+            } else {
+                res.id2time_limit[sorted_indices[i]] =
+                    dag_tasks.tasks[sorted_indices[i]].timePerformancePairs[0]
+                        .time_limit;
+            }
+        }
+    } else if (scheduler_mode_ == "RM_SLOW") {
+        std::vector<int> sorted_indices(dag_tasks.tasks.size());
+        std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
+        std::sort(
+            sorted_indices.begin(), sorted_indices.end(), [&](int a, int b) {
+                return dag_tasks.tasks[a].period < dag_tasks.tasks[b].period;
+            });
+
+        for (size_t i = 0; i < sorted_indices.size(); i++) {
+            res.priority_vec.push_back(sorted_indices[i]);
+            if (dag_tasks.tasks[sorted_indices[i]].timePerformancePairs.empty()) {
+                res.id2time_limit[sorted_indices[i]] = -1.0;
+            } else {
+                res.id2time_limit[sorted_indices[i]] =
+                    dag_tasks.tasks[sorted_indices[i]].timePerformancePairs
+                        .back()
+                        .time_limit;
+            }
         }
     }
     return res;
@@ -343,25 +397,17 @@ struct CFS_TaskCompareOrch {
 };
 
 void CFSSimulationOrchestrator::UpdateCFSVirtualTimes(
-    LLint time_now, LLint start_time, RunQueue& run_queue,
+    int running_task_id,
     std::unordered_map<int, double>& accumulated_et,
     std::set<std::pair<double, int>>& run_queue_set) {
-    if (time_now > start_time) {
-        for (auto& job_info : run_queue.job_queue_) {
-            if (job_info.running) {
-                int running_taskId = job_info.job.taskId;
-                double old_et = accumulated_et[running_taskId];
-                if (run_queue_set.count({old_et, running_taskId})) {
-                    run_queue_set.erase({old_et, running_taskId});
-                    accumulated_et[running_taskId] += 1.0;
-                    run_queue_set.insert(
-                        {accumulated_et[running_taskId], running_taskId});
-                } else {
-                    accumulated_et[running_taskId] += 1.0;
-                }
-                break;
-            }
+    if (running_task_id >= 0) {
+        double old_et = accumulated_et[running_task_id];
+        auto it = run_queue_set.find({old_et, running_task_id});
+        if (it != run_queue_set.end()) {
+            run_queue_set.erase(it);
         }
+        accumulated_et[running_task_id] += 1.0;
+        run_queue_set.insert({accumulated_et[running_task_id], running_task_id});
     }
 }
 
@@ -440,34 +486,37 @@ void CFSSimulationOrchestrator::ReleaseJobsCFS(
 
 void CFSSimulationOrchestrator::ScheduleCFS(
     LLint time_now, RunQueue& run_queue,
-    std::set<std::pair<double, int>>& run_queue_set) {
-    if (!run_queue_set.empty()) {
-        int min_taskId = run_queue_set.begin()->second;
-        int min_job_index = -1;
-        for (size_t i = 0; i < run_queue.size(); i++) {
-            if (run_queue.job_queue_[i].job.taskId == min_taskId) {
-                min_job_index = i;
-                break;
-            }
-        }
+    std::set<std::pair<double, int>>& run_queue_set,
+    int& running_task_id) {
+    running_task_id = -1;
+    if (run_queue_set.empty()) return;
 
-        if (min_job_index != -1) {
-            bool already_running = run_queue.job_queue_[min_job_index].running;
-            if (!already_running) {
-                run_queue.PreemptJob(time_now);
-                JobScheduleInfo selected_job =
-                    run_queue.job_queue_[min_job_index];
-                run_queue.job_queue_.erase(run_queue.job_queue_.begin() +
-                                           min_job_index);
-                run_queue.job_queue_.insert(run_queue.job_queue_.begin(),
-                                            selected_job);
-                if (!run_queue.RunJob(0, time_now)) {
-                    CoutError(
-                        "Error in RunQueue SimulatedCFS_SingleCore RunJob!");
-                }
-            }
+    int min_taskId = run_queue_set.begin()->second;
+    // Find the first (oldest) queued job for this task
+    int min_job_index = -1;
+    for (size_t i = 0; i < run_queue.job_queue_.size(); ++i) {
+        if (run_queue.job_queue_[i].job.taskId == min_taskId) {
+            min_job_index = static_cast<int>(i);
+            break;
         }
     }
+    if (min_job_index == -1) return;
+
+    if (!run_queue.job_queue_[min_job_index].running) {
+        run_queue.PreemptRunningJob(time_now);
+        if (min_job_index > 0) {
+            JobScheduleInfo selected_job =
+                run_queue.job_queue_[min_job_index];
+            run_queue.job_queue_.erase(run_queue.job_queue_.begin() +
+                                       min_job_index);
+            run_queue.job_queue_.insert(run_queue.job_queue_.begin(),
+                                        selected_job);
+        }
+        if (!run_queue.RunJob(0, time_now)) {
+            CoutError("Error in RunQueue SimulatedCFS_SingleCore RunJob!");
+        }
+    }
+    running_task_id = min_taskId;
 }
 
 void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
@@ -497,8 +546,10 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
         trace_indices[i] = 0;
     }
 
+    int running_task_id = -1;
+
     for (LLint time_now = start_time; time_now <= end_time; time_now++) {
-        UpdateCFSVirtualTimes(time_now, start_time, run_queue, accumulated_et,
+        UpdateCFSVirtualTimes(running_task_id, accumulated_et,
                               run_queue_set);
         run_queue.RemoveFinishedJob(time_now);
         RecordFinishedJobsCFS(time_now, run_queue, dag_tasks);
@@ -507,20 +558,27 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
         ReleaseJobsCFS(time_now, end_time, dag_tasks, run_queue, traces,
                        trace_indices);
 
-        std::unordered_map<int, int> added_counts;
-        for (const auto& job_info : run_queue.job_queue_) {
-            added_counts[job_info.job.taskId]++;
+        // Update active counts for newly released jobs and manage set
+        int prev_counts[16];  // small fixed-size buffer for speed
+        size_t n_tasks = dag_tasks.tasks.size();
+        for (size_t i = 0; i < n_tasks; ++i) {
+            prev_counts[i] = active_jobs_count[dag_tasks.tasks[i].id];
         }
-        for (const auto& task : dag_tasks.tasks) {
-            int old_c = active_jobs_count[task.id];
-            int new_c = added_counts[task.id];
-            if (old_c == 0 && new_c > 0) {
-                run_queue_set.insert({accumulated_et[task.id], task.id});
+        for (size_t i = 0; i < n_tasks; ++i) {
+            int tid = dag_tasks.tasks[i].id;
+            int new_c = 0;
+            for (const auto& job_info : run_queue.job_queue_) {
+                if (job_info.job.taskId == tid) {
+                    ++new_c;
+                }
             }
-            active_jobs_count[task.id] = new_c;
+            if (prev_counts[i] == 0 && new_c > 0) {
+                run_queue_set.insert({accumulated_et[tid], tid});
+            }
+            active_jobs_count[tid] = new_c;
         }
 
-        ScheduleCFS(time_now, run_queue, run_queue_set);
+        ScheduleCFS(time_now, run_queue, run_queue_set, running_task_id);
     }
 
     // CFS does not use time limits; pass all -1

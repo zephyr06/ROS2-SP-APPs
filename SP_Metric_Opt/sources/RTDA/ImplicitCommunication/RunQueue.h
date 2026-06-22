@@ -4,7 +4,7 @@ namespace SP_OPT_PA {
 typedef unsigned int uint;
 class RunQueue {
    public:
-    RunQueue(const TaskSetInfoDerived &tasks_info) : tasks_info_(tasks_info) {
+    RunQueue(const TaskSetInfoDerived& tasks_info) : tasks_info_(tasks_info) {
         N = tasks_info.N;
         job_queue_.reserve(N);
         schedule_.reserve(tasks_info.length);
@@ -28,7 +28,7 @@ class RunQueue {
             double priority_curr = tasks_info_.GetTask(job.taskId).priority;
             auto itr = std::upper_bound(
                 job_queue_.begin(), job_queue_.end(), priority_curr,
-                [&](double priority_curr, const JobScheduleInfo &element) {
+                [&](double priority_curr, const JobScheduleInfo& element) {
                     return priority_curr <
                            tasks_info_.GetTask(element.job.taskId).priority;
                 });
@@ -61,15 +61,26 @@ class RunQueue {
         }
     }
 
+    // inefficient code not used in actual experiments
+    void PreemptRunningJob(int time_now) {
+        for (uint i = 0; i < size(); i++) {
+            if (job_queue_[i].running) {
+                PreemptJob(i, time_now);
+                return;
+            }
+        }
+    }
+
     void PreemptJob(size_t job_info_index_in_queue, int time_now) {
         RangeCheck(job_info_index_in_queue);
-        JobScheduleInfo &job_info = job_queue_[job_info_index_in_queue];
+        JobScheduleInfo& job_info = job_queue_[job_info_index_in_queue];
         if (job_info.running == false)
             return;
         else {
             job_info.UpdateAccumTime(time_now);
             job_info.running = false;
             processor_free_ = true;
+            running_job_index_ = -1;
         }
     }
 
@@ -78,7 +89,8 @@ class RunQueue {
         if (!processor_free_)
             return false;
         processor_free_ = false;
-        JobScheduleInfo &job_info = job_queue_[job_info_index_in_queue];
+        running_job_index_ = static_cast<int>(job_info_index_in_queue);
+        JobScheduleInfo& job_info = job_queue_[job_info_index_in_queue];
         job_info.StartRun(time_now);
 
         auto itr = schedule_.find(job_info.job);
@@ -91,30 +103,57 @@ class RunQueue {
 
         int exec_time = job_info.executionTime;
         if (exec_time <= 0) {
-            exec_time = tasks_info_.GetTask(job_info.job.taskId).getExecutionTime();
+            exec_time =
+                tasks_info_.GetTask(job_info.job.taskId).getExecutionTime();
         }
 
-        next_free_time_ =
-            time_now +
-            exec_time -
-            job_info.accum_run_time;
+        next_free_time_ = time_now + exec_time - job_info.accum_run_time;
         return true;
     }
 
+    /**
+     * @brief Remove the currently running job if it has finished.
+     * Only checks the running job because non-running jobs' accumulated time
+     * does not increase.
+     *
+     * @param time_now: current simulation time
+     */
     void RemoveFinishedJob(int time_now) {
-        for (size_t i = 0; i < job_queue_.size(); i++) {
-            auto &job_info = job_queue_[i];
+        if (running_job_index_ >= 0 &&
+            running_job_index_ < static_cast<int>(job_queue_.size())) {
+            auto& job_info = job_queue_[running_job_index_];
             if (job_info.running) {
                 job_info.UpdateAccumTime(time_now);
             }
             if (job_info.IfFinished(tasks_info_)) {
+                int idx = running_job_index_;
                 if (job_info.running) {
                     job_info.running = false;
-                    schedule_[job_info.job].finish = time_now;
-                    schedule_[job_info.job].executionTime = job_info.executionTime;
                     processor_free_ = true;
+                    running_job_index_ = -1;
                 }
+                schedule_[job_info.job].finish = time_now;
+                schedule_[job_info.job].executionTime = job_info.executionTime;
+                job_queue_.erase(job_queue_.begin() + idx);
+                return;
+            }
+        }
+        // Slow-path safety check: if queue somehow contains a finished
+        // non-running job (should not happen in normal ms-by-ms simulation),
+        // sweep and remove.
+        for (size_t i = 0; i < job_queue_.size();) {
+            auto& job_info = job_queue_[i];
+            if (job_info.IfFinished(tasks_info_)) {
+                if (job_info.running) {
+                    job_info.running = false;
+                    processor_free_ = true;
+                    running_job_index_ = -1;
+                }
+                schedule_[job_info.job].finish = time_now;
+                schedule_[job_info.job].executionTime = job_info.executionTime;
                 job_queue_.erase(job_queue_.begin() + i);
+            } else {
+                ++i;
             }
         }
     }
@@ -166,6 +205,7 @@ class RunQueue {
     std::vector<JobScheduleInfo> job_queue_;
     int next_free_time_ = 0;
     bool processor_free_ = true;
+    int running_job_index_ = -1;
     Schedule schedule_;
 };
 

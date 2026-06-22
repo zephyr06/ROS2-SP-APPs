@@ -25,6 +25,8 @@ temp/
 Gen_Taskset/simulation_tasksets/
 tests/comparison_runs/*
 tests/test_output*
+tests/e2e_eval*
+tests/test_cfs_debug*
 
 # Binary / Output / Log formats
 *.log
