@@ -23,15 +23,15 @@ class TestYamlExporter(unittest.TestCase):
         inp_params = {
             'tasks': [
                 {
-                    'id': 0, 'name': 'task_A', 'processorId': 0, 'period': 100, 
+                    'id': 0, 'name': 'task_A', 'processorId': 0, 'period': 100,
                     'Et_mean': 10.0, 'Et_sigma': 1.0, 'sp_threshold': 0.8
                 },
                 {
-                    'id': 1, 'name': 'task_B', 'processorId': 1, 'period': 200, 
+                    'id': 1, 'name': 'task_B', 'processorId': 1, 'period': 200,
                     'Et_mean': 20.0, 'Et_sigma': 2.0, 'sp_threshold': 0.6
                 },
                 {
-                    'id': 2, 'name': 'task_C', 'processorId': 0, 'period': 300, 
+                    'id': 2, 'name': 'task_C', 'processorId': 0, 'period': 300,
                     'Et_mean': 30.0, 'Et_sigma': 3.0, 'sp_threshold': 0.4
                 }
             ]
@@ -73,6 +73,67 @@ class TestYamlExporter(unittest.TestCase):
         self.assertEqual(out_p1['tasks'][0]['gid'], 1)
         self.assertEqual(out_p1['tasks'][0]['name'], 'task_B')
         self.assertEqual(out_p1['tasks'][0]['processorId'], 1)
+
+    def test_max_time_limit_options_cap(self):
+        """Verify that MAX_TIME_LIMIT_OPTIONS caps the number of TL options."""
+        inp_params = {
+            'tasks': [
+                {
+                    'id': 0, 'name': 'slow_task', 'processorId': 0, 'period': 1000,
+                    'Et_mean': 50.0, 'Et_sigma': 5.0, 'sp_threshold': 0.5
+                },
+                {
+                    'id': 1, 'name': 'fast_task', 'processorId': 0, 'period': 50,
+                    'Et_mean': 5.0, 'Et_sigma': 0.5, 'sp_threshold': 0.5
+                }
+            ]
+        }
+
+        # Cap at 10 options (default)
+        cfgs_10 = {
+            "SP_WEIGHTS_SUM": 5.0,
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "MAX_TIME_LIMIT_OPTIONS": 10,
+            "N_ENV_DEPENDENT_TASKS": 1,
+            "MIN_PERIOD_WITH_PERFORMANCE_RECORDS": 100
+        }
+        out_10, sel_10 = convert_taskset_parameters_to_cpp_yaml(
+            inp_params=inp_params,
+            cfgs=cfgs_10,
+            add_perf_records=True
+        )
+        # slow_task qualifies (period 1000 >= 100), fast_task does not
+        self.assertEqual(len(sel_10), 1)
+        self.assertEqual(sel_10[0], 0)
+        perf_task_10 = out_10['tasks'][0]
+        perf_records_time_10 = perf_task_10['performance_records_time'].split()
+        perf_records_perf_10 = perf_task_10['performance_records_perf'].split()
+        self.assertEqual(len(perf_records_time_10), 10)
+        self.assertEqual(len(perf_records_perf_10), 10)
+
+        # Cap at 5 options
+        cfgs_5 = {
+            "SP_WEIGHTS_SUM": 5.0,
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "MAX_TIME_LIMIT_OPTIONS": 5,
+            "N_ENV_DEPENDENT_TASKS": 1,
+            "MIN_PERIOD_WITH_PERFORMANCE_RECORDS": 100
+        }
+        out_5, sel_5 = convert_taskset_parameters_to_cpp_yaml(
+            inp_params=inp_params,
+            cfgs=cfgs_5,
+            add_perf_records=True
+        )
+        perf_task_5 = out_5['tasks'][0]
+        perf_records_time_5 = perf_task_5['performance_records_time'].split()
+        perf_records_perf_5 = perf_task_5['performance_records_perf'].split()
+        self.assertEqual(len(perf_records_time_5), 5)
+        self.assertEqual(len(perf_records_perf_5), 5)
+
+        # Even with different caps, the first and last TL values should match
+        # because they are derived from the same min/max = period * range.
+        self.assertEqual(perf_records_time_10[0], perf_records_time_5[0])
+        self.assertEqual(perf_records_time_10[-1], perf_records_time_5[-1])
 
 if __name__ == "__main__":
     unittest.main()
