@@ -9,8 +9,12 @@ High-level Task list:
     * [x] INCR_NO_TL
     * [x] INCR_WCET
 - [x] add GP-based ET distribution prediction, if needed.
-- add end-to-end task set execution schedule code in c++. the code should read from each individual task set at different time stamps, then run different scheduler method, and monitor overall SP metric (check simulation_exp branch for basic ideas of related code)
-- add any missed baselines for simulation experiments such as CFS
+- [x] add end-to-end task set execution schedule code in c++. the code should read from each individual task set at different time stamps, then run different scheduler method, and monitor overall SP metric (check simulation_exp branch for basic ideas of related code)
+- add any missed baselines for simulation orchestrator:
+* CFS (SimulateCFSSched has some implemntation code in sources/RTDA/ImplicitCommunication/ScheduleSimulation.h)
+* ablation methods, INCR_NO_TL (GlobalVariables::disable_time_limit_opt) and INCR_WCET (GlobalVariables::use_wcet_execution_time)
+* RM-Fast (TL optimization always uses the shortest time limit), RM-Slow (TL optimization always uses the longest time limit)
+
 - add more types of reulst visualization figure plots(check simulation_exp branch):
 * x axis: number of tasks per task set
 * y axis:
@@ -21,49 +25,3 @@ High-level Task list:
 - add end-to-end script to run simulation evaluation of all baseline methods for given task set config.
 - other functional changes implemented in simulation_exp branch but not yet in this branch.
 
-
------------------------------ Future implementation plans----------------
-# Implementation Plan - Add Ablation Study Baselines
-
-This plan details:
-1. Porting the complete C++ scheduler simulation and priority optimization codebase from the `simulation_exp` branch, which implements the ablation study baselines:
-   - `INCR_NO_TL` (Task Budget/Time Limit Optimization disabled).
-   - `INCR_WCET` (Constant Worst-Case Execution Time modeling).
-   - `INCR_NO_SORT` (Heuristic sorting disabled in CD priority assignment).
-   - Custom priority reevaluation intervals (`_int<X>s` scheduler suffix).
-2. Compiling the C++ simulation binaries.
-3. Running verification tests.
-
-## User Review Required
-
-> [!IMPORTANT]
-> - We will checkout all C++ source code (`sources/`) and C++ test drivers (`tests/`) from the `simulation_exp` branch.
-> - This brings in the full multi-core `CSPSimulation_2` source and the updated `AnalyzeSP_Metric.cpp` logic.
-> - We will keep our own Python taskset generator logic (`Gen_Taskset/`) and `run_sim_experiments.py` which are already updated for 1 GMM instance and relocated output directories.
-> - We will rebuild the C++ executables in `release` and `build` directories using CMake.
-
-## Proposed Changes
-
-### Porting C++ Source Code & Tests
-
-- We will run `git checkout simulation_exp -- <files>` for:
-  - All C++ files under `sources/`
-  - All C++ source and CMakeLists files under `tests/` (except python test scripts)
-
-### Build Settings
-
-#### [MODIFY] [CMakeLists.txt](file:///home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/tests/CMakeLists.txt)
-- Register `CSPSimulation_2` executable.
-
-## Verification Plan
-
-### Automated Tests
-- Run `make` in `release` and `build` directories to ensure C++ compilation finishes successfully.
-- Run `PYTHONPATH=. pytest Gen_Taskset/tests tests/python` to ensure python tests pass.
-- Run the compiled C++ tests under `build/tests/` to verify priority optimization and scheduling correctness.
-
-### Manual Verification
-- Run simulation experiments with one of the baseline schedulers (e.g., `INCR_NO_TL` or `INCR_WCET`) to ensure they output expected response times and log files:
-  ```bash
-  python3 run_sim_experiments.py --num_tasks 4 --schedulers INCR INCR_NO_TL INCR_WCET CFS
-  ```

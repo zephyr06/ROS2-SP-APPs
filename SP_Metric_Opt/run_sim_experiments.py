@@ -280,7 +280,7 @@ def main():
                         help="Output directory to save experiments data")
     parser.add_argument("-n", "--n_tasksets", type=int, default=5,
                         help="Number of task sets to generate and simulate")
-    parser.add_argument("-s", "--schedulers", nargs="+", default=["INCR", "INCR_SWAP", "BR", "RM_FAST", "RM_SLOW", "CFS"],
+    parser.add_argument("-s", "--schedulers", nargs="+", default=["INCR", "INCR_SWAP", "BF", "RM_FAST", "RM_SLOW"],
                         help="List of schedulers to run")
     parser.add_argument("-t", "--n_sec", type=int, default=1000,
                         help="GMM trace path duration in seconds")
