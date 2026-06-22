@@ -129,7 +129,7 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
     }
 
     if (scheduler_mode_ == "INCR" || scheduler_mode_ == "INCR_NO_TL" ||
-        scheduler_mode_ == "INCR_WCET") {
+        scheduler_mode_ == "INCR_WCET" || scheduler_mode_ == "INCR_SCRATCH") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
     }
@@ -152,13 +152,13 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();
-    } else if (scheduler_mode_ == "BR") {
-        // OptimizePA_Incre_with_TimeLimits scratch_opt(dag_tasks,
-        // sp_parameters);
-        // scratch_opt.OptimizeFromScratch_w_TL(GlobalVariables::Layer_Node_During_Incremental_Optimization);
-        // res = scratch_opt.CollectResults();
-
+    } else if (scheduler_mode_ == "BF") {
         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    } else if (scheduler_mode_ == "INCR_SCRATCH") {
+        OptimizePA_Incre_with_TimeLimits scratch_opt(dag_tasks, sp_parameters);
+        scratch_opt.OptimizeFromScratch_w_TL(
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        res = scratch_opt.CollectResults();
     } else if (scheduler_mode_ == "INCR_NO_TL") {
         bool prev = GlobalVariables::disable_time_limit_opt;
         GlobalVariables::disable_time_limit_opt = true;

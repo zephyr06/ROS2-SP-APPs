@@ -8,6 +8,7 @@ using namespace SP_OPT_PA;
 int main(int argc, char** argv) {
     if (argc < 5) {
         std::cerr << "Usage: " << argv[0] << " <input_folder> <output_folder> <mode> <duration_ms>\n";
+        std::cerr << "Modes: RM, BF, INCR, INCR_NO_TL, INCR_WCET, INCR_SCRATCH, RM_FAST, RM_SLOW\n";
         return 1;
     }
 
@@ -20,6 +21,31 @@ int main(int argc, char** argv) {
               << ", Output=" << output_folder
               << ", Mode=" << mode
               << ", Duration=" << duration << " ms\n";
+
+    if (mode == "CFS") {
+        CFSSimulationOrchestrator orchestrator(input_folder, output_folder, duration);
+        orchestrator.RunSimulation();
+
+        const auto& metrics = orchestrator.GetIntervalSPMetrics();
+        if (!metrics.empty()) {
+            double sum = std::accumulate(metrics.begin(), metrics.end(), 0.0);
+            double avg = sum / metrics.size();
+            std::cout << "Average SP Metric: " << avg << "\n";
+
+            std::string summary_path = output_folder + "/" + mode + "/sp_metrics_summary.txt";
+            std::ofstream summary_file(summary_path);
+            if (summary_file.is_open()) {
+                summary_file << avg << "\n";
+                summary_file.close();
+                std::cout << "Saved average SP to: " << summary_path << "\n";
+            } else {
+                std::cerr << "Failed to write summary to: " << summary_path << "\n";
+            }
+        } else {
+            std::cout << "No intervals simulated, no SP metrics calculated.\n";
+        }
+        return 0;
+    }
 
     FixedTaskPrioritySchedulingOrchestrator orchestrator(input_folder, output_folder, mode, duration);
     orchestrator.RunSimulation();
