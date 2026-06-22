@@ -63,9 +63,12 @@ RecordCloseTimeLimitOptions(const DAG_Model &dag_tasks) {
     size_t close_time_limit_index = Find_Close_ExecutionTime(
         dag_tasks.tasks[i].timePerformancePairs,
         dag_tasks.tasks[i].execution_time_dist.GetAvgValue());
-    for (int j = max(0, static_cast<int>(close_time_limit_index) - 1);
-         j <= close_time_limit_index + 1 &&
-         j < dag_tasks.tasks[i].timePerformancePairs.size();
+    for (int j = max(
+             0, static_cast<int>(close_time_limit_index) -
+                    GlobalVariables::TimeLimitSearchRadiusIncr);
+         j <= static_cast<int>(close_time_limit_index) +
+                  GlobalVariables::TimeLimitSearchRadiusIncr &&
+         j < static_cast<int>(dag_tasks.tasks[i].timePerformancePairs.size());
          j++) {
       time_limit_option_for_each_task[i].push_back(
           dag_tasks.tasks[i].timePerformancePairs[j].time_limit);

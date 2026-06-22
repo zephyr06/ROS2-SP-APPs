@@ -34,8 +34,11 @@ class TaskSetForTest_robotics_v20 : public ::testing::Test {
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
+    // Closest to ET ~202 is 184.1 (index 0). Radius=2 => indices [0,2] => 3 opts.
+    EXPECT_EQ(3, time_limit_options[0].size());
     EXPECT_EQ(184.1, time_limit_options[0][0]);
     EXPECT_EQ(397.5, time_limit_options[0][1]);
+    EXPECT_EQ(657.9, time_limit_options[0][2]);
 
     EXPECT_EQ(-1, time_limit_options[1][0]);
     EXPECT_EQ(-1, time_limit_options[2][0]);
@@ -89,10 +92,13 @@ class TaskSetForTest_robotics_v19 : public ::testing::Test {
 TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks);
-    EXPECT_EQ(4, time_limit_options.size());     // 4 tasks
-    EXPECT_EQ(2, time_limit_options[0].size());  // 2 options for TSP
-    EXPECT_EQ(800, time_limit_options[0][0]);
-    EXPECT_EQ(1000, time_limit_options[0][1]);
+    EXPECT_EQ(4, time_limit_options.size());    // 4 tasks
+    // With TimeLimitSearchRadiusIncr=2 the window around closest ET (1000) is
+    // indices [1,3] => [600, 800, 1000] (3 options).
+    EXPECT_EQ(3, time_limit_options[0].size()); // 3 options for TSP
+    EXPECT_EQ(600, time_limit_options[0][0]);
+    EXPECT_EQ(800, time_limit_options[0][1]);
+    EXPECT_EQ(1000, time_limit_options[0][2]);
 
     EXPECT_EQ(-1, time_limit_options[1][0]);
     EXPECT_EQ(-1, time_limit_options[2][0]);

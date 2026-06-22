@@ -52,8 +52,11 @@ public:
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
   std::vector<std::vector<double>> time_limit_options =
       RecordCloseTimeLimitOptions(dag_tasks);
+  // Closest to ET ~202 is 184.1 (index 0). Radius=2 => indices [0,2] => 3 opts.
+  EXPECT_EQ(3, time_limit_options[0].size());
   EXPECT_EQ(184.1, time_limit_options[0][0]);
   EXPECT_EQ(397.5, time_limit_options[0][1]);
+  EXPECT_EQ(657.9, time_limit_options[0][2]);
 
   EXPECT_EQ(-1, time_limit_options[1][0]);
   EXPECT_EQ(-1, time_limit_options[2][0]);
@@ -249,9 +252,12 @@ TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
   std::vector<std::vector<double>> time_limit_options =
       RecordCloseTimeLimitOptions(dag_tasks);
   EXPECT_EQ(4, time_limit_options.size());    // 4 tasks
-  EXPECT_EQ(2, time_limit_options[0].size()); // 2 options for TSP
-  EXPECT_EQ(800, time_limit_options[0][0]);
-  EXPECT_EQ(1000, time_limit_options[0][1]);
+  // With TimeLimitSearchRadiusIncr=2 the window around closest ET (1000) is
+  // indices [1,3] => [600, 800, 1000] (3 options).
+  EXPECT_EQ(3, time_limit_options[0].size()); // 3 options for TSP
+  EXPECT_EQ(600, time_limit_options[0][0]);
+  EXPECT_EQ(800, time_limit_options[0][1]);
+  EXPECT_EQ(1000, time_limit_options[0][2]);
 
   EXPECT_EQ(-1, time_limit_options[1][0]);
   EXPECT_EQ(-1, time_limit_options[2][0]);
@@ -285,9 +291,11 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
                     "TaskData/test_robotics_v21.yaml"); // low utilization
   opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
   res_opt = opt.CollectResults();
+  // With radius=2 the incremental window for TSP (ET~401) is {400,600,800}.
+  // Low-utilization v21 allows the highest-performing feasible option: 800.
   EXPECT_EQ(
-      600,
-      res_opt.id2time_limit[0]); // change only to nearby ET level each time
+      800,
+      res_opt.id2time_limit[0]);
 
   auto start_time = CurrentTimeInProfiler;
   for (int i = 0; i < 10; i++)
@@ -319,9 +327,11 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
     }
   }
 
-  EXPECT_EQ(2, time_limit_options[perfTask].size()); // 2 options for TSP
-  EXPECT_EQ(800, time_limit_options[perfTask][0]);
-  EXPECT_EQ(1000, time_limit_options[perfTask][1]);
+  // With TimeLimitSearchRadiusIncr=2 the window is [1,3] => [600,800,1000].
+  EXPECT_EQ(3, time_limit_options[perfTask].size()); // 3 options for TSP
+  EXPECT_EQ(600, time_limit_options[perfTask][0]);
+  EXPECT_EQ(800, time_limit_options[perfTask][1]);
+  EXPECT_EQ(1000, time_limit_options[perfTask][2]);
 
   for (uint i = 0; i < time_limit_options.size(); i++) {
     if (i == perfTask)
@@ -457,17 +467,61 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     ResourceOptResult res_incre = opt_incre.CollectResults();
 
     // The incremental search window is restricted to neighbours near the
-    // warm-start ET (1000). Under the current data that is [800, 1000].
-    // Both options floor to perf 0.8, so the optimizer again chooses the
-    // tightest feasible option: 800.
-    EXPECT_EQ(800, res_incre.id2time_limit[0]);
+    // warm-start ET (1000). Under radius=2 that is [600, 800, 1000].
+    // With tight ET 700 the feasible window is [600, 800]. Both options
+    // yield the same floor perf, so the optimizer picks the tightest: 600.
+    EXPECT_EQ(600, res_incre.id2time_limit[0]);
 
-    // Because scratch also ends up selecting a TL that yields the same
-    // performance coefficient (the task set structure leads both to the same
-    // effective SP), they can be equal.  The important check is that the
-    // *search spaces differ* (scratch used all options, incre used only
-    // the restricted window), and both produce valid, schedulable results.
+    // Scratch explored the full option set so it should be at least as good.
     EXPECT_GE(res_scratch.sp_opt, res_incre.sp_opt);
+}
+
+TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
+  // Build a synthetic task with 10 evenly-spaced TL options [0, 10, 20, ... 90]
+  std::vector<Value_Proba> dist = {Value_Proba(45, 1.0)};
+  Task t(0, dist, 1000, 1000, 0, "T_perf");
+  for (int i = 0; i < 10; ++i) {
+    t.timePerformancePairs.push_back(TimePerfPair(i * 10, i * 0.1));
+  }
+  // ET is 45 → closest option is index 4 (value 40) because |45-40| = |45-50|
+  // and the earlier index wins.
+  MAP_Prev mapPrev;
+  TaskSet tasks = {t};
+  DAG_Model dag(tasks, mapPrev, 0, 0);
+
+  int saved_radius = GlobalVariables::TimeLimitSearchRadiusIncr;
+
+  // Radius 2 → indices [2, 6] → 5 options: {20,30,40,50,60}
+  {
+    GlobalVariables::TimeLimitSearchRadiusIncr = 2;
+    auto opts = RecordCloseTimeLimitOptions(dag);
+    ASSERT_EQ(1u, opts.size());
+    EXPECT_EQ(5u, opts[0].size());
+    EXPECT_DOUBLE_EQ(20.0, opts[0][0]);
+    EXPECT_DOUBLE_EQ(40.0, opts[0][2]);
+    EXPECT_DOUBLE_EQ(60.0, opts[0][4]);
+  }
+
+  // Radius 0 → single option (closest only)
+  {
+    GlobalVariables::TimeLimitSearchRadiusIncr = 0;
+    auto opts = RecordCloseTimeLimitOptions(dag);
+    ASSERT_EQ(1u, opts.size());
+    EXPECT_EQ(1u, opts[0].size());
+    EXPECT_DOUBLE_EQ(40.0, opts[0][0]);
+  }
+
+  // Large radius 5 → indices [0, 9] because only 10 options exist
+  {
+    GlobalVariables::TimeLimitSearchRadiusIncr = 5;
+    auto opts = RecordCloseTimeLimitOptions(dag);
+    ASSERT_EQ(1u, opts.size());
+    EXPECT_EQ(10u, opts[0].size());
+    EXPECT_DOUBLE_EQ(0.0, opts[0][0]);
+    EXPECT_DOUBLE_EQ(90.0, opts[0][9]);
+  }
+
+  GlobalVariables::TimeLimitSearchRadiusIncr = saved_radius;
 }
 
 int main(int argc, char **argv) {
