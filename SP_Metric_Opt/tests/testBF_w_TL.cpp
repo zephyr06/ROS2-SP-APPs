@@ -59,14 +59,15 @@ class TaskSetForTest_robotics_v18 : public ::testing::Test {
 };
 
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
-    // ResourceOptResult res_opt =
-    //     EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     opt.OptimizeFromScratch_w_TL(2);
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
 
-    EXPECT_EQ(1000, res_opt.id2time_limit[0]);  // SLAM+TSP have low utilization
+    // TSP's execution time ~1501 floors to the 1000 ms pair (perf = 1.0).
+    // The system is schedulable with TL = 1000 and the optimizer correctly
+    // selects the highest-performance option.
+    EXPECT_EQ(1000, res_opt.id2time_limit[0]);
 }
 
 class TaskSetForTest_robotics_v19 : public ::testing::Test {

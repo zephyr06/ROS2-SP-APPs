@@ -52,11 +52,13 @@ void PriorityPartialPath::UpdateSP(int task_id) {
             hp_tasks.push_back(dag_tasks.tasks[task_hp_id]);
     }
     FiniteDist rta_curr = GetRTA_OneTask(dag_tasks.tasks[task_id], hp_tasks);
-    // sp +=
+    double perf_coeff = dag_tasks.tasks[task_id].GetPerfCoefficient();
+    double weight = 1.0 * sp_parameters.weights_node[task_id];
+    double effective_weight = weight * perf_coeff;
     double sp_cur = ObtainSP({rta_curr}, {dag_tasks.tasks[task_id].deadline},
                              {sp_parameters.thresholds_node[task_id]},
-                             {1.0 * sp_parameters.weights_node[task_id]});
-    sp_lost += 1.0 * sp_parameters.weights_node[task_id] - sp_cur;
+                             {effective_weight});
+    sp_lost += effective_weight - sp_cur;
 }
 
 void PriorityPartialPath::AssignAndUpdateSP(int task_id) {
@@ -125,7 +127,8 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
     opt_pa_ = res;
     double sum_sp_weights = 0;
     for (int i = 0; i < N; i++) {
-        sum_sp_weights += sp_parameters_.weights_node[i];
+        sum_sp_weights +=
+            sp_parameters_.weights_node[i] * dag_tasks_.tasks[i].GetPerfCoefficient();
     }
     opt_sp_ = sum_sp_weights -
               partial_paths[0].sp_lost;  // SP range for each node is 0 to 1
