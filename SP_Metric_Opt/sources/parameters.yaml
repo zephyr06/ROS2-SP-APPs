@@ -6,6 +6,7 @@ TIME_LIMIT: 1 # seconds
 Granularity: 10
 Dist_compress_threshold: 0.01
 Layer_Node_During_Incremental_Optimization: 2
+TimeLimitSearchRadiusIncr: 2
 
 # ************** for debug purposes
 debugMode: 0
