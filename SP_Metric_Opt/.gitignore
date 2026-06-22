@@ -27,6 +27,11 @@ tests/comparison_runs/*
 tests/test_output*
 tests/e2e_eval*
 tests/test_cfs_debug*
+tests/*analysis*
+!tests/debug_analysis/
+!tests/debug_analysis/**
+tests/k_variation/*
+tests/radius_comparison/*
 
 # Binary / Output / Log formats
 *.log
