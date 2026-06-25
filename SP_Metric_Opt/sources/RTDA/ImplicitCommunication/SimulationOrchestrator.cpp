@@ -22,9 +22,22 @@ BaseSimulationOrchestrator::BaseSimulationOrchestrator(
 void BaseSimulationOrchestrator::LoadIntervalConfigs() {
     int interval_idx = 0;
     while (true) {
-        std::string file_path = input_folder_ + "/taskset_characteristics_i" +
-                                std::to_string(interval_idx) + "_p0.yaml";
+        // Require merged taskset files that contain ALL tasks (both p0 & p1)
+        std::string file_path = input_folder_ + "/taskset_characteristics_" +
+                                std::to_string(interval_idx) + ".yaml";
         if (!std::filesystem::exists(file_path)) {
+            if (interval_idx == 0) {
+                std::cerr << "Error: No merged taskset files found in "
+                          << input_folder_ << std::endl;
+                std::cerr
+                    << "Expected file example: taskset_characteristics_0.yaml"
+                    << std::endl;
+                std::cerr
+                    << "Merged files are required to ensure all processors' "
+                       "tasks are loaded. Exiting."
+                    << std::endl;
+                std::exit(EXIT_FAILURE);
+            }
             break;
         }
 
@@ -197,11 +210,13 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
 
         for (size_t i = 0; i < sorted_indices.size(); i++) {
             res.priority_vec.push_back(sorted_indices[i]);
-            if (dag_tasks.tasks[sorted_indices[i]].timePerformancePairs.empty()) {
+            if (dag_tasks.tasks[sorted_indices[i]]
+                    .timePerformancePairs.empty()) {
                 res.id2time_limit[sorted_indices[i]] = -1.0;
             } else {
                 res.id2time_limit[sorted_indices[i]] =
-                    dag_tasks.tasks[sorted_indices[i]].timePerformancePairs[0]
+                    dag_tasks.tasks[sorted_indices[i]]
+                        .timePerformancePairs[0]
                         .time_limit;
             }
         }
@@ -215,12 +230,13 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
 
         for (size_t i = 0; i < sorted_indices.size(); i++) {
             res.priority_vec.push_back(sorted_indices[i]);
-            if (dag_tasks.tasks[sorted_indices[i]].timePerformancePairs.empty()) {
+            if (dag_tasks.tasks[sorted_indices[i]]
+                    .timePerformancePairs.empty()) {
                 res.id2time_limit[sorted_indices[i]] = -1.0;
             } else {
                 res.id2time_limit[sorted_indices[i]] =
-                    dag_tasks.tasks[sorted_indices[i]].timePerformancePairs
-                        .back()
+                    dag_tasks.tasks[sorted_indices[i]]
+                        .timePerformancePairs.back()
                         .time_limit;
             }
         }
@@ -360,9 +376,8 @@ void FixedTaskPrioritySchedulingOrchestrator::SimulateInterval(int interval_idx,
             time_limits[i] = it->second;
         }
     }
-    interval_sp_metrics_.push_back(
-        ObtainSP_TaskSet_And_TimeLimits(dag_tasks.tasks, sp_parameters,
-                                        time_limits));
+    interval_sp_metrics_.push_back(ObtainSP_TaskSet_And_TimeLimits(
+        dag_tasks.tasks, sp_parameters, time_limits));
 }
 
 CFSSimulationOrchestrator::CFSSimulationOrchestrator(
@@ -397,8 +412,7 @@ struct CFS_TaskCompareOrch {
 };
 
 void CFSSimulationOrchestrator::UpdateCFSVirtualTimes(
-    int running_task_id,
-    std::unordered_map<int, double>& accumulated_et,
+    int running_task_id, std::unordered_map<int, double>& accumulated_et,
     std::set<std::pair<double, int>>& run_queue_set) {
     if (running_task_id >= 0) {
         double old_et = accumulated_et[running_task_id];
@@ -407,7 +421,8 @@ void CFSSimulationOrchestrator::UpdateCFSVirtualTimes(
             run_queue_set.erase(it);
         }
         accumulated_et[running_task_id] += 1.0;
-        run_queue_set.insert({accumulated_et[running_task_id], running_task_id});
+        run_queue_set.insert(
+            {accumulated_et[running_task_id], running_task_id});
     }
 }
 
@@ -486,10 +501,10 @@ void CFSSimulationOrchestrator::ReleaseJobsCFS(
 
 void CFSSimulationOrchestrator::ScheduleCFS(
     LLint time_now, RunQueue& run_queue,
-    std::set<std::pair<double, int>>& run_queue_set,
-    int& running_task_id) {
+    std::set<std::pair<double, int>>& run_queue_set, int& running_task_id) {
     running_task_id = -1;
-    if (run_queue_set.empty()) return;
+    if (run_queue_set.empty())
+        return;
 
     int min_taskId = run_queue_set.begin()->second;
     // Find the first (oldest) queued job for this task
@@ -500,13 +515,13 @@ void CFSSimulationOrchestrator::ScheduleCFS(
             break;
         }
     }
-    if (min_job_index == -1) return;
+    if (min_job_index == -1)
+        return;
 
     if (!run_queue.job_queue_[min_job_index].running) {
         run_queue.PreemptRunningJob(time_now);
         if (min_job_index > 0) {
-            JobScheduleInfo selected_job =
-                run_queue.job_queue_[min_job_index];
+            JobScheduleInfo selected_job = run_queue.job_queue_[min_job_index];
             run_queue.job_queue_.erase(run_queue.job_queue_.begin() +
                                        min_job_index);
             run_queue.job_queue_.insert(run_queue.job_queue_.begin(),
@@ -549,8 +564,7 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
     int running_task_id = -1;
 
     for (LLint time_now = start_time; time_now <= end_time; time_now++) {
-        UpdateCFSVirtualTimes(running_task_id, accumulated_et,
-                              run_queue_set);
+        UpdateCFSVirtualTimes(running_task_id, accumulated_et, run_queue_set);
         run_queue.RemoveFinishedJob(time_now);
         RecordFinishedJobsCFS(time_now, run_queue, dag_tasks);
         UpdateActiveCounts(run_queue, dag_tasks, active_jobs_count,
@@ -583,9 +597,8 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
 
     // CFS does not use time limits; pass all -1
     std::vector<double> time_limits(dag_tasks.tasks.size(), -1);
-    interval_sp_metrics_.push_back(
-        ObtainSP_TaskSet_And_TimeLimits(dag_tasks.tasks, sp_parameters,
-                                        time_limits));
+    interval_sp_metrics_.push_back(ObtainSP_TaskSet_And_TimeLimits(
+        dag_tasks.tasks, sp_parameters, time_limits));
 }
 
 }  // namespace SP_OPT_PA
