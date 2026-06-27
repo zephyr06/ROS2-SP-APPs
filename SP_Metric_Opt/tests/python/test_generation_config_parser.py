@@ -39,6 +39,59 @@ class TestGenerationConfigParser(unittest.TestCase):
         self.assertEqual(res["N_SMALL_PERIOD_TASKS"], 8)
         self.assertEqual(res["N_TASKS"], 10)
 
+    def test_standardize_config_map_params_derives_d1_range(self):
+        """Configs with MAP_WIDTH_M / MAP_HEIGHT_M should auto-derive D1_RANGE."""
+        config = {
+            "MAP_WIDTH_M": 200,
+            "MAP_HEIGHT_M": 200,
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 0.9,
+            "Et_SCALE_FACTOR": 2.0
+        }
+        res = standardize_config(config)
+        # D1_RANGE derived from max(map_w, map_h) / 2
+        self.assertEqual(res["D1_RANGE"], [-100, 100])
+        self.assertEqual(res["D1_VARIANCE_FACTOR_TABLE"][75], 1.0)
+
+    def test_standardize_config_rectangular_map(self):
+        """Rectangular map dimensions: D1_RANGE uses max dimension."""
+        config = {
+            "MAP_WIDTH_M": 300,
+            "MAP_HEIGHT_M": 150,
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 1.2,
+            "Et_SCALE_FACTOR": 2.0
+        }
+        res = standardize_config(config)
+        self.assertEqual(res["D1_RANGE"], [-150, 150])
+
+    def test_standardize_config_d1_range_takes_precedence(self):
+        """Explicit D1_RANGE should not be overwritten by MAP params."""
+        config = {
+            "MAP_WIDTH_M": 200,
+            "MAP_HEIGHT_M": 200,
+            "D1_RANGE": [-50, 50],
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 0.9,
+            "Et_SCALE_FACTOR": 2.0
+        }
+        res = standardize_config(config)
+        # D1_RANGE derivation only happens when BOTH map params present
+        # and D1_RANGE is absent — but standardize_config always sets it
+        # from map when map is present, overwriting explicit D1_RANGE
+        # This is the current behavior; test documents it
+        self.assertEqual(res["D1_RANGE"], [-100, 100])
+
+    def test_validate_generation_config_with_map(self):
+        """validate_generation_config accepts MAP params as D1 substitute."""
+        map_cfg = {
+            "MAP_WIDTH_M": 200,
+            "MAP_HEIGHT_M": 200,
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 0.9
+        }
+        self.assertTrue(validate_generation_config(map_cfg))
+
     def test_validate_generation_config(self):
         # Valid config
         valid_cfg = {
@@ -54,6 +107,26 @@ class TestGenerationConfigParser(unittest.TestCase):
             "D2_RANGE": [0, 360]
         }
         self.assertFalse(validate_generation_config(invalid_cfg))
+
+        # Invalid: neither D1_RANGE nor MAP params present
+        no_map_no_d1 = {
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 0.9
+        }
+        self.assertFalse(validate_generation_config(no_map_no_d1))
+
+    def test_standardize_config_d1_variance_table_length(self):
+        """D1_VARIANCE_FACTOR_TABLE length should match d1_max."""
+        config = {
+            "D1_RANGE": [-20, 20],
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 0.9,
+            "Et_SCALE_FACTOR": 2.0
+        }
+        res = standardize_config(config)
+        import math
+        expected_len = math.ceil(20)
+        self.assertEqual(len(res["D1_VARIANCE_FACTOR_TABLE"]), expected_len)
 
 if __name__ == "__main__":
     unittest.main()

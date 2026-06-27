@@ -12,7 +12,7 @@ Gen_Taskset/tests/test_output/
 build/
 release/
 bin/
-lib/
+/lib/
 obj/
 
 # Simulation Experiment Outputs & Configs
@@ -32,6 +32,7 @@ tests/*analysis*
 !tests/debug_analysis/**
 tests/k_variation/*
 tests/radius_comparison/*
+test_taskset_*gen*/*
 
 # Binary / Output / Log formats
 *.log
