@@ -216,7 +216,10 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         taskset_param[i].et_mean = Et_mean_new
         taskset_param[i].et_sigma = calc_mix_Et_sigma(Et_mean_new, taskset_param[i].weights, new_components)
 
-    # 3. Generate SP constraints
+    # 3. Generate static task properties (deadline, SP constraints)
+    for i in range(n_tasks):
+        # Generate a random deadline ratio once per task (int in [0.5*period, period])
+        taskset_param[i].deadline = int(round(taskset_param[i].period * random.uniform(0.5, 1.0)))
     trd_min = cfgs.get('SP_THRESHOLD_RANGE', [0.5, 0.9])[0]
     trd_max = cfgs.get('SP_THRESHOLD_RANGE', [0.5, 0.9])[1]
     
@@ -265,6 +268,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
             'weights': t.weights,
             'n_weights': len(t.components),
             'period': int(t.period),
+            'deadline': int(t.deadline),
             'D1_MIN': float(t.d1_min),
             'D1_MAX': float(t.d1_max),
             'D1_sigma': float(t.d1_sigma),

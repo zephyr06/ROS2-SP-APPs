@@ -1,3 +1,4 @@
+import random
 import unittest
 import os
 import sys
@@ -134,6 +135,62 @@ class TestYamlExporter(unittest.TestCase):
         # because they are derived from the same min/max = period * range.
         self.assertEqual(perf_records_time_10[0], perf_records_time_5[0])
         self.assertEqual(perf_records_time_10[-1], perf_records_time_5[-1])
+
+    def test_deadline_deterministic_when_provided(self):
+        """Bug: yaml_exporter ignores a pre-defined deadline and regenerates randomly.
+
+        If task_data already contains a 'deadline', the exporter must use it verbatim.
+        """
+        inp_params = {
+            'tasks': [
+                {
+                    'id': 0, 'name': 'task_A', 'processorId': 0, 'period': 100,
+                    'Et_mean': 10.0, 'Et_sigma': 1.0, 'sp_threshold': 0.8,
+                    'deadline': 73  # pre-defined static deadline
+                },
+            ]
+        }
+        cfgs = {"SP_WEIGHTS_SUM": 5.0, "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
+
+        random.seed(123)
+        out1, _ = convert_taskset_parameters_to_cpp_yaml(
+            inp_params, cfgs, add_perf_records=False
+        )
+
+        random.seed(999)
+        out2, _ = convert_taskset_parameters_to_cpp_yaml(
+            inp_params, cfgs, add_perf_records=False
+        )
+
+        self.assertEqual(out1['tasks'][0]['deadline'], 73)
+        self.assertEqual(out2['tasks'][0]['deadline'], 73)
+
+    def test_deadline_random_when_not_provided(self):
+        """Backward compat: missing deadline key triggers random generation."""
+        inp_params = {
+            'tasks': [
+                {
+                    'id': 0, 'name': 'task_B', 'processorId': 0, 'period': 200,
+                    'Et_mean': 20.0, 'Et_sigma': 2.0, 'sp_threshold': 0.6,
+                },
+            ]
+        }
+        cfgs = {"SP_WEIGHTS_SUM": 5.0, "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
+
+        random.seed(123)
+        out1, _ = convert_taskset_parameters_to_cpp_yaml(
+            inp_params, cfgs, add_perf_records=False
+        )
+
+        random.seed(999)
+        out2, _ = convert_taskset_parameters_to_cpp_yaml(
+            inp_params, cfgs, add_perf_records=False
+        )
+
+        self.assertNotEqual(
+            out1['tasks'][0]['deadline'], out2['tasks'][0]['deadline'],
+            "Deadlines should be different when random seeds differ and no deadline key is provided"
+        )
 
 if __name__ == "__main__":
     unittest.main()

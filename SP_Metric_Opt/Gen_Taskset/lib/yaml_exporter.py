@@ -73,7 +73,10 @@ def convert_taskset_parameters_to_cpp_yaml(
             t['execution_time_max'] = task_data.get('Et_max', task_data['period'] * g_final_Et_over_period_range[1])
 
         t['period'] = task_data['period']
-        t['deadline'] = int(round(t['period'] * random.uniform(0.5, 1.0)))
+        if 'deadline' in task_data:
+            t['deadline'] = task_data['deadline']
+        else:
+            t['deadline'] = int(round(t['period'] * random.uniform(0.5, 1.0)))
         t['processorId'] = task_processorId
         t['name'] = task_data.get('name', f'task_{i+1}')
         t['sp_threshold'] = task_data['sp_threshold']
