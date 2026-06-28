@@ -52,8 +52,16 @@ def run_single_simulation(sim_bin_path, taskset_dir, sched_dir, simt, scheduler,
 
 
 def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
-                            horizon_granularity):
-    """Reads interval_sp_metrics.txt from the scheduler output dir and computes miss rate."""
+                            horizon_granularity, effective_num_intervals=None):
+    """Reads interval_sp_metrics.txt from the scheduler output dir and computes miss rate.
+
+    Parameters
+    ----------
+    effective_num_intervals : int or None
+        If provided, use this as the divisor for per-call execution time instead
+        of counting ``taskset_characteristics_*.yaml`` files on disk.  This is
+        needed when ``--max_intervals`` hides some YAML files from C++.
+    """
     sched_dir = os.path.join(taskset_dir, scheduler, scheduler)
     sp_metrics_file = os.path.join(sched_dir, "interval_sp_metrics.txt")
     sp_values_run = []
@@ -96,8 +104,11 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
                     continue
 
     # Count intervals to compute per-call average
-    char_files = glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
-    num_intervals = len(char_files)
+    if effective_num_intervals is not None:
+        num_intervals = effective_num_intervals
+    else:
+        char_files = glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+        num_intervals = len(char_files)
     if scheduler == "CFS":
         avg_sched_time = 0.0
     elif num_intervals > 0:
@@ -113,6 +124,62 @@ def _needs_generation(taskset_dir):
     char_files = glob.glob(os.path.join(taskset_dir,
                                         "taskset_characteristics_*.yaml"))
     return len(char_files) == 0
+
+
+@contextlib.contextmanager
+def _temporarily_hide_interval_files(taskset_dir, max_intervals):
+    """Move excess interval characteristics files out of the way so C++ only sees max_intervals.
+
+    If ``max_intervals`` is None, this is a no-op.  If it is set, all
+    ``taskset_characteristics_*.yaml`` files whose index >= ``max_intervals``
+    are temporarily moved to a ``hidden_intervals/`` subdirectory and restored
+    on exit.  A recovery check at entry restores any files left over from a
+    previous crashed run.
+    """
+    if max_intervals is None:
+        yield
+        return
+
+    hidden_dir = os.path.join(taskset_dir, "hidden_intervals")
+
+    # --- Recovery: restore orphaned files from a previous crash ---
+    if os.path.exists(hidden_dir):
+        for fpath in glob.glob(
+            os.path.join(hidden_dir, "taskset_characteristics_*.yaml")
+        ):
+            dest = os.path.join(taskset_dir, os.path.basename(fpath))
+            if not os.path.exists(dest):
+                shutil.move(fpath, dest)
+        try:
+            os.rmdir(hidden_dir)
+        except OSError:
+            pass
+
+    os.makedirs(hidden_dir, exist_ok=True)
+    moved = []
+    for fpath in glob.glob(
+        os.path.join(taskset_dir, "taskset_characteristics_*.yaml")
+    ):
+        fname = os.path.basename(fpath)
+        stem = fname.replace("taskset_characteristics_", "").replace(".yaml", "")
+        try:
+            idx = int(stem)
+        except ValueError:
+            continue
+        if idx >= max_intervals:
+            dest = os.path.join(hidden_dir, fname)
+            shutil.move(fpath, dest)
+            moved.append((dest, fpath))
+    try:
+        yield
+    finally:
+        for src, dst in moved:
+            if os.path.exists(src):
+                shutil.move(src, dst)
+        try:
+            os.rmdir(hidden_dir)
+        except OSError:
+            pass
 
 
 def main():
@@ -147,8 +214,15 @@ def main():
         help="Number GMM trace instances per path"
     )
     parser.add_argument(
-        "--simt", type=int, default=1000000,
-        help="C++ simulation execution time in ms"
+        "--scheduler_trigger_interval", type=int, default=10,
+        help=("Interval in seconds between scheduler re-optimizations. "
+              "Controls taskset generation (UPDATE_INTERVAL_S) and "
+              "the per-interval simulation duration sent to C++ (default: 10)")
+    )
+    parser.add_argument(
+        "--max_intervals", type=int, default=None,
+        help=("If set, simulate at most this many intervals even if the "
+              "generated taskset contains more. Useful for fast tests.")
     )
     parser.add_argument(
         "--bin_dir", type=str, default="release",
@@ -193,6 +267,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.max_intervals is not None and args.max_intervals < 1:
+        parser.error("--max_intervals must be >= 1")
+    if args.scheduler_trigger_interval < 1:
+        parser.error("--scheduler_trigger_interval must be >= 1")
+
     if args.num_tasks is not None:
         args.config_file = (
             f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{args.num_tasks}.json"
@@ -214,6 +293,10 @@ def main():
 
     sim_bin_path = os.path.join(bin_dir_abs, "tests", "RunOrchestrator")
 
+    # scheduler_trigger_interval (seconds) drives generation, simulation, and plots
+    scheduler_trigger_interval = args.scheduler_trigger_interval
+    simt = scheduler_trigger_interval * 1000  # per-interval duration in ms for C++
+
     # Verify binary exists
     if not os.path.exists(sim_bin_path):
         print(f"Error: RunOrchestrator binary not found at {sim_bin_path}. "
@@ -223,6 +306,7 @@ def main():
     if args.verbose >= 1:
         print(f"Starting pipeline run on {args.n_tasksets} tasksets...")
         print(f"Schedulers to evaluate: {args.schedulers}")
+        print(f"Scheduler trigger interval: {scheduler_trigger_interval}s")
 
     # Temporary directory for JSON configs with seeds
     temp_dir = os.path.join(PROJECT_ROOT, "temp_experiment_configs")
@@ -234,7 +318,8 @@ def main():
             "sched_times": []}
         for s in args.schedulers
     }
-    horizon_granularity = 10  # 10-second intervals
+    # Plot x-axis spacing equals the scheduler trigger interval (seconds)
+    horizon_granularity = scheduler_trigger_interval
 
     for idx in range(args.n_tasksets):
         if args.verbose >= 1:
@@ -245,10 +330,11 @@ def main():
 
         needs_generation = _needs_generation(taskset_dir)
 
-        # 1. Load configuration and update random seed
+        # 1. Load configuration and update random seed + trigger interval
         with open(config_file_abs, "r") as f:
             config_dict = json.load(f)
         config_dict["RANDOM_SEED"] = args.base_seed + idx
+        config_dict["UPDATE_INTERVAL_S"] = scheduler_trigger_interval
 
         # Save a copy of the generator config in the taskset folder for records
         with open(os.path.join(taskset_dir, "generator_config.json"), "w") as f:
@@ -299,6 +385,15 @@ def main():
                 print("  --> Skipping simulation (--skip_simulation).")
             continue
 
+        # Total interval count on disk (used for exec-time divisor and max_intervals clamp)
+        total_intervals = len(
+            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+        )
+        effective_num_intervals = (
+            min(args.max_intervals, total_intervals)
+            if args.max_intervals is not None else total_intervals
+        )
+
         # Read task definitions and deadlines
         char_fpath = os.path.join(taskset_dir, "taskset_characteristics_0.yaml")
         with open(char_fpath, "r") as f:
@@ -317,7 +412,8 @@ def main():
             print("  --> Executing scheduler simulations in parallel...")
 
         sim_futures = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor, \
+             _temporarily_hide_interval_files(taskset_dir, args.max_intervals):
             for scheduler in args.schedulers:
                 sched_dir = os.path.join(taskset_dir, scheduler)
                 os.makedirs(sched_dir, exist_ok=True)
@@ -326,7 +422,7 @@ def main():
                         executor.submit(
                             run_single_simulation,
                             sim_bin_path, taskset_dir, sched_dir,
-                            args.simt, scheduler, inst, args.verbose,
+                            simt, scheduler, inst, args.verbose,
                             actual_level, args.sample_interval,
                         )
                     )
@@ -343,6 +439,7 @@ def main():
                         avg_sched_time = analyze_single_instance(
                             taskset_dir, scheduler, inst, task_deadlines,
                             horizon_granularity,
+                            effective_num_intervals=effective_num_intervals,
                         )
                     results_by_scheduler[sched]["miss_rates"].append(miss_rate)
                     results_by_scheduler[sched]["sched_times"].append(

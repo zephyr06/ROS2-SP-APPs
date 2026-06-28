@@ -10,6 +10,7 @@ Usage:
 """
 import argparse
 import contextlib
+import glob
 import json
 import os
 import shutil
@@ -30,6 +31,7 @@ from simulation_experiments.run_sim_experiments import (
     run_single_simulation,
     analyze_single_instance,
     _needs_generation,
+    _temporarily_hide_interval_files,
 )
 from simulation_experiments.utils import (
     compute_miss_rate,
@@ -199,8 +201,8 @@ def plot_per_taskset_radar(results_by_taskset, schedulers, output_path):
     print(f"Saved per-taskset plot to: {output_path}")
 
 
-def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec, simt,
-                           base_seed):
+def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec,
+                           scheduler_trigger_interval, base_seed):
     """Return the full output directory path for a comparison run.
 
     Parameters
@@ -209,7 +211,7 @@ def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec, simt,
         The parent directory (e.g. simulation_experiments/optimizer_comparison).
     run_name : str or None
         Explicit subfolder name. If None, auto-generated from parameters.
-    num_tasks, n_sec, simt, base_seed : int
+    num_tasks, n_sec, scheduler_trigger_interval, base_seed : int
         Parameters used for auto-naming when run_name is None.
     """
     if run_name:
@@ -217,7 +219,7 @@ def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec, simt,
     else:
         subfolder = (
             f"tasks{num_tasks}_dur{n_sec}_"
-            f"simt{simt}_seed{base_seed}"
+            f"interval{scheduler_trigger_interval}_seed{base_seed}"
         )
     return os.path.join(base_output_dir, subfolder)
 
@@ -240,8 +242,15 @@ def main():
         help="GMM trace path duration in seconds (default: 300)"
     )
     parser.add_argument(
-        "--simt", type=int, default=1000000,
-        help="C++ simulation execution time in ms (default: 1000000)"
+        "--scheduler_trigger_interval", type=int, default=10,
+        help=("Interval in seconds between scheduler re-optimizations. "
+              "This controls taskset generation (UPDATE_INTERVAL_S) and "
+              "the per-interval simulation duration sent to C++ (default: 10)")
+    )
+    parser.add_argument(
+        "--max_intervals", type=int, default=None,
+        help=("If set, simulate at most this many intervals even if the "
+              "generated taskset contains more. Useful for fast tests.")
     )
     parser.add_argument(
         "--n_inst", type=int, default=1,
@@ -258,7 +267,8 @@ def main():
         "--run_name", type=str, default=None,
         help=("Custom subfolder name inside --output_dir. "
               "If omitted, a name is auto-generated from num_tasks, "
-              "n_sec, simt, and base_seed (e.g. tasks6_dur300_simt1000000_seed1000).")
+              "n_sec, scheduler_trigger_interval, and base_seed "
+              "(e.g. tasks6_dur300_interval10_seed1000).")
     )
     parser.add_argument(
         "--bin_dir", type=str, default="release",
@@ -291,6 +301,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.max_intervals is not None and args.max_intervals < 1:
+        parser.error("--max_intervals must be >= 1")
+    if args.scheduler_trigger_interval < 1:
+        parser.error("--scheduler_trigger_interval must be >= 1")
+
     # Resolve paths
     config_file_abs = os.path.join(
         PROJECT_ROOT,
@@ -300,9 +315,14 @@ def main():
         args.output_dir if args.output_dir.startswith("/")
         else os.path.join(PROJECT_ROOT, args.output_dir)
     )
+    # scheduler_trigger_interval (seconds) is the single concept that drives
+    # generation, simulation, and plotting.
+    scheduler_trigger_interval = args.scheduler_trigger_interval
+    simt = scheduler_trigger_interval * 1000  # per-interval duration in ms for C++
+
     output_dir_abs = resolve_run_output_dir(
         base_output_dir, args.run_name, args.num_tasks, args.n_sec,
-        args.simt, args.base_seed
+        scheduler_trigger_interval, args.base_seed
     )
 
     bin_dir_abs = (
@@ -320,7 +340,7 @@ def main():
         print(f"Optimizer Comparison: {args.n_tasksets} tasksets × "
               f"{len(args.schedulers)} schedulers")
         print(f"Task count: {args.num_tasks} | Duration: {args.n_sec}s | "
-              f"Sim time: {args.simt}ms | Seed: {args.base_seed}")
+              f"Trigger interval: {scheduler_trigger_interval}s | Seed: {args.base_seed}")
         print(f"Schedulers: {args.schedulers}")
         print(f"Output: {output_dir_abs}")
 
@@ -330,7 +350,8 @@ def main():
     temp_dir = os.path.join(PROJECT_ROOT, "temp_experiment_configs")
     os.makedirs(temp_dir, exist_ok=True)
 
-    horizon_granularity = 10  # 10-second intervals
+    # Plot x-axis spacing equals the scheduler trigger interval (seconds)
+    horizon_granularity = scheduler_trigger_interval
 
     # Data structures
     results_by_scheduler = {
@@ -354,6 +375,7 @@ def main():
         # Load, seed, and save configuration (resolve INCLUDE so temp file is self-contained)
         config_dict = load_generation_config(config_file_abs)
         config_dict["RANDOM_SEED"] = args.base_seed + idx
+        config_dict["UPDATE_INTERVAL_S"] = scheduler_trigger_interval
 
         with open(os.path.join(taskset_dir, "generator_config.json"), "w") as f:
             json.dump(config_dict, f, indent=4)
@@ -402,12 +424,22 @@ def main():
             yaml_data = yaml.safe_load(f)
         task_deadlines = {t["id"]: float(t["deadline"]) for t in yaml_data["tasks"]}
 
+        # Total interval count on disk (for exec-time divisor and max_intervals clamp)
+        total_intervals = len(
+            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+        )
+        effective_num_intervals = (
+            min(args.max_intervals, total_intervals)
+            if args.max_intervals is not None else total_intervals
+        )
+
         # 2. Run each scheduler in parallel
         if args.verbose >= 1:
             print("  Running simulations...")
 
         sim_futures = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor, \
+             _temporarily_hide_interval_files(taskset_dir, args.max_intervals):
             for scheduler in args.schedulers:
                 sched_dir = os.path.join(taskset_dir, scheduler)
                 os.makedirs(sched_dir, exist_ok=True)
@@ -416,7 +448,7 @@ def main():
                         executor.submit(
                             run_single_simulation,
                             sim_bin_path, taskset_dir, sched_dir,
-                            args.simt, scheduler, inst, args.verbose,
+                            simt, scheduler, inst, args.verbose,
                             args.export_level, args.sample_interval,
                         )
                     )
@@ -434,6 +466,7 @@ def main():
                         avg_sched_time = analyze_single_instance(
                             taskset_dir, scheduler, inst, task_deadlines,
                             horizon_granularity,
+                            effective_num_intervals=effective_num_intervals,
                         )
                     results_by_scheduler[sched]["miss_rates"].append(miss_rate)
                     results_by_scheduler[sched]["sched_times"].append(

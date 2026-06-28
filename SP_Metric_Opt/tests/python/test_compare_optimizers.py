@@ -26,15 +26,15 @@ class TestCompareOptimizers(unittest.TestCase):
         """Auto-generated run name from parameters."""
         path = resolve_run_output_dir(
             "/base", None, num_tasks=6, n_sec=300,
-            simt=1000000, base_seed=42
+            scheduler_trigger_interval=10, base_seed=42
         )
-        self.assertEqual(path, "/base/tasks6_dur300_simt1000000_seed42")
+        self.assertEqual(path, "/base/tasks6_dur300_interval10_seed42")
 
     def test_resolve_run_output_dir_custom_name(self):
         """Custom run name overrides auto-generation."""
         path = resolve_run_output_dir(
             "/base", "my_exp_v2", num_tasks=8, n_sec=120,
-            simt=5000, base_seed=99
+            scheduler_trigger_interval=60, base_seed=99
         )
         self.assertEqual(path, "/base/my_exp_v2")
 
