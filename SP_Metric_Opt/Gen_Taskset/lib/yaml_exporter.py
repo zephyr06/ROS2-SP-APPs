@@ -40,7 +40,9 @@ def convert_taskset_parameters_to_cpp_yaml(
                 candidates.append(i)
         
         # Select randomly up to g_sel_n_perf_record_task
-        if len(candidates) >= g_sel_n_perf_record_task:
+        if g_sel_n_perf_record_task is None:
+            perf_sel = candidates.copy()
+        elif len(candidates) >= g_sel_n_perf_record_task:
             perf_sel = random.sample(candidates, g_sel_n_perf_record_task)
         else:
             perf_sel = candidates.copy()

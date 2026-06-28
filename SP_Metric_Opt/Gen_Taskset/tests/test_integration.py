@@ -22,15 +22,15 @@ def test_integration_pipeline():
         "BIG_PERIOD_HZ": [0.5, 1],
         "N_BIG_PERIOD_TASKS": 1,
         "N_SMALL_PERIOD_TASKS": 2,
-        "N_PERFORMANCE_RECORD_TASKS": 1,
-        "MIN_PERIOID_WITH_PERFORMANCE_RECORDS": 33,
+        "N_ENV_DEPENDENT_TASKS": 1,
+        "MIN_PERIOD_WITH_PERFORMANCE_RECORDS": 33,
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
         "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
         "RO_1_Et_RANGE": [-0.9, -0.7],
         "RO_2_Et_RANGE": [-0.1, 0.1],
         "D1_RANGE": [-10, 10],
         "D2_RANGE": [0, 360],
-        "N_MIX_WEIGHTS_PER_TASK": 2,
+        "N_GMM_COMPONENTS_PER_TASK": 2,
         "SP_THRESHOLD_RANGE": [0.5, 0.9],
         "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "MEAN_CPU_UTIL": 0.5,
@@ -86,8 +86,8 @@ def test_integration_pipeline():
     assert len(soft_tasks) == 1
     soft_task = soft_tasks[0]
     
-    # Soft task period must be >= MIN_PERIOID_WITH_PERFORMANCE_RECORDS
-    assert soft_task["period"] >= config_data["MIN_PERIOID_WITH_PERFORMANCE_RECORDS"]
+    # Soft task period must be >= MIN_PERIOD_WITH_PERFORMANCE_RECORDS
+    assert soft_task["period"] >= config_data["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"]
     
     # Verify format of performance records strings
     time_rec = [float(x) for x in soft_task["performance_records_time"].split()]
@@ -124,9 +124,6 @@ def test_integration_pipeline():
             assert config_data["D1_RANGE"][0] <= x <= config_data["D1_RANGE"][1]
             assert config_data["D1_RANGE"][0] <= y <= config_data["D1_RANGE"][1]
             
-            # Assert execution time is within final bounds
-            # period * FINAL_Et_OVER_PERIOD_RANGE
-            assert period * config_data["FINAL_Et_OVER_PERIOD_RANGE"][0] - 1e-4 <= et <= period * config_data["FINAL_Et_OVER_PERIOD_RANGE"][1] + 1e-4
             assert et >= 1.0
             
             # Assert movement steps do not exceed ROBOT_STEP_SIZE

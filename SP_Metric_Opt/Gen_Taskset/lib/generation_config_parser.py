@@ -33,9 +33,19 @@ def standardize_config(config: dict) -> dict:
         else:
             config["BIG_PERIODS_MS"] = [4000, 2000, 1000] # Default
 
-    # Map N_PERFORMANCE_RECORD_TASKS/N_ENV_DEPENDENT_TASKS
-    if "N_ENV_DEPENDENT_TASKS" not in config:
-        config["N_ENV_DEPENDENT_TASKS"] = config.get("N_PERFORMANCE_RECORD_TASKS", 2)
+    # Legacy key check
+    _LEGACY_KEYS = {
+        "N_PERFORMANCE_RECORD_TASKS",
+        "N_MIX_WEIGHTS_PER_TASK",
+        "N_PROCESSORS",
+        "MIN_PERIOID_WITH_PERFORMANCE_RECORDS",
+    }
+    found_legacy = _LEGACY_KEYS & config.keys()
+    if found_legacy:
+        raise KeyError(
+            f"Legacy config keys detected: {sorted(found_legacy)}. "
+            "Update the config to use the current field names instead."
+        )
 
     # Set default task counts
     config["N_BIG_PERIOD_TASKS"] = config.get("N_BIG_PERIOD_TASKS", 2)
@@ -44,20 +54,20 @@ def standardize_config(config: dict) -> dict:
 
     # Minimum period for performance records / soft tasks
     config["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"] = config.get(
-        "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 
-        config.get("MIN_PERIOID_WITH_PERFORMANCE_RECORDS", 100)
+        "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100
     )
 
     # GMM properties
-    config["N_GMM_COMPONENTS_PER_TASK"] = config.get(
-        "N_GMM_COMPONENTS_PER_TASK", 
-        config.get("N_MIX_WEIGHTS_PER_TASK", 4)
-    )
+    config["N_GMM_COMPONENTS_PER_TASK"] = config.get("N_GMM_COMPONENTS_PER_TASK", 4)
 
     # Scale factor
     config["Et_SCALE_FACTOR"] = config.get("Et_SCALE_FACTOR", 2.0)
     config["FINAL_Et_OVER_PERIOD_RANGE"] = config.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
     
+    # Backward-compat alias
+    if "N_CORES" not in config and "N_PROCESSORS" in config:
+        config["N_CORES"] = config["N_PROCESSORS"]
+
     # N_CORES default logic
     if "N_CORES" not in config:
         config["N_CORES"] = 2 if config.get("MEAN_CPU_UTIL", 0.5) > 1.0 else 1

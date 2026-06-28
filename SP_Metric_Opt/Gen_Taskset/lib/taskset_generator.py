@@ -7,41 +7,84 @@ from .generation_config_parser import standardize_config
 # Keep common parameters that are shared across gaussian tasks in a GMM task
 SHARED_TASK_PARAMS = ["period", "D1_MIN", "D1_MAX", "D1_sigma", "D2_MIN", "D2_MAX", "D2_sigma"]
 
+def uunifast_distribution(n: int, target_util: float, max_util_cap: float = 0.95) -> list[float]:
+    """Classic UUniFast algorithm for generating n utilization values that sum to target_util.
+
+    Each individual utilization is capped below max_util_cap (default 0.95 for single-core
+    feasibility).  Retries the whole vector up to 100 times; if still failing, falls back
+    to capping and re-normalizing.
+
+    Reference: Bini, Enrico, and Giorgio C. Buttazzo.
+    "Measuring the performance of schedulability tests."
+    Real-Time Systems 30.1-2 (2005): 129-154.
+
+    Args:
+        n: Number of tasks.
+        target_util: Total utilization to distribute.
+        max_util_cap: Maximum per-task utilization (exclusive).
+
+    Returns:
+        List of n utilization values summing to target_util, each < max_util_cap.
+    """
+    # Ensure a feasible cap: if the target is higher than what the default
+    # cap allows, raise it just enough to be mathematically possible.
+    required_min_cap = target_util / n
+    if required_min_cap >= max_util_cap:
+        max_util_cap = min(0.9999, required_min_cap + 0.001)
+
+    for _ in range(100):
+        sum_u = target_util
+        vect_u = [0.0] * n
+        for i in range(n - 1):
+            next_sum_u = sum_u * (random.random() ** (1.0 / (n - i)))
+            vect_u[i] = sum_u - next_sum_u
+            sum_u = next_sum_u
+        vect_u[n - 1] = sum_u
+
+        # Numerical safety clip
+        for i in range(n):
+            vect_u[i] = max(0.0, min(target_util, vect_u[i]))
+
+        if all(u < max_util_cap for u in vect_u):
+            return vect_u
+
+    # Fallback: cap and re-normalize to preserve exact total
+    capped = [min(u, max_util_cap * 0.9999) for u in vect_u]
+    current_sum = sum(capped)
+    if current_sum > 0:
+        scale = target_util / current_sum
+        vect_u = [u * scale for u in capped]
+    else:
+        vect_u = [target_util / n] * n
+    return vect_u
+
+def pick_period(cfgs: dict, prd_sel: str, picked_periods: list) -> int:
+    """Select a random period from the configured list, avoiding recent duplicates."""
+    periods_key = "BIG_PERIODS_MS" if prd_sel == 'big' else "SMALL_PERIODS_MS"
+    periods_list = cfgs.get(periods_key)
+
+    selected_period = None
+    for _ in range(10):
+        selected_period = int(np.random.choice(periods_list))
+        if selected_period not in picked_periods:
+            picked_periods.append(selected_period)
+            break
+    if selected_period is None:
+        selected_period = int(np.random.choice(periods_list))
+    return selected_period
+
 def generate_single_gaussian_task(
     cfgs: dict,
-    period: float = None,
+    period: float,
     et_mean: float = None,
     et_sigma: float = None,
     ro_1_Et: float = None,
     ro_2_Et: float = None,
-    prd_sel: str = 'big',
-    picked_periods: list = None
 ) -> dict:
     """Generates components and coefficients for a single Gaussian task."""
-    rt = {}
-    
-    # 1. Determine period (ms)
-    if period is not None:
-        rt["period"] = period
-    else:
-        # Standardize: check for periods list in ms, fall back to converting HZ to ms
-        periods_key = "BIG_PERIODS_MS" if prd_sel == 'big' else "SMALL_PERIODS_MS"
-        periods_list = cfgs.get(periods_key)
-        
-        if picked_periods is None:
-            picked_periods = []
-            
-        selected_period = None
-        for _ in range(10):
-            selected_period = int(np.random.choice(periods_list))
-            if selected_period not in picked_periods:
-                picked_periods.append(selected_period)
-                break
-        if selected_period is None:
-            selected_period = int(np.random.choice(periods_list))
-        rt["period"] = selected_period
+    rt = {"period": period}
 
-    # 2. Determine Et_mean
+    # 1. Determine Et_mean
     if et_mean is not None:
         rt["Et_mean"] = et_mean
     else:
@@ -106,19 +149,37 @@ def generate_single_gaussian_task(
 
     return rt
 
-def generate_mix_gaussian_task(cfgs: dict, prd_sel: str = 'big', picked_periods: list = None) -> GMMTaskModel:
-    """Generates GMMTaskModel containing multiple components and weights."""
+def generate_mix_gaussian_task(
+    cfgs: dict,
+    period: float,
+    et_mean: float = None,
+    et_sigma: float = None,
+    ro_1_Et: float = None,
+    ro_2_Et: float = None,
+) -> GMMTaskModel:
+    """Generates GMMTaskModel containing multiple components and weights.
+
+    When et_mean is provided (e.g. from UUniFast), all components share that Et_mean.
+    When et_sigma is provided, all components share that Et_sigma.
+    When ro_1_Et/ro_2_Et are provided, they override per-component random correlations.
+    All components share the provided period.
+    """
     gaussian_task_params = []
-    weights = []    
+    weights = []
     n_weights = cfgs.get("N_GMM_COMPONENTS_PER_TASK", 4)
 
     total = 0.0
-    period = None
-    for i in range(n_weights):
-        task_param = generate_single_gaussian_task(cfgs, period=period, prd_sel=prd_sel, picked_periods=picked_periods)
-        period = task_param['period']
+    for _ in range(n_weights):
+        task_param = generate_single_gaussian_task(
+            cfgs,
+            period=period,
+            et_mean=et_mean,
+            et_sigma=et_sigma,
+            ro_1_Et=ro_1_Et,
+            ro_2_Et=ro_2_Et,
+        )
         gaussian_task_params.append(task_param)
-        
+
         value = random.random()
         if value < 0.1:
             value = 0.1
@@ -129,8 +190,8 @@ def generate_mix_gaussian_task(cfgs: dict, prd_sel: str = 'big', picked_periods:
         weights[i] /= total
 
     # Compute GMM mix mean and sigma
-    Et_mean = sum(gaussian_task_params[i]['Et_mean'] * weights[i] for i in range(n_weights))
-    Et_sigma = calc_mix_Et_sigma(Et_mean, weights, gaussian_task_params)
+    mix_Et_mean = sum(gaussian_task_params[i]['Et_mean'] * weights[i] for i in range(n_weights))
+    mix_Et_sigma = calc_mix_Et_sigma(mix_Et_mean, weights, gaussian_task_params)
 
     # Instantiate the GMMTaskModel
     g_params = gaussian_task_params[0]
@@ -146,15 +207,15 @@ def generate_mix_gaussian_task(cfgs: dict, prd_sel: str = 'big', picked_periods:
         d2_min=g_params['D2_MIN'],
         d2_max=g_params['D2_MAX'],
         d2_sigma=g_params['D2_sigma'],
-        et_mean=Et_mean,
-        et_sigma=Et_sigma
+        et_mean=mix_Et_mean,
+        et_sigma=mix_Et_sigma
     )
     return task_model
 
 def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bool = False, n_sec: int = None) -> dict:
     """Orchestrates generation of all GMMTaskModels scaled to target MEAN_CPU_UTIL."""
     cfgs = standardize_config(cfgs)
-    
+
     # Seeding for reproducibility
     seed = cfgs.get("RANDOM_SEED")
     if seed is not None:
@@ -163,97 +224,118 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
 
     n_cores = cfgs["N_CORES"]
     cpu_util = cfgs['MEAN_CPU_UTIL'] * n_cores
-    total_util = 0.0
     taskset_param = []
     picked_periods = []
 
     g_n_big_periods = cfgs.get("N_BIG_PERIOD_TASKS", 2)
     g_n_small_periods = cfgs.get("N_SMALL_PERIOD_TASKS", 8)
+    n_tasks = g_n_big_periods + g_n_small_periods
 
-    # 1. Generate task GMM parameters
+    # Determine number of env-dependent tasks.
+    # If N_ENV_DEPENDENT_TASKS is specified in config, use it.
+    # Otherwise default to ALL tasks being env-dependent for maximum
+    # per-interval utilization variance (100-200% per-core swings).
+    n_env_dependent_cfg = cfgs.get("N_ENV_DEPENDENT_TASKS", None)
+    if n_env_dependent_cfg is None:
+        n_env_dependent = random.randint(1, n_tasks)
+    else:
+        n_env_dependent = min(int(n_env_dependent_cfg), n_tasks)
+
+    # Small sigma base for non-env tasks to keep them near-deterministic
+    FIXED_TASK_SIGMA_RATIO = cfgs.get("FIXED_TASK_SIGMA_RATIO", 0.001)
+    ENV_TASK_SIGMA_RATIO = cfgs.get("ENV_TASK_SIGMA_RATIO", 0.05)
+
+    # 1. Generate periods
+    periods = []
     for _ in range(g_n_big_periods):
-        task_param = generate_mix_gaussian_task(cfgs, prd_sel='big', picked_periods=picked_periods)
-        taskset_param.append(task_param)
-        total_util += task_param.et_mean / task_param.period
-    
+        periods.append(pick_period(cfgs, prd_sel='big', picked_periods=picked_periods))
     for _ in range(g_n_small_periods):
-        task_param = generate_mix_gaussian_task(cfgs, prd_sel='small', picked_periods=picked_periods)
-        taskset_param.append(task_param)
-        total_util += task_param.et_mean / task_param.period
-        
-    # 2. Scale execution times to target MEAN_CPU_UTIL
-    util_scale_factor = cpu_util / total_util
-    n_tasks = len(taskset_param)
-    
-    for i in range(n_tasks):
-        n_weights = len(taskset_param[i].components)
-        period = taskset_param[i].period
-        
-        # We need to scale components of the mixture
-        Et_mean_new = 0.0
-        new_components = []
-        for k in range(n_weights):
-            old_comp = taskset_param[i].components[k]
-            scaled_mean = old_comp.et_mean * util_scale_factor
-            scaled_sigma = old_comp.et_sigma * util_scale_factor
+        periods.append(pick_period(cfgs, prd_sel='small', picked_periods=picked_periods))
 
-            # Preserve correlations from the original component
-            old_ro_1 = getattr(old_comp, 'ro_1_Et', None)
-            old_ro_2 = getattr(old_comp, 'ro_2_Et', None)
+    # ------------------------------------------------------------------
+    # UUniFast mode: generate exact utilization vector, then derive Et_mean
+    # Legacy random-Et-then-scale mode has been removed.
+    # ------------------------------------------------------------------
+    util_vector = uunifast_distribution(n_tasks, cpu_util)
 
-            scaled_component_dict = generate_single_gaussian_task(
-                cfgs,
-                period=period,
-                et_mean=scaled_mean,
-                et_sigma=scaled_sigma,
-                ro_1_Et=old_ro_1,
-                ro_2_Et=old_ro_2,
+    # Pick env-dependent tasks weighted by utilization so that high-workload
+    # tasks (which drive per-interval variance) are more likely to be env.
+    # This restores the 100-200% utilization swings seen in legacy mode.
+    if n_env_dependent == n_tasks:
+        env_task_indices = set(range(n_tasks))
+    else:
+        env_task_indices = set(
+            np.random.choice(
+                n_tasks,
+                size=n_env_dependent,
+                replace=False,
+                p=np.array(util_vector) / sum(util_vector)
             )
-            new_components.append(scaled_component_dict['component'])
-            Et_mean_new += scaled_component_dict['Et_mean'] * taskset_param[i].weights[k]
-        
-        taskset_param[i].components = new_components
-        taskset_param[i].et_mean = Et_mean_new
-        taskset_param[i].et_sigma = calc_mix_Et_sigma(Et_mean_new, taskset_param[i].weights, new_components)
+        )
+
+    task_idx = 0
+    for i in range(n_tasks):
+        period = periods[task_idx]
+        u_i = util_vector[task_idx]
+        et_mean = max(1.0, u_i * period)
+        is_env = task_idx in env_task_indices
+
+        if is_env:
+            # Env tasks: use natural large sigma from config for strong spatial variation
+            et_sigma_for_components = None
+            # Use random correlations from config range
+            ro_1 = np.random.uniform(cfgs["RO_1_Et_RANGE"][0], cfgs["RO_1_Et_RANGE"][1])
+            ro_2 = np.random.uniform(cfgs["RO_2_Et_RANGE"][0], cfgs["RO_2_Et_RANGE"][1])
+        else:
+            # Non-env tasks: tiny sigma so they are effectively deterministic
+            et_sigma_for_components = max(0.001, et_mean * FIXED_TASK_SIGMA_RATIO)
+            ro_1 = 0.0
+            ro_2 = 0.0
+
+        task_model = generate_mix_gaussian_task(
+            cfgs,
+            period=period,
+            et_mean=et_mean,
+            et_sigma=et_sigma_for_components,
+            ro_1_Et=ro_1,
+            ro_2_Et=ro_2,
+        )
+        # Override to exact UUniFast target (numerical safety after GMM mixing)
+        task_model.et_mean = et_mean
+        task_model.env_dependent = is_env
+        taskset_param.append(task_model)
+        task_idx += 1
 
     # 3. Generate static task properties (deadline, SP constraints)
     for i in range(n_tasks):
-        # Generate a random deadline ratio once per task (int in [0.5*period, period])
         taskset_param[i].deadline = int(round(taskset_param[i].period * random.uniform(0.5, 1.0)))
+
     trd_min = cfgs.get('SP_THRESHOLD_RANGE', [0.5, 0.9])[0]
     trd_max = cfgs.get('SP_THRESHOLD_RANGE', [0.5, 0.9])[1]
-    
-    # Check if we should select from discrete SP thresholds set
     sp_thresholds_set = cfgs.get("SP_THRESHOLDS_SET", [0.2, 0.4, 0.6, 0.8, 1.0])
-    
+
     for i in range(n_tasks):
         taskset_param[i].sp_weight = 1.0
         if sp_thresholds_set:
-            # Random selection from discrete set (to match paper)
             taskset_param[i].sp_threshold = float(np.random.choice(sp_thresholds_set))
         else:
-            # Continuous uniform distribution
             taskset_param[i].sp_threshold = random.uniform(trd_min, trd_max)
 
     # 4. Core Allocation (Processor ID assignment)
-    # n_cores is already defined at the beginning of the function
-    
-    # Sort tasks by utilization (et_mean / period) descending for First-Fit bin packing
     indexed_tasks = [(i, taskset_param[i]) for i in range(n_tasks)]
     indexed_tasks.sort(key=lambda item: item[1].et_mean / item[1].period, reverse=True)
-    
+
     core_utilizations = [0.0] * n_cores
-    for original_idx, t in indexed_tasks:
+    for _, t in indexed_tasks:
         min_core_idx = int(np.argmin(core_utilizations))
         t.processorId = min_core_idx
         core_utilizations[min_core_idx] += (t.et_mean / t.period)
 
-    # Convert GMMTaskModel objects to dictionary structure for serialization
+    # 5. Convert GMMTaskModel objects to dictionary structure for serialization
     tasks_dict_list = []
     for i in range(n_tasks):
         t = taskset_param[i]
-        
-        # Serialize components parameters
+
         serialized_components = []
         for c in t.components:
             serialized_components.append({
@@ -263,7 +345,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
                 'ro_2_Et': float(getattr(c, 'ro_2_Et', 0.0)),
                 'coeffs': c.get_coeffs_dict()
             })
-        
+
         tasks_dict_list.append({
             'weights': t.weights,
             'n_weights': len(t.components),
@@ -280,12 +362,13 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
             'sp_weight': float(t.sp_weight),
             'sp_threshold': float(t.sp_threshold),
             'processorId': int(getattr(t, 'processorId', 0)),
+            'env_dependent': bool(getattr(t, 'env_dependent', False)),
             'tasks': serialized_components
         })
-        
+
     rt = {
-        'n_tasks': n_tasks, 
-        'cpu_util': cpu_util, 
+        'n_tasks': n_tasks,
+        'cpu_util': cpu_util,
         'tasks': tasks_dict_list
     }
     return rt

@@ -68,13 +68,19 @@ def generate_execution_time_trace(
             a += 360.0
 
         # Sample execution time
-        et = task_model.sample_execution_time(
-            d1=r,
-            d2=a,
-            variance_factor_table=variance_factor_table,
-            final_et_range=g_final_Et_over_period_range,
-            et_min_2sigma=True
-        )
+        if task_param.get('env_dependent', False):
+            # Env-dependent tasks: use the full GMM with spatial position + variance factor table
+            et = task_model.sample_execution_time(
+                d1=r,
+                d2=a,
+                variance_factor_table=variance_factor_table,
+                final_et_range=g_final_Et_over_period_range,
+                et_min_2sigma=True
+            )
+        else:
+            # Non-env tasks: fixed execution time from UUniFast allocation.
+            # No spatial or random variation — deterministic per design.
+            et = task_param.get('Et_mean', task_model.et_mean)
 
         Et_min = min(Et_min, et)
         Et_max = max(Et_max, et)

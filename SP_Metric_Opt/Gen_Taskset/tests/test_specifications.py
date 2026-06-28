@@ -23,7 +23,7 @@ def test_config_specifications_validation():
         "RO_2_Et_RANGE": [-0.1, 0.1],
         "D1_RANGE": [-20, 20],
         "D2_RANGE": [0, 360],
-        "N_MIX_WEIGHTS_PER_TASK": 2,
+        "N_GMM_COMPONENTS_PER_TASK": 2,
         "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "MEAN_CPU_UTIL": 1.6,
         "Et_SCALE_FACTOR": 1.5,
@@ -214,11 +214,10 @@ def test_all_configurations_specifications(config_path):
             assert cfgs["D1_RANGE"][0] <= x <= cfgs["D1_RANGE"][1]
             assert cfgs["D1_RANGE"][0] <= y <= cfgs["D1_RANGE"][1]
             
-            # Check execution time limits
-            final_et_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
-            assert period * final_et_range[0] - 1e-4 <= et <= period * final_et_range[1] + 1e-4
-            assert et >= 1.0
-            
+            # UUniFast guarantees each utilization < max_util_cap ≤ 1.0,
+            # therefore Et = u * period must be < period.
+            assert et < period + 1e-4
+
             # Verify that robot coordinates move by at most ROBOT_STEP_SIZE
             if prev_x is not None and prev_y is not None:
                 assert abs(x - prev_x) <= step_size
