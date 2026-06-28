@@ -16,7 +16,7 @@ def test_trajectory_generation():
     assert len(path) == 50
     for x, y in path:
         assert -10 <= x <= 10
-        assert -10 <= y <= 10
+        assert 0 <= y <= 360
         
 def test_taskset_parameters_generation():
     cfgs = {

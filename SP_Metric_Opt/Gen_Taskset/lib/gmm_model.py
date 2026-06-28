@@ -98,24 +98,13 @@ class GMMTaskModel:
 
         sample = comp.sample_conditional_execution_time(d1, d2, mean_only=mean_only)
 
-        # 2. Apply min_Et restriction
+        # 2. Apply min_Et restriction (soft lower bound, not below 1.0)
         if et_min_2sigma:
             min_Et = comp.et_mean - 2 * comp.et_sigma
             if sample < min_Et:
                 sample = min_Et
 
-        # 3. Limit to period/deadline bounds if period is specified
-        if self.period is not None:
-            et_min = self.period * final_et_range[0]
-            et_max = self.period * final_et_range[1]
-
-            if sample > self.period:
-                sample = self.period
-            if sample < et_min:
-                sample = et_min
-            if sample > et_max:
-                sample = et_max
-
+        # 3. Hard floor only — ET can exceed period; the scheduler handles it
         if sample < 1.0:
             sample = 1.0
 

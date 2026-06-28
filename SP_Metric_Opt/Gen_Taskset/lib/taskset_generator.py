@@ -48,14 +48,30 @@ def uunifast_distribution(n: int, target_util: float, max_util_cap: float = 0.95
         if all(u < max_util_cap for u in vect_u):
             return vect_u
 
-    # Fallback: cap and re-normalize to preserve exact total
-    capped = [min(u, max_util_cap * 0.9999) for u in vect_u]
-    current_sum = sum(capped)
-    if current_sum > 0:
-        scale = target_util / current_sum
-        vect_u = [u * scale for u in capped]
-    else:
-        vect_u = [target_util / n] * n
+    # Fallback: iterative cap-and-redistribute to preserve exact total
+    # without re-inflating capped values above the limit.
+    for _ in range(1000):
+        if all(u < max_util_cap for u in vect_u):
+            break
+        excess = 0.0
+        free_indices = []
+        for i in range(n):
+            if vect_u[i] >= max_util_cap:
+                excess += vect_u[i] - (max_util_cap * 0.9999)
+                vect_u[i] = max_util_cap * 0.9999
+            else:
+                free_indices.append(i)
+        if not free_indices:
+            vect_u = [target_util / n] * n
+            break
+        free_sum = sum(vect_u[i] for i in free_indices)
+        if free_sum > 0:
+            for i in free_indices:
+                vect_u[i] += excess * (vect_u[i] / free_sum)
+        else:
+            share = excess / len(free_indices)
+            for i in free_indices:
+                vect_u[i] += share
     return vect_u
 
 def pick_period(cfgs: dict, prd_sel: str, picked_periods: list) -> int:
@@ -255,24 +271,53 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     # UUniFast mode: generate exact utilization vector, then derive Et_mean
     # Legacy random-Et-then-scale mode has been removed.
     # ------------------------------------------------------------------
-    util_vector = uunifast_distribution(n_tasks, cpu_util)
+    util_vector = uunifast_distribution(n_tasks, cpu_util, max_util_cap=cfgs["MAX_UTIL_PER_TASK"])
 
-    # Pick env-dependent tasks weighted by utilization so that high-workload
-    # tasks (which drive per-interval variance) are more likely to be env.
-    # This restores the 100-200% utilization swings seen in legacy mode.
-    if n_env_dependent == n_tasks:
-        env_task_indices = set(range(n_tasks))
+    # Pick env-dependent tasks weighted by utilization from tasks whose
+    # period is >= MIN_PERIOD_ENV_DEPENDENT (avoids short-period blow-ups).
+    min_period_env = cfgs.get("MIN_PERIOD_ENV_DEPENDENT", 0)
+    env_candidates = [i for i in range(n_tasks) if periods[i] >= min_period_env]
+
+    if n_env_dependent == n_tasks or len(env_candidates) <= n_env_dependent:
+        env_task_indices = set(env_candidates)
     else:
+        candidate_utils = np.array([util_vector[i] for i in env_candidates])
+        candidate_probs = candidate_utils / candidate_utils.sum()
         env_task_indices = set(
             np.random.choice(
-                n_tasks,
+                len(env_candidates),
                 size=n_env_dependent,
                 replace=False,
-                p=np.array(util_vector) / sum(util_vector)
+                p=candidate_probs
             )
         )
+        env_task_indices = {env_candidates[i] for i in env_task_indices}
 
-    # 2. Select time-limit (performance-record) tasks from non-env candidates
+    # 2. Optionally tighten utilization cap ONLY for env-dependent tasks.
+    #    This leaves headroom so spatial variation from strong negative
+    #    correlations doesn't push observed ET above period at map edges.
+    max_util_env = cfgs.get("MAX_UTIL_PER_ENV_TASK")
+    if max_util_env is not None:
+        freed = 0.0
+        non_env_indices = []
+        for i in range(n_tasks):
+            if i in env_task_indices:
+                if util_vector[i] > max_util_env:
+                    freed += util_vector[i] - max_util_env
+                    util_vector[i] = max_util_env
+            else:
+                non_env_indices.append(i)
+        # Redistribute freed utilization to non-env tasks proportionally
+        if freed > 0 and non_env_indices:
+            non_env_sum = sum(util_vector[i] for i in non_env_indices)
+            if non_env_sum > 0:
+                for i in non_env_indices:
+                    util_vector[i] += freed * (util_vector[i] / non_env_sum)
+            else:
+                for i in non_env_indices:
+                    util_vector[i] += freed / len(non_env_indices)
+
+    # 3. Select time-limit (performance-record) tasks from non-env candidates
     min_period_perf = cfgs.get("MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100)
     perf_prob = cfgs.get("PERF_RECORD_TASK_PROBABILITY", 0.5)
     perf_candidates = []

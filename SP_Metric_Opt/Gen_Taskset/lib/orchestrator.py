@@ -145,12 +145,14 @@ def generate_additional_execution_traces(
 
         cpu_util_lst.append(cpu_util_lst_1)
 
-    # 5. Plot expected CPU utilization over time
+    # 5. Plot expected CPU utilization and per-task utilization over time
     if dir_path is not None:
-        fig, ax = plt.subplots()
         nn = math.ceil(n_sec / update_interval_s)
         xx = [update_interval_s * idx for idx in range(nn)]
+        n_cores = cfgs.get("N_CORES", 1)
 
+        # --- aggregate CPU util ---
+        fig, ax = plt.subplots()
         k_idx = 0
         for c in cpu_util_lst:
             si = 0
@@ -158,13 +160,46 @@ def generate_additional_execution_traces(
                 ax.plot(xx, cc, label=f"path_{k_idx}_inst_{si}", alpha=0.6, marker='o', markersize=3)
                 si += 1
             k_idx += 1
-
-        ax.set_xlabel('time')
+        ax.set_xlabel('time (s)')
         ax.set_ylabel('Average Per-Core CPU Utilization (%)')
         ax.set_title('Expected CPU Utilization')
         ax.legend()
         plt.savefig(os.path.join(dir_path, "cpu_util.png"))
         plt.close()
+
+        # --- per-task util ---
+        for i in range(n_tasks):
+            task = params['tasks'][i]
+            task_name = task.get('name', f'task_{i+1}')
+            prd = task['period']
+
+            if task.get('env_dependent', False):
+                task_type = 'env-dependent'
+            elif task.get('time_limit_task', False):
+                task_type = 'perf-dependent'
+            else:
+                task_type = 'normal'
+
+            fig, ax = plt.subplots()
+            task_util = [0.0] * nn
+            for idx in range(nn):
+                ets = task_Ets[i][idx]['Ets']
+                if ets:
+                    # Average ET over all runs, divided by period => true scheduling util
+                    mean_et = sum(ets) / len(ets)
+                    task_util[idx] = (mean_et / prd) * 100.0
+
+            ax.plot(xx, task_util, marker='o', markersize=3, alpha=0.7)
+            ax.set_xlabel('time (s)')
+            ax.set_ylabel('Task Utilization (%)')
+            ax.set_title(
+                f'{task_name} ({task_type}) — period={prd}ms\n'
+                f'Expected Utilization: {task["Et_mean"] / prd * 100:.1f}%'
+            )
+            ax.grid(True, alpha=0.3)
+            plt.tight_layout()
+            plt.savefig(os.path.join(dir_path, f"task_{i}_util.png"))
+            plt.close()
 
     # 6. Re-calculate metrics and write taskset_characteristics_[k].yaml
     perf_sel = None

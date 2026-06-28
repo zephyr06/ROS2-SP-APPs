@@ -37,6 +37,7 @@ class TestUUniFast(unittest.TestCase):
             "N_CORES": 1,
             "RANDOM_SEED": 42,
             "USE_UUNIFAST": use_uunifast,
+            "MIN_PERIOD_ENV_DEPENDENT": 0,  # no filter, so exact N_ENV counts hold
             # Minimal GMM params (only env-dependent tasks will use them)
             "RO_1_Et_RANGE": [-0.5, 0.5],
             "RO_2_Et_RANGE": [-0.5, 0.5],

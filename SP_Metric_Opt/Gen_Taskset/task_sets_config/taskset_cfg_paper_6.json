@@ -49,7 +49,8 @@
         0.8,
         1.0
     ],
-    "MEAN_CPU_UTIL": 1.5,
+    "MEAN_CPU_UTIL": 1.2,
+    "MAX_UTIL_PER_ENV_TASK": 0.45,
     "Et_SCALE_FACTOR": 4,
     "FINAL_Et_OVER_PERIOD_RANGE": [
         0.05,

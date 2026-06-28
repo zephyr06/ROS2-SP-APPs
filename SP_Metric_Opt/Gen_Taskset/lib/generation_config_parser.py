@@ -47,15 +47,22 @@ def standardize_config(config: dict) -> dict:
             "Update the config to use the current field names instead."
         )
 
-    # Set default task counts
     config["N_BIG_PERIOD_TASKS"] = config.get("N_BIG_PERIOD_TASKS", 2)
     config["N_SMALL_PERIOD_TASKS"] = config.get("N_SMALL_PERIOD_TASKS", 8)
     config["N_TASKS"] = config["N_BIG_PERIOD_TASKS"] + config["N_SMALL_PERIOD_TASKS"]
 
-    # Minimum period for performance records / soft tasks
+    # Per-task utilization caps
+    config["MAX_UTIL_PER_TASK"] = config.get("MAX_UTIL_PER_TASK", 0.95)
+    # Optional tighter cap applied only to env-dependent tasks.
+    # If None, env tasks use the same MAX_UTIL_PER_TASK cap as everyone else.
+    config["MAX_UTIL_PER_ENV_TASK"] = config.get("MAX_UTIL_PER_ENV_TASK", None)
     config["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"] = config.get(
         "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100
     )
+
+    # Minimum period for tasks that may be marked env-dependent.
+    # (Short-period env tasks are prone to ET > period with strong spatial correlations.)
+    config["MIN_PERIOD_ENV_DEPENDENT"] = config.get("MIN_PERIOD_ENV_DEPENDENT", 0)
 
     # Probability of selecting a non-env-dependent task as a performance-record task
     config["PERF_RECORD_TASK_PROBABILITY"] = config.get(
