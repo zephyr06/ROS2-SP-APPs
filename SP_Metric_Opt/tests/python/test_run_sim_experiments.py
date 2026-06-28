@@ -63,7 +63,7 @@ class TestRunSimExperiments(unittest.TestCase):
             sim_bin_path="sim_bin",
             taskset_dir="taskset",
             sched_dir="sched",
-            simt=1000,
+            interval_duration_ms=1000,
             scheduler="INCR",
             inst=0,
         )
@@ -80,7 +80,7 @@ class TestRunSimExperiments(unittest.TestCase):
             sim_bin_path="sim_bin",
             taskset_dir="taskset",
             sched_dir="sched",
-            simt=1000,
+            interval_duration_ms=1000,
             scheduler="BF",
             inst=1,
             verbose=0,

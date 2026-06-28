@@ -318,7 +318,7 @@ def main():
     # scheduler_trigger_interval (seconds) is the single concept that drives
     # generation, simulation, and plotting.
     scheduler_trigger_interval = args.scheduler_trigger_interval
-    simt = scheduler_trigger_interval * 1000  # per-interval duration in ms for C++
+    interval_duration_ms = scheduler_trigger_interval * 1000  # per-interval duration in ms for C++
 
     output_dir_abs = resolve_run_output_dir(
         base_output_dir, args.run_name, args.num_tasks, args.n_sec,
@@ -448,8 +448,8 @@ def main():
                         executor.submit(
                             run_single_simulation,
                             sim_bin_path, taskset_dir, sched_dir,
-                            simt, scheduler, inst, args.verbose,
-                            args.export_level, args.sample_interval,
+                            interval_duration_ms, scheduler, inst,
+                            args.verbose, args.export_level, args.sample_interval,
                         )
                     )
             concurrent.futures.wait(sim_futures)

@@ -22,7 +22,8 @@ from simulation_experiments.utils import (
 )
 
 
-def run_single_simulation(sim_bin_path, taskset_dir, sched_dir, simt, scheduler,
+def run_single_simulation(sim_bin_path, taskset_dir, sched_dir,
+                          interval_duration_ms, scheduler,
                           inst, verbose=1, export_level=None,
                           sample_interval=None):
     # RunOrchestrator args:
@@ -33,7 +34,7 @@ def run_single_simulation(sim_bin_path, taskset_dir, sched_dir, simt, scheduler,
         taskset_dir,
         sched_dir,
         scheduler,
-        str(simt),
+        str(interval_duration_ms),
     ]
     if export_level is not None:
         sim_cmd.append(str(export_level))
@@ -295,7 +296,7 @@ def main():
 
     # scheduler_trigger_interval (seconds) drives generation, simulation, and plots
     scheduler_trigger_interval = args.scheduler_trigger_interval
-    simt = scheduler_trigger_interval * 1000  # per-interval duration in ms for C++
+    interval_duration_ms = scheduler_trigger_interval * 1000  # per-interval duration in ms for C++
 
     # Verify binary exists
     if not os.path.exists(sim_bin_path):
@@ -422,8 +423,8 @@ def main():
                         executor.submit(
                             run_single_simulation,
                             sim_bin_path, taskset_dir, sched_dir,
-                            simt, scheduler, inst, args.verbose,
-                            actual_level, args.sample_interval,
+                            interval_duration_ms, scheduler, inst,
+                            args.verbose, actual_level, args.sample_interval,
                         )
                     )
             concurrent.futures.wait(sim_futures)
