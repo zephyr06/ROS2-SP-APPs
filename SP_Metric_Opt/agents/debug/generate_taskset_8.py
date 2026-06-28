@@ -9,8 +9,8 @@ if PROJECT_ROOT not in sys.path:
 
 from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
 
-CFG_FILE = os.path.join(PROJECT_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_paper_8.json")
-OUTPUT_DIR = os.path.join(PROJECT_ROOT, "test_taskset_8_gen_v2")
+CFG_FILE = os.path.join(PROJECT_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_paper_6.json")
+OUTPUT_DIR = os.path.join(PROJECT_ROOT, "test_taskset_6_gen_v2")
 N_SEC = 1000
 N_PATH_PER_TASK = 1
 N_INST_PER_PATH = 1
