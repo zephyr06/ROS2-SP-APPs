@@ -199,6 +199,29 @@ def plot_per_taskset_radar(results_by_taskset, schedulers, output_path):
     print(f"Saved per-taskset plot to: {output_path}")
 
 
+def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec, simt,
+                           base_seed):
+    """Return the full output directory path for a comparison run.
+
+    Parameters
+    ----------
+    base_output_dir : str
+        The parent directory (e.g. simulation_experiments/optimizer_comparison).
+    run_name : str or None
+        Explicit subfolder name. If None, auto-generated from parameters.
+    num_tasks, n_sec, simt, base_seed : int
+        Parameters used for auto-naming when run_name is None.
+    """
+    if run_name:
+        subfolder = run_name
+    else:
+        subfolder = (
+            f"tasks{num_tasks}_dur{n_sec}_"
+            f"simt{simt}_seed{base_seed}"
+        )
+    return os.path.join(base_output_dir, subfolder)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=("Compare scheduler optimizers across randomly generated tasksets. "
@@ -227,7 +250,15 @@ def main():
     parser.add_argument(
         "-o", "--output_dir", type=str,
         default="simulation_experiments/optimizer_comparison",
-        help="Output directory for results (default: simulation_experiments/optimizer_comparison)"
+        help=("Base output directory for results (default: "
+              "simulation_experiments/optimizer_comparison). "
+              "A subfolder is auto-created per configuration.")
+    )
+    parser.add_argument(
+        "--run_name", type=str, default=None,
+        help=("Custom subfolder name inside --output_dir. "
+              "If omitted, a name is auto-generated from num_tasks, "
+              "n_sec, simt, and base_seed (e.g. tasks6_dur300_simt1000000_seed1000).")
     )
     parser.add_argument(
         "--bin_dir", type=str, default="release",
@@ -265,10 +296,15 @@ def main():
         PROJECT_ROOT,
         f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{args.num_tasks}.json"
     )
-    output_dir_abs = (
+    base_output_dir = (
         args.output_dir if args.output_dir.startswith("/")
         else os.path.join(PROJECT_ROOT, args.output_dir)
     )
+    output_dir_abs = resolve_run_output_dir(
+        base_output_dir, args.run_name, args.num_tasks, args.n_sec,
+        args.simt, args.base_seed
+    )
+
     bin_dir_abs = (
         args.bin_dir if args.bin_dir.startswith("/")
         else os.path.join(PROJECT_ROOT, args.bin_dir)
@@ -284,8 +320,9 @@ def main():
         print(f"Optimizer Comparison: {args.n_tasksets} tasksets × "
               f"{len(args.schedulers)} schedulers")
         print(f"Task count: {args.num_tasks} | Duration: {args.n_sec}s | "
-              f"Sim time: {args.simt}ms")
+              f"Sim time: {args.simt}ms | Seed: {args.base_seed}")
         print(f"Schedulers: {args.schedulers}")
+        print(f"Output: {output_dir_abs}")
 
     os.makedirs(output_dir_abs, exist_ok=True)
 

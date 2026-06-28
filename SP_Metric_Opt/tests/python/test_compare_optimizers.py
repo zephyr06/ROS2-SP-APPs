@@ -15,11 +15,28 @@ from simulation_experiments.compare_optimizers import (
     plot_optimizer_bar_comparison,
     plot_optimizer_exec_time,
     plot_per_taskset_radar,
+    resolve_run_output_dir,
     ALL_SCHEDULERS,
 )
 
 
 class TestCompareOptimizers(unittest.TestCase):
+
+    def test_resolve_run_output_dir_auto_name(self):
+        """Auto-generated run name from parameters."""
+        path = resolve_run_output_dir(
+            "/base", None, num_tasks=6, n_sec=300,
+            simt=1000000, base_seed=42
+        )
+        self.assertEqual(path, "/base/tasks6_dur300_simt1000000_seed42")
+
+    def test_resolve_run_output_dir_custom_name(self):
+        """Custom run name overrides auto-generation."""
+        path = resolve_run_output_dir(
+            "/base", "my_exp_v2", num_tasks=8, n_sec=120,
+            simt=5000, base_seed=99
+        )
+        self.assertEqual(path, "/base/my_exp_v2")
 
     def test_all_schedulers_list(self):
         """Ensure the default scheduler list includes the expected modes."""
