@@ -214,34 +214,266 @@ TEST(OrchestratorTest, RateMonotonicPriorityAssignment) {
     EXPECT_NEAR(3.89222, sp_metrics[1], 1e-4);
 }
 
-TEST(OrchestratorTest, ExportResults) {
-    std::string input_dir =
-        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    std::string output_dir =
-        GlobalVariables::PROJECT_PATH + "tests/test_output_export";
 
-    // Clean directory first if exists
+
+class MockOrchestrator : public BaseSimulationOrchestrator {
+public:
+    MockOrchestrator(const std::string& output_folder, LLint interval_duration_ms = 1000)
+        : BaseSimulationOrchestrator("", output_folder, interval_duration_ms) {}
+
+    void RunSimulation() override {
+        // No-op for mock orchestrator
+    }
+
+    void PopulateData(const std::vector<JobRecord>& history, const std::vector<double>& sp_metrics) {
+        job_history_ = history;
+        interval_sp_metrics_ = sp_metrics;
+    }
+
+    void CallExportResults(const std::string& scheduler_name) {
+        ExportResults(scheduler_name);
+    }
+};
+
+static std::vector<JobRecord> GetMockJobHistory() {
+    std::vector<JobRecord> history;
+    // Task 0: 2 jobs (1 overrun)
+    history.push_back({0, 0, 0, 10, 15, 5.0, false});
+    history.push_back({0, 1, 1000, 1010, 1025, 15.0, true});
+    // Task 1: 2 jobs (0 overrun)
+    history.push_back({1, 0, 0, 15, 25, 10.0, false});
+    history.push_back({1, 1, 2000, 2010, 2025, 15.0, false});
+    return history;
+}
+
+static std::vector<double> GetMockSPMetrics() {
+    return {0.95, 0.90, 0.85}; // 3 intervals
+}
+
+TEST(OrchestratorTest, ExportResultsLevel0) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_l0";
     std::filesystem::remove_all(output_dir);
 
-    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                         "RM", 100);
-    orchestrator.RunSimulation();
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 0;
 
-    // Check if the output files exist and are populated
-    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
     std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
+    std::string summary_file = output_dir + "/RM/miss_rate_summary.txt";
+    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
+    std::string per_task_miss_file = output_dir + "/RM/miss_rate_per_task.txt";
+    std::string aggregate_file = output_dir + "/RM/task_aggregate_0.txt";
 
-    EXPECT_TRUE(std::filesystem::exists(response_file));
     EXPECT_TRUE(std::filesystem::exists(metrics_file));
+    EXPECT_TRUE(std::filesystem::exists(summary_file));
+    EXPECT_FALSE(std::filesystem::exists(response_file));
+    EXPECT_FALSE(std::filesystem::exists(per_task_miss_file));
+    EXPECT_FALSE(std::filesystem::exists(aggregate_file));
 
-    // Verify the response time file starts with correct header
+    // Verify summary contents
+    std::ifstream file(summary_file);
+    std::string line;
+    ASSERT_TRUE(std::getline(file, line));
+    EXPECT_EQ("total_jobs,missed_jobs,miss_rate", line);
+    ASSERT_TRUE(std::getline(file, line));
+    std::stringstream ss(line);
+    int total_jobs = 0, missed_jobs = -1;
+    double miss_rate = -1.0;
+    char comma;
+    ASSERT_TRUE(ss >> total_jobs >> comma >> missed_jobs >> comma >> miss_rate);
+    EXPECT_EQ(4, total_jobs);
+    EXPECT_EQ(1, missed_jobs);
+    EXPECT_DOUBLE_EQ(0.25, miss_rate);
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+}
+
+TEST(OrchestratorTest, ExportResultsLevel1) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_l1";
+    std::filesystem::remove_all(output_dir);
+
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 1;
+
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
+    std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
+    std::string summary_file = output_dir + "/RM/miss_rate_summary.txt";
+    std::string per_task_miss_file = output_dir + "/RM/miss_rate_per_task.txt";
+    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
+    std::string aggregate_file = output_dir + "/RM/task_aggregate_0.txt";
+
+    EXPECT_TRUE(std::filesystem::exists(metrics_file));
+    EXPECT_TRUE(std::filesystem::exists(summary_file));
+    EXPECT_TRUE(std::filesystem::exists(per_task_miss_file));
+    EXPECT_FALSE(std::filesystem::exists(response_file));
+    EXPECT_FALSE(std::filesystem::exists(aggregate_file));
+
+    // Verify per-task miss rate summary
+    std::ifstream file(per_task_miss_file);
+    std::string line;
+    ASSERT_TRUE(std::getline(file, line));
+    EXPECT_EQ("task_id,total_jobs,missed_jobs,miss_rate,avg_response_time,max_response_time", line);
+
+    int t_id, total, missed;
+    double mr, avg_rt, max_rt;
+    char comma;
+
+    std::unordered_map<int, std::vector<double>> task_stats;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        ASSERT_TRUE(ss >> t_id >> comma >> total >> comma >> missed >> comma >> mr >> comma >> avg_rt >> comma >> max_rt);
+        task_stats[t_id] = {static_cast<double>(total), static_cast<double>(missed), mr, avg_rt, max_rt};
+    }
+    
+    EXPECT_EQ(2, task_stats.size());
+    EXPECT_EQ(2, task_stats[0][0]); // Task 0 total
+    EXPECT_EQ(1, task_stats[0][1]); // Task 0 missed
+    EXPECT_DOUBLE_EQ(0.5, task_stats[0][2]); // Task 0 miss rate
+    EXPECT_DOUBLE_EQ(20.0, task_stats[0][3]); // Task 0 avg rt (Job 0: 15, Job 1: 25 -> avg 20)
+    EXPECT_DOUBLE_EQ(25.0, task_stats[0][4]); // Task 0 max rt (Job 0: 15, Job 1: 25 -> max 25)
+
+    EXPECT_EQ(2, task_stats[1][0]); // Task 1 total
+    EXPECT_EQ(0, task_stats[1][1]); // Task 1 missed
+    EXPECT_DOUBLE_EQ(0.0, task_stats[1][2]); // Task 1 miss rate
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+}
+
+TEST(OrchestratorTest, ExportResultsLevel2) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_l2";
+    std::filesystem::remove_all(output_dir);
+
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 2;
+
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
+    std::string aggregate_file = output_dir + "/RM/task_aggregate_0.txt";
+    EXPECT_TRUE(std::filesystem::exists(aggregate_file));
+
+    // Verify task aggregate contents
+    std::ifstream file(aggregate_file);
+    std::string line;
+    ASSERT_TRUE(std::getline(file, line));
+    EXPECT_EQ("interval_index,time_seconds,job_count,avg_response_time,max_response_time,missed_jobs", line);
+
+    // Interval 0: Task 0 Job 0 (release 0 -> falls in interval 0). count=1, rt=15.
+    ASSERT_TRUE(std::getline(file, line));
+    std::stringstream ss0(line);
+    int interval_index, time_seconds, job_count, missed_jobs;
+    double avg_response, max_response;
+    char comma;
+    ASSERT_TRUE(ss0 >> interval_index >> comma >> time_seconds >> comma >> job_count >> comma >> avg_response >> comma >> max_response >> comma >> missed_jobs);
+    EXPECT_EQ(0, interval_index);
+    EXPECT_EQ(0, time_seconds);
+    EXPECT_EQ(1, job_count);
+    EXPECT_DOUBLE_EQ(15.0, avg_response);
+    EXPECT_EQ(0, missed_jobs);
+
+    // Interval 1: Task 0 Job 1 (release 1000 -> falls in interval 1). count=1, rt=25, missed=1.
+    ASSERT_TRUE(std::getline(file, line));
+    std::stringstream ss1(line);
+    ASSERT_TRUE(ss1 >> interval_index >> comma >> time_seconds >> comma >> job_count >> comma >> avg_response >> comma >> max_response >> comma >> missed_jobs);
+    EXPECT_EQ(1, interval_index);
+    EXPECT_EQ(1, time_seconds);
+    EXPECT_EQ(1, job_count);
+    EXPECT_DOUBLE_EQ(25.0, avg_response);
+    EXPECT_EQ(1, missed_jobs);
+
+    // Interval 2: No Task 0 jobs released. count=0.
+    ASSERT_TRUE(std::getline(file, line));
+    std::stringstream ss2(line);
+    ASSERT_TRUE(ss2 >> interval_index >> comma >> time_seconds >> comma >> job_count >> comma >> avg_response >> comma >> max_response >> comma >> missed_jobs);
+    EXPECT_EQ(2, interval_index);
+    EXPECT_EQ(2, time_seconds);
+    EXPECT_EQ(0, job_count);
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+}
+
+TEST(OrchestratorTest, ExportResultsLevel3) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_l3";
+    std::filesystem::remove_all(output_dir);
+
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 3;
+
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
+    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
+    EXPECT_TRUE(std::filesystem::exists(response_file));
+
     std::ifstream file(response_file);
     std::string line;
-    std::getline(file, line);
-    EXPECT_EQ(
-        "jobId,release_time,start_time,finish_time,response_time,execution_"
-        "time,is_overrun",
-        line);
+    ASSERT_TRUE(std::getline(file, line));
+    EXPECT_EQ("jobId,release_time,start_time,finish_time,response_time,execution_time,is_overrun", line);
+
+    // Job 0
+    ASSERT_TRUE(std::getline(file, line));
+    std::stringstream ss0(line);
+    int jobId, is_overrun;
+    LLint release_time, start_time, finish_time, response_time;
+    double execution_time;
+    char comma;
+    ASSERT_TRUE(ss0 >> jobId >> comma >> release_time >> comma >> start_time >> comma >> finish_time >> comma >> response_time >> comma >> execution_time >> comma >> is_overrun);
+    EXPECT_EQ(0, jobId);
+    EXPECT_EQ(0, release_time);
+    EXPECT_EQ(15 - 0, response_time);
+    EXPECT_EQ(0, is_overrun);
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+}
+
+TEST(OrchestratorTest, ExportResultsSampling) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_sampling";
+    std::filesystem::remove_all(output_dir);
+
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    int old_sample = GlobalVariables::METRIC_SAMPLE_INTERVAL_SECONDS;
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 2;
+    GlobalVariables::METRIC_SAMPLE_INTERVAL_SECONDS = 2;
+
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
+    std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
+    EXPECT_TRUE(std::filesystem::exists(metrics_file));
+
+    std::ifstream file(metrics_file);
+    std::string line;
+    int count = 0;
+    while (std::getline(file, line)) {
+        if (!line.empty()) {
+            count++;
+            std::stringstream ss(line);
+            int idx;
+            char comma;
+            ss >> idx >> comma;
+            EXPECT_EQ(0, idx % 2);
+        }
+    }
+    EXPECT_EQ(2, count);
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+    GlobalVariables::METRIC_SAMPLE_INTERVAL_SECONDS = old_sample;
 }
 
 TEST(OrchestratorTest, CFSOrchestration) {

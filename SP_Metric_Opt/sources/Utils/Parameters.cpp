@@ -21,4 +21,28 @@ bool disable_time_limit_opt = false;
 bool use_wcet_execution_time = false;
 int TimeLimitSearchRadiusIncr =
     loaded_doc["TimeLimitSearchRadiusIncr"].as<int>();
+
+// simulation export controls
+int EXPORT_DETAIL_LEVEL = 3;               // default to FULL for backward compatibility
+int METRIC_SAMPLE_INTERVAL_SECONDS = 0;    // default to 0 (all intervals)
+
+// --- optional YAML overrides with fallback defaults ---
+// These run before main() because they are in the same namespace as the
+// variables above and depend on `loaded_doc` having already loaded.
+static bool _exportDefaultsSet = []() {
+    try {
+        EXPORT_DETAIL_LEVEL =
+            loaded_doc["EXPORT_DETAIL_LEVEL"].as<int>();
+    } catch (const YAML::Exception&) {
+        // keep hard-coded default
+    }
+    try {
+        METRIC_SAMPLE_INTERVAL_SECONDS =
+            loaded_doc["METRIC_SAMPLE_INTERVAL_SECONDS"].as<int>();
+    } catch (const YAML::Exception&) {
+        // keep hard-coded default
+    }
+    return true;
+}();
+
 }  // namespace GlobalVariables

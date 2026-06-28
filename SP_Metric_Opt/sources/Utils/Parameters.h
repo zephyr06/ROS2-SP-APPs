@@ -20,4 +20,8 @@ extern double Dist_compress_threshold;
 extern bool disable_time_limit_opt;
 extern bool use_wcet_execution_time;
 extern int TimeLimitSearchRadiusIncr;
-}  // namespace GlobalVariables
+
+// simulation export controls
+extern int EXPORT_DETAIL_LEVEL;               // 0=sp_metrics_only, 1=+miss_rate_per_task, 2=+task_aggregate, 3=+full_job_traces
+extern int METRIC_SAMPLE_INTERVAL_SECONDS;    // 0=un-sampled (all intervals), N>0=sample every N seconds
+}

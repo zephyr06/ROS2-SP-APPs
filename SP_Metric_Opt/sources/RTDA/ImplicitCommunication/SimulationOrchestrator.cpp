@@ -78,33 +78,136 @@ std::vector<float> BaseSimulationOrchestrator::LoadJobExecutionTraces(
 
 void BaseSimulationOrchestrator::ExportResults(
     const std::string& scheduler_name) {
+    // Determine effective export level & sampling
+    int detail = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    int sample_sec = GlobalVariables::METRIC_SAMPLE_INTERVAL_SECONDS;
+    if (detail < 0 || detail > 3) {
+        detail = 3;  // clamp to valid range
+    }
+
     std::string results_dir = output_folder_ + "/" + scheduler_name;
     std::filesystem::create_directories(results_dir);
 
-    // Group history by task id
+    // Always write interval_sp_metrics.txt (Level-0 minimum), with sampling.
+    // Format kept unchanged for backward compatibility: interval_index,sp_metric
+    std::string metrics_path = results_dir + "/interval_sp_metrics.txt";
+    std::ofstream metrics_file(metrics_path);
+    for (size_t i = 0; i < interval_sp_metrics_.size(); i++) {
+        LLint time_sec = i * interval_duration_ms_ / 1000;
+        if (sample_sec > 0 && time_sec % sample_sec != 0) {
+            continue;  // skip unsampled intervals
+        }
+        metrics_file << i << "," << interval_sp_metrics_[i] << "\n";
+    }
+
+    // Compute overall miss rate from job_history_
+    LLint total_jobs = 0;
+    LLint missed_jobs = 0;
+    for (const auto& r : job_history_) {
+        if (r.isOverrun) {
+            missed_jobs++;
+        }
+        total_jobs++;
+    }
+    double overall_miss_rate =
+        (total_jobs > 0)
+            ? (static_cast<double>(missed_jobs) / static_cast<double>(total_jobs))
+            : 0.0;
+
+    // Always write miss_rate_summary.txt (Level-0 minimum)
+    std::string miss_summary_path = results_dir + "/miss_rate_summary.txt";
+    std::ofstream miss_summary_file(miss_summary_path);
+    miss_summary_file << "total_jobs,missed_jobs,miss_rate\n";
+    miss_summary_file << total_jobs << "," << missed_jobs << ","
+                      << overall_miss_rate << "\n";
+
+    // Group history by task id for everything that follows
     std::unordered_map<int, std::vector<JobRecord>> task_history;
     for (const auto& record : job_history_) {
         task_history[record.taskId].push_back(record);
     }
 
-    for (const auto& [task_id, records] : task_history) {
-        std::string file_path = results_dir + "/response_times_task_" +
-                                std::to_string(task_id) + ".txt";
-        std::ofstream outfile(file_path);
-        outfile << "jobId,release_time,start_time,finish_time,response_time,"
-                   "execution_time,is_overrun\n";
-        for (const auto& r : records) {
-            outfile << r.jobId << "," << r.releaseTime << "," << r.startTime
-                    << "," << r.finishTime << ","
-                    << (r.finishTime - r.releaseTime) << "," << r.executionTime
-                    << "," << (r.isOverrun ? 1 : 0) << "\n";
+    // Level 1+: per-task miss rate summary
+    if (detail >= 1) {
+        std::string per_task_miss_path =
+            results_dir + "/miss_rate_per_task.txt";
+        std::ofstream per_task_miss_file(per_task_miss_path);
+        per_task_miss_file << "task_id,total_jobs,missed_jobs,miss_rate,"
+                              "avg_response_time,max_response_time\n";
+        for (const auto& [task_id, records] : task_history) {
+            LLint t_total = records.size();
+            LLint t_missed = 0;
+            double sum_rt = 0.0;
+            double max_rt = 0.0;
+            for (const auto& r : records) {
+                double rt = static_cast<double>(r.finishTime - r.releaseTime);
+                sum_rt += rt;
+                if (rt > max_rt) max_rt = rt;
+                if (r.isOverrun) t_missed++;
+            }
+            double avg_rt = (t_total > 0) ? (sum_rt / t_total) : 0.0;
+            double mr = (t_total > 0)
+                            ? (static_cast<double>(t_missed) / t_total)
+                            : 0.0;
+            per_task_miss_file << task_id << "," << t_total << ","
+                               << t_missed << "," << mr << "," << avg_rt
+                               << "," << max_rt << "\n";
         }
     }
 
-    std::string metrics_path = results_dir + "/interval_sp_metrics.txt";
-    std::ofstream metrics_file(metrics_path);
-    for (size_t i = 0; i < interval_sp_metrics_.size(); i++) {
-        metrics_file << i << "," << interval_sp_metrics_[i] << "\n";
+    // Level 2+: per-task aggregate per interval (only sampled intervals)
+    if (detail >= 2) {
+        for (const auto& [task_id, records] : task_history) {
+            std::string file_path = results_dir + "/task_aggregate_" +
+                                    std::to_string(task_id) + ".txt";
+            std::ofstream agg_file(file_path);
+            agg_file << "interval_index,time_seconds,job_count,avg_response_"
+                        "time,max_response_time,missed_jobs\n";
+
+            for (size_t i = 0; i < interval_sp_metrics_.size(); i++) {
+                LLint time_sec = i * interval_duration_ms_ / 1000;
+                if (sample_sec > 0 && time_sec % sample_sec != 0) {
+                    continue;
+                }
+                LLint int_start = i * interval_duration_ms_;
+                LLint int_end = (i + 1) * interval_duration_ms_;
+                int count = 0;
+                double sum_rt = 0.0;
+                double max_rt = 0.0;
+                int int_missed = 0;
+                for (const auto& r : records) {
+                    if (r.releaseTime >= int_start && r.releaseTime < int_end) {
+                        double rt = static_cast<double>(r.finishTime - r.releaseTime);
+                        sum_rt += rt;
+                        if (rt > max_rt) max_rt = rt;
+                        if (r.isOverrun) int_missed++;
+                        count++;
+                    }
+                }
+                double avg_rt = (count > 0) ? (sum_rt / count) : 0.0;
+                agg_file << i << "," << time_sec << "," << count << ","
+                         << avg_rt << "," << max_rt << "," << int_missed
+                         << "\n";
+            }
+        }
+    }
+
+    // Level 3: full per-job trace files (original behavior)
+    if (detail >= 3) {
+        for (const auto& [task_id, records] : task_history) {
+            std::string file_path = results_dir + "/response_times_task_" +
+                                    std::to_string(task_id) + ".txt";
+            std::ofstream outfile(file_path);
+            outfile << "jobId,release_time,start_time,finish_time,response_time,"
+                       "execution_time,is_overrun\n";
+            for (const auto& r : records) {
+                outfile << r.jobId << "," << r.releaseTime << ","
+                        << r.startTime << "," << r.finishTime << ","
+                        << (r.finishTime - r.releaseTime) << ","
+                        << r.executionTime << ","
+                        << (r.isOverrun ? 1 : 0) << "\n";
+            }
+        }
     }
 }
 

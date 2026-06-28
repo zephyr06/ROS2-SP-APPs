@@ -1,12 +1,23 @@
 %YAML:1.0
 # the time limit to run optimization for one time
-TIME_LIMIT: 1 # seconds
+TIME_LIMIT: 10 # seconds
 
 # must be no less than 1, granularity balences accuracy and speed;
 Granularity: 10
 Dist_compress_threshold: 0.01
 Layer_Node_During_Incremental_Optimization: 2
 TimeLimitSearchRadiusIncr: 2
+
+# simulation export granularity controls:
+# 0: interval SP metrics only (smallest disk usage)
+# 1: + per-task miss-rate summary
+# 2: + per-task aggregate statistics per sampled interval
+# 3: + full per-job response-time traces (largest disk usage; backward-compatible default)
+EXPORT_DETAIL_LEVEL: 0
+
+# Time-based sampling for interval metrics. 0 = no sampling (output every interval).
+# N > 0 = output only intervals whose start time (in seconds) is a multiple of N.
+METRIC_SAMPLE_INTERVAL_SECONDS: 0
 
 # ************** for debug purposes
 debugMode: 0
