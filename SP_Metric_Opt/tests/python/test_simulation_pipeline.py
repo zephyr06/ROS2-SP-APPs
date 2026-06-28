@@ -16,7 +16,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
+from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline, _compute_hyper_period
 
 
 class TestSimulationPipeline(unittest.TestCase):
@@ -178,6 +178,76 @@ class TestSimulationPipeline(unittest.TestCase):
                         self.assertLessEqual(x, 50)
                         self.assertGreaterEqual(y, -50)
                         self.assertLessEqual(y, 50)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+    # --- Hyper-period validation tests ---
+
+    def test_hyper_period_computation(self):
+        """LCM of periods must match expected values."""
+        self.assertEqual(_compute_hyper_period([10, 20, 30]), 60)
+        self.assertEqual(_compute_hyper_period([7, 13]), 91)
+        self.assertEqual(_compute_hyper_period([100]), 100)
+        self.assertEqual(_compute_hyper_period([100, 200, 50]), 200)
+
+    def test_pipeline_rejects_too_short_sim_time(self):
+        """n_sec < 2*hyper_period must raise ValueError before generation."""
+        cfg = self._make_config(
+            SMALL_PERIOD_HZ=[50],      # period = 20 ms
+            BIG_PERIOD_HZ=[1],         # period = 1000 ms
+            N_BIG_PERIOD_TASKS=1,
+            N_SMALL_PERIOD_TASKS=1,
+            MEAN_CPU_UTIL=0.5,
+        )
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cfg_path = os.path.join(temp_dir, "cfg.json")
+            with open(cfg_path, "w") as f:
+                json.dump(cfg, f)
+
+            # hyper_period = lcm(20, 1000) = 1000 ms
+            # required = 2 * 1000 = 2000 ms = 2 s
+            with self.assertRaises(ValueError) as ctx:
+                run_full_generation_pipeline(
+                    cfg_file=cfg_path,
+                    n_sec=1,  # 1000 ms < 2000 ms
+                    dir_path=temp_dir,
+                    n_path_per_task=1,
+                    n_inst_per_path=1,
+                )
+            msg = str(ctx.exception)
+            self.assertIn("2× the hyper-period", msg)
+            self.assertIn("1000ms", msg)
+            self.assertIn("Increase n_sec to >= 2s", msg)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_pipeline_accepts_minimum_valid_sim_time(self):
+        """n_sec exactly == 2*hyper_period (in seconds) must succeed."""
+        cfg = self._make_config(
+            SMALL_PERIOD_HZ=[50],      # period = 20 ms
+            BIG_PERIOD_HZ=[1],         # period = 1000 ms
+            N_BIG_PERIOD_TASKS=1,
+            N_SMALL_PERIOD_TASKS=1,
+            MEAN_CPU_UTIL=0.5,
+        )
+        temp_dir = tempfile.mkdtemp()
+        try:
+            cfg_path = os.path.join(temp_dir, "cfg.json")
+            with open(cfg_path, "w") as f:
+                json.dump(cfg, f)
+
+            # required = 2 s; n_sec = 2 should succeed
+            run_full_generation_pipeline(
+                cfg_file=cfg_path,
+                n_sec=2,
+                dir_path=temp_dir,
+                n_path_per_task=1,
+                n_inst_per_path=1,
+            )
+            self.assertTrue(os.path.exists(os.path.join(temp_dir, "taskset_param.yaml")))
+            self.assertTrue(os.path.exists(os.path.join(temp_dir, "taskset_characteristics.yaml")))
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
 

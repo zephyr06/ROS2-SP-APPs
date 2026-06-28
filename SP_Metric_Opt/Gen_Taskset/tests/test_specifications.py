@@ -8,7 +8,7 @@ import yaml
 import tempfile
 from Gen_Taskset.lib.generation_config_parser import standardize_config, load_generation_config
 from Gen_Taskset.lib.taskset_generator import generate_taskset_parameters
-from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
+from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline, _compute_hyper_period
 
 def test_config_specifications_validation():
     # Setup config with exact specifications
@@ -155,10 +155,15 @@ def test_all_configurations_specifications(config_path):
         shutil.rmtree(config_output_dir)
     os.makedirs(config_output_dir, exist_ok=True)
     
-    # Run short 2-second simulation trace generation to verify files and limits
+    # Run generation: n_sec must cover at least 2 hyper-periods.
+    # Compute required time from periods in the already-standardized config.
+    periods_ms = [int(p) for p in cfgs.get("SMALL_PERIODS_MS", []) + cfgs.get("BIG_PERIODS_MS", [])]
+    hp_ms = _compute_hyper_period(periods_ms)
+    required_n_sec = max(2 * hp_ms // 1000, 10)  # at least 2× hyper-period, or 10s
+
     run_full_generation_pipeline(
         cfg_file=config_path,
-        n_sec=10,
+        n_sec=required_n_sec,
         dir_path=config_output_dir,
         add_perf_records=True,
         interact=False,
@@ -203,7 +208,7 @@ def test_all_configurations_specifications(config_path):
         with open(trace_path, "r") as tf:
             lines = tf.readlines()
             
-        expected_steps = int(10000 / period)
+        expected_steps = int(required_n_sec * 1000 / period)
         assert len(lines) == expected_steps
         
         prev_x, prev_y = None, None

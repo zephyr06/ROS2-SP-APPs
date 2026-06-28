@@ -15,6 +15,19 @@ from .visualizer import plot_moving_trajectory
 # Interval settings
 UPDATE_INTERVAL_S = 10
 
+
+def _compute_hyper_period(periods_ms: list[int]) -> int:
+    """Return the least common multiple (LCM) of task periods in milliseconds."""
+    # Try native math.lcm (Python 3.9+), else manual fallback
+    try:
+        return math.lcm(*periods_ms)
+    except AttributeError:
+        hp = 1
+        for p in periods_ms:
+            hp = (hp * p) // math.gcd(hp, p)
+        return hp
+
+
 def generate_additional_execution_traces(
     cfgs: dict,
     dir_path: str,
@@ -28,7 +41,7 @@ def generate_additional_execution_traces(
     """Appends additional path and execution time trace files for an existing taskset."""
     update_interval_s = cfgs.get("UPDATE_INTERVAL_S", 10)
     n_ms = n_sec * 1000
-    n_intervals = max(1, int(n_sec / update_interval_s))
+    n_intervals = max(1, math.ceil(n_sec / update_interval_s))
 
     # 1. Figure out start path_idx (e.g. path_0.png, path_1.png)
     if path_idx is None:
@@ -204,10 +217,11 @@ def generate_additional_execution_traces(
     # 6. Re-calculate metrics and write taskset_characteristics_[k].yaml
     perf_sel = None
     for k_val in range(n_intervals):
-        ok = 1
+        bad_tasks = []  # (task_idx, n_samples) for diagnostics
         for i in range(n_tasks):
             interval_ets = task_Ets[i][k_val]['Ets']
-            if len(interval_ets) >= 2:
+            n = len(interval_ets)
+            if n >= 2:
                 task_Ets[i][k_val]['Et_mean'] = float(np.mean(interval_ets))
                 task_Ets[i][k_val]['Et_sigma'] = float(np.std(interval_ets))
                 task_Ets[i][k_val]['Et_min'] = float(np.min(interval_ets))
@@ -215,13 +229,13 @@ def generate_additional_execution_traces(
                 if task_Ets[i][k_val]['Et_sigma'] < 1e-6:
                     task_Ets[i][k_val]['Et_sigma'] = 1.0
             else:
-                ok = 0
-                break
-        
-        if ok:
+                bad_tasks.append((i, n))
+
+        if not bad_tasks:
+            # All tasks in this interval are well-sampled
             for i in range(n_tasks):
                 params['tasks'][i]['Et_actual'] = task_Ets[i][k_val]
-            
+
             if dir_path is not None:
                 old_task_char, perf_sel = convert_taskset_parameters_to_cpp_yaml(
                     params,
@@ -232,7 +246,7 @@ def generate_additional_execution_traces(
                 )
                 dump_yml_fpath = os.path.join(dir_path, f"taskset_characteristics_{k_val}.yaml")
                 export_taskset_to_yaml(old_task_char, dump_yml_fpath)
-                
+
                 # Write global taskset_characteristics.yaml for backward compatibility
                 if k_val == 0:
                     export_taskset_to_yaml(old_task_char, os.path.join(dir_path, "taskset_characteristics.yaml"))
@@ -251,12 +265,19 @@ def generate_additional_execution_traces(
                     dump_yml_fpath_p = os.path.join(dir_path, f"taskset_characteristics_i{k_val}_p{pp}.yaml")
                     export_taskset_to_yaml(old_task_char_p, dump_yml_fpath_p)
         else:
+            bad_str = ', '.join(f'task {idx} ({cnt} samples)' for idx, cnt in bad_tasks)
+            msg = (
+                f"Interval {k_val} has insufficient samples: {bad_str}. "
+                f"Each task interval needs >=2 samples. Consider increasing "
+                f"n_sec={n_sec} or n_path_per_task={n_path_per_task}."
+            )
             if k_val == 0:
-                print('error, no valid interval to compute taskset_characteristics, exiting')
-                sys.exit(1)
+                # Fatal: primary output (taskset_characteristics.yaml) cannot be produced
+                raise ValueError(f"Cannot compute primary taskset_characteristics: {msg}")
             else:
-                print(f'{k_val} intervals found, only {i} are valid')
-            break
+                # Secondary interval: warn and skip, but keep processing later intervals
+                print(f'Warning: skipping interval {k_val}: {msg}')
+                continue
 
 def run_full_generation_pipeline(
     cfg_file: str,
@@ -289,7 +310,20 @@ def run_full_generation_pipeline(
 
     # 1. Generate core taskset parameters
     taskset_params = generate_taskset_parameters(cfgs, n_sec=n_sec)
-    
+
+    # Validate that total simulated time covers at least 2 hyper-periods
+    periods_ms = [int(t['period']) for t in taskset_params['tasks']]
+    hyper_period_ms = _compute_hyper_period(periods_ms)
+    required_sim_time_ms = 2 * hyper_period_ms
+    n_sec_ms = n_sec * 1000
+    if n_sec_ms < required_sim_time_ms:
+        raise ValueError(
+            f"Total simulated time ({n_sec}s = {n_sec_ms}ms) must be at least "
+            f"2× the hyper-period ({required_sim_time_ms}ms). "
+            f"Hyper-period of periods {periods_ms} = {hyper_period_ms}ms. "
+            f"Increase n_sec to >= {math.ceil(required_sim_time_ms / 1000.0)}s."
+        )
+
     # 2. Export taskset_param.yaml
     export_taskset_to_yaml(taskset_params, os.path.join(dir_path, "taskset_param.yaml"))
 
