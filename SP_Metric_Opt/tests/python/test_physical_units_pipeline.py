@@ -38,7 +38,7 @@ class TestPhysicalUnitsPipeline(unittest.TestCase):
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "D2_RANGE": [0, 360],
-            "N_MIX_WEIGHTS_PER_TASK": 2,
+            "N_GMM_COMPONENTS_PER_TASK": 2,
             "SP_THRESHOLD_RANGE": [0.5, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "MEAN_CPU_UTIL": 0.8,
