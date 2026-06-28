@@ -198,7 +198,7 @@ def main():
         shutil.rmtree(base_dir)
     os.makedirs(base_dir, exist_ok=True)
 
-    config_template_path = os.path.join(_REPO_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_6_1_sixtasks.json")
+    config_template_path = os.path.join(_REPO_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_paper_6.json")
 
     modes = [
         "RM", "BF", "INCR",

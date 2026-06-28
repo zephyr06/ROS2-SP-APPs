@@ -47,7 +47,7 @@ def main():
         shutil.rmtree(base_dir)
     os.makedirs(base_dir, exist_ok=True)
 
-    cfg_path = "Gen_Taskset/task_sets_config/taskset_cfg_6_1_sixtasks.json"
+    cfg_path = "Gen_Taskset/task_sets_config/taskset_cfg_paper_6.json"
     num_tasksets = 5
     duration_ms = 10000
 

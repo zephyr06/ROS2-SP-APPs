@@ -233,7 +233,7 @@ def main():
         shutil.rmtree(base_dir)
     os.makedirs(base_dir, exist_ok=True)
 
-    cfg_file = os.path.join(_REPO_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_6_1_sixtasks.json")
+    cfg_file = os.path.join(_REPO_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_paper_6.json")
     num_runs = 5
     duration_ms = 10000
 

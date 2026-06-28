@@ -54,7 +54,7 @@ def main():
         shutil.rmtree(base_dir)
     os.makedirs(base_dir, exist_ok=True)
 
-    cfg_path = "Gen_Taskset/task_sets_config/taskset_cfg_6_1_sixtasks.json"
+    cfg_path = "Gen_Taskset/task_sets_config/taskset_cfg_paper_6.json"
     num_runs = 10           # number of random task sets
     duration_ms = 10000     # 10-second interval
     seed_offset = 100

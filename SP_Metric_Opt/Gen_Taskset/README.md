@@ -58,7 +58,7 @@ To generate tasksets and simulate different schedulers concurrently (INCR, CFS, 
 python3 run_sim_experiments.py --num_tasks <4|6|8>
 ```
 
-When `--num_tasks` is specified, the script automatically resolves the configuration to the corresponding paper config file and outputs the generated files under `Gen_Taskset/simulation_tasksets/experiment_{N}_tasks/`.
+When `--num_tasks` is specified, the script uses the corresponding paper config file and outputs the generated files under `simulation_experiments/experiment_<N>_tasks/`.
 
 ---
 

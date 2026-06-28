@@ -148,8 +148,7 @@ def main():
     )
     parser.add_argument(
         "--num_tasks", type=int, choices=[4, 6, 8], default=None,
-        help=("Number of tasks (4, 6, 8) to automatically select paper "
-              "config and output folder")
+        help="Number of tasks (4, 6, 8) to automatically select paper config and output folder"
     )
     parser.add_argument(
         "-v", "--verbose", type=int, choices=[0, 1, 2], default=1,
@@ -185,9 +184,6 @@ def main():
     if args.num_tasks is not None:
         args.config_file = (
             f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{args.num_tasks}.json"
-        )
-        args.output_dir = (
-            f"Gen_Taskset/simulation_tasksets/experiment_{args.num_tasks}_tasks"
         )
 
     # Resolve paths
