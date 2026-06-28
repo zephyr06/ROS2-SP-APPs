@@ -22,7 +22,7 @@ class TestVisualizer(unittest.TestCase):
         # Construct standard configs
         self.cfgs = {
             "D1_RANGE": [-10, 10],
-            "D1_VARIANCE_FACTOR_TABLE": [1.0] * 50,
+            "D2_RANGE": [0, 360],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]
         }
         

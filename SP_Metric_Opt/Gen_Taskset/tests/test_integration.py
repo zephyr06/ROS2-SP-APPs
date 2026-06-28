@@ -126,9 +126,9 @@ def test_integration_pipeline():
             y = int(parts[1])
             et = float(parts[2])
             
-            # Assert coordinates are bounded by grid D1_RANGE
+            # Assert coordinates are bounded by grid ranges
             assert config_data["D1_RANGE"][0] <= x <= config_data["D1_RANGE"][1]
-            assert config_data["D1_RANGE"][0] <= y <= config_data["D1_RANGE"][1]
+            assert config_data["D2_RANGE"][0] <= y <= config_data["D2_RANGE"][1]
             
             assert et >= 1.0
             

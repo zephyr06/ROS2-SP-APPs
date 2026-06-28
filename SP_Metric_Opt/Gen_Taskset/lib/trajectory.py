@@ -5,8 +5,8 @@ def generate_stops_in_map(cfgs: dict, x_step_ratio: float = 0.1, y_step_ratio: f
     """Generates stop stations/waypoints on the 2D grid."""
     X_MIN = cfgs['D1_RANGE'][0]
     X_MAX = cfgs['D1_RANGE'][1]
-    Y_MIN = X_MIN
-    Y_MAX = X_MAX
+    Y_MIN = cfgs['D2_RANGE'][0]
+    Y_MAX = cfgs['D2_RANGE'][1]
 
     X_STEP = int((X_MAX - X_MIN) * x_step_ratio)
     Y_STEP = int((Y_MAX - Y_MIN) * y_step_ratio)
@@ -36,8 +36,8 @@ def generate_path_only(cfgs: dict, stops: list, n_steps: int = 1000, reverse_pro
     N = len(stops)
     X_MIN = cfgs['D1_RANGE'][0]
     X_MAX = cfgs['D1_RANGE'][1]
-    Y_MIN = X_MIN
-    Y_MAX = X_MAX
+    Y_MIN = cfgs['D2_RANGE'][0]
+    Y_MAX = cfgs['D2_RANGE'][1]
 
     # Speed adjustment: step size per simulation move (default to 5 for exploration)
     step_size = cfgs.get("ROBOT_STEP_SIZE", 5.0)

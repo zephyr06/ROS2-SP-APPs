@@ -24,7 +24,6 @@ def generate_execution_time_trace(
     weights = task_param['weights']
     components_dicts = task_param['tasks']
     g_final_Et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
-    variance_factor_table = cfgs.get("D1_VARIANCE_FACTOR_TABLE")
 
     # Reconstruct GaussianComponent objects from dicts for sampling
     from .gmm_model import GaussianComponent
@@ -60,20 +59,17 @@ def generate_execution_time_trace(
         curr = path_xys[path_idx]
         x = curr[0]
         y = curr[1]
-        
-        # Convert X/Y to polar coordinates for GMM mapping
-        r = np.sqrt(x**2 + y**2)
-        a = np.arctan2(y, x) * 180.0 / np.pi
-        if a < 0.0:
-            a += 360.0
+
+        # Pass Cartesian coordinates directly; GMM coefficients are computed in Cartesian space.
+        d1_cartesian = x
+        d2_cartesian = y
 
         # Sample execution time
         if task_param.get('env_dependent', False):
-            # Env-dependent tasks: use the full GMM with spatial position + variance factor table
+            # Env-dependent tasks: use the full GMM with spatial position
             et = task_model.sample_execution_time(
-                d1=r,
-                d2=a,
-                variance_factor_table=variance_factor_table,
+                d1=d1_cartesian,
+                d2=d2_cartesian,
                 final_et_range=g_final_Et_over_period_range,
                 et_min_2sigma=True
             )

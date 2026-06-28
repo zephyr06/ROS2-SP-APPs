@@ -40,7 +40,7 @@ class TestGenerationConfigParser(unittest.TestCase):
         self.assertEqual(res["N_TASKS"], 10)
 
     def test_standardize_config_map_params_derives_d1_range(self):
-        """Configs with MAP_WIDTH_M / MAP_HEIGHT_M should auto-derive D1_RANGE."""
+        """Configs with MAP_WIDTH_M / MAP_HEIGHT_M should auto-derive D1_RANGE and D2_RANGE."""
         config = {
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
@@ -49,9 +49,10 @@ class TestGenerationConfigParser(unittest.TestCase):
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
-        # D1_RANGE derived from max(map_w, map_h) / 2
+        # Both ranges derived from map dims and centered at 0
         self.assertEqual(res["D1_RANGE"], [-100, 100])
-        self.assertEqual(res["D1_VARIANCE_FACTOR_TABLE"][75], 1.0)
+        self.assertEqual(res["D2_RANGE"], [-100, 100])
+        self.assertNotIn("D1_VARIANCE_FACTOR_TABLE", res)
 
     def test_standardize_config_rectangular_map(self):
         """Rectangular map dimensions: D1_RANGE uses max dimension."""
@@ -115,8 +116,8 @@ class TestGenerationConfigParser(unittest.TestCase):
         }
         self.assertFalse(validate_generation_config(no_map_no_d1))
 
-    def test_standardize_config_d1_variance_table_length(self):
-        """D1_VARIANCE_FACTOR_TABLE length should match d1_max."""
+    def test_standardize_config_d1_variance_table_removed(self):
+        """D1_VARIANCE_FACTOR_TABLE must not be present in standardized config."""
         config = {
             "D1_RANGE": [-20, 20],
             "D2_RANGE": [0, 360],
@@ -124,9 +125,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
-        import math
-        expected_len = math.ceil(20)
-        self.assertEqual(len(res["D1_VARIANCE_FACTOR_TABLE"]), expected_len)
+        self.assertNotIn("D1_VARIANCE_FACTOR_TABLE", res)
 
 if __name__ == "__main__":
     unittest.main()

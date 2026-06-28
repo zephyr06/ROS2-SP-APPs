@@ -177,7 +177,7 @@ class TestTrajectoryPhysicalUnits(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_generate_stops_in_map(self):
-        stops = generate_stops_in_map({"D1_RANGE": [0, 100]}, x_step_ratio=0.5, y_step_ratio=0.5)
+        stops = generate_stops_in_map({"D1_RANGE": [0, 100], "D2_RANGE": [0, 100]}, x_step_ratio=0.5, y_step_ratio=0.5)
         self.assertEqual(len(stops), 9)
 
 

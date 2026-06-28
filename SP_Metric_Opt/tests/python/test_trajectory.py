@@ -23,14 +23,13 @@ class TestTrajectory(unittest.TestCase):
 
     def test_generate_stops_in_map(self):
         stops = generate_stops_in_map(self.cfgs, x_step_ratio=0.5, y_step_ratio=0.5)
-        # Should generate stops at combination of:
-        # X: 0, 50, 100
-        # Y: 0, 50, 100
+        # D1_RANGE=[0,100] => x step = 50 => stops at 0, 50, 100 (3)
+        # D2_RANGE=[0,360] => y step = 180 => stops at 0, 180, 360 (3)
         # Total = 9 stops
         self.assertEqual(len(stops), 9)
         for stop in stops:
             self.assertTrue(0 <= stop[0] <= 100)
-            self.assertTrue(0 <= stop[1] <= 100)
+            self.assertTrue(0 <= stop[1] <= 360)
 
     def test_generate_path_only(self):
         stops = [(0, 0), (100, 100)]
@@ -78,12 +77,12 @@ class TestTrajectory(unittest.TestCase):
         }
         stops = generate_stops_in_map(cfgs, x_step_ratio=0.5, y_step_ratio=0.5)
         # x: -150, 0, 150 -> 3 stops
-        # y: -150, 0, 150 -> 3 stops
+        # y: 0, 180, 360 -> 3 stops
         # total = 9
         self.assertEqual(len(stops), 9)
         for stop in stops:
             self.assertTrue(-150 <= stop[0] <= 150)
-            self.assertTrue(-150 <= stop[1] <= 150)
+            self.assertTrue(0 <= stop[1] <= 360)
 
 if __name__ == "__main__":
     unittest.main()

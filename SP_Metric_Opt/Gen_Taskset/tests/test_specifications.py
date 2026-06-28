@@ -216,7 +216,7 @@ def test_all_configurations_specifications(config_path):
             
             # Check spatial grid boundaries mapping
             assert cfgs["D1_RANGE"][0] <= x <= cfgs["D1_RANGE"][1]
-            assert cfgs["D1_RANGE"][0] <= y <= cfgs["D1_RANGE"][1]
+            assert cfgs["D2_RANGE"][0] <= y <= cfgs["D2_RANGE"][1]
             
             # Verify that robot coordinates move by at most ROBOT_STEP_SIZE
             if prev_x is not None and prev_y is not None:

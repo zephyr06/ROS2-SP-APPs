@@ -72,15 +72,13 @@ class TestGMMModel(unittest.TestCase):
             et_sigma=10.0
         )
         
-        variance_factor_table = [1.0] * 20
         final_et_range = [0.05, 0.9]
-        
+
         # Sample 100 times and check bounds
         for _ in range(100):
             sample = gmm_model.sample_execution_time(
                 d1=5.0,
                 d2=180.0,
-                variance_factor_table=variance_factor_table,
                 final_et_range=final_et_range
             )
             self.assertTrue(5.0 <= sample <= 90.0) # period * 0.05 <= sample <= period * 0.9

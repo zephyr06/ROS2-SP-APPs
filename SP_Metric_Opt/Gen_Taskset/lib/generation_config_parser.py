@@ -80,33 +80,16 @@ def standardize_config(config: dict) -> dict:
     # SP threshold option set
     config["SP_THRESHOLDS_SET"] = config.get("SP_THRESHOLDS_SET", [0.2, 0.4, 0.6, 0.8, 1.0])
 
-    # Physical map dimensions override D1_RANGE
+    # Physical map dimensions: center both D1_RANGE (x) and D2_RANGE (y) at origin.
+    # Cartesian coordinates: D1 = x, D2 = y.
     map_w = config.get("MAP_WIDTH_M", None)
     map_h = config.get("MAP_HEIGHT_M", None)
     if map_w is not None and map_h is not None:
-        d1_half = int(max(map_w, map_h) / 2.0)
-        config["D1_RANGE"] = [-d1_half, d1_half]
+        config["D1_RANGE"] = [-int(map_w / 2.0), int(map_w / 2.0)]
+        config["D2_RANGE"] = [-int(map_h / 2.0), int(map_h / 2.0)]
 
-    # Calculate D1 variance factor table
-    d1_max = config.get("D1_RANGE", [-100, 100])[1]
-    nn = math.ceil(d1_max)
-    d1_variance_factor_tbl = [0.0] * nn
-    nn_mid = int(nn * 0.75)
-    
-    if nn_mid > 0:
-        d1_variance_factor_tbl[nn_mid] = 1.0
-        dlt = config["Et_SCALE_FACTOR"] ** (1.0 / nn_mid)
-        for i in range(1, nn_mid + 1):
-            i1 = nn_mid - i
-            if i1 >= 0:
-                d1_variance_factor_tbl[i1] = dlt ** i
-            i2 = nn_mid + i
-            if i2 < nn:
-                d1_variance_factor_tbl[i2] = 1.0
-    else:
-        d1_variance_factor_tbl = [1.0] * max(1, nn)
-
-    config["D1_VARIANCE_FACTOR_TABLE"] = d1_variance_factor_tbl
+    # Legacy D1_VARIANCE_FACTOR_TABLE removed: spatial variance is fully captured
+    # by the GMM covariance matrix in Cartesian coordinates.
     return config
 
 def validate_generation_config(config: dict) -> bool:

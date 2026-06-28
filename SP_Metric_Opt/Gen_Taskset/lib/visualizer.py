@@ -36,41 +36,27 @@ def plot_3d_execution_time_surface(cfgs: dict, task_param: dict, output_path: st
         coeffs = task_param['coeffs']
         component = GaussianComponent(None, None, coeffs=coeffs)
 
-    variance_factor_table = cfgs.get("D1_VARIANCE_FACTOR_TABLE")
     g_final_Et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
 
     for x in range(X_MIN, X_MAX + 1):
         for y in range(Y_MIN, Y_MAX + 1):
-            r = np.sqrt(x**2 + y**2)
-            a = np.arctan2(y, x) * 180.0 / np.pi
-            if a < 0.0:
-                a += 360.0
-            
             if is_mixture:
                 # Use mean_only = True for a smooth surface plot
                 et = task_model.sample_execution_time(
-                    d1=r, d2=a,
-                    variance_factor_table=variance_factor_table,
+                    d1=float(x), d2=float(y),
                     final_et_range=g_final_Et_over_period_range,
                     et_min_2sigma=True,
                     mean_only=True
                 )
             else:
-                et = component.sample_conditional_execution_time(r, a, mean_only=True)
-                # Apply variance factor manually for single Gaussian
-                r_i = int(r)
-                if r_i >= len(variance_factor_table):
-                    r_i = len(variance_factor_table) - 1
-                elif r_i < 0:
-                    r_i = 0
-                et *= variance_factor_table[r_i]
-                
+                et = component.sample_conditional_execution_time(float(x), float(y), mean_only=True)
+
                 min_Et = component.et_mean - 2 * component.et_sigma
                 if et < min_Et:
                     et = min_Et
                 if et < 1.0:
                     et = 1.0
-            
+
             Et_result[x + X_MAX, y + Y_MAX] = et
 
     if draw or output_path is not None:
@@ -99,8 +85,8 @@ def plot_moving_trajectory(steps: list, stops: list, cfgs: dict, output_path: st
     """Draws the path trajectory on the coordinate grid."""
     X_MIN = cfgs['D1_RANGE'][0]
     X_MAX = cfgs['D1_RANGE'][1]
-    Y_MIN = X_MIN
-    Y_MAX = X_MAX
+    Y_MIN = cfgs['D2_RANGE'][0]
+    Y_MAX = cfgs['D2_RANGE'][1]
 
     grid_size = stops[1][0] - stops[0][0]
     if grid_size == 0:

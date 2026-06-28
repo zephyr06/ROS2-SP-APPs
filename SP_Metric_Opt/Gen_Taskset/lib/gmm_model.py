@@ -84,48 +84,41 @@ class GMMTaskModel:
         self.performance_records_time = ""
         self.performance_records_perf = ""
 
-    def sample_execution_time(self, d1: float, d2: float, 
-                              variance_factor_table: list,
+    def sample_execution_time(self, d1: float, d2: float,
                               final_et_range: list,
-                              et_min_2sigma: bool = True, 
+                              et_min_2sigma: bool = True,
                               mean_only: bool = False) -> float:
-        """Selects a GMM component based on weights and samples execution time, enforcing bounds."""
+        """Selects a GMM component based on weights and samples execution time, enforcing bounds.
+
+        Parameters d1 and d2 are Cartesian coordinates (x, y).
+        """
         # 1. Choose component
         comp_idx = np.random.choice(len(self.components), p=self.weights)
         comp = self.components[comp_idx]
-        
+
         sample = comp.sample_conditional_execution_time(d1, d2, mean_only=mean_only)
-        
-        # 2. Scale by spatial variance factor
-        r_i = int(d1)
-        if r_i >= len(variance_factor_table):
-            r_i = len(variance_factor_table) - 1
-        elif r_i < 0:
-            r_i = 0
-        
-        sample *= variance_factor_table[r_i]
-        
-        # 3. Apply min_Et restriction
+
+        # 2. Apply min_Et restriction
         if et_min_2sigma:
             min_Et = comp.et_mean - 2 * comp.et_sigma
             if sample < min_Et:
                 sample = min_Et
-        
-        # 4. Limit to period/deadline bounds if period is specified
+
+        # 3. Limit to period/deadline bounds if period is specified
         if self.period is not None:
             et_min = self.period * final_et_range[0]
             et_max = self.period * final_et_range[1]
-            
+
             if sample > self.period:
                 sample = self.period
             if sample < et_min:
                 sample = et_min
             if sample > et_max:
                 sample = et_max
-        
+
         if sample < 1.0:
             sample = 1.0
-            
+
         return float(sample)
 
 
