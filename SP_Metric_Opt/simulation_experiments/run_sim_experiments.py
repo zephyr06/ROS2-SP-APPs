@@ -78,9 +78,11 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
 
     miss_rate = compute_miss_rate(sched_dir, task_deadlines)
 
-    # Read scheduler execution time if available
+    # Read scheduler execution time if available.
+    # C++ writes total process duration; we convert to per-scheduler-call average
+    # by dividing by the number of intervals (taskset_characteristics_*.yaml).
     exec_time_file = os.path.join(sched_dir, "scheduler_execution_time.txt")
-    avg_sched_time = 0.0
+    total_exec_time = 0.0
     if os.path.exists(exec_time_file):
         with open(exec_time_file, "r") as f:
             for line in f:
@@ -88,10 +90,20 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
                 if not line:
                     continue
                 try:
-                    avg_sched_time = float(line)
+                    total_exec_time = float(line)
                     break
                 except ValueError:
                     continue
+
+    # Count intervals to compute per-call average
+    char_files = glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+    num_intervals = len(char_files)
+    if scheduler == "CFS":
+        avg_sched_time = 0.0
+    elif num_intervals > 0:
+        avg_sched_time = total_exec_time / num_intervals
+    else:
+        avg_sched_time = total_exec_time
 
     return scheduler, miss_rate, sp_values_run, run_intervals_data, avg_sched_time
 

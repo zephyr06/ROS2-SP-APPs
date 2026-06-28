@@ -161,6 +161,77 @@ class TestRunSimExperiments(unittest.TestCase):
         finally:
             shutil.rmtree(temp_dir)
 
+    def test_analyze_single_instance_with_exec_time_and_intervals(self):
+        """Verify total exec time is divided by number of intervals."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            scheduler = "BF"
+            inst = 0
+            sched_dir = os.path.join(temp_dir, scheduler, scheduler)
+            os.makedirs(sched_dir, exist_ok=True)
+
+            # Write interval_sp_metrics.txt
+            metrics_file = os.path.join(sched_dir, "interval_sp_metrics.txt")
+            with open(metrics_file, "w") as f:
+                f.write("0,0.95\n")
+
+            # Write miss_rate_summary.txt
+            summary_file = os.path.join(sched_dir, "miss_rate_summary.txt")
+            with open(summary_file, "w") as f:
+                f.write("total_jobs,missed_jobs,miss_rate\n")
+                f.write("10,0,0.0\n")
+
+            # Write scheduler_execution_time.txt (total process time = 6.0s)
+            exec_file = os.path.join(sched_dir, "scheduler_execution_time.txt")
+            with open(exec_file, "w") as f:
+                f.write("6.0\n")
+
+            # Create 3 interval characteristic files
+            for i in range(3):
+                char_path = os.path.join(temp_dir, f"taskset_characteristics_{i}.yaml")
+                with open(char_path, "w") as f:
+                    f.write("tasks:\n")
+                    f.write("  - id: 0\n")
+                    f.write("    deadline: 1000\n")
+
+            task_deadlines = {0: 1000.0}
+            sched_ret, miss_rate, sp_values_run, run_intervals_data, avg_sched_time = \
+                analyze_single_instance(temp_dir, scheduler, inst, task_deadlines, 10)
+
+            self.assertEqual(sched_ret, "BF")
+            self.assertAlmostEqual(avg_sched_time, 2.0)  # 6.0 / 3 intervals
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_analyze_single_instance_cfs_exec_time_is_zero(self):
+        """CFS should report 0.0 regardless of execution time file."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            scheduler = "CFS"
+            inst = 0
+            sched_dir = os.path.join(temp_dir, scheduler, scheduler)
+            os.makedirs(sched_dir, exist_ok=True)
+
+            metrics_file = os.path.join(sched_dir, "interval_sp_metrics.txt")
+            with open(metrics_file, "w") as f:
+                f.write("0,0.88\n")
+
+            summary_file = os.path.join(sched_dir, "miss_rate_summary.txt")
+            with open(summary_file, "w") as f:
+                f.write("total_jobs,missed_jobs,miss_rate\n")
+                f.write("10,0,0.0\n")
+
+            exec_file = os.path.join(sched_dir, "scheduler_execution_time.txt")
+            with open(exec_file, "w") as f:
+                f.write("45.0\n")
+
+            task_deadlines = {0: 1000.0}
+            _, _, _, _, avg_sched_time = \
+                analyze_single_instance(temp_dir, scheduler, inst, task_deadlines, 10)
+            self.assertEqual(avg_sched_time, 0.0)
+        finally:
+            shutil.rmtree(temp_dir)
+
     @unittest.mock.patch("matplotlib.pyplot.savefig")
     def test_write_summary_and_plots(self, mock_savefig):
         temp_dir = tempfile.mkdtemp()

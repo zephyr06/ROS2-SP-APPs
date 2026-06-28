@@ -33,6 +33,8 @@ tests/*analysis*
 tests/k_variation/*
 tests/radius_comparison/*
 test_taskset_*gen*/*
+simulation_experiments/optimizer_comparison/
+simulation_experiments/debug_analysis/
 
 # Binary / Output / Log formats
 *.log
