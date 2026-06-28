@@ -126,8 +126,8 @@ def test_hz_key_parsing_specification():
     assert cfgs_std["SMALL_PERIODS_MS"] == [100, 40]
     assert cfgs_std["BIG_PERIODS_MS"] == [2000, 500]
 
-# Parameterize over all configuration json files in task_sets_config
-CONFIG_FILES = glob.glob(os.path.join(os.path.dirname(__file__), "../task_sets_config/*.json"))
+# Parameterize over stable test configs (NOT paper configs, which change frequently)
+CONFIG_FILES = glob.glob(os.path.join(os.path.dirname(__file__), "test_configs/*.json"))
 
 @pytest.mark.parametrize("config_path", CONFIG_FILES)
 def test_all_configurations_specifications(config_path):
