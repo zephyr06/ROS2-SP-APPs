@@ -24,6 +24,7 @@ def test_integration_pipeline():
         "N_SMALL_PERIOD_TASKS": 2,
         "N_ENV_DEPENDENT_TASKS": 1,
         "MIN_PERIOD_WITH_PERFORMANCE_RECORDS": 33,
+        "PERF_RECORD_TASK_PROBABILITY": 1.0,  # All eligible non-env tasks become soft tasks
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
         "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
         "RO_1_Et_RANGE": [-0.9, -0.7],
@@ -82,8 +83,13 @@ def test_integration_pipeline():
         if "performance_records_time" in t:
             soft_tasks.append(t)
             
-    # We requested 1 performance record task
-    assert len(soft_tasks) == 1
+    # With N_ENV_DEPENDENT_TASKS=1, 2 non-env tasks remain.
+    # PERF_RECORD_TASK_PROBABILITY=1.0 makes all eligible non-env tasks soft.
+    # The eligible tasks are those with period >= 33; if the env task happens
+    # to be the only big-period task (1000ms), then 1 soft task remains;
+    # if env is a small-period task (20 or 50ms), then the big-period task
+    # may still be the only eligible non-env task.
+    assert 1 <= len(soft_tasks) <= 2
     soft_task = soft_tasks[0]
     
     # Soft task period must be >= MIN_PERIOD_WITH_PERFORMANCE_RECORDS

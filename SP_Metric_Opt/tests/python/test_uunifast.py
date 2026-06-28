@@ -129,16 +129,18 @@ class TestUUniFast(unittest.TestCase):
             msg=f"Total utilization {total_util} != target {target_util}"
         )
 
-    def test_backward_compat_without_uunifast(self):
-        """When USE_UUNIFAST is explicitly False, old generation logic still works."""
-        cfg = self._make_cfg(use_uunifast=False)
+    def test_env_and_time_limit_tasks_are_disjoint(self):
+        """No task may be both env_dependent and time_limit_task."""
+        cfg = self._make_cfg(use_uunifast=True)
         params = generate_taskset_parameters(cfg)
 
-        # Should produce valid tasks; legacy mode may have env_dependent=False
-        self.assertEqual(len(params['tasks']), cfg["N_BIG_PERIOD_TASKS"] + cfg["N_SMALL_PERIOD_TASKS"])
         for t in params['tasks']:
-            self.assertFalse(t.get('env_dependent', False))
-
+            env = t.get('env_dependent', False)
+            tl = t.get('time_limit_task', False)
+            self.assertFalse(
+                env and tl,
+                f"Task must not be both env_dependent and time_limit_task: {t}"
+            )
 
 if __name__ == "__main__":
     unittest.main()

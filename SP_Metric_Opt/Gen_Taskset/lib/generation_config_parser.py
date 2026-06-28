@@ -57,6 +57,11 @@ def standardize_config(config: dict) -> dict:
         "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100
     )
 
+    # Probability of selecting a non-env-dependent task as a performance-record task
+    config["PERF_RECORD_TASK_PROBABILITY"] = config.get(
+        "PERF_RECORD_TASK_PROBABILITY", 0.5
+    )
+
     # GMM properties
     config["N_GMM_COMPONENTS_PER_TASK"] = config.get("N_GMM_COMPONENTS_PER_TASK", 4)
 

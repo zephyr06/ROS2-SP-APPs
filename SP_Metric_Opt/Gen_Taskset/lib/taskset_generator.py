@@ -241,9 +241,8 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     else:
         n_env_dependent = min(int(n_env_dependent_cfg), n_tasks)
 
-    # Small sigma base for non-env tasks to keep them near-deterministic
+    # Small sigma base for perf tasks so ET is effectively deterministic
     FIXED_TASK_SIGMA_RATIO = cfgs.get("FIXED_TASK_SIGMA_RATIO", 0.001)
-    ENV_TASK_SIGMA_RATIO = cfgs.get("ENV_TASK_SIGMA_RATIO", 0.05)
 
     # 1. Generate periods
     periods = []
@@ -273,22 +272,45 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
             )
         )
 
+    # 2. Select time-limit (performance-record) tasks from non-env candidates
+    min_period_perf = cfgs.get("MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100)
+    perf_prob = cfgs.get("PERF_RECORD_TASK_PROBABILITY", 0.5)
+    perf_candidates = []
+    for i in range(n_tasks):
+        period = periods[i]
+        if i in env_task_indices:
+            continue  # perf tasks must be disjoint from env tasks
+        if period < min_period_perf:
+            continue  # period too short for TL options
+        perf_candidates.append(i)
+
+    time_limit_task_indices = set()
+    for i in perf_candidates:
+        if random.random() < perf_prob:
+            time_limit_task_indices.add(i)
+
+    # 3. Build task models with appropriate sigma / correlations per type
     task_idx = 0
     for i in range(n_tasks):
         period = periods[task_idx]
         u_i = util_vector[task_idx]
         et_mean = max(1.0, u_i * period)
         is_env = task_idx in env_task_indices
+        is_perf = task_idx in time_limit_task_indices
 
         if is_env:
-            # Env tasks: use natural large sigma from config for strong spatial variation
-            et_sigma_for_components = None
-            # Use random correlations from config range
+            # Env tasks: natural large sigma for spatial variation, env correlations
+            et_sigma_for_components = None  # random from SIGMA_OVER_Et_RANGE per component
             ro_1 = np.random.uniform(cfgs["RO_1_Et_RANGE"][0], cfgs["RO_1_Et_RANGE"][1])
             ro_2 = np.random.uniform(cfgs["RO_2_Et_RANGE"][0], cfgs["RO_2_Et_RANGE"][1])
-        else:
-            # Non-env tasks: tiny sigma so they are effectively deterministic
+        elif is_perf:
+            # Perf tasks: tiny sigma so ET is effectively deterministic (no spatial variation)
             et_sigma_for_components = max(0.001, et_mean * FIXED_TASK_SIGMA_RATIO)
+            ro_1 = 0.0
+            ro_2 = 0.0
+        else:
+            # Normal tasks: random sigma following Gaussian distribution, no correlations
+            et_sigma_for_components = None  # random from SIGMA_OVER_Et_RANGE per component
             ro_1 = 0.0
             ro_2 = 0.0
 
@@ -303,6 +325,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         # Override to exact UUniFast target (numerical safety after GMM mixing)
         task_model.et_mean = et_mean
         task_model.env_dependent = is_env
+        task_model.time_limit_task = is_perf
         taskset_param.append(task_model)
         task_idx += 1
 
@@ -331,7 +354,12 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         t.processorId = min_core_idx
         core_utilizations[min_core_idx] += (t.et_mean / t.period)
 
-    # 5. Convert GMMTaskModel objects to dictionary structure for serialization
+    # 5. Compute C++-facing derived fields (deadline, weights, execution bounds,
+    #    performance records, total running time) before serialization.
+    g_final_et_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
+    n_ms = (n_sec * 1000) if n_sec is not None else 100000
+    max_time_limit_options = cfgs.get("MAX_TIME_LIMIT_OPTIONS", 10)
+
     tasks_dict_list = []
     for i in range(n_tasks):
         t = taskset_param[i]
@@ -346,6 +374,32 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
                 'coeffs': c.get_coeffs_dict()
             })
 
+        # Performance records for time-limit tasks
+        perf_records_time_str = ""
+        perf_records_perf_str = ""
+
+        if getattr(t, 'time_limit_task', False):
+            # Perf tasks: full range bounds so TL options span the config range
+            execution_time_min = t.period * g_final_et_range[0]
+            execution_time_max = t.period * g_final_et_range[1]
+            n_steps = max_time_limit_options - 1
+            step = (execution_time_max - execution_time_min) / n_steps
+            t_s = execution_time_min
+            perf_time = []
+            perf_perf = []
+            for _ in range(max_time_limit_options):
+                perf_time.append(t_s)
+                perf_perf.append(len(perf_perf) * 0.1 + 0.1)
+                t_s += step
+            perf_records_time_str = " ".join(f"{x:.3f}" for x in perf_time)
+            perf_records_perf_str = " ".join(f"{x:.1f}" for x in perf_perf)
+            sp_weight_base = 2.0
+        else:
+            # Normal and env tasks: min/max = mean ± 2*sigma (Gaussian distribution bounds)
+            execution_time_min = max(1.0, t.et_mean - 2.0 * t.et_sigma)
+            execution_time_max = max(1.0, t.et_mean + 2.0 * t.et_sigma)
+            sp_weight_base = 1.0
+
         tasks_dict_list.append({
             'weights': t.weights,
             'n_weights': len(t.components),
@@ -359,12 +413,26 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
             'D2_sigma': float(t.d2_sigma),
             'Et_mean': float(t.et_mean),
             'Et_sigma': float(t.et_sigma),
-            'sp_weight': float(t.sp_weight),
+            'sp_weight': float(sp_weight_base),
             'sp_threshold': float(t.sp_threshold),
             'processorId': int(getattr(t, 'processorId', 0)),
             'env_dependent': bool(getattr(t, 'env_dependent', False)),
+            'time_limit_task': bool(getattr(t, 'time_limit_task', False)),
+            'execution_time_min': float(execution_time_min),
+            'execution_time_max': float(execution_time_max),
+            'performance_records_time': perf_records_time_str,
+            'performance_records_perf': perf_records_perf_str,
+            'total_running_time': int(n_ms),
+            'name': f'task_{i+1}',
             'tasks': serialized_components
         })
+
+    # Normalize weights to SP_WEIGHTS_SUM
+    g_total_weights = cfgs.get("SP_WEIGHTS_SUM", 5.0)
+    total_weights = sum(t['sp_weight'] for t in tasks_dict_list)
+    if total_weights > 0.0:
+        for t in tasks_dict_list:
+            t['sp_weight'] *= g_total_weights / total_weights
 
     rt = {
         'n_tasks': n_tasks,

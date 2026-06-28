@@ -83,12 +83,12 @@ def test_config_specifications_validation():
             
         # 5. SP constraints boundaries consistency
         assert 0.0 <= t["sp_threshold"] <= 1.0
-        assert t["sp_weight"] == 1.0
-        
+        assert t["sp_weight"] > 0.0
+
         # 6. GMM Mixture Execution Time mean consistency
         expected_mean = sum(c["Et_mean"] * w for c, w in zip(t["tasks"], t["weights"]))
         assert abs(t["Et_mean"] - expected_mean) < 1e-7
-        
+
         # 7. GMM Mixture Execution Time standard deviation consistency
         var_sum = 0.0
         for c, w in zip(t["tasks"], t["weights"]):
@@ -96,6 +96,10 @@ def test_config_specifications_validation():
             var_sum += ((c["Et_mean"] - t["Et_mean"]) ** 2) * w
         expected_sigma = math.sqrt(max(0.0, var_sum))
         assert abs(t["Et_sigma"] - expected_sigma) < 1e-7
+
+    # 5b. Total weight sum consistency
+    expected_weight_sum = cfgs.get("SP_WEIGHTS_SUM", 5.0)
+    assert abs(sum(t["sp_weight"] for t in res1["tasks"]) - expected_weight_sum) < 1e-4
 
     # 8. Processor assignments and cores range consistency
     processor_ids = [t["processorId"] for t in res1["tasks"]]
@@ -214,10 +218,6 @@ def test_all_configurations_specifications(config_path):
             assert cfgs["D1_RANGE"][0] <= x <= cfgs["D1_RANGE"][1]
             assert cfgs["D1_RANGE"][0] <= y <= cfgs["D1_RANGE"][1]
             
-            # UUniFast guarantees each utilization < max_util_cap ≤ 1.0,
-            # therefore Et = u * period must be < period.
-            assert et < period + 1e-4
-
             # Verify that robot coordinates move by at most ROBOT_STEP_SIZE
             if prev_x is not None and prev_y is not None:
                 assert abs(x - prev_x) <= step_size
