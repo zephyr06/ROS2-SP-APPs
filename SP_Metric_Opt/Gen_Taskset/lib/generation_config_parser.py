@@ -3,13 +3,45 @@ import math
 import os
 
 def load_generation_config(config_path: str) -> dict:
-    """Reads the JSON configuration file for task set generation."""
+    """Reads the JSON configuration file for task set generation.
+
+    Supports an optional ``INCLUDE`` key with a path (relative to the config
+    file's directory or the ``templates/`` subdirectory) pointing to a base
+    JSON file whose values are merged in.  The top-level file always wins on
+    key collisions.
+    """
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
-    
+
+    config_dir = os.path.dirname(os.path.abspath(config_path))
     with open(config_path, 'r') as f:
         config = json.load(f)
-    
+
+    if "INCLUDE" in config:
+        include_path = config.pop("INCLUDE")
+        # Resolve relative to config dir, then templates dir
+        candidates = [
+            os.path.join(config_dir, include_path),
+            os.path.join(config_dir, "templates", include_path),
+        ]
+        resolved = None
+        for cand in candidates:
+            if os.path.exists(cand):
+                resolved = cand
+                break
+        if resolved is None:
+            raise FileNotFoundError(
+                f"Include file not found for config {config_path}: "
+                f"tried {candidates}"
+            )
+        with open(resolved, 'r') as f:
+            base = json.load(f)
+        # Remove INCLUDE from base if present (nested includes not supported)
+        base.pop("INCLUDE", None)
+        merged = dict(base)
+        merged.update(config)
+        config = merged
+
     # Standardize/convert parameters
     config = standardize_config(config)
     return config

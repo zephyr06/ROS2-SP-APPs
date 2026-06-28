@@ -1,63 +1,9 @@
 {
+    "INCLUDE": "taskset_cfg_paper_base.json",
     "DESC": "Paper parameters for 4 tasks (2 big, 2 small)",
-    "SMALL_PERIOD_HZ": [
-        10,
-        20,
-        30,
-        50
-    ],
-    "BIG_PERIOD_HZ": [
-        1,
-        2,
-        5
-    ],
-    "HZ_DESC": "task period selection in Hz",
     "N_BIG_PERIOD_TASKS": 2,
     "N_SMALL_PERIOD_TASKS": 2,
-    "N_TASKS_DESC": "4 tasks in total",
-    "Et_OVER_PERIOD_RANGE": [
-        0.1,
-        0.3
-    ],
-    "SIGMA_OVER_Et_RANGE": [
-        0.5,
-        0.6
-    ],
-    "RO_1_Et_RANGE": [
-        -0.9,
-        -0.7
-    ],
-    "RO_2_Et_RANGE": [
-        -0.1,
-        0.1
-    ],
-    "MAP_WIDTH_M": 100,
-    "MAP_HEIGHT_M": 100,
-    "ROBOT_SPEED_MPS": 1.0,
-    "D2_RANGE": [
-        0,
-        360
-    ],
-    "SP_THRESHOLD_RANGE": [
-        0.5,
-        0.9
-    ],
-    "SP_THRESHOLDS_SET": [
-        0.2,
-        0.4,
-        0.6,
-        0.8,
-        1.0
-    ],
     "MEAN_CPU_UTIL": 0.9,
-    "Et_SCALE_FACTOR": 4,
-    "FINAL_Et_OVER_PERIOD_RANGE": [
-        0.05,
-        0.9
-    ],
     "N_CORES": 2,
-    "RANDOM_SEED": 42,
-    "N_ENV_DEPENDENT_TASKS": 1,
-    "N_GMM_COMPONENTS_PER_TASK": 4,
-    "MIN_PERIOD_WITH_PERFORMANCE_RECORDS": 100
+    "RANDOM_SEED": 42
 }

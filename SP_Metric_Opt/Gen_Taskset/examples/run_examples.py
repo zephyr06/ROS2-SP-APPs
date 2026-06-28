@@ -12,7 +12,7 @@ from Gen_Taskset.lib.visualizer import plot_3d_execution_time_surface
 def main():
     # Paths
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    cfg_file = os.path.join(os.path.dirname(script_dir), "task_sets_config", "taskset_cfg_1.json")
+    cfg_file = os.path.join(os.path.dirname(script_dir), "task_sets_config", "taskset_cfg_paper_6.json")
     out_dir = os.path.join(script_dir, "output_example")
     
     print(f"Loading configuration: {cfg_file}")
