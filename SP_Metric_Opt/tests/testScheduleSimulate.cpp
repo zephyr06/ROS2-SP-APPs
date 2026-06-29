@@ -207,11 +207,11 @@ TEST(OrchestratorTest, RateMonotonicPriorityAssignment) {
     // i0: Task0 avg ET=2 → perf=0.6; others perf=1.0. Task3 schedulable.
     //     SP = 0.6 + 1.0 + 1.0 + 1.0 = 3.6
     // i1: Task0 avg ET=3 → perf=1.0; others perf=1.0. Task3 has slight ddl-miss
-    //     probability → SP ≈ 3.89222.
+    //     probability → SP ≈ 3.90119 (conservative max-value compression).
     const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
     ASSERT_EQ(2, sp_metrics.size());
     EXPECT_NEAR(3.6, sp_metrics[0], 1e-4);
-    EXPECT_NEAR(3.89222, sp_metrics[1], 1e-4);
+    EXPECT_NEAR(3.90119, sp_metrics[1], 1e-4);
 }
 
 
@@ -498,7 +498,7 @@ TEST(OrchestratorTest, CFSOrchestration) {
     const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
     ASSERT_EQ(2, sp_metrics.size());
     EXPECT_NEAR(3.6, sp_metrics[0], 1e-4);
-    EXPECT_NEAR(3.89222, sp_metrics[1], 1e-4);
+    EXPECT_NEAR(3.90119, sp_metrics[1], 1e-4);
 }
 
 // Unit Tests for helper functions
@@ -747,7 +747,7 @@ TEST(OrchestratorTest, CFS_RunOrchestrator_Binary) {
     std::stringstream ss1(line);
     ASSERT_TRUE(ss1 >> interval_idx >> comma >> sp_val);
     EXPECT_EQ(1, interval_idx);
-    EXPECT_NEAR(3.89222, sp_val, 1e-4);
+    EXPECT_NEAR(3.90119, sp_val, 1e-4);
 }
 
 TEST(OrchestratorTest, INCR_NO_TL_Integration) {

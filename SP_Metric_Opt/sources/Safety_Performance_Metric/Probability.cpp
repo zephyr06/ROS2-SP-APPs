@@ -115,8 +115,7 @@ bool FiniteDist::AddOnePreemption(const FiniteDist& execution_time_dist,
         tail.Convolve(execution_time_dist);
         head.Coalesce(tail);
         UpdateDistribution(head.distribution);
-        CompressDistribution(int(GlobalVariables::Granularity * 1.0),
-                             GlobalVariables::Dist_compress_threshold);
+        CompressDistributionWithOnlySize(int(GlobalVariables::Granularity * 1.0));
         return true;
     }
 }
@@ -263,19 +262,46 @@ void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
 void FiniteDist::CompressDistribution(size_t max_size,
                                       double compress_threshold) {
     if (distribution.size() <= max_size) return;
-    int compress_index_since = distribution.size();
-    for (size_t i = 0; i < distribution.size(); i++) {
-        if (distribution[i].probability < compress_threshold) {
-            compress_index_since = i;
-            break;
+
+    // Single-pass buffer-based compression.
+    // Enforce threshold >= 1.0/max_size so the output size bound is guaranteed
+    // without any fallback / second pass.
+    if (compress_threshold < 1.0 / max_size) {
+        CoutError(
+            "compress_threshold must be >= 1.0/max_size to guarantee output "
+            "size bound in a single pass");
+    }
+    double threshold = compress_threshold;
+
+    std::vector<Value_Proba> new_dist;
+    new_dist.reserve(distribution.size());
+
+    double buf_prob = 0.0;
+
+    for (const auto& item : distribution) {
+        buf_prob += item.probability;
+
+        if (buf_prob >= threshold) {
+            // Use item.value (the maximum value in this buffer) to be
+            // conservative — never underestimate execution/response time.
+            new_dist.emplace_back(item.value, buf_prob);
+            buf_prob = 0.0;
         }
     }
 
-    if (compress_index_since == distribution.size()) return;
+    // Merge trailing buffer into the last element so total probability stays 1.0
+    if (buf_prob > 0) {
+        if (!new_dist.empty()) {
+            auto& last = new_dist.back();
+            // Use distribution.back().value (max value of trailing range)
+            last.value = distribution.back().value;
+            last.probability += buf_prob;
+        } else {
+            new_dist.emplace_back(distribution.back().value, buf_prob);
+        }
+    }
 
-    CompressDistributionVector(
-        distribution, compress_index_since, distribution.size() - 1,
-        std::max(static_cast<int>(max_size) - compress_index_since, 1));
+    distribution = std::move(new_dist);
 }
 
 void FiniteDist::CompressDistributionWithOnlySize(size_t max_size) {

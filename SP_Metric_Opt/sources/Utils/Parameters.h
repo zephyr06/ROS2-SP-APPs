@@ -16,7 +16,6 @@ extern int printRTA;
 
 extern int Granularity;
 extern int Layer_Node_During_Incremental_Optimization;
-extern double Dist_compress_threshold;
 extern bool disable_time_limit_opt;
 extern bool use_wcet_execution_time;
 extern int TimeLimitSearchRadiusIncr;

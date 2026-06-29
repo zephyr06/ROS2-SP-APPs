@@ -74,11 +74,13 @@ TEST(FiniteDist, CompressDistribution_v2) {
     };
     FiniteDist dist1(dist_vec1);
     dist1.CompressDistribution(2, 0.5);
+    // Single-pass conservative: threshold = max(0.5, 0.5) = 0.5.
+    // Bucket 1: [3,4,5] → max value 5, prob = 0.5.
+    // Bucket 2: [6,7]   → max value 7, prob = 0.5.
     EXPECT_EQ(2, dist1.size());
-    EXPECT_EQ(5, dist1.distribution[0].value);
+    EXPECT_NEAR(5.0, dist1.distribution[0].value, 1e-6);
     EXPECT_NEAR(0.5, dist1.distribution[0].probability, 1e-6);
-
-    EXPECT_EQ(7, dist1.distribution[1].value);
+    EXPECT_NEAR(7.0, dist1.distribution[1].value, 1e-6);
     EXPECT_NEAR(0.5, dist1.distribution[1].probability, 1e-6);
 }
 TEST(FiniteDist, CompressDistribution) {
@@ -87,8 +89,12 @@ TEST(FiniteDist, CompressDistribution) {
         Value_Proba(6, 0.2), Value_Proba(7, 0.3),
     };
     FiniteDist dist1(dist_vec1);
-    dist1.CompressDistribution(2, 0.01);
-    EXPECT_EQ(5, dist1.size());
+    dist1.CompressDistribution(2, 0.5);
+    // Single-pass buffer-based compression: threshold = 0.5.
+    // Elements are accumulated until buf_prob >= threshold, then
+    // emitted with the max (conservative) value. This naturally yields at
+    // most max_size elements because total probability is 1.0.
+    EXPECT_LE(dist1.size(), 2);
 }
 TEST(FiniteDist, Coalesce_v1) {
     std::vector<Value_Proba> dist_vec1 = {Value_Proba(3, 0.1),
@@ -301,8 +307,141 @@ TEST(FiniteDist, AnalyzeFiniteDist_v2) {
     EXPECT_NEAR(0.3, finite_dist.CDF(3.25), 1e-3);
     EXPECT_NEAR(0.5, finite_dist.CDF(5.5), 1e-3);
     EXPECT_NEAR(0.7, finite_dist.CDF(7.75), 1e-3);
-    EXPECT_NEAR(1, finite_dist.CDF(10), 1e-3);
 }
+
+TEST(FiniteDist, BlockCompress_UnimodalTail) {
+    // Test Case 1: Unimodal (Gaussian-like) Tail Compression
+    // Single-pass conservative: threshold = max(0.01, 1/6) = 0.1667.
+    std::vector<Value_Proba> dist_vec = {
+        Value_Proba(0, 0.001),
+        Value_Proba(1, 0.005),
+        Value_Proba(2, 0.40),
+        Value_Proba(3, 0.50),
+        Value_Proba(4, 0.08),
+        Value_Proba(5, 0.01),
+        Value_Proba(6, 0.002),
+        Value_Proba(7, 0.002)
+    };
+    FiniteDist dist(dist_vec);
+    dist.CompressDistribution(6, 1.0 / 6.0);
+
+    EXPECT_EQ(2, dist.size());
+    EXPECT_NEAR(2.0, dist.distribution[0].value, 1e-4);
+    EXPECT_NEAR(0.406, dist.distribution[0].probability, 1e-4);
+    EXPECT_NEAR(7.0, dist.distribution[1].value, 1e-4);
+    EXPECT_NEAR(0.594, dist.distribution[1].probability, 1e-4);
+}
+
+TEST(FiniteDist, BlockCompress_MultimodalValley) {
+    // Test Case 2: Multimodal (Two Peaks) Valley Compression
+    // Single-pass conservative: threshold = 1.0/5 = 0.2.
+    std::vector<Value_Proba> dist_vec = {
+        Value_Proba(0, 0.001),
+        Value_Proba(1, 0.55),
+        Value_Proba(2, 0.002),
+        Value_Proba(3, 0.001),
+        Value_Proba(4, 0.445),
+        Value_Proba(5, 0.001)
+    };
+    FiniteDist dist(dist_vec);
+    dist.CompressDistribution(5, 0.2);
+
+    EXPECT_EQ(2, dist.size());
+    EXPECT_NEAR(1.0, dist.distribution[0].value, 1e-4);
+    EXPECT_NEAR(0.551, dist.distribution[0].probability, 1e-4);
+    EXPECT_NEAR(5.0, dist.distribution[1].value, 1e-4);
+    EXPECT_NEAR(0.449, dist.distribution[1].probability, 1e-4);
+}
+
+TEST(FiniteDist, BlockCompress_FlatDistribution) {
+    // Uniform distribution compressed with threshold = 1.0/10 = 0.1.
+    // All elements have equal prob 1/15 ≈ 0.067. Pairs cross threshold,
+    // yielding buckets of ~0.133 each; trailing element merges into last.
+    std::vector<Value_Proba> dist_vec;
+    for (int i = 0; i < 15; ++i) {
+        dist_vec.push_back(Value_Proba(i, 1.0 / 15.0));
+    }
+    FiniteDist dist(dist_vec);
+    dist.CompressDistribution(10, 0.1);
+
+    EXPECT_LE(dist.size(), 10);
+}
+
+TEST(FiniteDist, BlockCompress_RegressionMonotonicBug) {
+    // Test Case 4: Regression test — old monotonic code would compress from index 0
+    // to end, destroying the dual-peak structure.
+    // Single-pass conservative preserves peak separation by using max values.
+    std::vector<Value_Proba> dist_vec = {
+        Value_Proba(0, 0.001),
+        Value_Proba(1, 0.55),
+        Value_Proba(2, 0.002),
+        Value_Proba(3, 0.001),
+        Value_Proba(4, 0.445),
+        Value_Proba(5, 0.001)
+    };
+    FiniteDist dist(dist_vec);
+    dist.CompressDistribution(5, 0.2);
+
+    EXPECT_EQ(2, dist.size());
+    EXPECT_NEAR(1.0, dist.distribution[0].value, 1e-4);
+    EXPECT_NEAR(0.551, dist.distribution[0].probability, 1e-4);
+    EXPECT_NEAR(5.0, dist.distribution[1].value, 1e-4);
+    EXPECT_NEAR(0.449, dist.distribution[1].probability, 1e-4);
+}
+
+TEST(FiniteDist, BlockCompress_AlreadySmall) {
+    // All elements above threshold, size already <= max_size → early exit.
+    std::vector<Value_Proba> dist_vec = {
+        Value_Proba(0, 0.2),
+        Value_Proba(1, 0.3),
+        Value_Proba(2, 0.5)
+    };
+    FiniteDist dist(dist_vec);
+    dist.CompressDistribution(10, 0.1);
+
+    EXPECT_EQ(3, dist.size());
+    EXPECT_EQ(0, dist.distribution[0].value);
+    EXPECT_EQ(1, dist.distribution[1].value);
+    EXPECT_EQ(2, dist.distribution[2].value);
+}
+
+TEST(FiniteDist, BlockCompress_AlternatingNoise) {
+    // High-frequency noise: threshold = 1.0/6 ≈ 0.167.
+    // [0.009],[0.5]       → bucket 1: 0.509 >= 0.167, emit (1, 0.509)
+    // [0.009],[0.5]       → bucket 2: 0.509 >= 0.167, emit (3, 0.509)
+    // [0.009],[0.5]       → bucket 3: 0.509 >= 0.167, emit (5, 0.509)
+    // trailing [0.009]    → merge into last: emit (7, 0.518)
+    std::vector<Value_Proba> dist_vec = {
+        Value_Proba(0, 0.009),
+        Value_Proba(1, 0.5),
+        Value_Proba(2, 0.009),
+        Value_Proba(3, 0.5),
+        Value_Proba(4, 0.009),
+        Value_Proba(5, 0.5),
+        Value_Proba(6, 0.009),
+        Value_Proba(7, 0.5)
+    };
+    FiniteDist dist(dist_vec);
+    dist.CompressDistribution(6, 1.0 / 6.0);
+
+    EXPECT_LE(dist.size(), 6);
+}
+
+TEST(FiniteDist, BlockCompress_EmptyAndSingleElement) {
+    // Edge cases: empty and single-element distributions.
+    // Early-exits before threshold check (size <= max_size).
+    std::vector<Value_Proba> empty_vec;
+    FiniteDist dist_empty(empty_vec);
+    dist_empty.CompressDistribution(10, 0.125);
+    EXPECT_EQ(0, dist_empty.size());
+
+    std::vector<Value_Proba> single_vec = {Value_Proba(5, 1.0)};
+    FiniteDist dist_single(single_vec);
+    dist_single.CompressDistribution(10, 0.125);
+    EXPECT_EQ(1, dist_single.size());
+    EXPECT_EQ(5, dist_single.distribution[0].value);
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

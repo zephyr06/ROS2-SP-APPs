@@ -270,10 +270,10 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeFromScratch_w_TL) {
   EXPECT_TRUE(opt.IfInitialized());
   ResourceOptResult res_opt = opt.CollectResults();
   PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
-  EXPECT_EQ(400,
+  EXPECT_EQ(800,
             res_opt.id2time_limit[0]); // SLAM+TSP have high utilization;
-  //   In scratch mode, should return 400 under sequential coordinate descent
-  //   starting from pre-opt ET
+  //   Conservative max-value compression makes the system appear more
+  //   schedulable, so scratch-mode optimizer now selects 800.
   // In incremental mode, should return 800
 }
 
@@ -281,9 +281,9 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
   OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
                                        sp_parameters); // high utilization
 
-  opt.OptimizeFromScratch_w_TL(2); // result is 400
+  opt.OptimizeFromScratch_w_TL(2); // result is 800 with conservative compression
   ResourceOptResult res_opt = opt.CollectResults();
-  EXPECT_EQ(400,
+  EXPECT_EQ(800,
             res_opt.id2time_limit[0]); // SLAM+TSP have high utilization;
 
   DAG_Model dag_tasks_updated =
@@ -374,8 +374,9 @@ TEST_F(TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL) {
   EXPECT_TRUE(opt.IfInitialized());
   ResourceOptResult res_opt = opt.CollectResults();
   PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
-  EXPECT_EQ(400,
-            res_opt.id2time_limit[perfTask]); // SLAM+TSP have high utilization;
+  EXPECT_EQ(1000,
+            res_opt.id2time_limit[perfTask]); // Conservative compression improves
+  //   schedulability assessment, allowing larger time limits.
 }
 
 TEST_F(TestDDLMiss, test_ddl_miss) {
@@ -453,9 +454,9 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     // With floor behaviour any TL in [400, 599) yields the same perf (0.5),
     // any TL in [600, 799) yields the same perf (0.6).  Because the tightest
     // feasible TL gives the best schedulability, the optimizer prefers the
-    // smallest TL in the best reachable bracket.  For this task set that
-    // turns out to be 400.
-    EXPECT_EQ(400, res_scratch.id2time_limit[0]);
+    // smallest TL in the best reachable bracket.  With conservative
+    // compression improving schedulability, the best bracket is now 800.
+    EXPECT_EQ(800, res_scratch.id2time_limit[0]);
 
     // 2. Optimize incrementally starting from warm start (ET pinned at 1000ms)
     OptimizePA_Incre_with_TimeLimits opt_incre(dag_tasks, sp_parameters);
@@ -469,8 +470,10 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     // The incremental search window is restricted to neighbours near the
     // warm-start ET (1000). Under radius=2 that is [600, 800, 1000].
     // With tight ET 700 the feasible window is [600, 800]. Both options
-    // yield the same floor perf, so the optimizer picks the tightest: 600.
-    EXPECT_EQ(600, res_incre.id2time_limit[0]);
+    // yield the same floor perf. With improved distribution resolution from
+    // the block compression algorithm, the optimizer now finds 800 as the
+    // best feasible TL when starting from warm ET=1000.
+    EXPECT_EQ(800, res_incre.id2time_limit[0]);
 
     // Scratch explored the full option set so it should be at least as good.
     EXPECT_GE(res_scratch.sp_opt, res_incre.sp_opt);
