@@ -67,20 +67,43 @@ void FiniteDist::Coalesce(const FiniteDist& other) {
     UpdateDistribution(m_v2p);
 }
 
-// O(n^2)
+// O(n^2) flat-vector + sort + coalesce (avoids hash-map overhead)
 void FiniteDist::Convolve(const FiniteDist& other) {
-    std::unordered_map<double, double> m_v2p;
+    if (distribution.empty() || other.distribution.empty()) {
+        distribution.clear();
+        UpdateMinMaxValues();
+        return;
+    }
+
+    std::vector<Value_Proba> convolved;
+    convolved.reserve(distribution.size() * other.distribution.size());
+
     for (const auto& element_this : distribution) {
         for (const auto& element_other : other.distribution) {
             double value = element_this.value + element_other.value;
             double prob = element_this.probability * element_other.probability;
-            if (m_v2p.count(value))
-                m_v2p[value] += prob;
-            else
-                m_v2p[value] = prob;
+            convolved.emplace_back(value, prob);
         }
     }
-    UpdateDistribution(m_v2p);
+
+    std::sort(convolved.begin(), convolved.end(),
+              [](const Value_Proba& a, const Value_Proba& b) {
+                  return a.value < b.value;
+              });
+
+    std::vector<Value_Proba> merged;
+    merged.reserve(convolved.size());
+
+    for (const auto& item : convolved) {
+        if (!merged.empty() && merged.back().value == item.value) {
+            merged.back().probability += item.probability;
+        } else {
+            merged.push_back(item);
+        }
+    }
+
+    distribution = std::move(merged);
+    UpdateMinMaxValues();
 }
 
 std::vector<Value_Proba> FiniteDist::GetTailDistribution(double preempt_time) {
