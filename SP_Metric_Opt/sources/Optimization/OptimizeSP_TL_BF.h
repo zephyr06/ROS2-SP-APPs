@@ -18,14 +18,14 @@ class OptimizePA_with_TimeLimitsStatus {
                                      const SP_Parameters& sp_parameters)
         : dag_tasks(dag_tasks),
           sp_parameters(sp_parameters),
-          N(dag_tasks.tasks.size()) {
+          N(dag_tasks.tasks.size()),
+          start_time_(std::chrono::high_resolution_clock::now()) {
         res_opt.sp_opt = INT_MIN;
         time_limit_option_for_each_task = RecordTimeLimitOptions(dag_tasks);
     }
 
     void Optimize(uint trav_task_index,
                   std::vector<double>& time_limit_for_task);
-
     void Optimize();
 
     // data members
@@ -34,6 +34,7 @@ class OptimizePA_with_TimeLimitsStatus {
     int N;
     ResourceOptResult res_opt;
     std::vector<std::vector<double>> time_limit_option_for_each_task;
+    TimerType start_time_;
 };
 
 ResourceOptResult EnumeratePA_with_TimeLimits(

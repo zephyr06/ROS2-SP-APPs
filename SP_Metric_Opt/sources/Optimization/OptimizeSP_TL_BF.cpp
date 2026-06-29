@@ -35,6 +35,8 @@ std::vector<std::vector<double>> RecordTimeLimitOptions(
 
 void OptimizePA_with_TimeLimitsStatus::Optimize(
     uint trav_task_index, std::vector<double>& time_limit_for_task) {
+    if (ifTimeout(start_time_))
+        return;
     if (trav_task_index == time_limit_option_for_each_task.size()) {
         DAG_Model dag_tasks_cur =
             UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limit_for_task);
