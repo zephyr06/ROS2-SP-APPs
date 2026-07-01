@@ -5,7 +5,7 @@
 namespace SP_OPT_PA {
 
 bool ifTimeout(TimerType start_time) {
-    auto curr_time = std::chrono::system_clock::now();
+    auto curr_time = std::chrono::high_resolution_clock::now();
     if (std::chrono::duration_cast<std::chrono::seconds>(curr_time - start_time)
             .count() >= GlobalVariables::TIME_LIMIT) {
         std::cout << "\nTime out when running OptimizeOrder. Maximum time is "
