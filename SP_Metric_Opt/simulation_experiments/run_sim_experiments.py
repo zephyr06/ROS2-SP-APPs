@@ -60,7 +60,7 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
     ----------
     effective_num_intervals : int or None
         If provided, use this as the divisor for per-call execution time instead
-        of counting ``taskset_characteristics_*.yaml`` files on disk.  This is
+        of counting ``taskset_characteristics_interval_*.yaml`` files on disk.  This is
         needed when ``--max_intervals`` hides some YAML files from C++.
     """
     sched_dir = os.path.join(taskset_dir, scheduler, scheduler)
@@ -89,7 +89,7 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
 
     # Read scheduler execution time if available.
     # C++ writes total process duration; we convert to per-scheduler-call average
-    # by dividing by the number of intervals (taskset_characteristics_*.yaml).
+    # by dividing by the number of intervals (taskset_characteristics_interval_*.yaml).
     exec_time_file = os.path.join(sched_dir, "scheduler_execution_time.txt")
     total_exec_time = 0.0
     if os.path.exists(exec_time_file):
@@ -108,7 +108,7 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
     if effective_num_intervals is not None:
         num_intervals = effective_num_intervals
     else:
-        char_files = glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+        char_files = glob.glob(os.path.join(taskset_dir, "taskset_characteristics_interval_*.yaml"))
         num_intervals = len(char_files)
     if scheduler == "CFS":
         avg_sched_time = 0.0
@@ -123,7 +123,7 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
 def _needs_generation(taskset_dir):
     """Check if taskset needs to be generated."""
     char_files = glob.glob(os.path.join(taskset_dir,
-                                        "taskset_characteristics_*.yaml"))
+                                        "taskset_characteristics_interval_*.yaml"))
     return len(char_files) == 0
 
 
@@ -132,7 +132,7 @@ def _temporarily_hide_interval_files(taskset_dir, max_intervals):
     """Move excess interval characteristics files out of the way so C++ only sees max_intervals.
 
     If ``max_intervals`` is None, this is a no-op.  If it is set, all
-    ``taskset_characteristics_*.yaml`` files whose index >= ``max_intervals``
+    ``taskset_characteristics_interval_*.yaml`` files whose index >= ``max_intervals``
     are temporarily moved to a ``hidden_intervals/`` subdirectory and restored
     on exit.  A recovery check at entry restores any files left over from a
     previous crashed run.
@@ -146,7 +146,7 @@ def _temporarily_hide_interval_files(taskset_dir, max_intervals):
     # --- Recovery: restore orphaned files from a previous crash ---
     if os.path.exists(hidden_dir):
         for fpath in glob.glob(
-            os.path.join(hidden_dir, "taskset_characteristics_*.yaml")
+            os.path.join(hidden_dir, "taskset_characteristics_interval_*.yaml")
         ):
             dest = os.path.join(taskset_dir, os.path.basename(fpath))
             if not os.path.exists(dest):
@@ -159,10 +159,10 @@ def _temporarily_hide_interval_files(taskset_dir, max_intervals):
     os.makedirs(hidden_dir, exist_ok=True)
     moved = []
     for fpath in glob.glob(
-        os.path.join(taskset_dir, "taskset_characteristics_*.yaml")
+        os.path.join(taskset_dir, "taskset_characteristics_interval_*.yaml")
     ):
         fname = os.path.basename(fpath)
-        stem = fname.replace("taskset_characteristics_", "").replace(".yaml", "")
+        stem = fname.replace("taskset_characteristics_interval_", "").replace(".yaml", "")
         try:
             idx = int(stem)
         except ValueError:
@@ -375,7 +375,7 @@ def main():
             if args.verbose >= 1:
                 char_files = glob.glob(
                     os.path.join(taskset_dir,
-                                 "taskset_characteristics_*.yaml")
+                                 "taskset_characteristics_interval_*.yaml")
                 )
                 print(f"Taskset {idx} already exists "
                       f"({len(char_files)} characteristic files), "
@@ -388,7 +388,7 @@ def main():
 
         # Total interval count on disk (used for exec-time divisor and max_intervals clamp)
         total_intervals = len(
-            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_interval_*.yaml"))
         )
         effective_num_intervals = (
             min(args.max_intervals, total_intervals)
@@ -396,7 +396,7 @@ def main():
         )
 
         # Read task definitions and deadlines
-        char_fpath = os.path.join(taskset_dir, "taskset_characteristics_0.yaml")
+        char_fpath = os.path.join(taskset_dir, "taskset_characteristics_interval_0.yaml")
         with open(char_fpath, "r") as f:
             yaml_data = yaml.safe_load(f)
         task_deadlines = {t["id"]: float(t["deadline"]) for t in yaml_data["tasks"]}

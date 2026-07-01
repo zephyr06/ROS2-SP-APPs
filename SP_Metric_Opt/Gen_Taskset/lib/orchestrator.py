@@ -244,7 +244,7 @@ def generate_additional_execution_traces(
                     add_perf_records=add_perf_records,
                     perf_sel=perf_sel
                 )
-                dump_yml_fpath = os.path.join(dir_path, f"taskset_characteristics_{k_val}.yaml")
+                dump_yml_fpath = os.path.join(dir_path, f"taskset_characteristics_interval_{k_val}.yaml")
                 export_taskset_to_yaml(old_task_char, dump_yml_fpath)
 
                 # Write global taskset_characteristics.yaml for backward compatibility

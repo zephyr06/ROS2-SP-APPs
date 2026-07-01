@@ -58,7 +58,7 @@ def test_integration_pipeline():
     # Verify that output files exist and are non-empty
     assert os.path.exists(os.path.join(output_dir, "taskset_param.yaml"))
     assert os.path.exists(os.path.join(output_dir, "taskset_characteristics.yaml"))
-    assert os.path.exists(os.path.join(output_dir, "taskset_characteristics_0.yaml"))
+    assert os.path.exists(os.path.join(output_dir, "taskset_characteristics_interval_0.yaml"))
     assert os.path.exists(os.path.join(output_dir, "path_0.png"))
     assert os.path.exists(os.path.join(output_dir, "cpu_util.png"))
     

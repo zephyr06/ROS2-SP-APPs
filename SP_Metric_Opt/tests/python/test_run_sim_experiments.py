@@ -188,7 +188,7 @@ class TestRunSimExperiments(unittest.TestCase):
 
             # Create 3 interval characteristic files
             for i in range(3):
-                char_path = os.path.join(temp_dir, f"taskset_characteristics_{i}.yaml")
+                char_path = os.path.join(temp_dir, f"taskset_characteristics_interval_{i}.yaml")
                 with open(char_path, "w") as f:
                     f.write("tasks:\n")
                     f.write("  - id: 0\n")
@@ -230,7 +230,7 @@ class TestRunSimExperiments(unittest.TestCase):
 
             # Create 3 interval characteristic files on disk
             for i in range(3):
-                char_path = os.path.join(temp_dir, f"taskset_characteristics_{i}.yaml")
+                char_path = os.path.join(temp_dir, f"taskset_characteristics_interval_{i}.yaml")
                 with open(char_path, "w") as f:
                     f.write("tasks:\n")
                     f.write("  - id: 0\n")
@@ -313,6 +313,59 @@ class TestRunSimExperiments(unittest.TestCase):
 
             # Verify plots path savefig was called
             mock_savefig.assert_called_once()
+        finally:
+            shutil.rmtree(temp_dir)
+
+    def test_analyze_single_instance_ignores_path_files(self):
+        """Path-specific YAML files (i0_p0) must NOT be counted as interval files."""
+        temp_dir = tempfile.mkdtemp()
+        try:
+            scheduler = "BF"
+            inst = 0
+            sched_dir = os.path.join(temp_dir, scheduler, scheduler)
+            os.makedirs(sched_dir, exist_ok=True)
+
+            metrics_file = os.path.join(sched_dir, "interval_sp_metrics.txt")
+            with open(metrics_file, "w") as f:
+                f.write("0,0.95\n")
+
+            summary_file = os.path.join(sched_dir, "miss_rate_summary.txt")
+            with open(summary_file, "w") as f:
+                f.write("total_jobs,missed_jobs,miss_rate\n")
+                f.write("10,0,0.0\n")
+
+            exec_file = os.path.join(sched_dir, "scheduler_execution_time.txt")
+            with open(exec_file, "w") as f:
+                f.write("6.0\n")
+
+            # 2 genuine interval files
+            for i in range(2):
+                char_path = os.path.join(
+                    temp_dir, f"taskset_characteristics_interval_{i}.yaml"
+                )
+                with open(char_path, "w") as f:
+                    f.write("tasks:\n")
+                    f.write("  - id: 0\n")
+                    f.write("    deadline: 1000\n")
+
+            # 3 path-specific files that must be ignored
+            for i in range(3):
+                for pp in range(2):
+                    path_file = os.path.join(
+                        temp_dir, f"taskset_characteristics_i{i}_p{pp}.yaml"
+                    )
+                    with open(path_file, "w") as f:
+                        f.write("tasks:\n")
+                        f.write("  - id: 0\n")
+                        f.write("    deadline: 1000\n")
+
+            task_deadlines = {0: 1000.0}
+            sched_ret, miss_rate, sp_values_run, run_intervals_data, avg_sched_time = \
+                analyze_single_instance(temp_dir, scheduler, inst, task_deadlines, 10)
+
+            # 6.0 / 2 intervals = 3.0, NOT 6.0 / (2 + 6) = 0.75
+            self.assertEqual(sched_ret, "BF")
+            self.assertAlmostEqual(avg_sched_time, 3.0)
         finally:
             shutil.rmtree(temp_dir)
 

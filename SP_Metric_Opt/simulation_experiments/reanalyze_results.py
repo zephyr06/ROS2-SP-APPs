@@ -35,7 +35,7 @@ def reanalyze_experiment(exp_dir, schedulers, horizon_granularity=10):
         taskset_dir = os.path.join(exp_dir, td)
         char_files = [
             f for f in os.listdir(taskset_dir)
-            if f.startswith("taskset_characteristics_") and f.endswith(".yaml")
+            if f.startswith("taskset_characteristics_interval_") and f.endswith(".yaml")
         ]
         if not char_files:
             print(f"Skipping {td}, no characteristics file")

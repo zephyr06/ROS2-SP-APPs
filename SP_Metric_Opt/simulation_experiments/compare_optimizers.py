@@ -416,7 +416,7 @@ def main():
                 print("  Taskset already exists, skipping generation.")
 
         # Read task deadlines for miss-rate analysis
-        char_fpath = os.path.join(taskset_dir, "taskset_characteristics_0.yaml")
+        char_fpath = os.path.join(taskset_dir, "taskset_characteristics_interval_0.yaml")
         if not os.path.exists(char_fpath):
             # Fallback to the global characteristics file
             char_fpath = os.path.join(taskset_dir, "taskset_characteristics.yaml")
@@ -426,7 +426,7 @@ def main():
 
         # Total interval count on disk (for exec-time divisor and max_intervals clamp)
         total_intervals = len(
-            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_*.yaml"))
+            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_interval_*.yaml"))
         )
         effective_num_intervals = (
             min(args.max_intervals, total_intervals)

@@ -23,14 +23,14 @@ void BaseSimulationOrchestrator::LoadIntervalConfigs() {
     int interval_idx = 0;
     while (true) {
         // Require merged taskset files that contain ALL tasks (both p0 & p1)
-        std::string file_path = input_folder_ + "/taskset_characteristics_" +
+        std::string file_path = input_folder_ + "/taskset_characteristics_interval_" +
                                 std::to_string(interval_idx) + ".yaml";
         if (!std::filesystem::exists(file_path)) {
             if (interval_idx == 0) {
                 std::cerr << "Error: No merged taskset files found in "
                           << input_folder_ << std::endl;
                 std::cerr
-                    << "Expected file example: taskset_characteristics_0.yaml"
+                    << "Expected file example: taskset_characteristics_interval_0.yaml"
                     << std::endl;
                 std::cerr
                     << "Merged files are required to ensure all processors' "

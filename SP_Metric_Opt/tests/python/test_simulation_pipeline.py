@@ -146,7 +146,7 @@ class TestSimulationPipeline(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(temp_dir, "taskset_param.yaml")))
             self.assertTrue(os.path.exists(os.path.join(temp_dir, "taskset_characteristics.yaml")))
             # At least one interval file
-            interval_files = [f for f in os.listdir(temp_dir) if f.startswith("taskset_characteristics_") and f.endswith(".yaml")]
+            interval_files = [f for f in os.listdir(temp_dir) if f.startswith("taskset_characteristics_interval_") and f.endswith(".yaml")]
             self.assertTrue(len(interval_files) > 0)
         finally:
             shutil.rmtree(temp_dir, ignore_errors=True)
