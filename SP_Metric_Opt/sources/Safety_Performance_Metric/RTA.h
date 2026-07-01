@@ -4,6 +4,7 @@
 #include "sources/TaskModel/RegularTasks.h"
 namespace SP_OPT_PA {
 FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks);
+FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks, const FiniteDist& hp_tasks_et_conv);
 std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     const TaskSet& tasks);
 

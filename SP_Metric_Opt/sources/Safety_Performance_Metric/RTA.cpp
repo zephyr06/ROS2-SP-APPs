@@ -4,16 +4,7 @@
 #include "sources/TaskModel/RegularTasks.h"
 namespace SP_OPT_PA {
 
-FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
-    FiniteDist rta_cur = task_curr.execution_time_dist;
-    bool if_new_preempt = false;
-    for (const Task& task_hp : hp_tasks) {
-        rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity *
-                                                 1);
-        rta_cur.Convolve(task_hp.execution_time_dist);
-        if_new_preempt =
-            if_new_preempt || (rta_cur.max_time / task_hp.period > 1);
-    }
+void ResolvePreemptionsAndCompress(FiniteDist& rta_cur, const Task& task_curr, const TaskSet& hp_tasks, bool if_new_preempt) {
     int n_hp = hp_tasks.size();
     std::vector<int> hp_jobs_considered(n_hp, 1);
     while (if_new_preempt && rta_cur.min_time <= task_curr.deadline) {
@@ -34,6 +25,33 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
     rta_cur.CompressDeadlineMissProbability(task_curr.deadline);
     rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 1);
     rta_cur.UpdateMinMaxValues();
+}
+
+FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks) {
+    FiniteDist rta_cur = task_curr.execution_time_dist;
+    bool if_new_preempt = false;
+    for (const Task& task_hp : hp_tasks) {
+        rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity *
+                                                 1);
+        rta_cur.Convolve(task_hp.execution_time_dist);
+        if_new_preempt =
+            if_new_preempt || (rta_cur.max_time / task_hp.period > 1);
+    }
+    ResolvePreemptionsAndCompress(rta_cur, task_curr, hp_tasks, if_new_preempt);
+    return rta_cur;
+}
+
+FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks, const FiniteDist& hp_tasks_et_conv) {
+    FiniteDist rta_cur = task_curr.execution_time_dist;
+    rta_cur.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 1);
+    rta_cur.Convolve(hp_tasks_et_conv);
+
+    bool if_new_preempt = false;
+    for (const Task& task_hp : hp_tasks) {
+        if_new_preempt =
+            if_new_preempt || (rta_cur.max_time / task_hp.period > 1);
+    }
+    ResolvePreemptionsAndCompress(rta_cur, task_curr, hp_tasks, if_new_preempt);
     return rta_cur;
 }
 
@@ -51,12 +69,17 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     std::vector<FiniteDist> rtas(n);
     TaskSet hp_tasks;
     hp_tasks.reserve(n - 1);
+    
+    FiniteDist hp_tasks_et_conv({Value_Proba(0, 1.0)});
     for (int i = 0; i < n; i++) {
-        FiniteDist rta_curr = GetRTA_OneTask(tasks[i], hp_tasks);
+        FiniteDist rta_curr = GetRTA_OneTask(tasks[i], hp_tasks, hp_tasks_et_conv);
 
         // rtas.push_back(rta_curr);
         rtas[task_id_to_index[tasks[i].id]] = rta_curr;
         hp_tasks.push_back(tasks[i]);
+        
+        hp_tasks_et_conv.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 1);
+        hp_tasks_et_conv.Convolve(tasks[i].execution_time_dist);
     }
     return rtas;
 }
