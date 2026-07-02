@@ -9,6 +9,7 @@ Usage:
     python compare_optimizers.py --n_tasksets 10 --num_tasks 6
 """
 import argparse
+import atexit
 import contextlib
 import glob
 import json
@@ -26,18 +27,24 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
-from Gen_Taskset.lib.generation_config_parser import load_generation_config
+from Gen_Taskset.lib.generation_config_parser import (
+    load_generation_config,
+    resolve_taskset_config_path,
+)
 from simulation_experiments.run_sim_experiments import (
     run_single_simulation,
     analyze_single_instance,
     _needs_generation,
-    _temporarily_hide_interval_files,
+    _should_generate,
 )
 from simulation_experiments.utils import (
     compute_miss_rate,
+    compute_miss_rate_by_task,
+    compute_important_task_miss_rate,
     write_summary_and_plots,
     MATPLOTLIB_AVAILABLE,
 )
+from simulation_experiments.plotting_config import save_figure
 
 try:
     import matplotlib
@@ -78,11 +85,16 @@ def parse_interval_sp_metrics(metrics_path):
     return values
 
 
-def plot_optimizer_bar_comparison(results_by_scheduler, schedulers, output_path,
-                                  metric_name="SP Metric", ylabel="Average SP Metric"):
-    """Generate a bar chart with error bars (std) for each scheduler."""
+def plot_optimizer_sp_line(results_by_scheduler, schedulers, output_path,
+                           metric_name="SP Metric", ylabel="Average SP Metric"):
+    """Generate a line chart of mean SP (with std error bars) per scheduler.
+
+    Replaces the previous bar chart -- line plots are used everywhere per the
+    project convention. Schedulers are plotted in order on a categorical
+    x-axis, markers connected by a line. Saved as both PNG and PDF.
+    """
     if not MATPLOTLIB_AVAILABLE:
-        print("Skipping bar plot (matplotlib not available).")
+        print("Skipping SP line plot (matplotlib not available).")
         return
 
     valid_schedulers = []
@@ -97,16 +109,15 @@ def plot_optimizer_bar_comparison(results_by_scheduler, schedulers, output_path,
             stds.append(np.std(arr))
 
     if not valid_schedulers:
-        print("No valid SP data for bar plot.")
+        print("No valid SP data for line plot.")
         return
 
     fig, ax = plt.subplots(figsize=(12, 6))
     colors = matplotlib.colormaps["tab10"]
     x = np.arange(len(valid_schedulers))
-    bars = ax.bar(
-        x, means, yerr=stds, capsize=5,
-        color=[colors(i) for i in range(len(valid_schedulers))],
-        edgecolor="black"
+    ax.errorbar(
+        x, means, yerr=stds, marker="o", markersize=8, linewidth=2, capsize=5,
+        color=colors(0),
     )
     ax.set_xticks(x)
     ax.set_xticklabels(valid_schedulers, rotation=15, ha="right")
@@ -114,13 +125,19 @@ def plot_optimizer_bar_comparison(results_by_scheduler, schedulers, output_path,
     ax.set_title(f"{metric_name} by Scheduler")
     ax.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()
-    print(f"Saved bar comparison plot to: {output_path}")
+    # Strip a trailing .png so save_figure can append both .png and .pdf.
+    output_stem = output_path[:-4] if output_path.lower().endswith(".png") else output_path
+    save_figure(fig, output_stem)
+    plt.close(fig)
+    print(f"Saved SP comparison line plot to: {output_stem}.{{png,pdf}}")
 
 
-def plot_optimizer_exec_time(results_by_scheduler, schedulers, output_path):
-    """Generate a bar chart of average scheduler execution time per mode."""
+def plot_optimizer_exec_time_line(results_by_scheduler, schedulers, output_path):
+    """Generate a line chart of average scheduler execution time per mode.
+
+    Replaces the previous bar chart. Schedulers on a categorical x-axis,
+    markers connected by a line. Saved as both PNG and PDF.
+    """
     if not MATPLOTLIB_AVAILABLE:
         print("Skipping execution-time plot (matplotlib not available).")
         return
@@ -143,10 +160,9 @@ def plot_optimizer_exec_time(results_by_scheduler, schedulers, output_path):
     fig, ax = plt.subplots(figsize=(12, 6))
     colors = matplotlib.colormaps["tab10"]
     x = np.arange(len(valid_schedulers))
-    ax.bar(
-        x, means, yerr=stds, capsize=5,
-        color=[colors(i) for i in range(len(valid_schedulers))],
-        edgecolor="black"
+    ax.errorbar(
+        x, means, yerr=stds, marker="o", markersize=8, linewidth=2, capsize=5,
+        color=colors(0),
     )
     ax.set_xticks(x)
     ax.set_xticklabels(valid_schedulers, rotation=15, ha="right")
@@ -154,13 +170,18 @@ def plot_optimizer_exec_time(results_by_scheduler, schedulers, output_path):
     ax.set_title("Scheduler Execution Time")
     ax.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()
-    print(f"Saved execution-time plot to: {output_path}")
+    output_stem = output_path[:-4] if output_path.lower().endswith(".png") else output_path
+    save_figure(fig, output_stem)
+    plt.close(fig)
+    print(f"Saved execution-time line plot to: {output_stem}.{{png,pdf}}")
 
 
-def plot_per_taskset_radar(results_by_taskset, schedulers, output_path):
-    """Generate a radar / spider chart showing mean SP per scheduler for each taskset."""
+def plot_per_taskset_line(results_by_taskset, schedulers, output_path):
+    """Generate a line chart of mean SP per scheduler across tasksets.
+
+    Replaces the previous grouped bar chart. X-axis is the taskset index, with
+    one line per scheduler. Saved as both PNG and PDF.
+    """
     if not MATPLOTLIB_AVAILABLE:
         return
 
@@ -181,12 +202,13 @@ def plot_per_taskset_radar(results_by_taskset, schedulers, output_path):
 
     fig, ax = plt.subplots(figsize=(14, max(6, n_tasksets * 0.4)))
     x = np.arange(n_tasksets)
-    width = 0.8 / len(schedulers)
     colors = matplotlib.colormaps["tab10"]
 
     for i, s in enumerate(schedulers):
-        offset = (i - len(schedulers) / 2) * width
-        ax.bar(x + offset, data[s], width, label=s, color=colors(i), edgecolor="black")
+        ax.plot(
+            x, data[s], marker="o", markersize=6, linewidth=1.5,
+            label=s, color=colors(i),
+        )
 
     ax.set_xlabel("Taskset Index")
     ax.set_ylabel("Average SP Metric")
@@ -196,9 +218,10 @@ def plot_per_taskset_radar(results_by_taskset, schedulers, output_path):
     ax.legend(loc="upper right")
     ax.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300)
-    plt.close()
-    print(f"Saved per-taskset plot to: {output_path}")
+    output_stem = output_path[:-4] if output_path.lower().endswith(".png") else output_path
+    save_figure(fig, output_stem)
+    plt.close(fig)
+    print(f"Saved per-taskset line plot to: {output_stem}.{{png,pdf}}")
 
 
 def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec,
@@ -234,8 +257,10 @@ def main():
         help="Number of task sets to generate and evaluate (default: 10)"
     )
     parser.add_argument(
-        "--num_tasks", type=int, choices=[4, 6, 8], default=6,
-        help="Number of tasks (selects paper_4 / paper_6 / paper_8 config, default: 6)"
+        "--num_tasks", type=int, default=6,
+        help=("Number of tasks (default: 6). On-disk paper configs exist for "
+              "4/6/8; any N >= 2 is supported and the config is synthesized "
+              "on the fly for other values.")
     )
     parser.add_argument(
         "-t", "--n_sec", type=int, default=300,
@@ -246,11 +271,6 @@ def main():
         help=("Interval in seconds between scheduler re-optimizations. "
               "This controls taskset generation (UPDATE_INTERVAL_S) and "
               "the per-interval simulation duration sent to C++ (default: 10)")
-    )
-    parser.add_argument(
-        "--max_intervals", type=int, default=None,
-        help=("If set, simulate at most this many intervals even if the "
-              "generated taskset contains more. Useful for fast tests.")
     )
     parser.add_argument(
         "--n_inst", type=int, default=1,
@@ -287,30 +307,46 @@ def main():
         help="Verbosity level (0: minimal, 1: progress, 2: debug simulator output)"
     )
     parser.add_argument(
-        "--skip_generation", action="store_true",
-        help="Skip generation if taskset_characteristics files already exist"
+        "--skip_generation_if_exists", action="store_true", default=True,
+        help=("Reuse an existing taskset instead of regenerating. Before "
+              "reusing, the resolved generator config is compared against the "
+              "generator_config.json saved with the on-disk taskset; a change "
+              "triggers --on_taskset_config_change. Default: on.")
     )
     parser.add_argument(
-        "--export_level", type=int, default=0, choices=[0, 1, 2, 3],
+        "--on_taskset_config_change", choices=["prompt", "regenerate", "keep"],
+        default="prompt",
+        help=("Policy when an existing taskset's config has changed: 'prompt' "
+              "(default) asks [Y/n] and regenerates on yes (or regenerates "
+              "silently when non-interactive); 'regenerate' always regenerates; "
+              "'keep' reuses the stale taskset with a warning.")
+    )
+    parser.add_argument(
+        "--important_task_pct", type=float, default=0.10,
+        help="Fraction of tasks considered 'important' (top by sp_weight) for important-task miss rate (default: 0.10)"
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=None,
+        help="Number of parallel worker processes for scheduler execution (default: min(4, cpu_count))"
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Skip simulation if interval_sp_metrics.txt already exists"
+    )
+    parser.add_argument(
+        "--export_level", type=int, default=1, choices=[0, 1, 2, 3],
         help="Export detail level: 0=sp-only, 1=+task miss rate, 2=+task aggregate, 3=full job traces"
-    )
-    parser.add_argument(
-        "--sample_interval", type=int, default=0,
-        help="Sample interval metrics every N seconds (0=all intervals)"
     )
 
     args = parser.parse_args()
 
-    if args.max_intervals is not None and args.max_intervals < 1:
-        parser.error("--max_intervals must be >= 1")
     if args.scheduler_trigger_interval < 1:
         parser.error("--scheduler_trigger_interval must be >= 1")
+    if args.num_tasks < 2:
+        parser.error("--num_tasks must be >= 2 (needs >=1 big + >=1 small period task)")
 
     # Resolve paths
-    config_file_abs = os.path.join(
-        PROJECT_ROOT,
-        f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{args.num_tasks}.json"
-    )
+    config_file_abs = resolve_taskset_config_path(args.num_tasks)
     base_output_dir = (
         args.output_dir if args.output_dir.startswith("/")
         else os.path.join(PROJECT_ROOT, args.output_dir)
@@ -347,16 +383,19 @@ def main():
     os.makedirs(output_dir_abs, exist_ok=True)
 
     # Temporary directory for seeded JSON configs
-    temp_dir = os.path.join(PROJECT_ROOT, "temp_experiment_configs")
-    os.makedirs(temp_dir, exist_ok=True)
+    temp_dir = tempfile.mkdtemp(prefix="temp_experiment_configs_", dir=PROJECT_ROOT)
+    atexit.register(shutil.rmtree, temp_dir, ignore_errors=True)
 
     # Plot x-axis spacing equals the scheduler trigger interval (seconds)
     horizon_granularity = scheduler_trigger_interval
 
     # Data structures
     results_by_scheduler = {
-        s: {"sp_values": [], "miss_rates": [], "intervals": {},
-            "sched_times": []}
+        s: {
+            "sp_values": [], "miss_rates": [], "intervals": {},
+            "sched_times": [], "important_miss_rates": [],
+            "non_important_miss_rates": []
+        }
         for s in args.schedulers
     }
     results_by_taskset = []  # per-taskset dict for per-taskset plots
@@ -370,22 +409,33 @@ def main():
         taskset_dir = os.path.join(output_dir_abs, f"taskset_{idx}")
         os.makedirs(taskset_dir, exist_ok=True)
 
-        needs_generation = _needs_generation(taskset_dir)
-
         # Load, seed, and save configuration (resolve INCLUDE so temp file is self-contained)
         config_dict = load_generation_config(config_file_abs)
         config_dict["RANDOM_SEED"] = args.base_seed + idx
         config_dict["UPDATE_INTERVAL_S"] = scheduler_trigger_interval
 
-        with open(os.path.join(taskset_dir, "generator_config.json"), "w") as f:
-            json.dump(config_dict, f, indent=4)
+        # Decide whether to (re)generate. _should_generate compares
+        # ``config_dict`` against the generator_config.json saved with the
+        # on-disk taskset, so a stale taskset (generated under an older config)
+        # is never silently reused. The baseline file is written only when we
+        # actually generate, below -- writing it here would clobber the baseline.
+        should_generate = _should_generate(
+            taskset_dir, config_dict, idx,
+            skip_if_exists=args.skip_generation_if_exists,
+            on_change_policy=args.on_taskset_config_change,
+            verbose=args.verbose,
+        )
 
         temp_cfg_path = os.path.join(temp_dir, f"temp_cfg_{idx}.json")
         with open(temp_cfg_path, "w") as f:
             json.dump(config_dict, f, indent=4)
 
         # 1. Generate taskset
-        if needs_generation or not args.skip_generation:
+        if should_generate:
+            # Record the config that generated this taskset as the staleness
+            # baseline for future runs' _should_generate comparison.
+            with open(os.path.join(taskset_dir, "generator_config.json"), "w") as f:
+                json.dump(config_dict, f, indent=4)
             if args.verbose >= 1:
                 print("  Generating taskset...")
             if args.verbose >= 2:
@@ -415,7 +465,7 @@ def main():
             if args.verbose >= 1:
                 print("  Taskset already exists, skipping generation.")
 
-        # Read task deadlines for miss-rate analysis
+        # Read task deadlines and sp_weights for miss-rate analysis
         char_fpath = os.path.join(taskset_dir, "taskset_characteristics_interval_0.yaml")
         if not os.path.exists(char_fpath):
             # Fallback to the global characteristics file
@@ -423,33 +473,38 @@ def main():
         with open(char_fpath, "r") as f:
             yaml_data = yaml.safe_load(f)
         task_deadlines = {t["id"]: float(t["deadline"]) for t in yaml_data["tasks"]}
+        task_sp_weights = {t["id"]: float(t.get("sp_weight", 0.0)) for t in yaml_data["tasks"]}
 
-        # Total interval count on disk (for exec-time divisor and max_intervals clamp)
-        total_intervals = len(
-            glob.glob(os.path.join(taskset_dir, "taskset_characteristics_interval_*.yaml"))
-        )
-        effective_num_intervals = (
-            min(args.max_intervals, total_intervals)
-            if args.max_intervals is not None else total_intervals
-        )
+        # Determine number of worker processes
+        num_workers = args.num_workers
+        if num_workers is None:
+            num_workers = min(4, os.cpu_count() or 1)
 
-        # 2. Run each scheduler in parallel
+        # 2. Run each scheduler in parallel. The on-disk interval count is
+        # controlled solely by n_sec / scheduler_trigger_interval (removed
+        # --max_intervals), so C++ sees exactly the generated intervals.
         if args.verbose >= 1:
-            print("  Running simulations...")
+            print(f"  Running simulations ({num_workers} workers)...")
 
         sim_futures = []
-        with concurrent.futures.ProcessPoolExecutor(max_workers=1) as executor, \
-             _temporarily_hide_interval_files(taskset_dir, args.max_intervals):
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
             for scheduler in args.schedulers:
                 sched_dir = os.path.join(taskset_dir, scheduler)
                 os.makedirs(sched_dir, exist_ok=True)
                 for inst in range(args.n_inst):
+                    # Optional resume: skip if output already exists
+                    if args.resume:
+                        expected_output = os.path.join(sched_dir, scheduler, "interval_sp_metrics.txt")
+                        if os.path.exists(expected_output):
+                            if args.verbose >= 1:
+                                print(f"    [Resume] Skipping {scheduler} instance {inst}")
+                            continue
                     sim_futures.append(
                         executor.submit(
                             run_single_simulation,
                             sim_bin_path, taskset_dir, sched_dir,
                             interval_duration_ms, scheduler, inst,
-                            args.verbose, args.export_level, args.sample_interval,
+                            args.verbose, args.export_level,
                         )
                     )
             concurrent.futures.wait(sim_futures)
@@ -463,15 +518,18 @@ def main():
             for inst in range(args.n_inst):
                 try:
                     sched, miss_rate, sp_values_run, run_intervals_data, \
-                        avg_sched_time = analyze_single_instance(
+                        avg_sched_time, imp_miss, non_imp_miss = analyze_single_instance(
                             taskset_dir, scheduler, inst, task_deadlines,
                             horizon_granularity,
-                            effective_num_intervals=effective_num_intervals,
+                            task_sp_weights=task_sp_weights,
+                            important_pct=args.important_task_pct,
                         )
                     results_by_scheduler[sched]["miss_rates"].append(miss_rate)
                     results_by_scheduler[sched]["sched_times"].append(
                         avg_sched_time
                     )
+                    results_by_scheduler[sched]["important_miss_rates"].append(imp_miss)
+                    results_by_scheduler[sched]["non_important_miss_rates"].append(non_imp_miss)
                     for sp_val in sp_values_run:
                         results_by_scheduler[sched]["sp_values"].append(sp_val)
                     for interval, sp_val in run_intervals_data:
@@ -485,11 +543,14 @@ def main():
                     if sched not in per_ts_results:
                         per_ts_results[sched] = {
                             "sp_values": [], "miss_rates": [],
-                            "sched_times": []
+                            "sched_times": [], "important_miss_rates": [],
+                            "non_important_miss_rates": []
                         }
                     per_ts_results[sched]["sp_values"].extend(sp_values_run)
                     per_ts_results[sched]["miss_rates"].append(miss_rate)
                     per_ts_results[sched]["sched_times"].append(avg_sched_time)
+                    per_ts_results[sched]["important_miss_rates"].append(imp_miss)
+                    per_ts_results[sched]["non_important_miss_rates"].append(non_imp_miss)
                 except Exception as e:
                     print(f"  Error analyzing {scheduler} instance {inst}: {e}")
 
@@ -509,16 +570,16 @@ def main():
 
     # 5. Additional comparison plots
     if MATPLOTLIB_AVAILABLE:
-        plot_optimizer_bar_comparison(
+        plot_optimizer_sp_line(
             results_by_scheduler, args.schedulers,
             os.path.join(output_dir_abs, "optimizer_sp_bar.png")
         )
-        plot_optimizer_exec_time(
+        plot_optimizer_exec_time_line(
             results_by_scheduler, args.schedulers,
             os.path.join(output_dir_abs, "optimizer_exec_time.png")
         )
         if args.n_tasksets > 1:
-            plot_per_taskset_radar(
+            plot_per_taskset_line(
                 results_by_taskset, args.schedulers,
                 os.path.join(output_dir_abs, "optimizer_per_taskset.png")
             )

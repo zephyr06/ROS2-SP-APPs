@@ -10,11 +10,12 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import simulation_experiments.compare_optimizers as compare_optimizers
 from simulation_experiments.compare_optimizers import (
     parse_interval_sp_metrics,
-    plot_optimizer_bar_comparison,
-    plot_optimizer_exec_time,
-    plot_per_taskset_radar,
+    plot_optimizer_sp_line,
+    plot_optimizer_exec_time_line,
+    plot_per_taskset_line,
     resolve_run_output_dir,
     ALL_SCHEDULERS,
 )
@@ -70,11 +71,12 @@ class TestCompareOptimizers(unittest.TestCase):
         self.assertEqual(values, [])
 
     @unittest.mock.patch("simulation_experiments.compare_optimizers.MATPLOTLIB_AVAILABLE", True)
+    @unittest.mock.patch("simulation_experiments.compare_optimizers.save_figure")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.plt")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.np")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.matplotlib")
-    def test_plot_optimizer_bar_comparison(self, mock_matplotlib, mock_np, mock_plt):
-        """Bar plot generation runs without error given valid data."""
+    def test_plot_optimizer_sp_line(self, mock_matplotlib, mock_np, mock_plt, mock_save):
+        """SP line plot generation runs without error given valid data."""
         mock_np.array = lambda x: x
         mock_np.mean = lambda x: sum(x) / len(x) if x else 0.0
         mock_np.std = lambda x: 0.05
@@ -92,20 +94,22 @@ class TestCompareOptimizers(unittest.TestCase):
         }
         temp_dir = tempfile.mkdtemp()
         try:
-            out_path = os.path.join(temp_dir, "bar.png")
-            plot_optimizer_bar_comparison(results, ["INCR", "BF"], out_path)
+            out_path = os.path.join(temp_dir, "sp_line.png")
+            plot_optimizer_sp_line(results, ["INCR", "BF"], out_path)
             mock_plt.subplots.assert_called_once()
-            mock_plt.savefig.assert_called_once_with(out_path, dpi=300)
-            mock_plt.close.assert_called_once()
+            # save_figure receives the stem (no extension); emits PNG + PDF.
+            mock_save.assert_called_once_with(mock_fig, os.path.join(temp_dir, "sp_line"))
+            mock_plt.close.assert_called_once_with(mock_fig)
         finally:
             shutil.rmtree(temp_dir)
 
     @unittest.mock.patch("simulation_experiments.compare_optimizers.MATPLOTLIB_AVAILABLE", True)
+    @unittest.mock.patch("simulation_experiments.compare_optimizers.save_figure")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.plt")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.np")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.matplotlib")
-    def test_plot_optimizer_exec_time(self, mock_matplotlib, mock_np, mock_plt):
-        """Execution-time plot generation runs without error."""
+    def test_plot_optimizer_exec_time_line(self, mock_matplotlib, mock_np, mock_plt, mock_save):
+        """Execution-time line plot generation runs without error."""
         mock_np.array = lambda x: x
         mock_np.mean = lambda x: sum(x) / len(x) if x else 0.0
         mock_np.std = lambda x: 0.01
@@ -123,20 +127,21 @@ class TestCompareOptimizers(unittest.TestCase):
         }
         temp_dir = tempfile.mkdtemp()
         try:
-            out_path = os.path.join(temp_dir, "exec.png")
-            plot_optimizer_exec_time(results, ["INCR", "BF"], out_path)
+            out_path = os.path.join(temp_dir, "exec_line.png")
+            plot_optimizer_exec_time_line(results, ["INCR", "BF"], out_path)
             mock_plt.subplots.assert_called_once()
-            mock_plt.savefig.assert_called_once_with(out_path, dpi=300)
-            mock_plt.close.assert_called_once()
+            mock_save.assert_called_once_with(mock_fig, os.path.join(temp_dir, "exec_line"))
+            mock_plt.close.assert_called_once_with(mock_fig)
         finally:
             shutil.rmtree(temp_dir)
 
     @unittest.mock.patch("simulation_experiments.compare_optimizers.MATPLOTLIB_AVAILABLE", True)
+    @unittest.mock.patch("simulation_experiments.compare_optimizers.save_figure")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.plt")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.np")
     @unittest.mock.patch("simulation_experiments.compare_optimizers.matplotlib")
-    def test_plot_per_taskset_radar(self, mock_matplotlib, mock_np, mock_plt):
-        """Per-taskset plot generation runs without error for multiple tasksets."""
+    def test_plot_per_taskset_line(self, mock_matplotlib, mock_np, mock_plt, mock_save):
+        """Per-taskset line plot generation runs without error for multiple tasksets."""
         mock_np.array = lambda x: x
         mock_np.mean = lambda x: sum(x) / len(x) if x else 0.0
 
@@ -158,13 +163,67 @@ class TestCompareOptimizers(unittest.TestCase):
         ]
         temp_dir = tempfile.mkdtemp()
         try:
-            out_path = os.path.join(temp_dir, "radar.png")
-            plot_per_taskset_radar(results_by_taskset, ["INCR", "BF"], out_path)
+            out_path = os.path.join(temp_dir, "per_taskset_line.png")
+            plot_per_taskset_line(results_by_taskset, ["INCR", "BF"], out_path)
             mock_plt.subplots.assert_called_once()
-            mock_plt.savefig.assert_called_once_with(out_path, dpi=300)
-            mock_plt.close.assert_called_once()
+            mock_save.assert_called_once_with(mock_fig, os.path.join(temp_dir, "per_taskset_line"))
+            mock_plt.close.assert_called_once_with(mock_fig)
         finally:
             shutil.rmtree(temp_dir)
+
+
+class TestNumTasksCliAcceptance(unittest.TestCase):
+    """P13 Commit B: --num_tasks is no longer restricted to choices=[4,6,8],
+    and any N >= 2 routes through resolve_taskset_config_path.
+
+    We patch the resolver to raise a sentinel so we can assert that argparse
+    accepted the value (no choices rejection) AND that main() routed it to the
+    resolver -- without needing the C++ binary or taskset generation.
+    """
+
+    def _run_main_catching_resolver(self, cli_args):
+        """Run compare_optimizers.main() with --num_tasks; expect the patched
+        resolver to raise a sentinel. Returns the num_tasks the resolver saw."""
+        seen = {}
+
+        def fake_resolver(num_tasks, *a, **kw):
+            seen["num_tasks"] = num_tasks
+            raise _SentinelStop()
+
+        with unittest.mock.patch.object(
+            compare_optimizers, "resolve_taskset_config_path", side_effect=fake_resolver
+        ), unittest.mock.patch.object(sys, "argv", ["compare_optimizers.py"] + cli_args):
+            with self.assertRaises(_SentinelStop):
+                compare_optimizers.main()
+        return seen.get("num_tasks")
+
+    def test_num_tasks_10_accepted_and_routed(self):
+        """--num_tasks 10 is accepted (argparse no longer rejects it) and
+        passed to resolve_taskset_config_path."""
+        n = self._run_main_catching_resolver(
+            ["--num_tasks", "10", "--n_tasksets", "1", "-v", "0"]
+        )
+        self.assertEqual(n, 10)
+
+    def test_num_tasks_18_accepted_and_routed(self):
+        """--num_tasks 18 is accepted and routed (well beyond the old 4/6/8)."""
+        n = self._run_main_catching_resolver(
+            ["--num_tasks", "18", "--n_tasksets", "1", "-v", "0"]
+        )
+        self.assertEqual(n, 18)
+
+    def test_num_tasks_below_two_rejected_by_argparse(self):
+        """--num_tasks 1 is rejected with a parser error (SystemExit)."""
+        with unittest.mock.patch.object(
+            sys, "argv", ["compare_optimizers.py", "--num_tasks", "1", "-v", "0"]
+        ):
+            with self.assertRaises(SystemExit):
+                compare_optimizers.main()
+
+
+class _SentinelStop(Exception):
+    """Raised by the patched resolver to short-circuit main() after the
+    routing assertion point (avoids needing the C++ binary)."""
 
 
 if __name__ == "__main__":
