@@ -506,6 +506,22 @@ class TestShouldGenerate(unittest.TestCase):
                 json.dump(config, f)
         return taskset_dir
 
+    def _assert_prompt_regenerates_noninteractive(self, taskset_dir, new_cfg):
+        """Assert the 'prompt' policy regenerates on a config change in a
+        non-interactive session.
+
+        ``_should_generate`` queries the real ``sys.stdin.isatty()`` to decide
+        whether to prompt a human or fall back to regenerating. Under an
+        interactive test runner (a TTY-attached terminal) ``isatty()`` is True
+        and the code would call ``input()`` and hang forever. Patch stdin to
+        be non-interactive so the test exercises the fallback path
+        deterministically, regardless of how pytest is invoked.
+        """
+        with unittest.mock.patch.object(sys.stdin, "isatty", return_value=False):
+            self.assertTrue(_should_generate(
+                taskset_dir, new_cfg, 0,
+                skip_if_exists=True, on_change_policy="prompt"))
+
     def test_no_intervals_on_disk_always_generate(self):
         """Empty taskset dir -> True regardless of skip_if_exists / policy."""
         temp_dir = tempfile.mkdtemp()
@@ -575,10 +591,8 @@ class TestShouldGenerate(unittest.TestCase):
             old_cfg = {"RANDOM_SEED": 100, "UPDATE_INTERVAL_S": 10}
             taskset_dir = self._make_taskset(temp_dir, old_cfg)
             new_cfg = {"RANDOM_SEED": 100, "UPDATE_INTERVAL_S": 60}
-            # stdin.isatty() is False under the test runner -> regenerates.
-            self.assertTrue(_should_generate(
-                taskset_dir, new_cfg, 0,
-                skip_if_exists=True, on_change_policy="prompt"))
+            # Patched non-interactive stdin -> regenerates (not the live TTY).
+            self._assert_prompt_regenerates_noninteractive(taskset_dir, new_cfg)
         finally:
             shutil.rmtree(temp_dir)
 
@@ -591,9 +605,7 @@ class TestShouldGenerate(unittest.TestCase):
                 f.write("{not valid json")
             new_cfg = {"RANDOM_SEED": 100, "UPDATE_INTERVAL_S": 10}
             # Corrupt old config != new -> prompt policy regenerates (non-TTY).
-            self.assertTrue(_should_generate(
-                taskset_dir, new_cfg, 0,
-                skip_if_exists=True, on_change_policy="prompt"))
+            self._assert_prompt_regenerates_noninteractive(taskset_dir, new_cfg)
         finally:
             shutil.rmtree(temp_dir)
 

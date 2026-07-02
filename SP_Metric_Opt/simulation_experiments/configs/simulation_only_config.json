@@ -1,0 +1,66 @@
+{
+    "_comment": "Simulation-only config: a single focused compare-optimizers run -- the former run_simulation.sh responsibility. Invoke via run_end_to_end.sh with CONFIG_JSON pointing here and --steps simulate, e.g.: CONFIG_JSON=simulation_experiments/configs/simulation_only_config.json MODE=prod ./scripts/run_end_to_end.sh --steps simulate. Unlike experiment_config.json (which sweeps multiple task counts and unions main+ablation schedulers to produce the full figure set), this config fixes one task count and the main scheduler list only, making it a direct, config-driven replacement for run_simulation.sh. To change the task count or scheduler subset, edit the values below -- there are no CLI overrides (by design: experiment parameters live in JSON, not in shell env).",
+    "_comment_on_naming": "All keys use full descriptive names, mirroring experiment_config.json. Times are in seconds unless noted.",
+
+    "test_mode": {
+        "_comment": "Quick smoke validation of the single-N compare run (run_simulation.sh defaults at smoke scale).",
+        "num_tasks_for_cross_task_comparison": [6],
+        "num_tasks_for_single_task_figures": 6,
+        "num_tasksets_to_generate": 2,
+        "simulation_duration_seconds": 70,
+        "scheduler_trigger_interval_seconds": 10,
+        "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+        "ablation_scheduler_list": [],
+        "interval_sweep_seconds_list": [10],
+        "parallel_worker_processes": null,
+        "enable_execution_time_profiling": true,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1
+    },
+    "prod_mode": {
+        "_comment": "Paper-grade single-N compare run -- the direct equivalent of the former run_simulation.sh defaults (N=6, 10 tasksets, 300s, main schedulers, seed 1000). parallel_worker_processes=null leaves worker count at compare_optimizers' auto default (min(4, cpu_count)); set an integer to pin it.",
+        "num_tasks_for_cross_task_comparison": [6],
+        "num_tasks_for_single_task_figures": 6,
+        "num_tasksets_to_generate": 10,
+        "simulation_duration_seconds": 300,
+        "scheduler_trigger_interval_seconds": 10,
+        "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+        "ablation_scheduler_list": [],
+        "interval_sweep_seconds_list": [10],
+        "parallel_worker_processes": null,
+        "enable_execution_time_profiling": true,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1
+    },
+
+    "plotting": {
+        "_comment": "Publication-quality figure styling parameters (same defaults as experiment_config.json).",
+        "font_base_size_points": 14,
+        "font_axis_label_size_points": 16,
+        "font_title_size_points": 18,
+        "output_resolution_dpi": 300,
+        "color_palette_name": "colorblind",
+        "grid_line_alpha": 0.5,
+        "figure_width_inches_single": 8,
+        "figure_height_inches_single": 6,
+        "figure_width_inches_grouped": 12,
+        "figure_height_inches_grouped": 6,
+        "enable_statistical_annotation": false,
+        "output_format_list": ["png", "pdf"],
+        "run_name_prefix": ""
+    },
+
+    "analysis": {
+        "_comment": "Parameters controlling metric computation and data filtering (same defaults as experiment_config.json). enable_resume_from_existing_results=false mirrors run_simulation.sh's default (RESUME unset); set true to skip already-completed intervals.",
+        "important_task_top_percentage": 0.10,
+        "minimum_important_tasks_count": 1,
+        "discard_early_intervals_for_sp_computation": 0,
+        "enable_resume_from_existing_results": false,
+        "skip_generation_if_exists": true,
+        "on_taskset_config_change": "prompt",
+        "normalize_sp": true,
+        "sp_normalization_method": "upper_bound"
+    }
+}
