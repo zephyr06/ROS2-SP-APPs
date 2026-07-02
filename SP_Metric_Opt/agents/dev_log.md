@@ -685,3 +685,50 @@ user — pool unchanged.
 
 See [[taskset-config-architecture]] (memory) for the full N-flow diagram.
 
+### Unified period pool: drop the big/small split (P19)
+
+Follow-on to P13/P16/P17. The paired `BIG_PERIOD_HZ` / `SMALL_PERIOD_HZ` (+ the
+`N_BIG_PERIOD_TASKS` / `N_SMALL_PERIOD_TASKS` counts) schema was an Hz-era
+artifact: periods are ms everywhere downstream, the split only added a
+`pick_period` branch, an ad-hoc <10 Hz / >=10 Hz split for the legacy single
+`HZ` list, and a fixed `N_BIG=2` hardcode that fought the P13/P17 count
+relaxation. Collapsed to one pool + one count.
+
+**Canonical schema (the only accepted period/count inputs):**
+- `PERIODS_MS` (list[int]) — period pool every task draws from, in ms.
+- `N_TASKS` (int) — total task count; each task draws one period from the pool.
+  Pool exhaustion at large N allows duplicate periods (`pick_period` avoids dups
+  then falls back) — acceptable per the P13 note.
+
+**Landed in two phases:**
+
+- **Phase 1 — `a0cc8021` ("hz to period ms, merge big and small periods into
+  single period list").** Migrated source (`generation_config_parser.py`,
+  `taskset_generator.py`), every shipped config/template (`paper_base`,
+  `paper_{4,6,8}`, `test_standard_{4,6,8}`), and `debug_uunifast.py` to
+  `PERIODS_MS` + `N_TASKS`. `standardize_config` kept a **backward-compat
+  alias** so old-shape configs kept working: built `PERIODS_MS` = big-pool
+  periods + small-pool periods and `N_TASKS = N_BIG + N_SMALL`, then deleted
+  the old keys. `pick_period(cfgs, picked_periods)` dropped its `prd_sel` arg
+  (one pool, no branch). `resolve_taskset_config_path` synthesized configs set
+  `N_TASKS`; N=1 still drops to `N_CORES=1` for schedulability (lone task's
+  util stays < 1.0; with N_CORES=2 it would carry 1.8 → unschedulable).
+
+- **Phase 2 — this change (alias removal).** The backward-compat alias was a
+  transitional bridge; now removed. Legacy period keys
+  (`HZ`, `SMALL_PERIOD_HZ`, `BIG_PERIOD_HZ`, `SMALL_PERIODS_MS`,
+  `BIG_PERIODS_MS`) and count keys (`N_BIG_PERIOD_TASKS`,
+  `N_SMALL_PERIOD_TASKS`) raise `ValueError` pointing at the canonical
+  replacement instead of being silently aliased. Nothing in-tree breaks — every
+  shipped config already sets the canonical keys. A bare config (no period/
+  count info) defaults to the base template's pool
+  (`[1000, 500, 200, 100, 50, 33, 20]`) and `N_TASKS=10`.
+
+**Tests:** `TestP17ZeroCountTasksets` rewritten as `TestP19UnifiedPoolTasksets`
+(5 cases: unified-pool sourcing, pool-exhaustion duplicates, N=1 single-rate,
+legacy-keys-rejected, N_TASKS<1-rejected). Legacy-aliasing tests in
+`test_generation_config_parser.py`, `Gen_Taskset/tests/test_generation_config.py`,
+and `Gen_Taskset/tests/test_specifications.py` flipped to assert `ValueError`.
+Remaining test files migrated to canonical keys in-place. Full suite
+**238 passing** (`tests/python/` 224 + `Gen_Taskset/tests/` 14).
+

@@ -18,31 +18,6 @@ _PAPER_BASE_TEMPLATE_NAME = "taskset_cfg_paper_base.json"
 _DEFAULT_PER_CORE_CPU_UTIL = 0.9
 
 
-def _resolve_period_pool_ms(config, ms_key, hz_key, hz_split, default_ms):
-    """Resolve one old big/small period pool to a list of periods in ms.
-
-    Used only by ``standardize_config``'s backward-compat alias to build the
-    unified ``PERIODS_MS`` from old-shape configs. The precedence mirrors the
-    pre-P19 behavior exactly:
-
-    1. ``ms_key`` (e.g. ``BIG_PERIODS_MS``) used as-is if present;
-    2. else ``hz_key`` (e.g. ``BIG_PERIOD_HZ``) converted to ms;
-    3. else the legacy ``HZ`` list filtered through ``hz_split`` (the <10 /
-       >=10 Hz split that separated big from small);
-    4. else ``default_ms`` (the pool's pre-P19 default).
-
-    Each pool defaults independently, so a config that specifies only one pool
-    still gets the other pool's default -- matching pre-P19 composition.
-    """
-    if ms_key in config:
-        return list(config[ms_key])
-    if hz_key in config:
-        return [int(1000.0 / hz) for hz in config[hz_key]]
-    if "HZ" in config:
-        return [int(1000.0 / hz) for hz in config["HZ"] if hz_split(hz)]
-    return list(default_ms)
-
-
 def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     """Return the path to the taskset config for ``num_tasks`` tasks.
 
@@ -57,8 +32,7 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     (=N), ``MEAN_CPU_UTIL`` (=0.9 per-core, see P13), ``N_CORES`` (=2) and
     ``RANDOM_SEED`` (=42; callers override the seed per-taskset anyway).
     Every task draws its period from the unified ``PERIODS_MS`` pool defined
-    in the base template (P19 collapsed the former big/small split into a
-    single pool).
+    in the base template.
 
     The synthesized ``INCLUDE`` is written as an **absolute** path to the real
     base template, so ``load_generation_config`` resolves it correctly
@@ -70,9 +44,9 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     num_tasks : int
         Total number of tasks (``N_TASKS``). Must be >= 1 (P17 relaxed the
         former >= 2 floor that was tied to a fixed N_BIG=2; a single-task
-        taskset is now valid). P19 replaced the N_BIG/N_SMALL split with a
-        single ``N_TASKS`` count; every task draws from one ``PERIODS_MS``
-        pool, so any N >= 1 is representable.
+        taskset is now valid). A single ``N_TASKS`` count is the sole task-count
+        input; every task draws from one ``PERIODS_MS`` pool, so any N >= 1 is
+        representable.
     config_dir : str, optional
         Directory to look for an existing ``taskset_cfg_paper_{N}.json``.
         Defaults to the repo config dir.
@@ -118,12 +92,12 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
             f"found at {base_template_abs}"
         )
 
-    # Synthesized config (P19): the big/small split no longer exists in the
-    # schema -- N_TASKS is the sole task-count input and every task draws from
-    # the unified PERIODS_MS pool in the base template. This is equivalent to
-    # the former "2 big / (N-2) small" synthesized split in period composition
-    # (the base template's PERIODS_MS is the big-pool periods followed by the
-    # small-pool periods), just expressed through one pool + one count.
+    # Synthesized config: N_TASKS is the sole task-count input and every task
+    # draws from the unified PERIODS_MS pool in the base template. This is
+    # equivalent to the former "2 big / (N-2) small" synthesized split in
+    # period composition (the base template's PERIODS_MS is the big-pool
+    # periods followed by the small-pool periods), just expressed through one
+    # pool + one count.
     #
     # N=1 feasibility: drop to 1 core so cpu_util = 0.9 x 1 = 0.9 stays
     # schedulable (the lone task's utilization stays < 1.0). With N_CORES=2 the
@@ -208,45 +182,29 @@ def standardize_config(config: dict) -> dict:
     - ``PERIODS_MS``: list[int] -- the single period pool every task draws from.
     - ``N_TASKS``: int -- total task count (the sole count input; no split).
 
-    Old configs that still carry the paired keys (or the legacy ``HZ`` /
-    ``*_PERIOD_HZ`` Hz lists) keep working: when ``PERIODS_MS`` is absent, it is
-    built by concatenating the big-pool periods followed by the small-pool
-    periods (preserving the historical composition), and ``N_TASKS`` is the sum
-    of the two counts. The old keys are then deleted so the standardized config
-    carries only the canonical new keys (keeps ``_should_generate`` baselines
-    clean post-refactor).
+    These are now the **only** accepted period/count inputs. The former
+    backward-compat alias (which built ``PERIODS_MS`` from ``HZ`` /
+    ``*_PERIOD_HZ`` / ``*_PERIODS_MS`` and ``N_TASKS`` from ``N_BIG`` +
+    ``N_SMALL``) has been removed: any of those legacy keys now raises a
+    ``ValueError`` pointing at the canonical replacement. Configs must set
+    ``PERIODS_MS`` and ``N_TASKS`` directly (all shipped configs already do).
     """
-    # --- Period pool: backward-compat alias, then canonical default. ----------
-    # Resolve the big/small period pools (in ms) from whatever the config
-    # provides: explicit *_PERIODS_MS lists, *_PERIOD_HZ lists, or the legacy
-    # single HZ list split at 10 Hz. These are only used to build PERIODS_MS
-    # for old-shape configs; new canonical configs set PERIODS_MS directly.
-    # Each pool defaults independently (pre-P19 behavior preserved).
-    big_ms = _resolve_period_pool_ms(
-        config, "BIG_PERIODS_MS", "BIG_PERIOD_HZ",
-        hz_split=lambda hz: hz < 10, default_ms=[4000, 2000, 1000],
-    )
-    small_ms = _resolve_period_pool_ms(
-        config, "SMALL_PERIODS_MS", "SMALL_PERIOD_HZ",
-        hz_split=lambda hz: hz >= 10, default_ms=[100, 50, 33, 20],
-    )
-
-    if "PERIODS_MS" not in config:
-        # Old-shape config (or no period info): big-pool periods first, then
-        # small-pool periods, preserving the historical composition of existing
-        # configs (a former "2 big + 4 small" still yields 2 long + 4 short
-        # periods, just from one pool). When both pools fall to their defaults
-        # this is exactly the merged big+small default.
-        config["PERIODS_MS"] = list(big_ms) + list(small_ms)
-
-    # Drop the old paired period keys so the standardized config is canonical.
-    for old_key in (
+    # --- Period pool: canonical key only, hard-reject legacy Hz/pool keys. ----
+    _LEGACY_PERIOD_KEYS = {
+        "HZ", "SMALL_PERIOD_HZ", "BIG_PERIOD_HZ",
         "SMALL_PERIODS_MS", "BIG_PERIODS_MS",
-        "SMALL_PERIOD_HZ", "BIG_PERIOD_HZ",
-    ):
-        config.pop(old_key, None)
-    # Legacy single HZ list is also superseded by PERIODS_MS.
-    config.pop("HZ", None)
+    }
+    found_period_legacy = _LEGACY_PERIOD_KEYS & config.keys()
+    if found_period_legacy:
+        raise ValueError(
+            f"Hz-style period keys are no longer supported; set PERIODS_MS "
+            f"(list of periods in ms) instead. Found: {sorted(found_period_legacy)}"
+        )
+
+    # Canonical default when no period info is given -- the base template's pool
+    # (so a bare config still works and matches the on-disk paper configs).
+    if "PERIODS_MS" not in config:
+        config["PERIODS_MS"] = [1000, 500, 200, 100, 50, 33, 20]
 
     # Legacy key check
     _LEGACY_KEYS = {
@@ -262,22 +220,21 @@ def standardize_config(config: dict) -> dict:
             "Update the config to use the current field names instead."
         )
 
-    # --- Task count: backward-compat alias (N_BIG + N_SMALL), then N_TASKS. ---
+    # --- Task count: canonical N_TASKS only, hard-reject the big/small split. --
+    _LEGACY_COUNT_KEYS = {"N_BIG_PERIOD_TASKS", "N_SMALL_PERIOD_TASKS"}
+    found_count_legacy = _LEGACY_COUNT_KEYS & config.keys()
+    if found_count_legacy:
+        raise ValueError(
+            f"Big/small task-count split is no longer supported; set N_TASKS "
+            f"(total task count) instead. Found: {sorted(found_count_legacy)}"
+        )
+
     if "N_TASKS" not in config:
-        n_big = config.get("N_BIG_PERIOD_TASKS", 2)
-        n_small = config.get("N_SMALL_PERIOD_TASKS", 8)
-        config["N_TASKS"] = n_big + n_small
+        config["N_TASKS"] = 10
 
-    # Drop the old paired count keys so the standardized config is canonical.
-    # (They are no longer read by the generator -- see P19.)
-    config.pop("N_BIG_PERIOD_TASKS", None)
-    config.pop("N_SMALL_PERIOD_TASKS", None)
-
-    # P19 validation: the only hard requirements are at least one task total
-    # and a non-empty period pool. (P17's N_BIG/N_SMALL>=0 checks had no
-    # referent once the split was removed; the degenerate all-zero config is
-    # now simply N_TASKS < 1.) Explicit rejection avoids a cryptic divide-by-
-    # zero in uunifast_distribution.
+    # Validation: the only hard requirements are at least one task total and a
+    # non-empty period pool. Explicit rejection avoids a cryptic divide-by-zero
+    # in uunifast_distribution.
     if not isinstance(config["N_TASKS"], int) or config["N_TASKS"] < 1:
         raise ValueError(
             f"N_TASKS must be a positive integer, got {config['N_TASKS']!r}"

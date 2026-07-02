@@ -17,8 +17,8 @@ class TestTasksetGenerator(unittest.TestCase):
 
     def setUp(self):
         self.cfgs = {
-            "SMALL_PERIOD_HZ": [10, 20, 50],
-            "BIG_PERIOD_HZ": [1, 2, 5],
+            "PERIODS_MS": [1000, 500, 200, 100, 50, 20],
+            "N_TASKS": 4,
             "D1_RANGE": [-10.0, 10.0],
             "D2_RANGE": [0.0, 360.0],
             "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
@@ -28,8 +28,6 @@ class TestTasksetGenerator(unittest.TestCase):
             "MEAN_CPU_UTIL": 1.2,
             "Et_SCALE_FACTOR": 2.0,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "N_BIG_PERIOD_TASKS": 2,
-            "N_SMALL_PERIOD_TASKS": 2,
             "N_ENV_DEPENDENT_TASKS": 1,
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
@@ -279,12 +277,12 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
         t = res["tasks"][0]
         self.assertLess(t["Et_mean"] / t["period"], 1.0)
 
-    def test_legacy_big_small_keys_aliased(self):
-        """P19 backward-compat: a config still carrying the old paired keys
-        (SMALL_PERIOD_HZ / BIG_PERIOD_HZ + N_BIG / N_SMALL counts) generates
-        correctly -- standardize_config aliases them to PERIODS_MS + N_TASKS
-        before the generator runs, so the old-shape configs keep working."""
-        from Gen_Taskset.lib.generation_config_parser import standardize_config
+    def test_legacy_big_small_keys_rejected(self):
+        """A config still carrying the old paired keys (SMALL_PERIOD_HZ /
+        BIG_PERIOD_HZ + N_BIG / N_SMALL counts) is now rejected -- the
+        backward-compat alias was removed; configs must use PERIODS_MS +
+        N_TASKS directly. generate_taskset_parameters runs standardize_config,
+        so the legacy keys surface as a ValueError before generation."""
         legacy = {
             "SMALL_PERIOD_HZ": [10, 20, 50],
             "BIG_PERIOD_HZ": [1, 2, 5],
@@ -303,12 +301,8 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
             "N_CORES": 2,
             "RANDOM_SEED": 42,
         }
-        res = generate_taskset_parameters(dict(legacy))
-        self.assertEqual(len(res["tasks"]), 5)
-        # Aliasing builds PERIODS_MS = big-pool periods + small-pool periods.
-        aliased_pool = set(standardize_config(dict(legacy))["PERIODS_MS"])
-        for t in res["tasks"]:
-            self.assertIn(t["period"], aliased_pool)
+        with self.assertRaises(ValueError):
+            generate_taskset_parameters(dict(legacy))
 
     def test_n_tasks_below_one_rejected(self):
         """N_TASKS < 1 -> standardize_config rejects it (the degenerate

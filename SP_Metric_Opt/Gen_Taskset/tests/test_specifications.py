@@ -11,12 +11,11 @@ from Gen_Taskset.lib.taskset_generator import generate_taskset_parameters
 from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline, _compute_hyper_period
 
 def test_config_specifications_validation():
-    # Setup config with exact specifications
+    # Setup config with exact specifications (canonical P19 keys: PERIODS_MS +
+    # N_TASKS; Hz/split aliases were removed and now raise).
     cfgs = {
-        "SMALL_PERIOD_HZ": [10, 20, 50],
-        "BIG_PERIOD_HZ": [0.5, 1],
-        "N_BIG_PERIOD_TASKS": 2,
-        "N_SMALL_PERIOD_TASKS": 4,
+        "PERIODS_MS": [2000, 1000, 100, 50, 20],
+        "N_TASKS": 6,
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
         "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
         "RO_1_Et_RANGE": [-0.9, -0.7],
@@ -31,12 +30,11 @@ def test_config_specifications_validation():
         "N_CORES": 2,
         "RANDOM_SEED": 42
     }
-    
-    # Test standardization conversions (P19: big+small pools aliased to
-    # PERIODS_MS, big-pool periods first then small-pool periods)
+
+    # Canonical keys pass through standardize_config unchanged.
     cfgs_std = standardize_config(cfgs.copy())
     assert cfgs_std["PERIODS_MS"] == [2000, 1000, 100, 50, 20]
-    assert cfgs_std["N_TASKS"] == 6  # 2 big + 4 small
+    assert cfgs_std["N_TASKS"] == 6
     
     # Test Seeding & Determinism (Generating twice with same seed yields identical parameters)
     res1 = generate_taskset_parameters(cfgs.copy())
@@ -115,19 +113,19 @@ def test_config_specifications_validation():
     # 11. Verify FINAL_Et_OVER_PERIOD_RANGE configuration is present
     assert cfgs_std["FINAL_Et_OVER_PERIOD_RANGE"] == cfgs["FINAL_Et_OVER_PERIOD_RANGE"]
 
-def test_hz_key_parsing_specification():
-    # P19: the legacy single HZ list is split at 10 Hz (<10 -> big, >=10 -> small)
-    # and aliased to the unified PERIODS_MS, big-pool periods first.
+def test_hz_key_rejected():
+    # The legacy single HZ list is no longer supported -- it used to be split
+    # at 10 Hz (<10 -> big, >=10 -> small) and aliased to PERIODS_MS. It now
+    # raises ValueError pointing the user at PERIODS_MS.
     cfgs = {
         "HZ": [0.5, 2.0, 10, 25],
         "D1_RANGE": [-10, 10],
         "D2_RANGE": [0, 360],
         "MEAN_CPU_UTIL": 0.5
     }
-    cfgs_std = standardize_config(cfgs)
-    # 0.5->2000, 2.0->500 (big, <10 Hz) then 10->100, 25->40 (small, >=10 Hz)
-    assert cfgs_std["PERIODS_MS"] == [2000, 500, 100, 40]
-    assert "HZ" not in cfgs_std
+    with pytest.raises(ValueError) as exc:
+        standardize_config(cfgs)
+    assert "PERIODS_MS" in str(exc.value)
 
 # Parameterize over stable test configs (NOT paper configs, which change frequently)
 CONFIG_FILES = glob.glob(os.path.join(os.path.dirname(__file__), "test_configs/*.json"))

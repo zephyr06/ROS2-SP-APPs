@@ -19,46 +19,46 @@ from Gen_Taskset.lib.taskset_generator import generate_taskset_parameters
 
 class TestGenerationConfigParser(unittest.TestCase):
 
-    def test_standardize_config_hz_conversion(self):
-        """P19: old-shape Hz configs are aliased to the unified PERIODS_MS.
-
-        The big-pool periods come first, then the small-pool periods,
-        preserving the historical composition. Hz→ms conversion:
-        big [1,2,5]→[1000,500,200], small [10,20,50]→[100,50,20].
-        """
+    def test_standardize_config_rejects_hz_keys(self):
+        """Hz-style period keys are no longer supported -- standardize_config
+        raises ValueError pointing the user at PERIODS_MS. The big/small
+        count split is rejected separately (see test_rejects_count_split)."""
         config = {
             "SMALL_PERIOD_HZ": [10, 20, 50],
             "BIG_PERIOD_HZ": [1, 2, 5],
-            "N_BIG_PERIOD_TASKS": 2,
-            "N_SMALL_PERIOD_TASKS": 3,
             "D1_RANGE": [-10, 10],
             "Et_SCALE_FACTOR": 2.0
         }
-        res = standardize_config(config)
-        # Big-pool periods first, then small-pool periods
-        self.assertEqual(res["PERIODS_MS"], [1000, 500, 200, 100, 50, 20])
-        self.assertEqual(res["N_TASKS"], 5)
-        # Old paired keys must be deleted from the standardized config.
-        for old_key in (
-            "SMALL_PERIOD_HZ", "BIG_PERIOD_HZ",
-            "SMALL_PERIODS_MS", "BIG_PERIODS_MS",
-            "N_BIG_PERIOD_TASKS", "N_SMALL_PERIOD_TASKS",
-        ):
-            self.assertNotIn(old_key, res)
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(config)
+        self.assertIn("PERIODS_MS", str(cm.exception))
 
-    def test_standardize_config_legacy_hz_split_aliased(self):
-        """P19: the legacy single HZ list is split at 10 Hz and aliased to
-        PERIODS_MS. Hz < 10 → big pool, Hz >= 10 → small pool, big first."""
+    def test_standardize_config_rejects_legacy_hz_key(self):
+        """The legacy single HZ list is rejected (it used to be split at 10 Hz
+        and aliased to PERIODS_MS)."""
         config = {
             "HZ": [0.5, 2.0, 10, 25],
             "D1_RANGE": [-10, 10],
             "D2_RANGE": [0, 360],
             "MEAN_CPU_UTIL": 0.5
         }
-        res = standardize_config(config)
-        # 0.5→2000, 2.0→500 (big, <10 Hz) then 10→100, 25→40 (small, >=10 Hz)
-        self.assertEqual(res["PERIODS_MS"], [2000, 500, 100, 40])
-        self.assertNotIn("HZ", res)
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(config)
+        self.assertIn("PERIODS_MS", str(cm.exception))
+
+    def test_standardize_config_rejects_count_split(self):
+        """The N_BIG_PERIOD_TASKS / N_SMALL_PERIOD_TASKS split is no longer
+        supported -- raise ValueError pointing at N_TASKS."""
+        config = {
+            "N_BIG_PERIOD_TASKS": 2,
+            "N_SMALL_PERIOD_TASKS": 3,
+            "PERIODS_MS": [1000, 100, 50],
+            "D1_RANGE": [-10, 10],
+            "Et_SCALE_FACTOR": 2.0
+        }
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(config)
+        self.assertIn("N_TASKS", str(cm.exception))
 
     def test_standardize_config_defaults(self):
         config = {
@@ -66,9 +66,9 @@ class TestGenerationConfigParser(unittest.TestCase):
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
-        # No period info: merged big+small defaults
-        self.assertEqual(res["PERIODS_MS"], [4000, 2000, 1000, 100, 50, 33, 20])
-        # No count info: default N_BIG(2) + N_SMALL(8)
+        # No period info: canonical default pool (the base template's PERIODS_MS)
+        self.assertEqual(res["PERIODS_MS"], [1000, 500, 200, 100, 50, 33, 20])
+        # No count info: default N_TASKS
         self.assertEqual(res["N_TASKS"], 10)
 
     def test_standardize_config_canonical_new_keys(self):

@@ -9,10 +9,8 @@ This package provides a modular tool to generate real-time multi-core tasksets w
 Scenario configurations are specified in JSON files (e.g., inside `Gen_Taskset/task_sets_config/`). Below are the primary configuration variables:
 
 * **Task Period Partitioning**:
-  * `SMALL_PERIOD_HZ` (list): Target frequencies for fast-running tasks.
-  * `BIG_PERIOD_HZ` (list): Target frequencies for slower-running tasks.
-  * `N_SMALL_PERIOD_TASKS` (int): Number of small-period tasks to generate.
-  * `N_BIG_PERIOD_TASKS` (int): Number of big-period tasks to generate.
+  * `PERIODS_MS` (list of int): The period pool every task draws from, in milliseconds (e.g. `[1000, 500, 200, 100, 50, 33, 20]`). Replaces the former Hz-based `SMALL_PERIOD_HZ` / `BIG_PERIOD_HZ` lists.
+  * `N_TASKS` (int): Total number of tasks to generate (every task draws one period from `PERIODS_MS`). Replaces the former `N_SMALL_PERIOD_TASKS` / `N_BIG_PERIOD_TASKS` split.
 * **Execution Time ($E_t$) and Variance**:
   * `Et_OVER_PERIOD_RANGE` (list `[min, max]`): Bounds for initial mean execution time ratio ($E_t / P$).
   * `SIGMA_OVER_Et_RANGE` (list `[min, max]`): Ratio of standard deviation ($\sigma$) over mean execution time.

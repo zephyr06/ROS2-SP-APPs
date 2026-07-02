@@ -28,10 +28,8 @@ class TestSimulationPipeline(unittest.TestCase):
             "MAP_WIDTH_M": 100,
             "MAP_HEIGHT_M": 100,
             "ROBOT_SPEED_MPS": 1.0,
-            "SMALL_PERIOD_HZ": [50],
-            "BIG_PERIOD_HZ": [0.5],
-            "N_BIG_PERIOD_TASKS": 1,
-            "N_SMALL_PERIOD_TASKS": 1,
+            "PERIODS_MS": [20, 1000],
+            "N_TASKS": 2,
             "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
             "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
             "RO_1_Et_RANGE": [-0.9, -0.7],
@@ -194,10 +192,8 @@ class TestSimulationPipeline(unittest.TestCase):
     def test_pipeline_rejects_too_short_sim_time(self):
         """n_sec < 2*hyper_period must raise ValueError before generation."""
         cfg = self._make_config(
-            SMALL_PERIOD_HZ=[50],      # period = 20 ms
-            BIG_PERIOD_HZ=[1],         # period = 1000 ms
-            N_BIG_PERIOD_TASKS=1,
-            N_SMALL_PERIOD_TASKS=1,
+            PERIODS_MS=[20, 1000],      # periods 20 ms + 1000 ms
+            N_TASKS=2,
             MEAN_CPU_UTIL=0.5,
         )
         temp_dir = tempfile.mkdtemp()
@@ -226,10 +222,8 @@ class TestSimulationPipeline(unittest.TestCase):
     def test_pipeline_accepts_minimum_valid_sim_time(self):
         """n_sec exactly == 2*hyper_period (in seconds) must succeed."""
         cfg = self._make_config(
-            SMALL_PERIOD_HZ=[50],      # period = 20 ms
-            BIG_PERIOD_HZ=[1],         # period = 1000 ms
-            N_BIG_PERIOD_TASKS=1,
-            N_SMALL_PERIOD_TASKS=1,
+            PERIODS_MS=[20, 1000],      # periods 20 ms + 1000 ms
+            N_TASKS=2,
             MEAN_CPU_UTIL=0.5,
         )
         temp_dir = tempfile.mkdtemp()

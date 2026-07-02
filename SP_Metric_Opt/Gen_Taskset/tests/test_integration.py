@@ -18,10 +18,8 @@ def test_integration_pipeline():
     os.makedirs(output_dir, exist_ok=True)
     
     config_data = {
-        "SMALL_PERIOD_HZ": [20, 50],
-        "BIG_PERIOD_HZ": [0.5, 1],
-        "N_BIG_PERIOD_TASKS": 1,
-        "N_SMALL_PERIOD_TASKS": 2,
+        "PERIODS_MS": [2000, 1000, 50, 20],
+        "N_TASKS": 3,
         "N_ENV_DEPENDENT_TASKS": 1,
         "PERF_RECORD_TASK_PROBABILITY": 1.0,  # All eligible non-env tasks become soft tasks
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],

@@ -29,10 +29,8 @@ class TestPhysicalUnitsPipeline(unittest.TestCase):
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
             "ROBOT_SPEED_MPS": 1.0,
-            "SMALL_PERIOD_HZ": [10, 20, 50],
-            "BIG_PERIOD_HZ": [0.5, 1],
-            "N_BIG_PERIOD_TASKS": 1,
-            "N_SMALL_PERIOD_TASKS": 2,
+            "PERIODS_MS": [2000, 1000, 100, 50, 20],
+            "N_TASKS": 3,
             "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
             "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
             "RO_1_Et_RANGE": [-0.9, -0.7],
@@ -161,12 +159,10 @@ class TestPhysicalUnitsPipeline(unittest.TestCase):
         """For n_sec=10 and prd_max=2000ms, trace should have 5 steps."""
         temp_dir = tempfile.mkdtemp()
         try:
-            # Force BIG_PERIODS_MS to be 2000ms only to keep prd_max predictable.
+            # Force the big period to be 2000ms only to keep prd_max predictable.
             cfg = self._make_config(
-                BIG_PERIOD_HZ=[0.5],
-                SMALL_PERIOD_HZ=[50],
-                N_BIG_PERIOD_TASKS=1,
-                N_SMALL_PERIOD_TASKS=1,
+                PERIODS_MS=[2000, 50],
+                N_TASKS=2,
                 MAP_WIDTH_M=50,
                 MAP_HEIGHT_M=50,
                 ROBOT_SPEED_MPS=1.0,

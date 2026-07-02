@@ -32,8 +32,8 @@ def test_taskset_parameters_generation():
         "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "Et_SCALE_FACTOR": 2.0,
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-        "N_BIG_PERIOD_TASKS": 1,
-        "N_SMALL_PERIOD_TASKS": 3
+        "PERIODS_MS": [1000, 100, 50, 20],
+        "N_TASKS": 4
     }
     
     taskset = generate_taskset_parameters(cfgs)

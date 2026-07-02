@@ -409,6 +409,59 @@ variance (may interact with P12 normalization).
 
 ---
 
+### P19 -- Unified period pool (PERIODS_MS + N_TASKS), drop big/small split
+
+- [x] Collapse the paired big/small period schema into a single period pool +
+  single task count, and remove the Hz/period-split keys from the config schema
+  entirely.
+
+      **Why:** the `BIG_PERIOD_HZ` / `SMALL_PERIOD_HZ` (+ `N_BIG_PERIOD_TASKS`
+      / `N_SMALL_PERIOD_TASKS`) split was an artifact of an older Hz-based
+      config. Periods are stored in ms everywhere they are used; the split only
+      added a `pick_period` branching path, an ad-hoc <10 Hz / >=10 Hz split for
+      the legacy single `HZ` list, and a fixed `N_BIG=2` hardcode that fought
+      the P13/P17 task-count relaxation. One pool + one count is strictly
+      simpler and removes the last big/small coupling.
+
+      **Schema (canonical, the only accepted period/count inputs):**
+      - `PERIODS_MS` (list[int]) — the period pool every task draws from, in ms.
+      - `N_TASKS` (int) — total task count; every task draws one period from the
+        pool. `pool exhaustion at large N allows duplicate periods (acceptable,
+        per P13 note) — `pick_period` tries to avoid dups then falls back.
+
+      **Two-phase landing:**
+      - **Phase 1 (commit `a0cc8021`):** migrated source
+        (`generation_config_parser.py`, `taskset_generator.py`), all shipped
+        configs/templates (`paper_base`, `paper_{4,6,8}`, `test_standard_{4,6,8}`)
+        and `debug_uunifast.py` to `PERIODS_MS` + `N_TASKS`. `standardize_config`
+        kept a backward-compat alias so old-shape configs kept working: it built
+        `PERIODS_MS` = big-pool periods + small-pool periods and `N_TASKS` =
+        `N_BIG + N_SMALL`, then deleted the old keys. `pick_period` dropped its
+        `prd_sel` arg (one pool, no branch). `resolve_taskset_config_path`
+        synthesized configs set `N_TASKS` (N=1 still drops to `N_CORES=1`).
+      - **Phase 2 (this change):** removed the backward-compat alias. Legacy
+        period keys (`HZ`, `SMALL_PERIOD_HZ`, `BIG_PERIOD_HZ`,
+        `SMALL_PERIODS_MS`, `BIG_PERIODS_MS`) and count keys
+        (`N_BIG_PERIOD_TASKS`, `N_SMALL_PERIOD_TASKS`) now raise `ValueError`
+        pointing at the canonical replacement instead of being silently aliased.
+        All shipped configs already set the canonical keys, so nothing in-tree
+        breaks; the alias was a transitional bridge and is gone. A bare config
+        (no period/count info) defaults to the base template's pool
+        (`[1000, 500, 200, 100, 50, 33, 20]`) and `N_TASKS=10`.
+
+      **Tests:** rewrote `TestP17ZeroCountTasksets` →
+      `TestP19UnifiedPoolTasksets` (5 cases: unified-pool sourcing,
+      pool-exhaustion duplicates, N=1 single-rate, legacy-keys-rejected,
+      N_TASKS<1-rejected). The legacy-aliasing tests across
+      `test_generation_config_parser.py`,
+      `Gen_Taskset/tests/test_generation_config.py`, and
+      `Gen_Taskset/tests/test_specifications.py` were flipped to assert
+      `ValueError` rejection. Remaining test files migrated to the canonical
+      keys in-place. Full suite **238 passing** (`tests/python/` 224 +
+      `Gen_Taskset/tests/` 14).
+
+---
+
 ### P18 -- INCR optimizer run-time speed (per-interval scheduling time > 0.1 s)
 
 **Goal:** Investigate and resolve the INCR optimizer's slow per-invocation

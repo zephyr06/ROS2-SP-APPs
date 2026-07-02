@@ -28,23 +28,14 @@ def debug_uunifast(n, target_util):
     return vect_u
 
 def generate_periods(cfgs):
-    """Mimic period generation from taskset_generator."""
+    """Mimic period generation from taskset_generator (unified PERIODS_MS pool)."""
     picked_periods = []
     periods = []
-    g_n_big_periods = cfgs.get("N_BIG_PERIOD_TASKS", 2)
-    g_n_small_periods = cfgs.get("N_SMALL_PERIOD_TASKS", 4)
+    n_tasks = cfgs["N_TASKS"]
+    periods_pool = cfgs["PERIODS_MS"]
 
-    periods_list_big = cfgs.get("BIG_PERIODS_MS", [1000])
-    periods_list_small = cfgs.get("SMALL_PERIODS_MS", [100, 50])
-
-    for _ in range(g_n_big_periods):
-        p = int(np.random.choice(periods_list_big))
-        if p not in picked_periods:
-            picked_periods.append(p)
-        periods.append(p)
-
-    for _ in range(g_n_small_periods):
-        p = int(np.random.choice(periods_list_small))
+    for _ in range(n_tasks):
+        p = int(np.random.choice(periods_pool))
         if p not in picked_periods:
             picked_periods.append(p)
         periods.append(p)
@@ -53,10 +44,8 @@ def generate_periods(cfgs):
 
 def main():
     config = {
-        "SMALL_PERIOD_HZ": [10, 20, 30, 50],
-        "BIG_PERIOD_HZ": [1, 2, 5],
-        "N_BIG_PERIOD_TASKS": 2,
-        "N_SMALL_PERIOD_TASKS": 4,
+        "PERIODS_MS": [100, 50, 33, 20, 1000, 500, 200],
+        "N_TASKS": 6,
         "MEAN_CPU_UTIL": 1.2,
         "N_CORES": 2,
         "RANDOM_SEED": 40,
@@ -68,7 +57,7 @@ def main():
         np.random.seed(seed)
         random.seed(seed)
 
-    n_tasks = cfgs["N_BIG_PERIOD_TASKS"] + cfgs["N_SMALL_PERIOD_TASKS"]
+    n_tasks = cfgs["N_TASKS"]
     n_cores = cfgs["N_CORES"]
     cpu_util = cfgs["MEAN_CPU_UTIL"] * n_cores
     print(f"Config: n_tasks={n_tasks}, n_cores={n_cores}, MEAN_CPU_UTIL={cfgs['MEAN_CPU_UTIL']}, cpu_util target={cpu_util}")

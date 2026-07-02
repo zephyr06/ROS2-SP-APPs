@@ -30,10 +30,8 @@ class TestCorrelationSerialization(unittest.TestCase):
     def _make_config(self):
         """A minimal config that triggers the generation pipeline."""
         return standardize_config({
-            "SMALL_PERIOD_HZ": [50],
-            "BIG_PERIOD_HZ": [1],
-            "N_BIG_PERIOD_TASKS": 1,
-            "N_SMALL_PERIOD_TASKS": 1,
+            "PERIODS_MS": [20, 1000],
+            "N_TASKS": 2,
             "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [-0.9, -0.7],

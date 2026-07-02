@@ -28,10 +28,8 @@ class TestUUniFast(unittest.TestCase):
 
     def _make_cfg(self, use_uunifast=True):
         return standardize_config({
-            "SMALL_PERIOD_HZ": [50],
-            "BIG_PERIOD_HZ": [1],
-            "N_BIG_PERIOD_TASKS": 1,
-            "N_SMALL_PERIOD_TASKS": 1,
+            "PERIODS_MS": [20, 1000],
+            "N_TASKS": 2,
             "N_ENV_DEPENDENT_TASKS": 1,
             "MEAN_CPU_UTIL": 0.5,
             "N_CORES": 1,
