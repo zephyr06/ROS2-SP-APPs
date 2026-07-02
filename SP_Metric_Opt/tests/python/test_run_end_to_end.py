@@ -97,12 +97,33 @@ class TestBuildCommands(unittest.TestCase):
         cmd = e2e.build_simulate_command(8, cfg, "/tmp/out", verbose=1)
         self.assertEqual(cmd[cmd.index("--num_workers") + 1], "8")
 
+    def test_simulate_command_keeps_prompt_policy(self):
+        """P20: the simulate stage keeps compare_optimizers' default 'prompt'
+        policy -- the orchestrator shares tasksets across stages, it does NOT
+        silence the config-drift guard the user relies on.
+        """
+        cfg = _cfg("test")
+        cfg["bin_dir"] = "release"
+        cmd = e2e.build_simulate_command(6, cfg, "/tmp/out", verbose=1)
+        self.assertNotIn("--on_taskset_config_change", cmd)
+
     def test_sweep_command(self):
         cfg = _cfg("test")
         cmd = e2e.build_sweep_command(cfg, "/tmp/out", verbose=1)
         self.assertEqual(cmd[2], "simulation_experiments.interval_sweep")
         self.assertEqual(cmd[cmd.index("--mode") + 1], "test")
         self.assertEqual(cmd[cmd.index("--output_parent") + 1], "/tmp/out")
+
+    def test_sweep_command_reuses_matching_interval(self):
+        """P20: the sweep stage reuses the main step's tasksets for a matching
+        interval. The regeneration policy is left at the sweep's default
+        ('prompt') -- not overridden -- so drift still surfaces."""
+        cfg = _cfg("test")
+        cmd = e2e.build_sweep_command(cfg, "/tmp/out", verbose=1)
+        # Reuse flag is present (store_true -- no value follows).
+        self.assertIn("--reuse_matching_interval", cmd)
+        # Policy is NOT overridden by the orchestrator (default 'prompt' kept).
+        self.assertNotIn("--on_taskset_config_change", cmd)
 
     def test_aggregate_command(self):
         cfg = _cfg("prod")

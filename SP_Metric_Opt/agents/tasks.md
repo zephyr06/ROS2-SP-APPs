@@ -262,94 +262,6 @@ to re-examine P12 normalization under per-taskset load variance).
 
 ---
 
-### P15 -- Randomize N_BIG / N_SMALL period-task split (per-taskset sampling)
-
-**Goal:** During task-set generation, instead of a fixed
-`N_BIG_PERIOD_TASKS` / `N_SMALL_PERIOD_TASKS` split from the config, **for
-each task set** randomly decide how many of the N tasks are big-period vs
-small-period (subject to floors), then run the existing period-picking and
-UUniFast allocation against the resulting split.
-
-**Rationale:** Today the split is pinned by the config (on-disk paper files
-and the synthesized configs both hardcode `N_BIG_PERIOD_TASKS=2`,
-`N_SMALL_PERIOD_TASKS=N-2`). Every task set of a given N therefore has the
-same big/small composition. Randomizing the split per-taskset exercises a
-wider region of the period-composition space within one experiment run,
-giving a distribution of SP behavior over composition rather than a point
-estimate. Sibling to P14 (which randomizes load); both are opt-in knobs that
-leave the fixed defaults intact.
-
-**Current behavior (verified):**
-- `Gen_Taskset/lib/taskset_generator.py:246-248`:
-  `g_n_big_periods = cfgs.get("N_BIG_PERIOD_TASKS", 2)`;
-  `g_n_small_periods = cfgs.get("N_SMALL_PERIOD_TASKS", 8)`;
-  `n_tasks = g_n_big_periods + g_n_small_periods`.
-- Periods picked at lines 263-268: `g_n_big_periods` big + `g_n_small_periods`
-  small via `pick_period(...)`.
-- `N_TASKS` is derived in `standardize_config()` as `N_BIG + N_SMALL`; with
-  the random split, the generator must treat `N_TASKS` as the input and
-  sample the split from it (not the reverse).
-
-**Design (to implement later — NOT started yet):**
-
-- [ ] **P15.1** Generation config: add a task-set generation config parameter
-      controlling the sampling. Tentative shape:
-      - `N_BIG_PERIOD_TASKS_RANDOM_RANGE: [2, 4]` (inclusive) in
-        `taskset_cfg_paper_base.json` (or relevant base template), OR a
-        fraction-style knob like `N_BIG_PERIOD_TASKS_FRAC: [0.2, 0.5]` of N.
-        Pick one shape (count-range is simpler and matches the existing
-        integer `N_BIG_PERIOD_TASKS` semantics).
-      - When present, the generator samples
-        `n_big ~ UniformInt(low, high)` per task set (clamped so
-        `low >= 2` — need at least two big-period tasks — and
-        `high <= N-1` so at least one small-period task remains), then
-        `n_small = N - n_big`.
-      - Decide interaction with existing `N_BIG_PERIOD_TASKS` /
-        `N_SMALL_PERIOD_TASKS`: recommend the range **supersedes** the fixed
-        counts when present; fixed counts remain the fallback when the range
-        is absent (backward compat — old configs keep working, P13 configs
-        still produce the 2 / N-2 split).
-- [ ] **P15.2** Generator (`Gen_Taskset/lib/taskset_generator.py:246-248`):
-      replace the two `cfgs.get(...)` reads with a branch — if the range
-      config is present, sample `n_big` from it (using the taskset's RNG,
-      seeded per-taskset for reproducibility), set `n_small = N - n_big`;
-      otherwise fall back to the existing fixed-count path. The downstream
-      period-picking loop (263-268) and `uunifast_distribution(n_tasks, ...)`
-      (274) then use the sampled split unchanged — `n_tasks` stays `N`.
-- [ ] **P15.3** Reproducibility: the sampled `n_big` must be drawn from the
-      per-taskset RNG (alongside `RANDOM_SEED`) so a given seed reproduces
-      the same split. Record the realized `n_big` / `n_small` (and the
-      sampled value) in the generated `taskset_characteristics_interval_0.yaml`
-      (or equivalent output) so each task set's composition is inspectable —
-      mirror P14.3's record-realized-value approach.
-- [ ] **P15.4** Config-validation interaction: `standardize_config()` in
-      `generation_config_parser.py` currently computes
-      `N_TASKS = N_BIG_PERIOD_TASKS + N_SMALL_PERIOD_TASKS`. With the random
-      split, `N_TASKS` must come from the caller (the CLI's `--num_tasks`,
-      or the synthesized config's `N_BIG+N_SMALL`), and the split is sampled
-      *at generation time*, not at config-load time. Ensure the resolver
-      (`resolve_taskset_config_path`) and synthesized configs expose a stable
-      `N_TASKS` that the generator samples *within*.
-- [ ] **P15.5** Tests: `tests/python/test_taskset_generator.py` (or
-      `test_generation_config_parser.py`) — assert that with the range config
-      present, sampled `n_big ∈ [low, high]` and `n_big + n_small == N`;
-      assert at least one big and one small period task per task set;
-      assert deterministic under a fixed seed; assert fallback to the fixed
-      2 / N-2 split when the range is absent (P13 configs unaffected).
-- [ ] **P15.6** Relationship to P13/P14: P13's fixed `2 / N-2` split stays
-      the default (no range config → 2 / N-2). P15 is **opt-in** via the new
-      range parameter. Composes with P14 (load range) independently — a
-      task set may sample both load and composition. Update `dev_log.md` to
-      record P15 as a sibling randomization knob to P14.
-
-**Out of scope (for now):** implementation; deciding whether the big/small
-period *values* (not just counts) should also be randomized (current design:
-counts randomized, period pool unchanged — duplicate periods OK at large N,
-per P13); cross-N comparison implications under per-taskset composition
-variance (may interact with P12 normalization).
-
----
-
 ### P12 -- SP-Metric Cross-Task Comparison: Investigate Trend + Normalization
 
 - [x] **Investigate** whether mean SP increases as the number of tasks per task set increases.
@@ -498,4 +410,114 @@ algorithmic (incrementalize/memoize the search) or implementation-level
 (data-structure / pruning). First step when picked up: profile a single N=6
 prod run to confirm where the >0.1 s is actually spent before changing
 anything.
+
+---
+
+### P20 -- End-to-end: all stages share the same task sets
+
+**Goal:** `run_end_to_end.sh` (the e2e orchestrator) must use the **same
+generated task sets** across all stages so metrics are cross-referenceable,
+instead of each stage generating its own. The regeneration prompt itself is
+**not** the bug — it is a desired drift guard the user wants kept (a `[Y/n]`
+prompt when an on-disk taskset's config has drifted is correct behavior, not
+something to silence). Per user spec:
+
+1. **Main step (and any non-sweep step):** generate each task set **once**;
+   later stages reuse the main step's task sets, not newly generated ones.
+2. **Sweep step:** regeneration is allowed for a *different* interval (the
+   interval-sliced `taskset_characteristics_interval_*.yaml` files genuinely
+   depend on the trigger interval), **but** first reuse the main step's
+   already-generated task sets when the scheduler interval matches the main
+   step's interval — do not generate a duplicate set.
+
+**The actual bug (verified):** the sweep stage wrote to its own dirs
+(`tasks{N}_sweep_interval{I}_seed{S}`) and ran the full generation pipeline per
+interval — so for the interval that matches the main step's default, it
+generated a *second, duplicate* set of task sets instead of reusing the main
+step's. The core random draws are already identical by seed (see below), but
+the on-disk files + scheduler outputs were duplicated into separate dirs,
+breaking cross-reference and wasting work.
+
+**Key facts (verified, constrain the design):**
+- `generate_taskset_parameters()` (the core: periods, ET means/sigmas,
+  sp_weights, priorities, paths) seeds **only off `RANDOM_SEED`** — it does
+  **not** read `UPDATE_INTERVAL_S`. So the core random task set is already
+  identical across the main step and every sweep interval today (same
+  `base_seed + idx`, same N → same draws). "Same tasksets across steps" is
+  already true at the random-draw level; the fix is about reusing the
+  *generated files*, not the draws.
+- The interval-sliced `taskset_characteristics_interval_*.yaml` files (which
+  the C++ `RunOrchestrator` reads) **do** depend on the interval:
+  `n_intervals = ceil(n_sec / update_interval_s)` and Et bucketing use it.
+  Different sweep intervals therefore need different sliced files; the core
+  cannot be shared verbatim across intervals at the *file* level — which is
+  why a non-matching sweep interval still regenerates.
+- `write_summary_and_plots()` (`utils.py:192`) opens
+  `comparison_summary.csv` in `"w"` mode (overwrite). The main step writes the
+  **union** scheduler list (main + ablation); the sweep plots the **main** list
+  only. A matching-interval sweep point that *ran* `compare_optimizers` against
+  the main step's output dir would clobber the union summary with a main-only
+  summary, dropping the ablation rows the aggregate step reads. **So
+  matching-interval reuse must skip the run and read the existing summary**,
+  not re-run into the main dir.
+- The regeneration prompt (`_should_generate()` in
+  `run_sim_experiments.py:153`) fires on genuine config drift (e.g. the on-disk
+  baselines are stale after the P19 refactor). That is **desired** — the fix
+  must not silence it. (An earlier draft of P20 forced
+  `--on_taskset_config_change=regenerate` to kill the prompt; that was wrong
+  and was reverted. The orchestrator now leaves the policy at its `prompt`
+  default.)
+
+**Design:**
+- [x] **P20.3** Sweep interval reuse: before running `compare_optimizers` for a
+      sweep interval `I`, check whether the main step's dir for `(N, n_sec, I,
+      seed)` exists with **fresh** task sets (every `taskset_{idx}`'s saved
+      `generator_config.json` matches the resolved config + `RANDOM_SEED =
+      base_seed + idx` + `UPDATE_INTERVAL_S = I`). If so, **skip** the run and
+      read the main dir's `comparison_summary.csv` directly (its union summary
+      already contains every scheduler the sweep plots) — no regeneration, no
+      clobbering. If `I` differs from the main step's interval or the main dir
+      is absent/stale, run `compare_optimizers` as before (regeneration
+      allowed for a genuinely different interval).
+- [x] **P20.4** Tests: `test_run_end_to_end.py` asserts the simulate command
+      does **not** override the regeneration policy (prompt kept) and the
+      sweep command carries `--reuse_matching_interval` (and does not override
+      the policy). `test_interval_sweep.py::TestSweepReuseMatchingInterval`
+      covers: fresh main dir reused (no subprocess), absent main dir runs,
+      stale main dir not reused, policy forwarding, reuse-disabled always
+      runs.
+
+**Implemented (this change):**
+- `run_end_to_end_experiments.build_sweep_command` appends
+  `--reuse_matching_interval` (and **only** that — the regeneration policy is
+  left at the sweep's `prompt` default, not silenced).
+  `build_simulate_command` is unchanged: it does not touch the regeneration
+  policy, so compare_optimizers' default `prompt` is kept.
+- `interval_sweep.run_single_interval` gained `reuse_matching_interval` +
+  `on_taskset_config_change` params (default `prompt`). When reuse is on,
+  `_main_dir_is_fresh` reconstructs the main-step dir name
+  (`build_experiment_dir_name`) and, for every `taskset_{idx}`, runs
+  `_should_generate` (policy `"regenerate"` used purely as a staleness
+  detector — it returns True iff absent/stale; `"keep"` would be wrong, it
+  returns False even when stale) against the resolved config overlaid with
+  `RANDOM_SEED = base_seed + idx` / `UPDATE_INTERVAL_S = interval_sec`. If all
+  tasksets are fresh + a `comparison_summary.csv` exists, the sweep **skips**
+  `compare_optimizers` and returns the main dir. A stale/absent or
+  non-matching interval falls through to a normal `compare_optimizers` run.
+- New CLI flags on `interval_sweep.py`: `--reuse_matching_interval` (off by
+  default) + `--on_taskset_config_change` (default `prompt`).
+- Tests: `test_run_end_to_end.py` +2 (simulate keeps prompt policy; sweep
+  carries `--reuse_matching_interval` and keeps prompt policy);
+  `test_interval_sweep.py` +5 (`TestSweepReuseMatchingInterval`: fresh-main-dir
+  reuse skips the subprocess, absent main dir runs it, stale main dir is not
+  reused, the policy is forwarded to the child, reuse-disabled always runs).
+  Full suite **231 passing** (was 224).
+
+**Out of scope:** refactoring `Gen_Taskset/lib/orchestrator.py` to split the
+interval-independent core from interval-dependent slicing (the core is already
+shared by seed today; the redundant core regen in the sweep is wasted work but
+not incorrect, and the refactor is non-trivial). P20 targets the prompts +
+correct reuse, not the generation-pipeline split.
+
+---
 

@@ -144,6 +144,12 @@ def build_simulate_command(num_tasks, cfg, output_parent, verbose):
         "--important_task_pct",
         str(cfg.get("analysis", {}).get("important_task_top_percentage", 0.10)),
         "--verbose", str(verbose),
+        # P20: the simulate stage does NOT override the regeneration policy --
+        # compare_optimizers' default 'prompt' is kept so genuine config drift
+        # (e.g. after the P19 refactor) still surfaces a [Y/n] prompt instead
+        # of silently regenerating. The orchestrator only ensures stages SHARE
+        # tasksets (see the sweep's --reuse_matching_interval); it does not
+        # silence the drift guard. See agents/tasks.md (P20).
     ]
     num_workers = cfg.get("parallel_worker_processes")
     if num_workers is not None:
@@ -179,6 +185,12 @@ def build_sweep_command(cfg, output_parent, verbose):
         "--mode", cfg.get("_active_mode", "test"),
         "--output_parent", output_parent,
         "--verbose", str(verbose),
+        # P20: reuse the main step's tasksets for any sweep interval that
+        # matches it (no regeneration). The regeneration policy is left at
+        # the sweep's default ('prompt') so config drift still surfaces a
+        # [Y/n] prompt -- the orchestrator shares tasksets, it does not
+        # silence the drift guard.
+        "--reuse_matching_interval",
     ]
     config_path = cfg.get("_config_source_path")
     if config_path:

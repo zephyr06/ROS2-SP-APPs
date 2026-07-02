@@ -54,6 +54,72 @@ DEFAULT_OUTPUT_PARENT = os.path.join(
 )
 
 
+def _main_step_dir(num_tasks, n_sec, interval_sec, base_seed, output_parent):
+    """Return the canonical main-step experiment dir path for these params.
+
+    The main step (compare_optimizers without --run_name) writes to
+    ``tasks{N}_dur{D}_interval{I}_seed{S}`` via
+    :func:`build_experiment_dir_name`. The sweep can reuse that dir's results
+    when its interval matches the main step's, so it must reconstruct the same
+    name to *find* it.
+    """
+    from simulation_experiments.experiment_config_loader import (
+        build_experiment_dir_name,
+    )
+    return os.path.join(
+        output_parent,
+        build_experiment_dir_name(num_tasks, n_sec, interval_sec, base_seed),
+    )
+
+
+def _main_dir_is_fresh(num_tasks, n_tasksets, n_sec, interval_sec, base_seed,
+                       output_parent):
+    """Check whether the main-step dir has fresh, reusable tasksets.
+
+    "Fresh" means: every ``taskset_{idx}`` inside it was generated under a
+    config matching what the sweep would use (same source config + same
+    ``RANDOM_SEED = base_seed + idx`` + same ``UPDATE_INTERVAL_S =
+    interval_sec``). Reuses :func:`_should_generate`'s exact comparison so the
+    sweep's freshness notion matches compare_optimizers' own.
+
+    Returns the dir path if fresh and it has a comparison_summary.csv, else
+    ``None``.
+    """
+    from Gen_Taskset.lib.generation_config_parser import (
+        load_generation_config, resolve_taskset_config_path,
+    )
+    from simulation_experiments.run_sim_experiments import _should_generate
+
+    main_dir = _main_step_dir(num_tasks, n_sec, interval_sec, base_seed,
+                              output_parent)
+    if not os.path.exists(os.path.join(main_dir, "comparison_summary.csv")):
+        return None
+
+    config_file_abs = resolve_taskset_config_path(num_tasks)
+    try:
+        base_config = load_generation_config(config_file_abs)
+    except (OSError, ValueError):
+        return None
+
+    for idx in range(n_tasksets):
+        taskset_dir = os.path.join(main_dir, f"taskset_{idx}")
+        # Build the exact config compare_optimizers would compare against.
+        config_dict = dict(base_config)
+        config_dict["RANDOM_SEED"] = base_seed + idx
+        config_dict["UPDATE_INTERVAL_S"] = interval_sec
+        # _should_generate returns True iff the taskset is absent or its saved
+        # config has drifted (stale) -- i.e. NOT reusable. We use the
+        # "regenerate" policy purely as a detector here (it only *decides*;
+        # the caller does the regenerating), with verbose=0 so it stays quiet.
+        # "keep" would be wrong: it returns False (reuse) even when stale.
+        if _should_generate(
+            taskset_dir, config_dict, idx,
+            skip_if_exists=True, on_change_policy="regenerate", verbose=0,
+        ):
+            return None
+    return main_dir
+
+
 def run_single_interval(
     num_tasks,
     n_tasksets,
@@ -68,11 +134,47 @@ def run_single_interval(
     num_workers,
     resume,
     verbose,
+    reuse_matching_interval=False,
+    on_taskset_config_change="prompt",
 ):
-    """Launch compare_optimizers.py for a single trigger interval."""
+    """Launch compare_optimizers.py for a single trigger interval.
+
+    Parameters
+    ----------
+    reuse_matching_interval : bool
+        P20: when True, first look for the main-step experiment dir for this
+        ``(N, n_sec, interval, seed)``. If it exists with fresh, reusable
+        tasksets (every ``taskset_{idx}`` generated under a matching config)
+        and a ``comparison_summary.csv``, skip running compare_optimizers
+        entirely and return that dir -- its summary already contains every
+        scheduler the sweep plots (the main step runs the union list). This
+        avoids regenerating tasksets the main step already produced for the
+        same interval, and never clobbers the main dir's union summary.
+    on_taskset_config_change : str
+        Forwarded to compare_optimizers as ``--on_taskset_config_change``.
+        Defaults to ``"prompt"`` so the config-drift guard the user relies on
+        stays visible (a [Y/n] prompt on a TTY; the non-interactive fallback in
+        :func:`_should_generate` regenerates with a warning when there is no
+        TTY). The e2e orchestrator does **not** override this -- it shares
+        tasksets across stages (``reuse_matching_interval``), it does not
+        silence the drift guard. See ``agents/tasks.md`` (P20).
+    """
     output_dir = os.path.join(
         output_parent, f"tasks{num_tasks}_sweep_interval{interval_sec}_seed{base_seed}"
     )
+
+    if reuse_matching_interval:
+        reused = _main_dir_is_fresh(
+            num_tasks, n_tasksets, n_sec, interval_sec, base_seed, output_parent
+        )
+        if reused is not None:
+            if verbose >= 1:
+                print(f"\n{'='*60}")
+                print(f"SWEEP: interval={interval_sec}s (reused main-step dir)")
+                print(f"{'='*60}")
+                print(f"  Reusing {reused}; skipping compare_optimizers.")
+            return reused
+
     cmd = [
         sys.executable,
         "-m", "simulation_experiments.compare_optimizers",
@@ -88,6 +190,7 @@ def run_single_interval(
         "--export_level", str(export_level),
         "--important_task_pct", str(important_task_pct),
         "--verbose", str(verbose),
+        "--on_taskset_config_change", on_taskset_config_change,
     ]
     if num_workers is not None:
         cmd += ["--num_workers", str(num_workers)]
@@ -262,6 +365,21 @@ def main():
         "--verbose", type=int, choices=[0, 1, 2], default=1,
         help="Verbosity level.",
     )
+    parser.add_argument(
+        "--reuse_matching_interval", action="store_true", default=False,
+        help=("P20: for each sweep interval, first look for the main-step "
+              "experiment dir (tasks{N}_dur{D}_interval{I}_seed{S}) with fresh, "
+              "reusable tasksets; if present, reuse its summary instead of "
+              "running compare_optimizers. Avoids regenerating tasksets the "
+              "main step already produced for the same interval. Default: off."),
+    )
+    parser.add_argument(
+        "--on_taskset_config_change",
+        choices=["prompt", "regenerate", "keep"], default="prompt",
+        help=("Policy forwarded to compare_optimizers when an existing "
+              "taskset's config has changed. Default 'prompt' keeps the "
+              "drift guard visible (a [Y/n] prompt on a TTY)."),
+    )
     args = parser.parse_args()
 
     cfg = load_experiment_config(mode=args.mode, config_path=args.config_json)
@@ -304,6 +422,8 @@ def main():
             num_workers=num_workers,
             resume=resume,
             verbose=args.verbose,
+            reuse_matching_interval=args.reuse_matching_interval,
+            on_taskset_config_change=args.on_taskset_config_change,
         )
         if first_output_dir is None:
             first_output_dir = output_dir
