@@ -75,6 +75,7 @@ from simulation_experiments.plotting_config import (
 from simulation_experiments.experiment_config_loader import (
     load_experiment_config,
     build_run_id,
+    DEFAULT_CONFIG_PATH,
 )
 
 try:
@@ -859,8 +860,9 @@ def main():
     )
     parser.add_argument(
         "--config_json",
-        default=None,
-        help="Path to custom experiment_config.json. Uses default if omitted.",
+        default=DEFAULT_CONFIG_PATH,
+        help="Path to the experiment_config.json. Defaults to the shipped "
+             "config at configs/experiment_config.json.",
     )
     parser.add_argument(
         "--output_parent",

@@ -19,10 +19,12 @@ import os
 
 # Absolute path to ``simulation_experiments/``
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
-_DEFAULT_CONFIG_PATH = os.path.join(_MODULE_DIR, "configs", "experiment_config.json")
+# Public so callers (e.g. run_end_to_end_experiments --config_json default) can
+# reference the shipped config path without hard-coding it.
+DEFAULT_CONFIG_PATH = os.path.join(_MODULE_DIR, "configs", "experiment_config.json")
 
 
-def load_experiment_config(mode="test", config_path=_DEFAULT_CONFIG_PATH):
+def load_experiment_config(mode="test", config_path=DEFAULT_CONFIG_PATH):
     """Load experiment parameters from the central JSON configuration file.
 
     Parameters
