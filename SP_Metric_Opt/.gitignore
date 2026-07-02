@@ -21,6 +21,7 @@ TaskData/*/
 TaskData/*.txt
 TaskData/*.json
 temp_experiment_configs/
+temp_experiment_configs_*/
 temp/
 Gen_Taskset/simulation_tasksets/
 tests/comparison_runs/*
