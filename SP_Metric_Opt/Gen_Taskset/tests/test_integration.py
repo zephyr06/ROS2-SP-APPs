@@ -18,12 +18,11 @@ def test_integration_pipeline():
     os.makedirs(output_dir, exist_ok=True)
     
     config_data = {
-        "SMALL_PERIOD_HZ": [10, 20, 50],
+        "SMALL_PERIOD_HZ": [20, 50],
         "BIG_PERIOD_HZ": [0.5, 1],
         "N_BIG_PERIOD_TASKS": 1,
         "N_SMALL_PERIOD_TASKS": 2,
         "N_ENV_DEPENDENT_TASKS": 1,
-        "MIN_PERIOD_WITH_PERFORMANCE_RECORDS": 33,
         "PERF_RECORD_TASK_PROBABILITY": 1.0,  # All eligible non-env tasks become soft tasks
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
         "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
@@ -84,16 +83,20 @@ def test_integration_pipeline():
             soft_tasks.append(t)
             
     # With N_ENV_DEPENDENT_TASKS=1, 2 non-env tasks remain.
-    # PERF_RECORD_TASK_PROBABILITY=1.0 makes all eligible non-env tasks soft.
-    # The eligible tasks are those with period >= 33; if the env task happens
-    # to be the only big-period task (1000ms), then 1 soft task remains;
-    # if env is a small-period task (20 or 50ms), then the big-period task
-    # may still be the only eligible non-env task.
-    assert 1 <= len(soft_tasks) <= 2
+    # PERF_RECORD_TASK_PROBABILITY=1.0 makes ALL non-env tasks soft -- including
+    # short-period tasks. The MIN_PERIOD_WITH_PERFORMANCE_RECORDS period floor
+    # was removed (P16), so every non-env task is eligible regardless of period.
+    assert len(soft_tasks) == 2
     soft_task = soft_tasks[0]
-    
-    # Soft task period must be >= MIN_PERIOD_WITH_PERFORMANCE_RECORDS
-    assert soft_task["period"] >= config_data["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"]
+
+    # P16: short-period tasks are now eligible as perf-record tasks (the legacy
+    # period floor was removed). At least one soft task must have a small period
+    # (<= 50 ms) since the small-period pool is {50, 20} ms.
+    min_soft_period = min(t["period"] for t in soft_tasks)
+    assert min_soft_period <= 50, (
+        "P16: expected at least one short-period perf-record task, "
+        f"but min soft-task period was {min_soft_period}"
+    )
     
     # Verify format of performance records strings
     time_rec = [float(x) for x in soft_task["performance_records_time"].split()]

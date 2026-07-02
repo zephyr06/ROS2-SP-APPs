@@ -118,7 +118,6 @@ class TestTasksetGenerator(unittest.TestCase):
         """Normal tasks (non-env, non-perf) have natural random sigma and bounds = mean ± 2σ."""
         cfgs = self.cfgs.copy()
         cfgs["PERF_RECORD_TASK_PROBABILITY"] = 0.0  # no perf tasks
-        cfgs["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"] = 33
         cfgs["N_ENV_DEPENDENT_TASKS"] = 1
         cfgs["RANDOM_SEED"] = 42
         res = generate_taskset_parameters(cfgs)
@@ -148,7 +147,6 @@ class TestTasksetGenerator(unittest.TestCase):
         """Perf tasks have tiny sigma, no correlations, full range bounds, and performance records."""
         cfgs = self.cfgs.copy()
         cfgs["PERF_RECORD_TASK_PROBABILITY"] = 1.0  # all eligible non-env tasks become perf
-        cfgs["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"] = 33
         cfgs["N_ENV_DEPENDENT_TASKS"] = 1
         cfgs["RANDOM_SEED"] = 42
         res = generate_taskset_parameters(cfgs)

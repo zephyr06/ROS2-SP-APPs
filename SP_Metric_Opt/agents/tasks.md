@@ -369,7 +369,8 @@ variance (may interact with P12 normalization).
 
 ### P16 -- Remove MIN_PERIOD_WITH_PERFORMANCE_RECORDS Constraint
 
-- [ ] Remove the `MIN_PERIOD_WITH_PERFORMANCE_RECORDS` limitation from taskset generation so all tasks, regardless of their periods, are eligible to be chosen as time-limit (performance-record) tasks.
+- [x] Remove the `MIN_PERIOD_WITH_PERFORMANCE_RECORDS` limitation from taskset generation so all tasks, regardless of their periods, are eligible to be chosen as time-limit (performance-record) tasks.
+  - **Verified:** removed the period-floor gate (`if period < min_period_perf: continue`) in `taskset_generator.py` perf-record candidate selection; the legacy `MIN_PERIOD_WITH_PERFORMANCE_RECORDS` key is still accepted by `generation_config_parser.py` (default now `0`) as a documented no-op for external-config backward-compat. Removed the dead key from all shipped configs/templates that set it (`taskset_cfg_paper_base.json` — propagates to `paper_4/6/8.json` via INCLUDE; `test_standard_{4,6,8}.json`) and from tests that set it (`test_integration.py`, `test_taskset_generator.py` ×2). `test_integration.py` now asserts that short-period tasks are eligible perf-record tasks (expect exactly 2 soft tasks at `PERF_RECORD_TASK_PROBABILITY=1.0` with 2 non-env tasks, down from the old `1 <= len <= 2`). Full suite **225 passing**.
 
 ---
 

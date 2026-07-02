@@ -194,8 +194,13 @@ def standardize_config(config: dict) -> dict:
     # Optional tighter cap applied only to env-dependent tasks.
     # If None, env tasks use the same MAX_UTIL_PER_TASK cap as everyone else.
     config["MAX_UTIL_PER_ENV_TASK"] = config.get("MAX_UTIL_PER_ENV_TASK", None)
+    # MIN_PERIOD_WITH_PERFORMANCE_RECORDS was a period floor that gated which
+    # non-env tasks could become time-limit (performance-record) tasks. It was
+    # removed in P16 so all non-env tasks are eligible regardless of period.
+    # The key is still accepted here (kept as a no-op) so existing configs and
+    # templates that set it continue to load without error; it has no effect.
     config["MIN_PERIOD_WITH_PERFORMANCE_RECORDS"] = config.get(
-        "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100
+        "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 0
     )
 
     # Minimum period for tasks that may be marked env-dependent.

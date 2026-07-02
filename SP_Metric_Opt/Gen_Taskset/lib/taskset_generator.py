@@ -317,16 +317,15 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
                 for i in non_env_indices:
                     util_vector[i] += freed / len(non_env_indices)
 
-    # 3. Select time-limit (performance-record) tasks from non-env candidates
-    min_period_perf = cfgs.get("MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 100)
+    # 3. Select time-limit (performance-record) tasks from non-env candidates.
+    # All non-env tasks are eligible regardless of period (the former
+    # MIN_PERIOD_WITH_PERFORMANCE_RECORDS period floor was removed in P16);
+    # the legacy key is still accepted by the config loader but is now a no-op.
     perf_prob = cfgs.get("PERF_RECORD_TASK_PROBABILITY", 0.5)
     perf_candidates = []
     for i in range(n_tasks):
-        period = periods[i]
         if i in env_task_indices:
             continue  # perf tasks must be disjoint from env tasks
-        if period < min_period_perf:
-            continue  # period too short for TL options
         perf_candidates.append(i)
 
     time_limit_task_indices = set()
