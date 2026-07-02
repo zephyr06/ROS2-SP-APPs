@@ -1,0 +1,214 @@
+"""Tests for simulation_experiments.run_end_to_end_experiments.
+
+These tests mock ``subprocess.run`` so the orchestrator is exercised without
+launching real simulations. They verify that the correct commands are
+constructed for each stage, that the main+ablation scheduler lists are
+unioned and de-duplicated, that ``--dry_run`` prints without executing, and
+that ``--steps`` selects a subset of stages.
+"""
+import os
+import sys
+import unittest
+import unittest.mock
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+import simulation_experiments.run_end_to_end_experiments as e2e
+from simulation_experiments.experiment_config_loader import load_experiment_config
+
+
+def _cfg(mode="test"):
+    """Load a real config so the constructed commands reflect actual values."""
+    return load_experiment_config(mode=mode)
+
+
+class TestSchedulerUnion(unittest.TestCase):
+
+    def test_union_dedup_preserves_order(self):
+        cfg = {
+            "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+            "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"],
+        }
+        union = e2e.build_scheduler_union(cfg)
+        # BF and INCR appear in both lists but only once in the union
+        self.assertEqual(union, ["INCR", "BF", "RM", "CFS",
+                                 "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"])
+        self.assertEqual(len(union), len(set(union)), "union contains duplicates")
+
+    def test_union_from_real_config(self):
+        cfg = _cfg("test")
+        union = e2e.build_scheduler_union(cfg)
+        # Every main and ablation scheduler is present, with no duplicates
+        for s in cfg["main_scheduler_list"] + cfg["ablation_scheduler_list"]:
+            self.assertIn(s, union)
+        self.assertEqual(len(union), len(set(union)))
+
+
+class TestBuildCommands(unittest.TestCase):
+
+    def test_simulate_command_carries_config_values(self):
+        cfg = _cfg("test")
+        cfg["bin_dir"] = "release"
+        cmd = e2e.build_simulate_command(6, cfg, "/tmp/out", verbose=1)
+
+        self.assertEqual(cmd[1], "-m")
+        self.assertEqual(cmd[2], "simulation_experiments.compare_optimizers")
+        # num_tasks, n_tasksets, n_sec, trigger interval, seed from config
+        self.assertIn("--num_tasks", cmd)
+        self.assertEqual(cmd[cmd.index("--num_tasks") + 1], "6")
+        self.assertEqual(cmd[cmd.index("--n_tasksets") + 1],
+                         str(cfg["num_tasksets_to_generate"]))
+        self.assertEqual(cmd[cmd.index("--n_sec") + 1],
+                         str(cfg["simulation_duration_seconds"]))
+        self.assertEqual(cmd[cmd.index("--scheduler_trigger_interval") + 1],
+                         str(cfg["scheduler_trigger_interval_seconds"]))
+        self.assertEqual(cmd[cmd.index("--base_seed") + 1],
+                         str(cfg["base_random_seed"]))
+        # Scheduler union is passed positionally after --schedulers
+        sched_idx = cmd.index("--schedulers")
+        schedulers_passed = cmd[sched_idx + 1:cmd.index("--bin_dir", sched_idx)]
+        union = e2e.build_scheduler_union(cfg)
+        self.assertEqual(schedulers_passed, union)
+        # Important-task threshold flows through from the analysis block
+        self.assertEqual(cmd[cmd.index("--important_task_pct") + 1],
+                         str(cfg["analysis"]["important_task_top_percentage"]))
+
+    def test_simulate_command_resume_flag(self):
+        cfg = _cfg("test")
+        cfg["bin_dir"] = "release"
+        cfg["analysis"]["enable_resume_from_existing_results"] = True
+        cmd = e2e.build_simulate_command(4, cfg, "/tmp/out", verbose=1)
+        self.assertIn("--resume", cmd)
+
+    def test_simulate_command_no_resume_by_default(self):
+        cfg = _cfg("test")
+        cfg["bin_dir"] = "release"
+        cfg["analysis"]["enable_resume_from_existing_results"] = False
+        cmd = e2e.build_simulate_command(4, cfg, "/tmp/out", verbose=1)
+        self.assertNotIn("--resume", cmd)
+
+    def test_simulate_command_num_workers(self):
+        cfg = _cfg("test")
+        cfg["bin_dir"] = "release"
+        cfg["parallel_worker_processes"] = 8
+        cmd = e2e.build_simulate_command(8, cfg, "/tmp/out", verbose=1)
+        self.assertEqual(cmd[cmd.index("--num_workers") + 1], "8")
+
+    def test_sweep_command(self):
+        cfg = _cfg("test")
+        cmd = e2e.build_sweep_command(cfg, "/tmp/out", verbose=1)
+        self.assertEqual(cmd[2], "simulation_experiments.interval_sweep")
+        self.assertEqual(cmd[cmd.index("--mode") + 1], "test")
+        self.assertEqual(cmd[cmd.index("--output_parent") + 1], "/tmp/out")
+
+    def test_aggregate_command(self):
+        cfg = _cfg("prod")
+        cmd = e2e.build_aggregate_command(cfg, "/tmp/out")
+        self.assertEqual(cmd[2], "simulation_experiments.aggregate_across_tasks")
+        self.assertEqual(cmd[cmd.index("--mode") + 1], "prod")
+        self.assertEqual(cmd[cmd.index("--output_parent") + 1], "/tmp/out")
+
+
+class TestRunCommand(unittest.TestCase):
+
+    def test_dry_run_does_not_execute(self):
+        with unittest.mock.patch.object(e2e.subprocess, "run") as mock_run:
+            ok = e2e.run_command(["python", "-c", "print('hi')"], dry_run=True)
+            self.assertTrue(ok)
+            mock_run.assert_not_called()
+
+    def test_real_run_calls_subprocess(self):
+        with unittest.mock.patch.object(e2e.subprocess, "run") as mock_run:
+            mock_run.return_value = unittest.mock.MagicMock(returncode=0)
+            ok = e2e.run_command(["python", "-c", "print('hi')"], dry_run=False)
+            self.assertTrue(ok)
+            mock_run.assert_called_once()
+
+    def test_failed_run_returns_false(self):
+        with unittest.mock.patch.object(e2e.subprocess, "run") as mock_run:
+            mock_run.side_effect = e2e.subprocess.CalledProcessError(1, "cmd")
+            ok = e2e.run_command(["python", "-c", "print('hi')"], dry_run=False)
+            self.assertFalse(ok)
+
+
+class TestMainPipeline(unittest.TestCase):
+    """Drive main() end-to-end with run_command / subprocess.run mocked."""
+
+    def _run_main(self, extra_args, mode="test"):
+        """Run main() with run_command mocked; return (exit_code, mock_rc).
+
+        Counting ``run_command`` calls (one per constructed command) is the
+        mode-independent way to assert how many commands were built -- in
+        dry-run mode ``run_command`` returns early and never reaches
+        ``subprocess.run``, so counting subprocess calls would be wrong.
+        """
+        argv = ["prog", "--mode", mode] + extra_args
+        with unittest.mock.patch.object(sys, "argv", argv), \
+             unittest.mock.patch.object(e2e, "run_command", return_value=True) as mock_rc, \
+             unittest.mock.patch.object(e2e, "time") as mock_time:
+            mock_time.time.return_value = 0.0
+            try:
+                e2e.main()
+                exit_code = 0
+            except SystemExit as exc:
+                exit_code = exc.code
+            return exit_code, mock_rc
+
+    def test_dry_run_prints_and_does_not_execute(self):
+        argv = ["prog", "--mode", "test", "--dry_run", "--steps", "simulate"]
+        with unittest.mock.patch.object(sys, "argv", argv), \
+             unittest.mock.patch.object(e2e.subprocess, "run") as mock_run, \
+             unittest.mock.patch.object(e2e, "time") as mock_time:
+            mock_time.time.return_value = 0.0
+            try:
+                e2e.main()
+                exit_code = 0
+            except SystemExit as exc:
+                exit_code = exc.code
+        self.assertEqual(exit_code, 0)
+        # Dry run never invokes subprocess.run
+        self.assertEqual(mock_run.call_count, 0)
+
+    def test_all_stages_dry_run(self):
+        # test_mode has 2 task counts -> 2 simulate cmds + 1 sweep + 1 aggregate
+        exit_code, mock_rc = self._run_main(["--dry_run"])
+        self.assertEqual(exit_code, 0)
+        cfg = _cfg("test")
+        expected_simulate = len(cfg["num_tasks_for_cross_task_comparison"])
+        self.assertEqual(mock_rc.call_count, expected_simulate + 2)
+
+    def test_subset_stages_dry_run(self):
+        exit_code, mock_rc = self._run_main(
+            ["--dry_run", "--steps", "simulate", "aggregate"])
+        self.assertEqual(exit_code, 0)
+        cfg = _cfg("test")
+        expected = len(cfg["num_tasks_for_cross_task_comparison"]) + 1  # + aggregate
+        self.assertEqual(mock_rc.call_count, expected)
+
+    def test_simulate_only_dry_run(self):
+        exit_code, mock_rc = self._run_main(["--dry_run", "--steps", "simulate"])
+        self.assertEqual(exit_code, 0)
+        cfg = _cfg("test")
+        self.assertEqual(mock_rc.call_count,
+                         len(cfg["num_tasks_for_cross_task_comparison"]))
+
+    def test_failed_stage_aborts(self):
+        argv = ["prog", "--mode", "test", "--steps", "simulate", "--dry_run"]
+        # Make the very first subprocess call "succeed" (dry run skips run),
+        # so instead test the failure path via run_command directly.
+        with unittest.mock.patch.object(sys, "argv", argv), \
+             unittest.mock.patch.object(e2e, "run_command", return_value=False) as mock_rc, \
+             unittest.mock.patch.object(e2e, "time") as mock_time:
+            mock_time.time.return_value = 0.0
+            with self.assertRaises(SystemExit) as ctx:
+                e2e.main()
+            self.assertNotEqual(ctx.exception.code, 0)
+            # run_command should have been called once (first task count), then abort
+            self.assertEqual(mock_rc.call_count, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
