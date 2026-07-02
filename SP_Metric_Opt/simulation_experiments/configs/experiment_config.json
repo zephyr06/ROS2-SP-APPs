@@ -48,7 +48,8 @@
         "figure_width_inches_grouped": 12,
         "figure_height_inches_grouped": 6,
         "enable_statistical_annotation": false,
-        "output_format_list": ["png", "pdf"]
+        "output_format_list": ["png", "pdf"],
+        "run_name_prefix": ""
     },
 
     "analysis": {
@@ -57,6 +58,9 @@
         "minimum_important_tasks_count": 1,
         "discard_early_intervals_for_sp_computation": 0,
         "enable_resume_from_existing_results": true,
+        "skip_generation_if_exists": true,
+        "on_taskset_config_change": "prompt",
+        "_comment_generation": "Taskset reuse policy. skip_generation_if_exists=true reuses an existing taskset instead of regenerating. Before reusing, the resolved generator config (source config + per-taskset RANDOM_SEED + UPDATE_INTERVAL_S) is compared against the generator_config.json saved alongside the on-disk taskset; a mismatch means the taskset is stale. on_taskset_config_change then decides: 'prompt' (default) asks interactively [Y/n] and regenerates on yes (or when non-interactive, e.g. called as a subprocess by the e2e orchestrator / interval sweep, where prompting is impossible); 'regenerate' always regenerates on a change; 'keep' reuses the stale taskset with a warning (explicit opt-out for cheap re-runs). No change -> always silently reused.",
         "normalize_sp": true,
         "sp_normalization_method": "upper_bound",
         "_comment_normalize_sp": "When true, every SP-metric figure emits an additional normalized variant (raw always kept): Fig 1A + 1B (main), Fig 1F (boxplot), Fig Ab-A (ablation), and Fig 2 (interval sweep). Normalized SP = raw_SP / ideal_SP, where ideal_SP is the best possible with infinite computation (every task meets its deadline perfectly, SP_Func=1 for all tasks, optimizer uses the best config) = sum of sp_weight x perf_coefficient (~5.0, flat across N because the generator normalizes the weight sum). Because SP_Func in [0,1] with non-negative weights, raw_SP <= ideal_SP always, so the ratio is guaranteed in [0,1] with 1.0 = all deadlines met perfectly -- independent of any scheduler's realized value. Methods: 'upper_bound' (default) divides by this ideal-SP ceiling (a constant, so no figure exceeds 1.0); 'minmax_per_task_count' applies min-max across schedulers at each fixed N (relative ranking only -- 1.0 = best of compared schedulers, NOT best possible; debug use). The same transform is applied consistently across all SP figures."

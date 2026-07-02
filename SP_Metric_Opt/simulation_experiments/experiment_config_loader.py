@@ -63,6 +63,37 @@ def load_experiment_config(mode="test", config_path=DEFAULT_CONFIG_PATH):
     return merged
 
 
+def build_experiment_dir_name(num_tasks, n_sec, scheduler_trigger_interval,
+                              base_seed):
+    """Return the canonical experiment data-directory name.
+
+    Every per-task-count simulation run writes into a folder named this way
+    (e.g. ``tasks6_dur300_interval10_seed1000``). Centralizing the name here
+    means callers that need to *find* an experiment dir (not just create one)
+    reconstruct the same path -- there is no human override of the data-dir
+    name; the only human-supplied name is a *prefix* on the figures namespace
+    via :func:`build_run_id`.
+
+    Parameters
+    ----------
+    num_tasks : int
+        Number of tasks for this experiment.
+    n_sec : int
+        Simulation duration in seconds (drives the on-disk interval count).
+    scheduler_trigger_interval : int
+        Scheduler re-optimization interval in seconds.
+    base_seed : int
+        Base random seed.
+
+    Returns
+    -------
+    str
+        e.g. ``"tasks6_dur300_interval10_seed1000"``.
+    """
+    return (f"tasks{num_tasks}_dur{n_sec}_"
+            f"interval{scheduler_trigger_interval}_seed{base_seed}")
+
+
 def build_run_id(config_dict):
     """Return a stable folder key identifying one end-to-end run.
 
@@ -72,6 +103,11 @@ def build_run_id(config_dict):
     intentionally excluded -- two runs differing only in taskset count share a
     folder, which is acceptable since ``mode`` is the primary axis.
 
+    A human-supplied prefix (``plotting.run_name_prefix``) is prepended to the
+    alg-generated id when set, so a run can be namespaced (e.g. ``expA_``)
+    without overriding the descriptive auto-name. Empty prefix (the default)
+    leaves the id fully alg-decided.
+
     Parameters
     ----------
     config_dict : dict
@@ -80,7 +116,8 @@ def build_run_id(config_dict):
     Returns
     -------
     str
-        e.g. ``"run_test_dur70_interval10_seed1000_tasks4x6"``.
+        e.g. ``"run_test_dur70_interval10_seed1000_tasks4x6"``, or
+        ``"expA_run_test_dur70_interval10_seed1000_tasks4x6"`` with a prefix.
     """
     mode = config_dict.get("_active_mode", "run")
     dur = config_dict.get("simulation_duration_seconds", 0)
@@ -88,7 +125,9 @@ def build_run_id(config_dict):
     seed = config_dict.get("base_random_seed", 0)
     tasks = config_dict.get("num_tasks_for_cross_task_comparison", [])
     tasks_tag = "x".join(str(t) for t in tasks) if tasks else "na"
-    return f"run_{mode}_dur{dur}_interval{interv}_seed{seed}_tasks{tasks_tag}"
+    base = f"run_{mode}_dur{dur}_interval{interv}_seed{seed}_tasks{tasks_tag}"
+    prefix = config_dict.get("plotting", {}).get("run_name_prefix", "")
+    return f"{prefix}_{base}" if prefix else base
 
 
 def resolve_config_value(config_dict, key, default=None):
