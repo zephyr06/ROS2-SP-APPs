@@ -3,7 +3,7 @@
     "DESC": "Paper parameters for 6 tasks (2 big, 4 small)",
     "N_BIG_PERIOD_TASKS": 2,
     "N_SMALL_PERIOD_TASKS": 4,
-    "MEAN_CPU_UTIL": 1.2,
+    "MEAN_CPU_UTIL": 0.9,
     "N_CORES": 2,
     "RANDOM_SEED": 40
 }
