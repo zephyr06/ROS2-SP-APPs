@@ -617,8 +617,9 @@ class _SentinelStop(Exception):
 
 class TestNumTasksCliAcceptance(unittest.TestCase):
     """P13 Commit B: --num_tasks is no longer restricted to choices=[4,6,8].
-    When set, any N >= 2 routes through resolve_taskset_config_path; when
-    unset, the --config_file fallback path is used (resolver not called).
+    When set, any N >= 1 routes through resolve_taskset_config_path (P17
+    relaxed the former >= 2 floor to >= 1); when unset, the --config_file
+    fallback path is used (resolver not called).
     """
 
     def _run_main_catching_resolver(self, cli_args):
@@ -645,10 +646,18 @@ class TestNumTasksCliAcceptance(unittest.TestCase):
         )
         self.assertEqual(n, 10)
 
-    def test_num_tasks_below_two_rejected_by_argparse(self):
-        """--num_tasks 1 is rejected with a parser error (SystemExit)."""
+    def test_num_tasks_one_accepted_and_routed(self):
+        """P17: --num_tasks 1 is accepted (the >= 2 floor was relaxed to >= 1)
+        and routed to resolve_taskset_config_path."""
+        n = self._run_main_catching_resolver(
+            ["--num_tasks", "1", "--n_tasksets", "1", "-v", "0"]
+        )
+        self.assertEqual(n, 1)
+
+    def test_num_tasks_zero_rejected_by_argparse(self):
+        """P17: --num_tasks 0 is rejected with a parser error (SystemExit)."""
         with unittest.mock.patch.object(
-            sys, "argv", ["run_sim_experiments.py", "--num_tasks", "1", "-v", "0"]
+            sys, "argv", ["run_sim_experiments.py", "--num_tasks", "0", "-v", "0"]
         ):
             with self.assertRaises(SystemExit):
                 run_sim_experiments.main()

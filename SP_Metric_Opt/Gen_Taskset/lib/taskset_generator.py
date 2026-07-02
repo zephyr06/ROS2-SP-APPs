@@ -243,6 +243,10 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     taskset_param = []
     picked_periods = []
 
+    # P17: N_BIG_PERIOD_TASKS and N_SMALL_PERIOD_TASKS may each be 0 (single-rate
+    # tasksets: all-big or all-small). The period-pick loops below are no-ops for
+    # a 0 count, and standardize_config() guarantees n_tasks >= 1. The defaults
+    # (2 / 8) are kept for backward compatibility with configs that omit them.
     g_n_big_periods = cfgs.get("N_BIG_PERIOD_TASKS", 2)
     g_n_small_periods = cfgs.get("N_SMALL_PERIOD_TASKS", 8)
     n_tasks = g_n_big_periods + g_n_small_periods

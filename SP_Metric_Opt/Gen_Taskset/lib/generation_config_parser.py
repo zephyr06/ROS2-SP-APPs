@@ -41,8 +41,9 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     Parameters
     ----------
     num_tasks : int
-        Total number of tasks. Must be >= 2 (N_BIG=2 fixed, so N>=2 gives
-        >=0 small-period tasks; N<2 is rejected).
+        Total number of tasks. Must be >= 1 (P17 relaxed the former >= 2
+        floor that was tied to a fixed N_BIG=2; a single-task taskset is now
+        valid, e.g. a single-rate small-period taskset with N_BIG=0).
     config_dir : str, optional
         Directory to look for an existing ``taskset_cfg_paper_{N}.json``.
         Defaults to the repo config dir.
@@ -65,9 +66,11 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
         n = int(num_tasks)
     except (TypeError, ValueError):
         raise ValueError(f"num_tasks must be an integer, got {num_tasks!r}")
-    if n < 2:
+    if n < 1:
         raise ValueError(
-            f"num_tasks must be >= 2 (N_BIG_PERIOD_TASKS=2 fixed), got {n}"
+            f"num_tasks must be >= 1 (P17: the former N>=2 floor tied to a "
+            f"fixed N_BIG=2 was relaxed; N_BIG=0 / N_SMALL=0 are now allowed), "
+            f"got {n}"
         )
 
     cfg_dir = config_dir or _TASK_SETS_CONFIG_DIR
@@ -86,17 +89,32 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
             f"found at {base_template_abs}"
         )
 
-    small = n - 2
+    # Synthesized split (P17): keep the historical 2 big / (N-2) small default
+    # for N >= 2 so existing on-disk paper_4/6/8 and the cross-task sweep
+    # [4,6,8,10,12,14,16,18] are unaffected. For N == 1, emit a single
+    # small-period task (N_BIG=0) -- the minimal single-rate taskset, which the
+    # former N_BIG=2 hardcode could not represent (it would have made
+    # N_SMALL = -1).
+    if n >= 2:
+        n_big, n_small = 2, n - 2
+        n_cores = 2
+        desc = f"Paper parameters for {n} tasks (2 big, {n_small} small) [synthesized]"
+    else:  # n == 1
+        # Single-task taskset: drop to 1 core so cpu_util = 0.9 x 1 = 0.9 stays
+        # feasible (util < 1.0). With N_CORES=2 the lone task would carry
+        # cpu_util = 1.8, which uunifast_distribution can only realize as a
+        # single 1.8 utilization -- overloaded / unschedulable. N=1 is a
+        # single-rate corner case, never on the cross-task sweep.
+        n_big, n_small = 0, 1
+        n_cores = 1
+        desc = "Paper parameters for 1 task (0 big, 1 small) [synthesized, single-rate]"
     synthesized = {
         "INCLUDE": base_template_abs,
-        "DESC": (
-            f"Paper parameters for {n} tasks (2 big, {small} small) "
-            f"[synthesized]"
-        ),
-        "N_BIG_PERIOD_TASKS": 2,
-        "N_SMALL_PERIOD_TASKS": small,
+        "DESC": desc,
+        "N_BIG_PERIOD_TASKS": n_big,
+        "N_SMALL_PERIOD_TASKS": n_small,
         "MEAN_CPU_UTIL": _DEFAULT_PER_CORE_CPU_UTIL,
-        "N_CORES": 2,
+        "N_CORES": n_cores,
         "RANDOM_SEED": 42,
     }
 
@@ -188,6 +206,23 @@ def standardize_config(config: dict) -> dict:
     config["N_BIG_PERIOD_TASKS"] = config.get("N_BIG_PERIOD_TASKS", 2)
     config["N_SMALL_PERIOD_TASKS"] = config.get("N_SMALL_PERIOD_TASKS", 8)
     config["N_TASKS"] = config["N_BIG_PERIOD_TASKS"] + config["N_SMALL_PERIOD_TASKS"]
+
+    # P17: N_BIG=0 and N_SMALL=0 are now allowed (single-rate tasksets), so the
+    # only hard requirement is at least one task total. Explicitly reject a
+    # degenerate all-zero config (which would otherwise divide by zero in
+    # uunifast_distribution) with a clear message instead of a cryptic crash.
+    if config["N_BIG_PERIOD_TASKS"] < 0 or config["N_SMALL_PERIOD_TASKS"] < 0:
+        raise ValueError(
+            "N_BIG_PERIOD_TASKS and N_SMALL_PERIOD_TASKS must be >= 0, got "
+            f"N_BIG={config['N_BIG_PERIOD_TASKS']}, "
+            f"N_SMALL={config['N_SMALL_PERIOD_TASKS']}"
+        )
+    if config["N_TASKS"] < 1:
+        raise ValueError(
+            "N_TASKS must be >= 1 (P17 allows N_BIG=0 or N_SMALL=0 but not both); "
+            f"got N_BIG={config['N_BIG_PERIOD_TASKS']}, "
+            f"N_SMALL={config['N_SMALL_PERIOD_TASKS']}"
+        )
 
     # Per-task utilization caps
     config["MAX_UTIL_PER_TASK"] = config.get("MAX_UTIL_PER_TASK", 0.95)

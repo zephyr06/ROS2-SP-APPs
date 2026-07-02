@@ -15,6 +15,7 @@ from Gen_Taskset.lib.generation_config_parser import (
     resolve_taskset_config_path,
     load_generation_config,
 )
+from Gen_Taskset.lib.taskset_generator import generate_taskset_parameters
 
 class TestGenerationConfigParser(unittest.TestCase):
 
@@ -189,11 +190,35 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
         self.assertEqual(cfg["SMALL_PERIODS_MS"], [100, 50, 33, 20])
         self.assertEqual(cfg["BIG_PERIODS_MS"], [1000, 500, 200])
 
-    def test_rejects_num_tasks_below_two(self):
-        """num_tasks < 2 must be rejected (N_BIG_PERIOD_TASKS=2 fixed)."""
-        for bad in (1, 0, -3):
+    def test_rejects_num_tasks_below_one(self):
+        """P17: num_tasks < 1 must be rejected (the floor dropped from >= 2 to
+        >= 1; N=1 is now valid -- a single-rate small-period taskset)."""
+        for bad in (0, -3):
             with self.assertRaises(ValueError, msg=f"N={bad} should be rejected"):
                 resolve_taskset_config_path(bad, temp_dir=self._temp())
+
+    def test_accepts_num_tasks_one_single_rate(self):
+        """P17: N=1 synthesizes a single-task config (N_BIG=0, N_SMALL=1),
+        the minimal single-rate taskset the former N_BIG=2 hardcode could not
+        represent.
+
+        Feasibility: the synthesized N=1 config drops to N_CORES=1 so that
+        cpu_util = MEAN_CPU_UTIL x 1 = 0.9 -- the lone task's utilization stays
+        below 1.0 (schedulable). With the historical N_CORES=2 the single task
+        would carry cpu_util = 1.8, which uunifast_distribution can only
+        realize as a single 1.8 utilization (overloaded / unschedulable)."""
+        path = resolve_taskset_config_path(1, temp_dir=self._temp())
+        cfg = load_generation_config(path)
+        self.assertEqual(cfg["N_TASKS"], 1)
+        self.assertEqual(cfg["N_BIG_PERIOD_TASKS"], 0)
+        self.assertEqual(cfg["N_SMALL_PERIOD_TASKS"], 1)
+        self.assertEqual(cfg["N_CORES"], 1)
+        self.assertAlmostEqual(cfg["MEAN_CPU_UTIL"] * cfg["N_CORES"], 0.9)
+        # End-to-end feasibility: the generated single task is schedulable.
+        res = generate_taskset_parameters(cfg)
+        self.assertEqual(len(res["tasks"]), 1)
+        util = res["tasks"][0]["Et_mean"] / res["tasks"][0]["period"]
+        self.assertLess(util, 1.0, f"single-task utilization {util} must be < 1.0")
 
     def test_rejects_non_integer(self):
         """Non-integer num_tasks must be rejected."""

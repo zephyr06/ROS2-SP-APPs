@@ -174,7 +174,8 @@ class TestCompareOptimizers(unittest.TestCase):
 
 class TestNumTasksCliAcceptance(unittest.TestCase):
     """P13 Commit B: --num_tasks is no longer restricted to choices=[4,6,8],
-    and any N >= 2 routes through resolve_taskset_config_path.
+    and any N >= 1 routes through resolve_taskset_config_path (P17 relaxed the
+    former >= 2 floor to >= 1).
 
     We patch the resolver to raise a sentinel so we can assert that argparse
     accepted the value (no choices rejection) AND that main() routed it to the
@@ -212,10 +213,18 @@ class TestNumTasksCliAcceptance(unittest.TestCase):
         )
         self.assertEqual(n, 18)
 
-    def test_num_tasks_below_two_rejected_by_argparse(self):
-        """--num_tasks 1 is rejected with a parser error (SystemExit)."""
+    def test_num_tasks_one_accepted_and_routed(self):
+        """P17: --num_tasks 1 is accepted (the >= 2 floor was relaxed to >= 1)
+        and routed to resolve_taskset_config_path (single-rate taskset)."""
+        n = self._run_main_catching_resolver(
+            ["--num_tasks", "1", "--n_tasksets", "1", "-v", "0"]
+        )
+        self.assertEqual(n, 1)
+
+    def test_num_tasks_zero_rejected_by_argparse(self):
+        """P17: --num_tasks 0 is rejected with a parser error (SystemExit)."""
         with unittest.mock.patch.object(
-            sys, "argv", ["compare_optimizers.py", "--num_tasks", "1", "-v", "0"]
+            sys, "argv", ["compare_optimizers.py", "--num_tasks", "0", "-v", "0"]
         ):
             with self.assertRaises(SystemExit):
                 compare_optimizers.main()

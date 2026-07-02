@@ -342,8 +342,8 @@ def main():
 
     if args.scheduler_trigger_interval < 1:
         parser.error("--scheduler_trigger_interval must be >= 1")
-    if args.num_tasks < 2:
-        parser.error("--num_tasks must be >= 2 (needs >=1 big + >=1 small period task)")
+    if args.num_tasks < 1:
+        parser.error("--num_tasks must be >= 1 (P17: N_BIG=0 / N_SMALL=0 are allowed)")
 
     # Resolve paths
     config_file_abs = resolve_taskset_config_path(args.num_tasks)

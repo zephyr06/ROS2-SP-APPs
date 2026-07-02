@@ -195,5 +195,84 @@ class TestTasksetGenerator(unittest.TestCase):
             self.assertGreater(sigma_ratio, 0.45,
                                "Env tasks should have random natural sigma")
 
+class TestP17ZeroCountTasksets(unittest.TestCase):
+    """P17: N_BIG_PERIOD_TASKS=0 and N_SMALL_PERIOD_TASKS=0 are allowed,
+    producing single-rate tasksets (all-small or all-big)."""
+
+    def setUp(self):
+        self.cfgs = {
+            "SMALL_PERIOD_HZ": [10, 20, 50],
+            "BIG_PERIOD_HZ": [1, 2, 5],
+            "D1_RANGE": [-10.0, 10.0],
+            "D2_RANGE": [0.0, 360.0],
+            "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
+            "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
+            "RO_1_Et_RANGE": [-0.9, -0.7],
+            "RO_2_Et_RANGE": [-0.1, 0.1],
+            "MEAN_CPU_UTIL": 1.0,
+            "Et_SCALE_FACTOR": 2.0,
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "N_CORES": 2,
+            "RANDOM_SEED": 42,
+        }
+
+    def _periods_ms(self, res, std_cfgs):
+        big = set(std_cfgs["BIG_PERIODS_MS"])
+        small = set(std_cfgs["SMALL_PERIODS_MS"])
+        return [(t["period"], "big" if t["period"] in big else "small") for t in res["tasks"]]
+
+    def test_zero_big_all_small_single_rate(self):
+        """N_BIG=0, N_SMALL=3 -> 3 tasks, all drawn from the small-period pool."""
+        cfgs = self.cfgs.copy()
+        cfgs["N_BIG_PERIOD_TASKS"] = 0
+        cfgs["N_SMALL_PERIOD_TASKS"] = 3
+        cfgs["N_ENV_DEPENDENT_TASKS"] = 1
+        res = generate_taskset_parameters(cfgs)
+        self.assertEqual(len(res["tasks"]), 3)
+        small_ms = set(int(1000 / h) for h in cfgs["SMALL_PERIOD_HZ"])
+        for t in res["tasks"]:
+            self.assertIn(t["period"], small_ms,
+                          f"period {t['period']} not in small-period pool")
+
+    def test_zero_small_all_big_single_rate(self):
+        """N_SMALL=0, N_BIG=2 -> 2 tasks, all drawn from the big-period pool."""
+        cfgs = self.cfgs.copy()
+        cfgs["N_BIG_PERIOD_TASKS"] = 2
+        cfgs["N_SMALL_PERIOD_TASKS"] = 0
+        cfgs["N_ENV_DEPENDENT_TASKS"] = 1
+        res = generate_taskset_parameters(cfgs)
+        self.assertEqual(len(res["tasks"]), 2)
+        big_ms = set(int(1000 / h) for h in cfgs["BIG_PERIOD_HZ"])
+        for t in res["tasks"]:
+            self.assertIn(t["period"], big_ms,
+                          f"period {t['period']} not in big-period pool")
+
+    def test_single_task_all_small(self):
+        """N_BIG=0, N_SMALL=1 -> the minimal single-rate taskset (N=1)."""
+        cfgs = self.cfgs.copy()
+        cfgs["N_BIG_PERIOD_TASKS"] = 0
+        cfgs["N_SMALL_PERIOD_TASKS"] = 1
+        cfgs["N_ENV_DEPENDENT_TASKS"] = 0  # keep the lone task a normal task
+        res = generate_taskset_parameters(cfgs)
+        self.assertEqual(len(res["tasks"]), 1)
+        small_ms = set(int(1000 / h) for h in cfgs["SMALL_PERIOD_HZ"])
+        self.assertIn(res["tasks"][0]["period"], small_ms)
+        # Utilization vector sums to the configured per-core total
+        self.assertAlmostEqual(
+            sum(t["Et_mean"] / t["period"] for t in res["tasks"]),
+            res["cpu_util"],
+        )
+
+    def test_both_zero_rejected(self):
+        """N_BIG=0 and N_SMALL=0 -> standardize_config rejects (N_TASKS < 1)."""
+        from Gen_Taskset.lib.generation_config_parser import standardize_config
+        cfgs = standardize_config(self.cfgs.copy())
+        cfgs["N_BIG_PERIOD_TASKS"] = 0
+        cfgs["N_SMALL_PERIOD_TASKS"] = 0
+        with self.assertRaises(ValueError):
+            standardize_config(cfgs)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -376,7 +376,36 @@ variance (may interact with P12 normalization).
 
 ### P17 -- Relax/Remove N_BIG and N_SMALL Task Count Constraints
 
-- [ ] Relax or remove the constraints forcing a minimum number of big-period or small-period tasks (e.g. allowing `N_BIG = 0` or `N_SMALL = 0`) to support single-rate or arbitrary period-ratio taskset generations.
+- [x] Relax or remove the constraints forcing a minimum number of big-period or small-period tasks (e.g. allowing `N_BIG = 0` or `N_SMALL = 0`) to support single-rate or arbitrary period-ratio taskset generations.
+
+      **Verified (P17):** the generator (`taskset_generator.py:246-248`) never
+      enforced a minimum — the period-pick loops are no-ops at count 0, and two
+      pre-existing `test_coordinate_system.py` cases already ran `N_SMALL=0`
+      end-to-end. The real constraints were upstream: `resolve_taskset_config_path`
+      rejected `num_tasks < 2` and **hardcoded `N_BIG_PERIOD_TASKS=2`** in every
+      synthesized config (so `N=1` was unreachable and `N_SMALL=n-2` would go
+      negative), mirrored by two CLI guards (`compare_optimizers.py:345`,
+      `run_sim_experiments.py:352`) with the rationale "needs >=1 big + >=1 small
+      period task." Relaxations applied:
+      - `resolve_taskset_config_path`: floor dropped `>= 2` → `>= 1`; synthesized
+        split keeps `2 / (N-2)` for `N >= 2` (on-disk paper_4/6/8 and the
+        cross-task sweep `[4,6,8,10,12,14,16,18]` unaffected) but emits
+        `N_BIG=0, N_SMALL=1` for `N == 1` (minimal single-rate taskset the old
+        hardcode could not represent). The N==1 synthesized config also drops to
+        `N_CORES=1` so `cpu_util = 0.9` stays feasible for the lone task
+        (util < 1.0); with `N_CORES=2` the single task would carry `cpu_util=
+        1.8`, which `uunifast_distribution` can only realize as a single 1.8
+        utilization — overloaded/unschedulable. N=1 is never on the cross-task
+        sweep; this just keeps the corner case schedulable.
+      - `standardize_config`: added explicit `N_BIG >= 0`, `N_SMALL >= 0`,
+        `N_TASKS >= 1` validation (rejects a degenerate all-zero config with a
+        clear message instead of a divide-by-zero in `uunifast_distribution`).
+      - Both CLI guards relaxed `>= 2` → `>= 1`; help text updated.
+      - Generator count-reads gained a P17 comment documenting 0-count support.
+      Tests: rewrote the three `n < 2`-rejection tests to assert `N=1` accepted
+      (routed to resolver) and `N=0` rejected; added `TestP17ZeroCountTasksets`
+      (4 cases: all-small, all-big, single-task N=1, both-zero-rejected). Full
+      suite **232 passing** (was 225).
 
 ---
 

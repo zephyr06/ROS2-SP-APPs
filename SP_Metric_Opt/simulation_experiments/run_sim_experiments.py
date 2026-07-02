@@ -294,8 +294,9 @@ def main():
     parser.add_argument(
         "--num_tasks", type=int, default=None,
         help=("Number of tasks to automatically select/synthesize paper config "
-              "and output folder. On-disk configs exist for 4/6/8; any N >= 2 "
-              "is supported (config synthesized on the fly for other values).")
+              "and output folder. On-disk configs exist for 4/6/8; any N >= 1 "
+              "is supported (config synthesized on the fly for other values; "
+              "P17 allows N_BIG=0 / N_SMALL=0).")
     )
     parser.add_argument(
         "-v", "--verbose", type=int, choices=[0, 1, 2], default=1,
@@ -349,12 +350,12 @@ def main():
 
     if args.scheduler_trigger_interval < 1:
         parser.error("--scheduler_trigger_interval must be >= 1")
-    if args.num_tasks is not None and args.num_tasks < 2:
-        parser.error("--num_tasks must be >= 2 (needs >=1 big + >=1 small period task)")
+    if args.num_tasks is not None and args.num_tasks < 1:
+        parser.error("--num_tasks must be >= 1 (P17: N_BIG=0 / N_SMALL=0 are allowed)")
 
     if args.num_tasks is not None:
         # Resolve (or synthesize) the paper config for this task count; works
-        # for any N >= 2, not just 4/6/8.
+        # for any N >= 1 (P17), not just 4/6/8.
         config_file_abs = resolve_taskset_config_path(args.num_tasks)
     else:
         config_file_abs = (
