@@ -9,7 +9,10 @@ them, driven entirely by ``configs/experiment_config.json``.
 
 Pipeline stages
 ---------------
-The orchestrator runs three stages, each implemented by an existing module:
+The orchestrator runs three stages, each implemented by an existing module,
+**always in this fixed order** -- there is no stage-selection flag, because the
+stages are dependent: aggregate reads what simulate wrote, and sweep reuses
+simulate's tasksets. Run the whole pipeline or don't run it at all.
 
 1. **simulate** -- For each task count in
    ``num_tasks_for_cross_task_comparison``, run
@@ -32,19 +35,15 @@ Usage
     # Everything, paper-grade parameters:
     python3 -m simulation_experiments.run_end_to_end_experiments --mode prod
 
-    # Only some stages (simulate, sweep, aggregate):
-    python3 -m simulation_experiments.run_end_to_end_experiments --steps simulate aggregate
-
     # Print the commands that would run without executing them:
     python3 -m simulation_experiments.run_end_to_end_experiments --dry_run
 
 Notes
 -----
 - Every parameter comes from the config file. No experiment parameter is
-  hardcoded here; the only CLI flags select *mode*, *which stages*, and
-  *verbosity*.
-- The binary ``release/tests/RunOrchestrator`` must exist for the simulate
-  and sweep stages (validation is delegated to each subprocess).
+  hardcoded here; the only CLI flags select *mode* and *verbosity*.
+- The binary ``release/tests/RunOrchestrator`` must exist (the simulate and
+  sweep stages invoke it; validation is delegated to each subprocess).
 """
 import argparse
 import os
@@ -62,9 +61,6 @@ from simulation_experiments.experiment_config_loader import (
     build_run_id,
     DEFAULT_CONFIG_PATH,
 )
-
-# Canonical stage names. ``--steps`` accepts any subset of these.
-ALL_STAGES = ["simulate", "sweep", "aggregate"]
 
 DEFAULT_OUTPUT_PARENT = os.path.join(
     PROJECT_ROOT, "simulation_experiments", "optimizer_comparison"
@@ -306,12 +302,6 @@ def main():
              "config at configs/experiment_config.json.",
     )
     parser.add_argument(
-        "--steps", nargs="+", default=list(ALL_STAGES),
-        choices=ALL_STAGES,
-        help="Subset of stages to run (default: all three). "
-             "Stages run in fixed order: simulate, sweep, aggregate.",
-    )
-    parser.add_argument(
         "--output_parent", default=DEFAULT_OUTPUT_PARENT,
         help="Base output directory for experiment results "
              "(default: simulation_experiments/optimizer_comparison).",
@@ -345,9 +335,11 @@ def main():
         else os.path.join(PROJECT_ROOT, args.output_parent)
     )
 
-    # Pre-flight: validate the binary exists for any stage that simulates.
-    needs_binary = any(s in args.steps for s in ("simulate", "sweep"))
-    if needs_binary and not args.dry_run:
+    # Pre-flight: validate the binary exists. The simulate and sweep stages
+    # both invoke RunOrchestrator, and both always run (there is no
+    # stage-selection flag), so the binary is always required unless this is a
+    # dry run.
+    if not args.dry_run:
         bin_dir = cfg["bin_dir"]
         bin_dir_abs = (
             bin_dir if os.path.isabs(bin_dir)
@@ -362,8 +354,7 @@ def main():
     start = time.time()
     _print_header(
         f"SP-Metric Optimization: End-to-End Pipeline "
-        f"(mode={args.mode}, steps={args.steps}, "
-        f"dry_run={args.dry_run})",
+        f"(mode={args.mode}, dry_run={args.dry_run})",
         width=70,
     )
     print(f"  Config: {cfg.get('_config_source_path')}")
@@ -371,16 +362,18 @@ def main():
     print(f"  Tasks:  {cfg.get('num_tasks_for_cross_task_comparison')}")
     print(f"  Sweep:  {cfg.get('interval_sweep_seconds_list')}")
 
-    stage_funcs = {
-        "simulate": lambda: stage_simulate(cfg, output_parent, args.verbose, args.dry_run),
-        "sweep": lambda: stage_sweep(cfg, output_parent, args.verbose, args.dry_run),
-        "aggregate": lambda: stage_aggregate(cfg, output_parent, args.dry_run),
-    }
-
-    for stage in args.steps:
-        ok = stage_funcs[stage]()
-        if not ok:
-            print(f"\nPipeline aborted at stage '{stage}'.")
+    # Stages always run together, in fixed order: simulate -> sweep ->
+    # aggregate. They are dependent (aggregate reads what simulate wrote;
+    # sweep reuses simulate's tasksets), so there is no stage-selection flag.
+    # A failed stage aborts the pipeline.
+    stages = [
+        ("simulate", lambda: stage_simulate(cfg, output_parent, args.verbose, args.dry_run)),
+        ("sweep", lambda: stage_sweep(cfg, output_parent, args.verbose, args.dry_run)),
+        ("aggregate", lambda: stage_aggregate(cfg, output_parent, args.dry_run)),
+    ]
+    for name, stage_fn in stages:
+        if not stage_fn():
+            print(f"\nPipeline aborted at stage '{name}'.")
             sys.exit(1)
 
     elapsed = time.time() - start

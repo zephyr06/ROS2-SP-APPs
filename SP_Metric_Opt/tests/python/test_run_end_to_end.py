@@ -4,7 +4,9 @@ These tests mock ``subprocess.run`` so the orchestrator is exercised without
 launching real simulations. They verify that the correct commands are
 constructed for each stage, that the main+ablation scheduler lists are
 unioned and de-duplicated, that ``--dry_run`` prints without executing, and
-that ``--steps`` selects a subset of stages.
+that the pipeline always runs all three stages in fixed order (there is no
+``--steps`` flag -- simulate, sweep, and aggregate are dependent and always
+run together).
 """
 import os
 import sys
@@ -179,7 +181,7 @@ class TestMainPipeline(unittest.TestCase):
             return exit_code, mock_rc
 
     def test_dry_run_prints_and_does_not_execute(self):
-        argv = ["prog", "--mode", "test", "--dry_run", "--steps", "simulate"]
+        argv = ["prog", "--mode", "test", "--dry_run"]
         with unittest.mock.patch.object(sys, "argv", argv), \
              unittest.mock.patch.object(e2e.subprocess, "run") as mock_run, \
              unittest.mock.patch.object(e2e, "time") as mock_time:
@@ -193,33 +195,31 @@ class TestMainPipeline(unittest.TestCase):
         # Dry run never invokes subprocess.run
         self.assertEqual(mock_run.call_count, 0)
 
-    def test_all_stages_dry_run(self):
-        # test_mode has 2 task counts -> 2 simulate cmds + 1 sweep + 1 aggregate
+    def test_all_stages_always_run(self):
+        # There is no --steps flag: the pipeline always runs simulate (once per
+        # task count) + sweep + aggregate. test_mode has 2 task counts ->
+        # 2 simulate cmds + 1 sweep + 1 aggregate = 4 run_command calls.
         exit_code, mock_rc = self._run_main(["--dry_run"])
         self.assertEqual(exit_code, 0)
         cfg = _cfg("test")
         expected_simulate = len(cfg["num_tasks_for_cross_task_comparison"])
         self.assertEqual(mock_rc.call_count, expected_simulate + 2)
 
-    def test_subset_stages_dry_run(self):
-        exit_code, mock_rc = self._run_main(
-            ["--dry_run", "--steps", "simulate", "aggregate"])
-        self.assertEqual(exit_code, 0)
-        cfg = _cfg("test")
-        expected = len(cfg["num_tasks_for_cross_task_comparison"]) + 1  # + aggregate
-        self.assertEqual(mock_rc.call_count, expected)
-
-    def test_simulate_only_dry_run(self):
-        exit_code, mock_rc = self._run_main(["--dry_run", "--steps", "simulate"])
-        self.assertEqual(exit_code, 0)
-        cfg = _cfg("test")
-        self.assertEqual(mock_rc.call_count,
-                         len(cfg["num_tasks_for_cross_task_comparison"]))
+    def test_steps_flag_rejected(self):
+        # --steps was removed; argparse must reject it (unrecognized arg).
+        argv = ["prog", "--mode", "test", "--dry_run", "--steps", "simulate"]
+        with unittest.mock.patch.object(sys, "argv", argv), \
+             unittest.mock.patch.object(e2e, "time") as mock_time:
+            mock_time.time.return_value = 0.0
+            with self.assertRaises(SystemExit) as ctx:
+                e2e.main()
+        # argparse exits with code 2 on argument errors.
+        self.assertEqual(ctx.exception.code, 2)
 
     def test_failed_stage_aborts(self):
-        argv = ["prog", "--mode", "test", "--steps", "simulate", "--dry_run"]
-        # Make the very first subprocess call "succeed" (dry run skips run),
-        # so instead test the failure path via run_command directly.
+        # The first stage (simulate for the first task count) fails; the
+        # pipeline must abort immediately and not run sweep/aggregate.
+        argv = ["prog", "--mode", "test", "--dry_run"]
         with unittest.mock.patch.object(sys, "argv", argv), \
              unittest.mock.patch.object(e2e, "run_command", return_value=False) as mock_rc, \
              unittest.mock.patch.object(e2e, "time") as mock_time:

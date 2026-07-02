@@ -899,7 +899,32 @@ def main():
     print("Scanning experiment directories ...")
     records = aggregate_data_from_directories(cfg=cfg, output_parent=output_parent)
     if not records:
-        print("No experiment records found. Run simulations first.")
+        # Aggregate is read-only: it ingests comparison_summary.csv files that
+        # the simulate stage wrote. With no matching records there is nothing
+        # to plot, and aggregate deliberately does NOT auto-run simulate (that
+        # would couple a read-only stage to the C++ binary + generation and
+        # could surprise a user who expected a quick re-plot with a long sim).
+        # Show exactly what was looked for so the gap is obvious, then point
+        # at the entry point that runs the dependent stages in order.
+        print("No experiment records found for this run's parameters.")
+        dur = cfg.get("simulation_duration_seconds")
+        interv = cfg.get("scheduler_trigger_interval_seconds")
+        seed = cfg.get("base_random_seed")
+        task_counts = cfg.get("num_tasks_for_cross_task_comparison", [])
+        if dur is not None and interv is not None and seed is not None and task_counts:
+            expected = [
+                f"tasks{n}_dur{dur}_interval{interv}_seed{seed}"
+                for n in task_counts
+            ]
+            print("Expected experiment directories (none found on disk):")
+            for name in expected:
+                print(f"  - {name}")
+            print("(These are created by the simulate stage, which writes a "
+                  "comparison_summary.csv into each.)")
+        print(
+            "Run the pipeline end-to-end so simulate runs before aggregate:\n"
+            "  ./scripts/run_end_to_end.sh"
+        )
         sys.exit(1)
 
     print(f"Loaded {len(records)} scheduler records.")

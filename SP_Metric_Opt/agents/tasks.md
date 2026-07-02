@@ -115,15 +115,15 @@ Requirements:
   - Step 1 (simulate): Run `compare_optimizers.py` for task counts in `num_tasks_for_cross_task_comparison`, passing the **union** of `main_scheduler_list` + `ablation_scheduler_list` so one pass feeds both main and ablation figures.
   - Step 2 (sweep): Run `interval_sweep.py` to sweep trigger intervals (Fig 2).
   - Step 3 (aggregate): Run `aggregate_across_tasks.py` to compile Figs 1A-1F, ablation figures, and 3.
-  - All experiment parameters come from config; CLI only selects `--mode`, `--steps`, `--bin_dir`, `--verbose`, `--dry_run`.
-  - `--steps` runs stages in fixed order (simulate → sweep → aggregate); a failed stage aborts the pipeline.
+  - All experiment parameters come from config; CLI only selects `--mode`, `--bin_dir`, `--verbose`, `--dry_run`. (P21: `--steps` was removed — the three stages are dependent and always run together in fixed order; a failed stage aborts the pipeline.)
 - [x] Create `scripts/run_end_to_end.sh`
-  - Accepts `MODE` env-var (default "test"); also `STEPS`, `BIN_DIR`, `VERBOSE`, `DRY_RUN`, `PYTHON`.
+  - Accepts `MODE` env-var (default "test"); also `BIN_DIR`, `VERBOSE`, `DRY_RUN`, `PYTHON`. (P21: `STEPS` env-var removed for the same reason as `--steps`.)
   - Validates `release/tests/RunOrchestrator` before launching (skipped in dry-run).
   - Traps Ctrl-C / TERM to kill child processes cleanly.
   - Prints header + start/end time, calls `run_end_to_end_experiments.py`.
 - [x] Fix: `aggregate_across_tasks.py` now skips `*_sweep_*` dirs so interval-sweep result directories (which also match `tasks(\d+)_`) don't pollute / overwrite the cross-task comparison bars in Figs 1A-1E.
-- [x] Tests: `tests/python/test_run_end_to_end.py` (16 tests) — command construction per stage, scheduler-union dedup, `--dry_run`, `--steps` subset, stage-failure abort.
+- [x] P21: `aggregate_across_tasks.py` empty-data path is now actionable — prints the exact expected dir prefixes it looked for (none matched) and points at `./scripts/run_end_to_end.sh`, instead of the bare "Run simulations first." Aggregate stays read-only (does NOT auto-run simulate).
+- [x] Tests: `tests/python/test_run_end_to_end.py` — command construction per stage, scheduler-union dedup, `--dry_run`, all-stages-always-run, `--steps`-rejected, stage-failure abort.
 
 ---
 
