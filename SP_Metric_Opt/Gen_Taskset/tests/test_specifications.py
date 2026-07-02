@@ -24,7 +24,7 @@ def test_config_specifications_validation():
         "D2_RANGE": [0, 360],
         "N_GMM_COMPONENTS_PER_TASK": 2,
         "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
-        "MEAN_CPU_UTIL": 1.6,
+        "CPU_UTIL_RANDOM_RANGE": [1.6, 1.6],
         "Et_SCALE_FACTOR": 1.5,
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "N_CORES": 2,
@@ -121,7 +121,7 @@ def test_hz_key_rejected():
         "HZ": [0.5, 2.0, 10, 25],
         "D1_RANGE": [-10, 10],
         "D2_RANGE": [0, 360],
-        "MEAN_CPU_UTIL": 0.5
+        "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5]
     }
     with pytest.raises(ValueError) as exc:
         standardize_config(cfgs)
@@ -139,7 +139,7 @@ def test_all_configurations_specifications(config_path):
     # 1. Verify basic fields
     assert "D1_RANGE" in cfgs
     assert "D2_RANGE" in cfgs
-    assert "MEAN_CPU_UTIL" in cfgs
+    assert "CPU_UTIL_RANDOM_RANGE" in cfgs
 
     # P19: N_TASKS is the sole task-count input (the big/small split is gone).
     expected_tasks_count = cfgs["N_TASKS"]
@@ -186,7 +186,7 @@ def test_all_configurations_specifications(config_path):
     assert abs(total_weights_sum - expected_weights_sum) < 1e-4
     
     # Verify task parameters and core allocation bounds
-    n_cores = cfgs.get("N_CORES", 2 if cfgs["MEAN_CPU_UTIL"] > 1.0 else 1)
+    n_cores = cfgs["N_CORES"]
     for t in char_data["tasks"]:
         assert 0 <= t["processorId"] < n_cores
         assert 0.5 * t["period"] <= t["deadline"] <= t["period"]

@@ -28,6 +28,7 @@
     "MAP_WIDTH_M": 200,
     "MAP_HEIGHT_M": 200,
     "ROBOT_SPEED_MPS": 1.0,
+    "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
     "SP_THRESHOLD_RANGE": [
         0.5,
         0.9

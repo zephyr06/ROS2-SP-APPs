@@ -235,7 +235,7 @@ def generate_mix_gaussian_task(
     return task_model
 
 def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bool = False, n_sec: int = None) -> dict:
-    """Orchestrates generation of all GMMTaskModels scaled to target MEAN_CPU_UTIL."""
+    """Orchestrates generation of all GMMTaskModels scaled to a sampled per-core utilization."""
     cfgs = standardize_config(cfgs)
 
     # Seeding for reproducibility
@@ -245,7 +245,17 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         random.seed(seed)
 
     n_cores = cfgs["N_CORES"]
-    cpu_util = cfgs['MEAN_CPU_UTIL'] * n_cores
+    # P14: per-core CPU utilization is sampled uniformly from
+    # CPU_UTIL_RANDOM_RANGE [low, high] per task set (the first draw off the
+    # seeded RNG, so the sampled value is reproducible under a fixed
+    # RANDOM_SEED). The range is required -- standardize_config raises if it is
+    # absent -- so there is no fixed-scalar fallback here. The total cpu_util
+    # is per_core * N_CORES. Recording per_core_cpu_util in the returned dict
+    # surfaces the realized load in taskset_param.yaml so each task set's
+    # utilization is inspectable.
+    cpu_util_range = cfgs["CPU_UTIL_RANDOM_RANGE"]
+    per_core_cpu_util = random.uniform(cpu_util_range[0], cpu_util_range[1])
+    cpu_util = per_core_cpu_util * n_cores
     taskset_param = []
     picked_periods = []
 
@@ -487,6 +497,9 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     rt = {
         'n_tasks': n_tasks,
         'cpu_util': cpu_util,
+        # P14: realized per-core utilization sampled from CPU_UTIL_RANDOM_RANGE
+        # that produced cpu_util above.
+        'per_core_cpu_util': per_core_cpu_util,
         'tasks': tasks_dict_list
     }
     return rt

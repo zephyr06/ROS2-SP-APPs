@@ -25,7 +25,7 @@ class TestCoordinateSystem(unittest.TestCase):
         config = {
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
-            "MEAN_CPU_UTIL": 0.5,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
             "D2_RANGE": [0, 360],  # legacy; should be overridden
         }
         std = standardize_config(config)
@@ -37,7 +37,7 @@ class TestCoordinateSystem(unittest.TestCase):
         config = {
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
-            "MEAN_CPU_UTIL": 0.5,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
         }
         std = standardize_config(config)
         self.assertNotIn("D1_VARIANCE_FACTOR_TABLE", std)
@@ -47,7 +47,7 @@ class TestCoordinateSystem(unittest.TestCase):
         config = {
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
-            "MEAN_CPU_UTIL": 0.5,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [0.5, 0.7],
             "RO_2_Et_RANGE": [0.0, 0.1],
@@ -75,7 +75,7 @@ class TestCoordinateSystem(unittest.TestCase):
         config = {
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
-            "MEAN_CPU_UTIL": 0.5,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [0.7, 0.9],   # strong positive x correlation
             "RO_2_Et_RANGE": [0.0, 0.0],

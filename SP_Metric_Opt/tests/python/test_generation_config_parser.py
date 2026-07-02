@@ -40,7 +40,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             "HZ": [0.5, 2.0, 10, 25],
             "D1_RANGE": [-10, 10],
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.5
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5]
         }
         with self.assertRaises(ValueError) as cm:
             standardize_config(config)
@@ -61,9 +61,13 @@ class TestGenerationConfigParser(unittest.TestCase):
         self.assertIn("N_TASKS", str(cm.exception))
 
     def test_standardize_config_defaults(self):
+        # With period + count + range provided, the canonical defaults fill in
+        # the rest (PERIODS_MS pool, N_TASKS). The range is required, so a bare
+        # config without it raises (see test_standardize_config_requires_range).
         config = {
             "D1_RANGE": [-5, 5],
-            "Et_SCALE_FACTOR": 2.0
+            "Et_SCALE_FACTOR": 2.0,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
         }
         res = standardize_config(config)
         # No period info: canonical default pool (the base template's PERIODS_MS)
@@ -71,13 +75,24 @@ class TestGenerationConfigParser(unittest.TestCase):
         # No count info: default N_TASKS
         self.assertEqual(res["N_TASKS"], 10)
 
+    def test_standardize_config_requires_range(self):
+        """P14: CPU_UTIL_RANDOM_RANGE is required -- a config that omits it
+        raises ValueError (no silent fixed-scalar fallback)."""
+        config = {
+            "D1_RANGE": [-5, 5],
+            "Et_SCALE_FACTOR": 2.0,
+        }
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(config)
+        self.assertIn("CPU_UTIL_RANDOM_RANGE is required", str(cm.exception))
+
     def test_standardize_config_canonical_new_keys(self):
         """P19: a canonical PERIODS_MS+N_TASKS config passes through untouched."""
         config = {
             "PERIODS_MS": [1000, 500, 100],
             "N_TASKS": 3,
             "D1_RANGE": [-5, 5],
-            "MEAN_CPU_UTIL": 0.9,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
@@ -91,7 +106,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             with self.assertRaises(ValueError):
                 standardize_config({
                     "PERIODS_MS": [100], "N_TASKS": bad,
-                    "D1_RANGE": [-5, 5], "MEAN_CPU_UTIL": 0.9,
+                    "D1_RANGE": [-5, 5], "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
                 })
 
     def test_standardize_config_rejects_empty_periods(self):
@@ -99,7 +114,7 @@ class TestGenerationConfigParser(unittest.TestCase):
         with self.assertRaises(ValueError):
             standardize_config({
                 "PERIODS_MS": [], "N_TASKS": 3,
-                "D1_RANGE": [-5, 5], "MEAN_CPU_UTIL": 0.9,
+                "D1_RANGE": [-5, 5], "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             })
 
     def test_standardize_config_map_params_derives_d1_range(self):
@@ -108,7 +123,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.9,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
@@ -123,7 +138,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             "MAP_WIDTH_M": 300,
             "MAP_HEIGHT_M": 150,
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 1.2,
+            "CPU_UTIL_RANDOM_RANGE": [1.2, 1.2],
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
@@ -136,7 +151,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             "MAP_HEIGHT_M": 200,
             "D1_RANGE": [-50, 50],
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.9,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
@@ -152,7 +167,7 @@ class TestGenerationConfigParser(unittest.TestCase):
             "MAP_WIDTH_M": 200,
             "MAP_HEIGHT_M": 200,
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.9
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9]
         }
         self.assertTrue(validate_generation_config(map_cfg))
 
@@ -161,11 +176,11 @@ class TestGenerationConfigParser(unittest.TestCase):
         valid_cfg = {
             "D1_RANGE": [-10, 10],
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.9
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9]
         }
         self.assertTrue(validate_generation_config(valid_cfg))
 
-        # Invalid config (missing MEAN_CPU_UTIL)
+        # Invalid config (missing CPU_UTIL_RANDOM_RANGE)
         invalid_cfg = {
             "D1_RANGE": [-10, 10],
             "D2_RANGE": [0, 360]
@@ -175,7 +190,7 @@ class TestGenerationConfigParser(unittest.TestCase):
         # Invalid: neither D1_RANGE nor MAP params present
         no_map_no_d1 = {
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.9
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9]
         }
         self.assertFalse(validate_generation_config(no_map_no_d1))
 
@@ -184,11 +199,53 @@ class TestGenerationConfigParser(unittest.TestCase):
         config = {
             "D1_RANGE": [-20, 20],
             "D2_RANGE": [0, 360],
-            "MEAN_CPU_UTIL": 0.9,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
         self.assertNotIn("D1_VARIANCE_FACTOR_TABLE", res)
+
+    def test_standardize_config_accepts_cpu_util_random_range(self):
+        """P14: a valid CPU_UTIL_RANDOM_RANGE [low, high] pair is accepted and
+        normalized to floats. The range is required (the generator samples one
+        per-core value per task set from it)."""
+        config = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "Et_SCALE_FACTOR": 2.0,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
+        }
+        res = standardize_config(config)
+        self.assertEqual(res["CPU_UTIL_RANDOM_RANGE"], [0.5, 1.5])
+
+    def test_standardize_config_rejects_bad_cpu_util_random_range(self):
+        """P14: a malformed CPU_UTIL_RANDOM_RANGE (wrong arity, non-numeric,
+        or low > high / low < 0) is rejected with ValueError."""
+        base = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "Et_SCALE_FACTOR": 2.0,
+        }
+        for bad in ([0.5], [0.5, 1.5, 2.0], "0.5-1.5",
+                    [1.5, 0.5], [-0.2, 1.5], [True, 1.5]):
+            with self.assertRaises(ValueError):
+                standardize_config(dict(base, CPU_UTIL_RANDOM_RANGE=bad))
+
+    def test_standardize_config_no_range_synthesized(self):
+        """P14: a config without CPU_UTIL_RANDOM_RANGE is not given a default
+        range -- it raises. The range is required, not synthesized (a forgotten
+        range must not silently lock every task set to one load point)."""
+        config = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "Et_SCALE_FACTOR": 2.0
+        }
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(config)
+        self.assertIn("CPU_UTIL_RANDOM_RANGE is required", str(cm.exception))
 
 
 class TestResolveTasksetConfigPath(unittest.TestCase):
@@ -232,10 +289,12 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
             self.assertNotIn("N_SMALL_PERIOD_TASKS", cfg)
 
     def test_synthesized_config_per_core_util_and_cores(self):
-        """Synthesized configs hold MEAN_CPU_UTIL=0.9 per-core, N_CORES=2 (P13)."""
+        """Synthesized configs inherit CPU_UTIL_RANDOM_RANGE=[0.5, 1.5] from the
+        base template (P14) and hold N_CORES=2. MEAN_CPU_UTIL is gone."""
         path = resolve_taskset_config_path(12, temp_dir=self._temp())
         cfg = load_generation_config(path)
-        self.assertEqual(cfg["MEAN_CPU_UTIL"], 0.9)
+        self.assertEqual(cfg["CPU_UTIL_RANDOM_RANGE"], [0.5, 1.5])
+        self.assertNotIn("MEAN_CPU_UTIL", cfg)
         self.assertEqual(cfg["N_CORES"], 2)
 
     def test_synthesized_config_resolves_include(self):
@@ -260,11 +319,12 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
         minimal single-rate taskset the former N_BIG=2 hardcode could not
         represent.
 
-        Feasibility: the synthesized N=1 config drops to N_CORES=1 so that
-        cpu_util = MEAN_CPU_UTIL x 1 = 0.9 -- the lone task's utilization stays
-        below 1.0 (schedulable). With the historical N_CORES=2 the single task
-        would carry cpu_util = 1.8, which uunifast_distribution can only
-        realize as a single 1.8 utilization (overloaded / unschedulable)."""
+        Feasibility: the synthesized N=1 config drops to N_CORES=1 and overrides
+        the base template's [0.5, 1.5] sweep with [0.5, 0.9] so the sampled
+        per-core utilization stays below 1.0 -- the lone task's utilization
+        stays schedulable. With N_CORES=2 the single task would carry cpu_util
+        up to 3.0 (1.5 x 2), and the base range can sample >1.0 per core, both
+        unschedulable for a single task."""
         path = resolve_taskset_config_path(1, temp_dir=self._temp())
         cfg = load_generation_config(path)
         self.assertEqual(cfg["N_TASKS"], 1)
@@ -272,7 +332,8 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
         self.assertNotIn("N_BIG_PERIOD_TASKS", cfg)
         self.assertNotIn("N_SMALL_PERIOD_TASKS", cfg)
         self.assertEqual(cfg["N_CORES"], 1)
-        self.assertAlmostEqual(cfg["MEAN_CPU_UTIL"] * cfg["N_CORES"], 0.9)
+        # P14: N=1 caps the per-core range below 1.0 for schedulability.
+        self.assertEqual(cfg["CPU_UTIL_RANDOM_RANGE"], [0.5, 0.9])
         # End-to-end feasibility: the generated single task is schedulable.
         res = generate_taskset_parameters(cfg)
         self.assertEqual(len(res["tasks"]), 1)

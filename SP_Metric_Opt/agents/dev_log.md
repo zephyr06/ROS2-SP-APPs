@@ -732,3 +732,77 @@ and `Gen_Taskset/tests/test_specifications.py` flipped to assert `ValueError`.
 Remaining test files migrated to canonical keys in-place. Full suite
 **238 passing** (`tests/python/` 224 + `Gen_Taskset/tests/` 14).
 
+### Random per-core CPU utilization range (P14)
+
+Follow-on to P13. P13 held per-core `MEAN_CPU_UTIL` constant at 0.9 so every
+task set exercises a single load point (90 % loaded / under-subscribed). P14
+makes that load **sampleable per task set**: when a new optional
+`CPU_UTIL_RANDOM_RANGE: [low, high]` key is present, the generator samples the
+per-core utilization uniformly from `[low, high]` for each task set, then runs
+the existing UUniFast distribution against the sampled total
+(`cpu_util = sampled_per_core × N_CORES`). One experiment run therefore sweeps
+under-subscribed → over-subscribed systems, giving a distribution of SP
+behavior over load rather than a point estimate. P13's per-core semantics are
+preserved — only the fixed *value* becomes a *sampled range*.
+
+**Supersedes the P13 out-of-scope note.** P13's acceptance line said "the 0.9
+value is itself tunable later as a separate edit." P14 is that edit: the
+tunable knob is now the **range** (`CPU_UTIL_RANDOM_RANGE`), not a scalar. P13's
+fixed 0.9 remains the default load when the range is absent — P14 is strictly
+opt-in (see below).
+
+**Design decisions (resolving the P14.1 open question):**
+- *Range supersedes or falls back?* — **fallback** (option (b) in the task
+  spec) for backward compat. When `CPU_UTIL_RANDOM_RANGE` is present it is
+  used; when absent, the generator takes the existing fixed-`MEAN_CPU_UTIL`
+  path unchanged. Old P13 configs without the range keep working verbatim.
+- *Where does the key live?* — **opt-in, NOT in the base template.** P14.5
+  requires "no range config → 0.9" as the default. Adding the key to
+  `taskset_cfg_paper_base.json` would turn sampling ON for every paper config
+  via INCLUDE, contradicting P14.5. So the key is recognized by the parser/
+  generator only when a config sets it explicitly; no shipped config sets it.
+  Enabling sampling for the paper experiments is a one-line config edit (add
+  `"CPU_UTIL_RANDOM_RANGE": [0.5, 1.5]` to the desired `paper_*.json`).
+
+**Implementation:**
+- **P14.1** `generation_config_parser.standardize_config`: validates
+  `CPU_UTIL_RANDOM_RANGE` shape when present — must be a `[low, high]` pair of
+  numbers with `0 <= low <= high`; coerced to floats. Rejected with
+  `ValueError` otherwise (wrong arity, non-numeric, `low > high`, `low < 0`,
+  bool). The key is not synthesized when absent (opt-in).
+- **P14.2** `taskset_generator.generate_taskset_parameters` (~line 248):
+  replaced `cpu_util = cfgs['MEAN_CPU_UTIL'] * n_cores` with a branch — if the
+  range is present, `per_core_cpu_util = random.uniform(low, high)`; else
+  `per_core_cpu_util = cfgs['MEAN_CPU_UTIL']`. Then `cpu_util = per_core_cpu_util
+  × n_cores` in both paths.
+- **P14.3** Reproducibility + inspection: the sampled value is the **first
+  draw** off the seeded global RNG (`random.seed(RANDOM_SEED)` runs immediately
+  before, at ~line 242), so a given `RANDOM_SEED` reproduces the same sampled
+  per-core util. The realized `per_core_cpu_util` is recorded in the returned
+  dict and lands in `taskset_param.yaml` (top-level, alongside `cpu_util`) so
+  each task set's load is inspectable. (Existing readers use
+  `yaml.safe_load` + named-key access, so the new key is additive — no reader
+  changes.) Enabling the range shifts all downstream random draws (it consumes
+  one RNG value), so task sets generated with the range are not byte-identical
+  to the fixed-0.9 ones under the same seed — inherent to the design and
+  documented in the task spec.
+- **P14.5** P13's 0.9 stays the default; P14 is opt-in. No P13 config removed.
+  This entry records that P14 supersedes P13's "0.9 is itself tunable later"
+  note (above).
+
+**Tests** (`tests/python/`):
+- `test_taskset_generator.py::TestP14RandomCpuUtilRange` (5): sampled util ∈
+  `[low, high]`; `cpu_util = per_core × N_CORES` (realized per-task sum within
+  a tolerance — the pre-existing `max(1.0, u_i×period)` floor on small-period
+  tasks can push the realized sum slightly above the target); deterministic
+  under a fixed seed; varies across 30 seeds; range-absent falls back to fixed
+  0.9. The class snapshots/restores global `random` + `np.random` state in
+  setUp/tearDown so its many seeded generations don't leak RNG state into later
+  modules (surfaced a pre-existing latent flake in
+  `test_trajectory.py::test_generate_path_only`, which reads global RNG
+  unseeded via `generate_path_only`).
+- `test_generation_config_parser.py` (+3): valid range accepted + normalized;
+  malformed ranges rejected; range absent by default (opt-in).
+
+Full suite **253 passing** (was 245 at HEAD; +8 P14 tests).
+

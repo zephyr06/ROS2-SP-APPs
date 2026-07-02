@@ -6,7 +6,7 @@ def test_trajectory_generation():
     cfgs = {
         "D1_RANGE": [-10, 10],
         "D2_RANGE": [0, 360],
-        "MEAN_CPU_UTIL": 0.75
+        "CPU_UTIL_RANDOM_RANGE": [0.75, 0.75]
     }
     stops = generate_stops_in_map(cfgs, x_step_ratio=0.5, y_step_ratio=0.5)
     # Stops should be generated on the grid boundary steps
@@ -22,7 +22,7 @@ def test_taskset_parameters_generation():
     cfgs = {
         "D1_RANGE": [-100, 100],
         "D2_RANGE": [0, 360],
-        "MEAN_CPU_UTIL": 0.75,
+        "CPU_UTIL_RANDOM_RANGE": [0.75, 0.75],
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
         "SIGMA_OVER_Et_RANGE": [0.1, 0.4],
         "RO_1_Et_RANGE": [-0.9, -0.7],

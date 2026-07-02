@@ -38,7 +38,7 @@ class TestSimulationPipeline(unittest.TestCase):
             "N_GMM_COMPONENTS_PER_TASK": 2,
             "SP_THRESHOLD_RANGE": [0.5, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
-            "MEAN_CPU_UTIL": 0.8,
+            "CPU_UTIL_RANDOM_RANGE": [0.8, 0.8],
             "Et_SCALE_FACTOR": 1.5,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "N_CORES": 1,
@@ -194,7 +194,7 @@ class TestSimulationPipeline(unittest.TestCase):
         cfg = self._make_config(
             PERIODS_MS=[20, 1000],      # periods 20 ms + 1000 ms
             N_TASKS=2,
-            MEAN_CPU_UTIL=0.5,
+            CPU_UTIL_RANDOM_RANGE=[0.5, 0.5],
         )
         temp_dir = tempfile.mkdtemp()
         try:
@@ -224,7 +224,7 @@ class TestSimulationPipeline(unittest.TestCase):
         cfg = self._make_config(
             PERIODS_MS=[20, 1000],      # periods 20 ms + 1000 ms
             N_TASKS=2,
-            MEAN_CPU_UTIL=0.5,
+            CPU_UTIL_RANDOM_RANGE=[0.5, 0.5],
         )
         temp_dir = tempfile.mkdtemp()
         try:

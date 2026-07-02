@@ -1,5 +1,8 @@
 # SP-Metric Optimization: Task List
 
+# RULE NUMBER 0:
+- Read `agent_coding_rules.md` and follow it closely
+
 ## Completed (Pre-2026-07-01)
 
 - [x] Fix `opt_sp_` initialization bug (0 → -1).
@@ -219,46 +222,49 @@ behavior over load rather than a point estimate. Keeps P13's per-core
 semantics (`MEAN_CPU_UTIL` is per-core, `× N_CORES` for total) — only the
 *fixed value* becomes a *sampled range*.
 
-**Design (to implement later — NOT started yet):**
+**Implemented (this change):**
 
-- [ ] **P14.1** Generation config: add a new task-set generation config
-      parameter controlling the sampling range. Tentative shape:
-      - `CPU_UTIL_RANDOM_RANGE: [0.5, 1.5]` (per-core, inclusive) in
-        `taskset_cfg_paper_base.json` (or the relevant base template).
-      - When present, the generator samples `per_core_util ~
-        Uniform(low, high)` **per task set** and uses it in place of a fixed
-        `MEAN_CPU_UTIL`.
-      - Decide interaction with existing `MEAN_CPU_UTIL`: either (a) the range
-        **supersedes** the scalar when both are present, or (b) the scalar
-        becomes the fallback when the range is absent. (Recommend (b) for
-        backward compat — old configs without the range keep working.)
-- [ ] **P14.2** Generator (`Gen_Taskset/lib/taskset_generator.py:241-242`):
-      replace `cpu_util = cfgs['MEAN_CPU_UTIL'] * n_cores` with a branch —
-      if the range config is present, sample per-core util from it first
-      (using the taskset's RNG, seeded per-taskset so results are
-      reproducible), then `cpu_util = sampled * n_cores`. Otherwise fall back
-      to the existing fixed-`MEAN_CPU_UTIL` path.
-- [ ] **P14.3** Reproducibility: the sampled value must be seeded by the
-      per-taskset RNG (alongside `RANDOM_SEED`) so a given seed reproduces the
-      same sampled util — record the realized per-core util + total
-      `cpu_util` in the generated `taskset_characteristics_interval_0.yaml`
-      (or equivalent output) so each task set's load is inspectable.
-- [ ] **P14.4** Tests: `tests/python/test_taskset_generator.py` (or
-      `test_generation_config_parser.py`) — assert that with the range config
-      present, sampled per-core util ∈ [low, high] and total = sampled ×
-      N_CORES; assert deterministic under a fixed seed; assert fallback to
-      fixed `MEAN_CPU_UTIL` when the range is absent (P13 configs still
-      produce 1.8 total).
-- [ ] **P14.5** Relationship to P13: P13's "hold constant at 0.9" stays the
+- [x] **P14.1** Generation config: added `CPU_UTIL_RANDOM_RANGE: [low, high]`
+      (per-core, inclusive) — validated in `standardize_config` (2-list of
+      numbers, `0 <= low <= high`, coerced to floats; malformed →
+      `ValueError`). **Opt-in only**: the key is NOT added to the base
+      template, so absent the key the generator keeps P13's fixed-`MEAN_CPU_UTIL`
+      path (0.9). Resolved the P14.1 open question in favor of **fallback**
+      (option (b)) for backward compat — old configs without the range keep
+      working; when the range is present it is used in place of the scalar.
+- [x] **P14.2** Generator (`Gen_Taskset/lib/taskset_generator.py:~248`):
+      replaced `cpu_util = cfgs['MEAN_CPU_UTIL'] * n_cores` with a branch —
+      if the range config is present, `per_core_cpu_util =
+      random.uniform(low, high)` (the first draw off the seeded RNG, so
+      reproducible); else `per_core_cpu_util = cfgs['MEAN_CPU_UTIL']`. Then
+      `cpu_util = per_core_cpu_util * n_cores` in both paths.
+- [x] **P14.3** Reproducibility + inspection: the sampled value is the first
+      draw off the seeded global RNG (`random.seed(RANDOM_SEED)` runs
+      immediately before), so a given `RANDOM_SEED` reproduces the same
+      sampled per-core util. The realized `per_core_cpu_util` is recorded in
+      the returned dict and lands in `taskset_param.yaml` (top-level, alongside
+      `cpu_util`) so each task set's load is inspectable. Existing YAML
+      readers use `safe_load` + named-key access, so the new key is additive.
+- [x] **P14.4** Tests: `test_taskset_generator.py::TestP14RandomCpuUtilRange`
+      (5 — sampled util ∈ [low, high]; `cpu_util = per_core × N_CORES`;
+      deterministic under fixed seed; varies across seeds; range-absent
+      fallback to fixed 0.9) + `test_generation_config_parser.py` (+3 — valid
+      range accepted/normalized; malformed rejected; absent by default). The
+      test class snapshots/restores global RNG state so its seeded generations
+      don't leak into later modules.
+- [x] **P14.5** Relationship to P13: P13's "hold constant at 0.9" stays the
       default (no range config → 0.9). P14 is **opt-in** via the new range
-      parameter. No removal of P13's configs. Update `dev_log.md` to record
-      that P14 supersedes the "0.9 is itself tunable later" out-of-scope note
-      in P13 — the tunable knob is now the range, not a scalar.
+      parameter. No removal of P13's configs. `dev_log.md` records that P14
+      supersedes P13's "0.9 is itself tunable later" out-of-scope note — the
+      tunable knob is now the range, not a scalar. Full suite **253 passing**
+      (was 245; +8 P14 tests).
 
-**Out of scope (for now):** implementation; deciding whether the range should
-also vary with N (current design: same `[low, high]` for all N, per-core);
-cross-N comparison implications (sampling changes SP distributions — may need
-to re-examine P12 normalization under per-taskset load variance).
+**Out of scope (for now):** deciding whether the range should also vary with N
+(current design: same `[low, high]` for all N, per-core); cross-N comparison
+implications (sampling changes SP distributions — may need to re-examine P12
+normalization under per-taskset load variance); enabling the range on the
+shipped paper configs (a one-line config edit when the load-sweep experiment
+is wanted).
 
 ---
 
@@ -521,3 +527,7 @@ correct reuse, not the generation-pipeline split.
 
 ---
 
+### P21 -- Implement & Run Experiments for Warm-Start Incremental Priority Assignment
+
+- [ ] Implement warm-start initialization of `OptimizePA_Incre` from the previous configuration's optimal priority vector to bypass `OptimizeFromScratch` Audsley search calls.
+- [ ] Run profiling experiments to evaluate the performance speedup ratio and verify the scheduling priority quality under multi-task execution time updates.

@@ -12,11 +12,6 @@ _TASK_SETS_CONFIG_DIR = os.path.join(
 # Name of the shared base template that per-N paper configs INCLUDE.
 _PAPER_BASE_TEMPLATE_NAME = "taskset_cfg_paper_base.json"
 
-# Per-core CPU utilization held constant across all task counts (see P13). The
-# synthesized configs below use this value so dynamic N (10/12/14/...) matches
-# the on-disk paper_4/6/8 semantics. Kept in sync with those files.
-_DEFAULT_PER_CORE_CPU_UTIL = 0.9
-
 
 def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     """Return the path to the taskset config for ``num_tasks`` tasks.
@@ -29,10 +24,10 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     **synthesized** in ``temp_dir`` (default: a process-wide
     ``tempfile.mkdtemp``) with the same shape as the on-disk paper files:
     it INCLUDEs ``taskset_cfg_paper_base.json`` and sets only ``N_TASKS``
-    (=N), ``MEAN_CPU_UTIL`` (=0.9 per-core, see P13), ``N_CORES`` (=2) and
-    ``RANDOM_SEED`` (=42; callers override the seed per-taskset anyway).
-    Every task draws its period from the unified ``PERIODS_MS`` pool defined
-    in the base template.
+    (=N), ``N_CORES`` (=2) and ``RANDOM_SEED`` (=42; callers override the seed
+    per-taskset anyway). Every task draws its period from the unified
+    ``PERIODS_MS`` pool and the per-core load from ``CPU_UTIL_RANDOM_RANGE``,
+    both defined in the base template.
 
     The synthesized ``INCLUDE`` is written as an **absolute** path to the real
     base template, so ``load_generation_config`` resolves it correctly
@@ -97,14 +92,17 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
     # equivalent to the former "2 big / (N-2) small" synthesized split in
     # period composition (the base template's PERIODS_MS is the big-pool
     # periods followed by the small-pool periods), just expressed through one
-    # pool + one count.
+    # pool + one count. The base template also supplies CPU_UTIL_RANDOM_RANGE
+    # (P14), so the synthesized override does not need to set it.
     #
-    # N=1 feasibility: drop to 1 core so cpu_util = 0.9 x 1 = 0.9 stays
-    # schedulable (the lone task's utilization stays < 1.0). With N_CORES=2 the
-    # single task would carry cpu_util = 1.8, which uunifast_distribution can
-    # only realize as a single 1.8 utilization -- overloaded / unschedulable.
-    # N=1 is never on the cross-task sweep; this just keeps the corner case
-    # schedulable. (Carried over verbatim from P17.)
+    # N=1 feasibility: drop to 1 core and cap the per-core range below 1.0
+    # (override the base template's [0.5, 1.5] sweep) so the lone task's
+    # utilization stays schedulable. The base range can sample >1.0 per core,
+    # which on a single core / single task means utilization >1.0 --
+    # unschedulable. With N_CORES=2 the single task would carry cpu_util up to
+    # 3.0 (1.5 x 2), also unschedulable. N=1 is never on the cross-task sweep;
+    # this just keeps the corner case schedulable under P14's required range.
+    # (Adapted from P17, which assumed P13's fixed 0.9.)
     n_cores = 1 if n == 1 else 2
     desc = (
         f"Paper parameters for {n} tasks [synthesized]"
@@ -115,10 +113,12 @@ def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
         "INCLUDE": base_template_abs,
         "DESC": desc,
         "N_TASKS": n,
-        "MEAN_CPU_UTIL": _DEFAULT_PER_CORE_CPU_UTIL,
         "N_CORES": n_cores,
         "RANDOM_SEED": 42,
     }
+    if n == 1:
+        # Keep the single task schedulable: sample per-core util below 1.0.
+        synthesized["CPU_UTIL_RANDOM_RANGE"] = [0.5, 0.9]
 
     write_dir = temp_dir or tempfile.mkdtemp(prefix="synthesized_taskset_cfg_")
     os.makedirs(write_dir, exist_ok=True)
@@ -279,10 +279,45 @@ def standardize_config(config: dict) -> dict:
     if "N_CORES" not in config and "N_PROCESSORS" in config:
         config["N_CORES"] = config["N_PROCESSORS"]
 
-    # N_CORES default logic
+    # N_CORES default logic. P14 made CPU_UTIL_RANDOM_RANGE the sole load input
+    # (a [low, high] per-core range, not a single scalar), so the old
+    # "2 cores when MEAN_CPU_UTIL > 1.0" heuristic has nothing to test. Default
+    # to 1 core; all shipped configs set N_CORES explicitly, so this only
+    # applies to bare configs that omit it.
     if "N_CORES" not in config:
-        config["N_CORES"] = 2 if config.get("MEAN_CPU_UTIL", 0.5) > 1.0 else 1
-    
+        config["N_CORES"] = 1
+
+    # P14: the per-core CPU utilization range is now **required**. Each task set
+    # samples its per-core utilization uniformly from [low, high] (the first draw
+    # off the seeded RNG, so the realized value is reproducible under a fixed
+    # RANDOM_SEED), sweeping under- to over-subscribed loads within one run.
+    # The former fixed-MEAN_CPU_UTIL scalar was removed as the load source
+    # (P13); a config that omits the range now raises instead of silently
+    # falling back, since a forgotten range would otherwise lock every task set
+    # to one load point and quietly defeat the experiment's purpose.
+    if "CPU_UTIL_RANDOM_RANGE" not in config:
+        raise ValueError(
+            "CPU_UTIL_RANDOM_RANGE is required: set a [low, high] per-core "
+            "utilization range (the generator samples one value per task set). "
+            "The former fixed MEAN_CPU_UTIL scalar is no longer supported."
+        )
+    cpu_util_range = config["CPU_UTIL_RANDOM_RANGE"]
+    if (not isinstance(cpu_util_range, (list, tuple))
+            or len(cpu_util_range) != 2
+            or any(not isinstance(v, (int, float)) or isinstance(v, bool)
+                    for v in cpu_util_range)):
+        raise ValueError(
+            "CPU_UTIL_RANDOM_RANGE must be a [low, high] pair of numbers, "
+            f"got {cpu_util_range!r}"
+        )
+    low, high = cpu_util_range
+    if low < 0.0 or low > high:
+        raise ValueError(
+            "CPU_UTIL_RANDOM_RANGE requires 0 <= low <= high, "
+            f"got [{low}, {high}]"
+        )
+    config["CPU_UTIL_RANDOM_RANGE"] = [float(low), float(high)]
+
     # SP threshold option set
     config["SP_THRESHOLDS_SET"] = config.get("SP_THRESHOLDS_SET", [0.2, 0.4, 0.6, 0.8, 1.0])
 
@@ -300,7 +335,7 @@ def standardize_config(config: dict) -> dict:
 
 def validate_generation_config(config: dict) -> bool:
     """Validates required keys are present and correct."""
-    required_keys = ["D2_RANGE", "MEAN_CPU_UTIL"]
+    required_keys = ["D2_RANGE", "CPU_UTIL_RANDOM_RANGE"]
     for key in required_keys:
         if key not in config:
             return False

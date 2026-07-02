@@ -39,7 +39,7 @@ class TestCorrelationSerialization(unittest.TestCase):
             "N_GMM_COMPONENTS_PER_TASK": 2,
             "SP_THRESHOLD_RANGE": [0.5, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
-            "MEAN_CPU_UTIL": 0.5,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
             "Et_SCALE_FACTOR": 2.0,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "N_CORES": 1,

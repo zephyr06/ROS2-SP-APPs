@@ -1,6 +1,7 @@
 import unittest
 import os
 import sys
+import random
 import numpy as np
 
 # Ensure project root is in sys.path
@@ -25,7 +26,7 @@ class TestTasksetGenerator(unittest.TestCase):
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
-            "MEAN_CPU_UTIL": 1.2,
+            "CPU_UTIL_RANDOM_RANGE": [1.2, 1.2],
             "Et_SCALE_FACTOR": 2.0,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "N_ENV_DEPENDENT_TASKS": 1,
@@ -218,7 +219,7 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
-            "MEAN_CPU_UTIL": 0.9,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "Et_SCALE_FACTOR": 2.0,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
@@ -294,7 +295,7 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
-            "MEAN_CPU_UTIL": 0.9,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "Et_SCALE_FACTOR": 2.0,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
@@ -313,6 +314,117 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
         for bad in (0, -1):
             with self.assertRaises(ValueError):
                 standardize_config(dict(self.cfgs, N_TASKS=bad))
+
+
+class TestP14RandomCpuUtilRange(unittest.TestCase):
+    """P14: CPU_UTIL_RANDOM_RANGE is **required** and samples the per-core
+    utilization uniformly from [low, high] per task set, so one experiment
+    sweeps under- to over-subscribed loads. The former fixed MEAN_CPU_UTIL
+    scalar (P13) is removed as the load source.
+
+    Key invariants tested:
+    - sampled per-core util lies in [low, high];
+    - the realized total cpu_util = sampled per-core * N_CORES;
+    - the sampled value is reproducible under a fixed RANDOM_SEED (it is the
+      first draw off the seeded RNG);
+    - the sampled value varies across different seeds;
+    - absent the range, standardize_config raises (no silent fixed-scalar
+      fallback, so a forgotten range cannot quietly lock every task set to one
+      load point).
+    """
+
+    def setUp(self):
+        # Snapshot global RNG state: generate_taskset_parameters reseeds the
+        # global random/np.random streams per call (by design, for
+        # reproducibility), and this class runs many generations across several
+        # seeds. Restoring in tearDown keeps that perturbation from leaking
+        # into later test modules that read global RNG state unseeded
+        # (e.g. test_trajectory's generate_path_only).
+        self._random_state = random.getstate()
+        self._np_state = np.random.get_state()
+        # Canonical P19 shape + the required P14 range key.
+        self.cfgs = {
+            "PERIODS_MS": [1000, 500, 200, 100, 50, 33, 20],
+            "D1_RANGE": [-10.0, 10.0],
+            "D2_RANGE": [0.0, 360.0],
+            "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
+            "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
+            "RO_1_Et_RANGE": [-0.9, -0.7],
+            "RO_2_Et_RANGE": [-0.1, 0.1],
+            "Et_SCALE_FACTOR": 2.0,
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "N_CORES": 2,
+            "RANDOM_SEED": 42,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
+        }
+
+    def tearDown(self):
+        random.setstate(self._random_state)
+        np.random.set_state(self._np_state)
+
+    def test_sampled_util_in_range_and_total_matches(self):
+        """The realized per_core_cpu_util is within [low, high] and the total
+        cpu_util = per_core * N_CORES exactly."""
+        cfgs = dict(self.cfgs, N_TASKS=6, N_ENV_DEPENDENT_TASKS=1)
+        res = generate_taskset_parameters(cfgs)
+        low, high = cfgs["CPU_UTIL_RANDOM_RANGE"]
+        self.assertGreaterEqual(res["per_core_cpu_util"], low)
+        self.assertLessEqual(res["per_core_cpu_util"], high)
+        self.assertAlmostEqual(
+            res["cpu_util"], res["per_core_cpu_util"] * cfgs["N_CORES"]
+        )
+        # The per-task utilization vector sums to the realized target total
+        # within a tolerance: a small-period task whose u_i*period < 1.0 ms is
+        # floored to et_mean=1.0 (generator line ~347), so the realized sum can
+        # exceed cpu_util by up to ~N_TASKS * (1/min_period). This floor is
+        # pre-existing generator behavior, not P14-specific.
+        realized = sum(t["Et_mean"] / t["period"] for t in res["tasks"])
+        self.assertGreaterEqual(realized, res["cpu_util"])
+        self.assertLess(realized, res["cpu_util"] + 0.1)
+
+    def test_sampled_util_deterministic_under_fixed_seed(self):
+        """The same RANDOM_SEED reproduces the same sampled per-core util
+        (it is the first draw off the seeded RNG)."""
+        cfgs = dict(self.cfgs, N_TASKS=6, N_ENV_DEPENDENT_TASKS=1)
+        res1 = generate_taskset_parameters(dict(cfgs))
+        res2 = generate_taskset_parameters(dict(cfgs))
+        self.assertEqual(res1["per_core_cpu_util"], res2["per_core_cpu_util"])
+        self.assertEqual(res1["cpu_util"], res2["cpu_util"])
+
+    def test_sampled_util_varies_across_seeds(self):
+        """Different seeds (across multiple task sets in one sweep) yield a
+        spread of sampled utilizations rather than a single constant -- the
+        range genuinely sweeps load, not a point."""
+        seen = set()
+        for seed in range(1, 31):
+            cfgs = dict(self.cfgs, N_TASKS=4, N_ENV_DEPENDENT_TASKS=1,
+                        RANDOM_SEED=seed)
+            res = generate_taskset_parameters(cfgs)
+            seen.add(round(res["per_core_cpu_util"], 4))
+        # 30 different seeds should produce more than one distinct sampled util.
+        self.assertGreater(len(seen), 1,
+                           "sampling should vary across seeds, got a constant")
+
+    def test_range_absent_raises(self):
+        """P14 is required: with no CPU_UTIL_RANDOM_RANGE, standardize_config
+        raises ValueError pointing the user at the range (no silent fallback to
+        a fixed scalar)."""
+        from Gen_Taskset.lib.generation_config_parser import standardize_config
+        cfgs = {k: v for k, v in self.cfgs.items()
+                if k != "CPU_UTIL_RANDOM_RANGE"}
+        cfgs.update(N_TASKS=6, N_ENV_DEPENDENT_TASKS=1)
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(cfgs)
+        self.assertIn("CPU_UTIL_RANDOM_RANGE is required", str(cm.exception))
+
+    def test_bad_range_shape_rejected(self):
+        """Malformed CPU_UTIL_RANDOM_RANGE is rejected by standardize_config
+        before generation runs."""
+        from Gen_Taskset.lib.generation_config_parser import standardize_config
+        for bad in ([0.5], [0.5, 1.5, 2.0], "0.5-1.5", [1.5, 0.5], [-0.2, 1.5]):
+            with self.assertRaises(ValueError):
+                standardize_config(dict(self.cfgs, CPU_UTIL_RANDOM_RANGE=bad))
 
 
 if __name__ == "__main__":

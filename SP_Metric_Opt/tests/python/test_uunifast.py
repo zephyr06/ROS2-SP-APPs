@@ -5,8 +5,8 @@ Design:
 - N_ENV_DEPENDENT_TASKS tasks get env-dependent execution times: their *mean* ET follows
   the UUniFast allocation, but spatial variation (via GMM + D1_VARIANCE_FACTOR_TABLE) is
   added on top.
-- The total utilization must exactly match target MEAN_CPU_UTIL * N_CORES when
-  USE_UUNIFAST is enabled.
+- The total utilization must exactly match the sampled per-core utilization *
+  N_CORES when USE_UUNIFAST is enabled.
 """
 import os
 import sys
@@ -31,7 +31,7 @@ class TestUUniFast(unittest.TestCase):
             "PERIODS_MS": [20, 1000],
             "N_TASKS": 2,
             "N_ENV_DEPENDENT_TASKS": 1,
-            "MEAN_CPU_UTIL": 0.5,
+            "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
             "N_CORES": 1,
             "RANDOM_SEED": 42,
             "USE_UUNIFAST": use_uunifast,
@@ -111,14 +111,17 @@ class TestUUniFast(unittest.TestCase):
                 self.assertEqual(comp['ro_2_Et'], 0.0)
 
     def test_total_utilization_matches_target(self):
-        """Total utilization of generated taskset must equal MEAN_CPU_UTIL * N_CORES.
+        """Total utilization of generated taskset must equal the sampled per-core
+        utilization * N_CORES.
 
-        When USE_UUNIFAST=True, the sum of (Et_mean / period) over all tasks must exactly
-        match the target utilization.
+        When USE_UUNIFAST=True, the sum of (Et_mean / period) over all tasks must
+        exactly match the target utilization. The per-core utilization is sampled
+        from CPU_UTIL_RANDOM_RANGE (a degenerate [0.5, 0.5] here, so the sampled
+        value is exactly 0.5 and the target is deterministic).
         """
         cfg = self._make_cfg(use_uunifast=True)
-        target_util = cfg["MEAN_CPU_UTIL"] * cfg["N_CORES"]
         params = generate_taskset_parameters(cfg)
+        target_util = params["per_core_cpu_util"] * cfg["N_CORES"]
 
         total_util = sum(
             t['Et_mean'] / t['period'] for t in params['tasks']

@@ -7,7 +7,7 @@ def test_standardize_config_rejects_hz_keys():
     raw_cfg = {
         "SMALL_PERIOD_HZ": [10, 20, 50],
         "BIG_PERIOD_HZ": [0.5, 1],
-        "MEAN_CPU_UTIL": 0.75,
+        "CPU_UTIL_RANDOM_RANGE": [0.75, 0.75],
         "D1_RANGE": [-10, 10],
         "D2_RANGE": [0, 360]
     }
@@ -19,11 +19,11 @@ def test_validate_config():
     valid_cfg = {
         "D1_RANGE": [-10, 10],
         "D2_RANGE": [0, 360],
-        "MEAN_CPU_UTIL": 0.75
+        "CPU_UTIL_RANDOM_RANGE": [0.75, 0.75]
     }
     assert validate_generation_config(valid_cfg) is True
-    
+
     invalid_cfg = {
-        "MEAN_CPU_UTIL": 0.75
+        "CPU_UTIL_RANDOM_RANGE": [0.75, 0.75]
     }
     assert validate_generation_config(invalid_cfg) is False

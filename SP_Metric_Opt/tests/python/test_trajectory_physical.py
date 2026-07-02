@@ -104,10 +104,15 @@ class TestTrajectoryPhysicalUnits(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_path_respects_map_bounds_negative_origin(self):
-        """Path should stay inside D1_RANGE even with negative coordinates."""
+        """Path should stay inside the configured D1_RANGE/D2_RANGE bounds
+        even with negative coordinates. D2_RANGE must match the asserted
+        y-range — generate_path_only clamps to D2_RANGE[1], so an overly wide
+        D2_RANGE (e.g. [0, 360]) lets y exceed the stop grid and breaks the
+        bounds check under some RNG states.
+        """
         cfgs = {
             "D1_RANGE": [-100, 100],
-            "D2_RANGE": [0, 360],
+            "D2_RANGE": [-100, 100],
             "ROBOT_STEP_SIZE": 5.0,
         }
         stops = [(-100, -100), (100, 100)]
@@ -119,10 +124,14 @@ class TestTrajectoryPhysicalUnits(unittest.TestCase):
             self.assertLessEqual(p[1], 100)
 
     def test_path_respects_map_bounds_positive_origin(self):
-        """Path should stay inside D1_RANGE with a positive-only map."""
+        """Path should stay inside the configured bounds with a positive-only map.
+
+        D2_RANGE is set to [0, 100] (not [0, 360]) so the y-clamp matches the
+        stop grid and the bounds assertion holds for every RNG state.
+        """
         cfgs = {
             "D1_RANGE": [0, 100],
-            "D2_RANGE": [0, 360],
+            "D2_RANGE": [0, 100],
             "ROBOT_STEP_SIZE": 10.0,
         }
         stops = [(0, 0), (100, 100)]
@@ -187,7 +196,7 @@ class TestTrajectoryRegression(unittest.TestCase):
     def setUp(self):
         self.cfgs = {
             "D1_RANGE": [0, 100],
-            "D2_RANGE": [0, 360],
+            "D2_RANGE": [0, 100],
             "ROBOT_STEP_SIZE": 10.0
         }
 
@@ -202,7 +211,7 @@ class TestTrajectoryRegression(unittest.TestCase):
     def test_generate_path_only_step_size_fallback(self):
         cfgs = {
             "D1_RANGE": [0, 100],
-            "D2_RANGE": [0, 360],
+            "D2_RANGE": [0, 100],
         }
         stops = [(0, 0), (100, 100)]
         path = generate_path_only(cfgs, stops, n_steps=10)
@@ -210,6 +219,7 @@ class TestTrajectoryRegression(unittest.TestCase):
         for point in path:
             self.assertTrue(0 <= point[0] <= 100)
             self.assertTrue(0 <= point[1] <= 100)
+
 
 
 if __name__ == "__main__":
