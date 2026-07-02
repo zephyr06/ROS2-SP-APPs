@@ -1,9 +1,7 @@
 {
-    "DESC": "Stable test config: 8 tasks (2 big, 6 small). Do NOT modify—create new configs instead.",
-    "SMALL_PERIOD_HZ": [10, 20, 30, 50],
-    "BIG_PERIOD_HZ": [1, 2, 5],
-    "N_BIG_PERIOD_TASKS": 2,
-    "N_SMALL_PERIOD_TASKS": 6,
+    "DESC": "Stable test config: 8 tasks. Do NOT modify—create new configs instead.",
+    "PERIODS_MS": [1000, 500, 200, 100, 50, 33, 20],
+    "N_TASKS": 8,
     "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
     "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
     "RO_1_Et_RANGE": [-0.9, -0.7],

@@ -1,8 +1,7 @@
 {
     "INCLUDE": "taskset_cfg_paper_base.json",
-    "DESC": "Paper parameters for 6 tasks (2 big, 4 small)",
-    "N_BIG_PERIOD_TASKS": 2,
-    "N_SMALL_PERIOD_TASKS": 4,
+    "DESC": "Paper parameters for 6 tasks",
+    "N_TASKS": 6,
     "MEAN_CPU_UTIL": 0.9,
     "N_CORES": 2,
     "RANDOM_SEED": 40

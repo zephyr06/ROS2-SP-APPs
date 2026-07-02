@@ -1,15 +1,13 @@
 {
     "DESC": "Base paper parameters shared across N=4,6,8 task configurations",
-    "SMALL_PERIOD_HZ": [
-        10,
-        20,
-        30,
-        50
-    ],
-    "BIG_PERIOD_HZ": [
-        1,
-        2,
-        5
+    "PERIODS_MS": [
+        1000,
+        500,
+        200,
+        100,
+        50,
+        33,
+        20
     ],
     "Et_OVER_PERIOD_RANGE": [
         0.1,

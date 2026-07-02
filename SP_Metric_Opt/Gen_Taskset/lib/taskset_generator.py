@@ -74,10 +74,16 @@ def uunifast_distribution(n: int, target_util: float, max_util_cap: float = 0.95
                 vect_u[i] += share
     return vect_u
 
-def pick_period(cfgs: dict, prd_sel: str, picked_periods: list) -> int:
-    """Select a random period from the configured list, avoiding recent duplicates."""
-    periods_key = "BIG_PERIODS_MS" if prd_sel == 'big' else "SMALL_PERIODS_MS"
-    periods_list = cfgs.get(periods_key)
+def pick_period(cfgs: dict, picked_periods: list) -> int:
+    """Select a random period from the unified ``PERIODS_MS`` pool, avoiding duplicates.
+
+    Tries up to 10 times to draw a period not already picked (so distinct
+    periods are preferred while the pool has variety); falls back to an
+    unconditional draw once the pool is exhausted at large N (duplicate periods
+    are acceptable per the user). The big/small distinction was removed in P19
+    -- every task draws from the same pool.
+    """
+    periods_list = cfgs["PERIODS_MS"]
 
     selected_period = None
     for _ in range(10):
@@ -243,13 +249,11 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     taskset_param = []
     picked_periods = []
 
-    # P17: N_BIG_PERIOD_TASKS and N_SMALL_PERIOD_TASKS may each be 0 (single-rate
-    # tasksets: all-big or all-small). The period-pick loops below are no-ops for
-    # a 0 count, and standardize_config() guarantees n_tasks >= 1. The defaults
-    # (2 / 8) are kept for backward compatibility with configs that omit them.
-    g_n_big_periods = cfgs.get("N_BIG_PERIOD_TASKS", 2)
-    g_n_small_periods = cfgs.get("N_SMALL_PERIOD_TASKS", 8)
-    n_tasks = g_n_big_periods + g_n_small_periods
+    # P19: the big/small period split is gone -- N_TASKS is the sole task-count
+    # input and every task draws its period from the unified PERIODS_MS pool.
+    # standardize_config() guarantees n_tasks >= 1 and a non-empty PERIODS_MS;
+    # pick_period handles pool exhaustion (duplicate periods) at large N.
+    n_tasks = cfgs["N_TASKS"]
 
     # Determine number of env-dependent tasks.
     # If N_ENV_DEPENDENT_TASKS is specified in config, use it.
@@ -264,12 +268,10 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     # Small sigma base for perf tasks so ET is effectively deterministic
     FIXED_TASK_SIGMA_RATIO = cfgs.get("FIXED_TASK_SIGMA_RATIO", 0.001)
 
-    # 1. Generate periods
+    # 1. Generate periods (all drawn from the unified PERIODS_MS pool)
     periods = []
-    for _ in range(g_n_big_periods):
-        periods.append(pick_period(cfgs, prd_sel='big', picked_periods=picked_periods))
-    for _ in range(g_n_small_periods):
-        periods.append(pick_period(cfgs, prd_sel='small', picked_periods=picked_periods))
+    for _ in range(n_tasks):
+        periods.append(pick_period(cfgs, picked_periods=picked_periods))
 
     # ------------------------------------------------------------------
     # UUniFast mode: generate exact utilization vector, then derive Et_mean

@@ -195,83 +195,130 @@ class TestTasksetGenerator(unittest.TestCase):
             self.assertGreater(sigma_ratio, 0.45,
                                "Env tasks should have random natural sigma")
 
-class TestP17ZeroCountTasksets(unittest.TestCase):
-    """P17: N_BIG_PERIOD_TASKS=0 and N_SMALL_PERIOD_TASKS=0 are allowed,
-    producing single-rate tasksets (all-small or all-big)."""
+class TestP19UnifiedPoolTasksets(unittest.TestCase):
+    """P19: the former big/small period split (``N_BIG_PERIOD_TASKS`` +
+    ``N_SMALL_PERIOD_TASKS`` drawing from ``BIG_PERIODS_MS`` /
+    ``SMALL_PERIODS_MS``) is collapsed into a single ``N_TASKS`` count drawing
+    from one unified ``PERIODS_MS`` pool.
+
+    These tests cover the P19-native behavior that subsumes the old P17
+    single-rate cases (``N_BIG=0`` / ``N_SMALL=0``): with one pool there is no
+    "all-big vs all-small" distinction to test, so we instead assert (a) every
+    generated period comes from ``PERIODS_MS``, (b) the pool exhausts
+    gracefully (duplicates allowed) when ``N_TASKS`` exceeds the pool size, and
+    (c) the minimal single-task taskset (the former ``N=1`` corner case) still
+    generates a schedulable task.
+    """
 
     def setUp(self):
+        # Canonical P19 shape: PERIODS_MS + N_TASKS, no big/small split.
         self.cfgs = {
-            "SMALL_PERIOD_HZ": [10, 20, 50],
-            "BIG_PERIOD_HZ": [1, 2, 5],
+            "PERIODS_MS": [1000, 500, 200, 100, 50, 33, 20],
             "D1_RANGE": [-10.0, 10.0],
             "D2_RANGE": [0.0, 360.0],
             "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
             "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
-            "MEAN_CPU_UTIL": 1.0,
+            "MEAN_CPU_UTIL": 0.9,
             "Et_SCALE_FACTOR": 2.0,
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "RANDOM_SEED": 42,
         }
+        # The single-task case must stay schedulable: with N_CORES=2 the lone
+        # task would carry cpu_util = 0.9 x 2 = 1.8 (> MAX_UTIL_PER_TASK=0.95),
+        # so uunifast_distribution cannot realize it. Drop to 1 core there so
+        # cpu_util = 0.9 < 1.0. (Mirrors resolve_taskset_config_path's N==1
+        # handling -- see P17/P19.)
+        self.single_task_cfgs = dict(self.cfgs, N_CORES=1)
 
-    def _periods_ms(self, res, std_cfgs):
-        big = set(std_cfgs["BIG_PERIODS_MS"])
-        small = set(std_cfgs["SMALL_PERIODS_MS"])
-        return [(t["period"], "big" if t["period"] in big else "small") for t in res["tasks"]]
-
-    def test_zero_big_all_small_single_rate(self):
-        """N_BIG=0, N_SMALL=3 -> 3 tasks, all drawn from the small-period pool."""
-        cfgs = self.cfgs.copy()
-        cfgs["N_BIG_PERIOD_TASKS"] = 0
-        cfgs["N_SMALL_PERIOD_TASKS"] = 3
-        cfgs["N_ENV_DEPENDENT_TASKS"] = 1
+    def test_all_periods_from_unified_pool(self):
+        """Every generated period is a member of the configured PERIODS_MS."""
+        cfgs = dict(self.cfgs, N_TASKS=3, N_ENV_DEPENDENT_TASKS=1)
         res = generate_taskset_parameters(cfgs)
         self.assertEqual(len(res["tasks"]), 3)
-        small_ms = set(int(1000 / h) for h in cfgs["SMALL_PERIOD_HZ"])
+        pool = set(cfgs["PERIODS_MS"])
         for t in res["tasks"]:
-            self.assertIn(t["period"], small_ms,
-                          f"period {t['period']} not in small-period pool")
+            self.assertIn(t["period"], pool,
+                          f"period {t['period']} not in unified PERIODS_MS pool")
 
-    def test_zero_small_all_big_single_rate(self):
-        """N_SMALL=0, N_BIG=2 -> 2 tasks, all drawn from the big-period pool."""
-        cfgs = self.cfgs.copy()
-        cfgs["N_BIG_PERIOD_TASKS"] = 2
-        cfgs["N_SMALL_PERIOD_TASKS"] = 0
-        cfgs["N_ENV_DEPENDENT_TASKS"] = 1
+    def test_pool_exhaustion_allows_duplicates(self):
+        """N_TASKS > len(PERIODS_MS): pick_period exhausts the pool and falls
+        back to allowing duplicate periods (acceptable per the documented
+        design -- the period pool is unchanged at large N)."""
+        pool = self.cfgs["PERIODS_MS"]
+        n_tasks = len(pool) + 3  # strictly more tasks than distinct periods
+        cfgs = dict(self.cfgs, N_TASKS=n_tasks, N_ENV_DEPENDENT_TASKS=1)
         res = generate_taskset_parameters(cfgs)
-        self.assertEqual(len(res["tasks"]), 2)
-        big_ms = set(int(1000 / h) for h in cfgs["BIG_PERIOD_HZ"])
+        self.assertEqual(len(res["tasks"]), n_tasks)
+        # Every period is still a valid pool member; duplicates are expected.
+        pool_set = set(pool)
         for t in res["tasks"]:
-            self.assertIn(t["period"], big_ms,
-                          f"period {t['period']} not in big-period pool")
+            self.assertIn(t["period"], pool_set)
+        # Sanity: with more tasks than distinct periods, at least one period
+        # must recur (the pool is genuinely exhausted, not silently truncated).
+        periods = [t["period"] for t in res["tasks"]]
+        self.assertLess(len(set(periods)), len(periods),
+                        "expected at least one duplicate period at large N")
 
-    def test_single_task_all_small(self):
-        """N_BIG=0, N_SMALL=1 -> the minimal single-rate taskset (N=1)."""
-        cfgs = self.cfgs.copy()
-        cfgs["N_BIG_PERIOD_TASKS"] = 0
-        cfgs["N_SMALL_PERIOD_TASKS"] = 1
-        cfgs["N_ENV_DEPENDENT_TASKS"] = 0  # keep the lone task a normal task
+    def test_single_task_single_rate(self):
+        """N_TASKS=1: the minimal single-rate taskset (the former N=1 corner
+        case). The lone task is schedulable -- its utilization stays < 1.0."""
+        cfgs = dict(self.single_task_cfgs, N_TASKS=1, N_ENV_DEPENDENT_TASKS=0)
         res = generate_taskset_parameters(cfgs)
         self.assertEqual(len(res["tasks"]), 1)
-        small_ms = set(int(1000 / h) for h in cfgs["SMALL_PERIOD_HZ"])
-        self.assertIn(res["tasks"][0]["period"], small_ms)
-        # Utilization vector sums to the configured per-core total
+        self.assertIn(res["tasks"][0]["period"], set(cfgs["PERIODS_MS"]))
+        # Utilization vector sums to the configured per-core total (0.9).
         self.assertAlmostEqual(
             sum(t["Et_mean"] / t["period"] for t in res["tasks"]),
             res["cpu_util"],
         )
+        # Schedulability: the lone task's utilization is below the per-task cap.
+        t = res["tasks"][0]
+        self.assertLess(t["Et_mean"] / t["period"], 1.0)
 
-    def test_both_zero_rejected(self):
-        """N_BIG=0 and N_SMALL=0 -> standardize_config rejects (N_TASKS < 1)."""
+    def test_legacy_big_small_keys_aliased(self):
+        """P19 backward-compat: a config still carrying the old paired keys
+        (SMALL_PERIOD_HZ / BIG_PERIOD_HZ + N_BIG / N_SMALL counts) generates
+        correctly -- standardize_config aliases them to PERIODS_MS + N_TASKS
+        before the generator runs, so the old-shape configs keep working."""
         from Gen_Taskset.lib.generation_config_parser import standardize_config
-        cfgs = standardize_config(self.cfgs.copy())
-        cfgs["N_BIG_PERIOD_TASKS"] = 0
-        cfgs["N_SMALL_PERIOD_TASKS"] = 0
-        with self.assertRaises(ValueError):
-            standardize_config(cfgs)
+        legacy = {
+            "SMALL_PERIOD_HZ": [10, 20, 50],
+            "BIG_PERIOD_HZ": [1, 2, 5],
+            "N_BIG_PERIOD_TASKS": 2,
+            "N_SMALL_PERIOD_TASKS": 3,
+            "D1_RANGE": [-10.0, 10.0],
+            "D2_RANGE": [0.0, 360.0],
+            "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
+            "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
+            "RO_1_Et_RANGE": [-0.9, -0.7],
+            "RO_2_Et_RANGE": [-0.1, 0.1],
+            "MEAN_CPU_UTIL": 0.9,
+            "Et_SCALE_FACTOR": 2.0,
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "N_CORES": 2,
+            "RANDOM_SEED": 42,
+        }
+        res = generate_taskset_parameters(dict(legacy))
+        self.assertEqual(len(res["tasks"]), 5)
+        # Aliasing builds PERIODS_MS = big-pool periods + small-pool periods.
+        aliased_pool = set(standardize_config(dict(legacy))["PERIODS_MS"])
+        for t in res["tasks"]:
+            self.assertIn(t["period"], aliased_pool)
+
+    def test_n_tasks_below_one_rejected(self):
+        """N_TASKS < 1 -> standardize_config rejects it (the degenerate
+        all-zero config from P17 is now simply N_TASKS < 1 under P19)."""
+        from Gen_Taskset.lib.generation_config_parser import standardize_config
+        # standardize_config validates on first call, so a directly-bad N_TASKS
+        # raises immediately -- no two-step setup needed.
+        for bad in (0, -1):
+            with self.assertRaises(ValueError):
+                standardize_config(dict(self.cfgs, N_TASKS=bad))
 
 
 if __name__ == "__main__":

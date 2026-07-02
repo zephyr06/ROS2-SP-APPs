@@ -32,10 +32,11 @@ def test_config_specifications_validation():
         "RANDOM_SEED": 42
     }
     
-    # Test standardization conversions
+    # Test standardization conversions (P19: big+small pools aliased to
+    # PERIODS_MS, big-pool periods first then small-pool periods)
     cfgs_std = standardize_config(cfgs.copy())
-    assert cfgs_std["SMALL_PERIODS_MS"] == [100, 50, 20]
-    assert cfgs_std["BIG_PERIODS_MS"] == [2000, 1000]
+    assert cfgs_std["PERIODS_MS"] == [2000, 1000, 100, 50, 20]
+    assert cfgs_std["N_TASKS"] == 6  # 2 big + 4 small
     
     # Test Seeding & Determinism (Generating twice with same seed yields identical parameters)
     res1 = generate_taskset_parameters(cfgs.copy())
@@ -115,7 +116,8 @@ def test_config_specifications_validation():
     assert cfgs_std["FINAL_Et_OVER_PERIOD_RANGE"] == cfgs["FINAL_Et_OVER_PERIOD_RANGE"]
 
 def test_hz_key_parsing_specification():
-    # Test that universal HZ key parses correctly into big/small periods
+    # P19: the legacy single HZ list is split at 10 Hz (<10 -> big, >=10 -> small)
+    # and aliased to the unified PERIODS_MS, big-pool periods first.
     cfgs = {
         "HZ": [0.5, 2.0, 10, 25],
         "D1_RANGE": [-10, 10],
@@ -123,8 +125,9 @@ def test_hz_key_parsing_specification():
         "MEAN_CPU_UTIL": 0.5
     }
     cfgs_std = standardize_config(cfgs)
-    assert cfgs_std["SMALL_PERIODS_MS"] == [100, 40]
-    assert cfgs_std["BIG_PERIODS_MS"] == [2000, 500]
+    # 0.5->2000, 2.0->500 (big, <10 Hz) then 10->100, 25->40 (small, >=10 Hz)
+    assert cfgs_std["PERIODS_MS"] == [2000, 500, 100, 40]
+    assert "HZ" not in cfgs_std
 
 # Parameterize over stable test configs (NOT paper configs, which change frequently)
 CONFIG_FILES = glob.glob(os.path.join(os.path.dirname(__file__), "test_configs/*.json"))
@@ -139,25 +142,25 @@ def test_all_configurations_specifications(config_path):
     assert "D1_RANGE" in cfgs
     assert "D2_RANGE" in cfgs
     assert "MEAN_CPU_UTIL" in cfgs
-    
-    n_big = cfgs.get("N_BIG_PERIOD_TASKS", 2)
-    n_small = cfgs.get("N_SMALL_PERIOD_TASKS", 8)
-    expected_tasks_count = n_big + n_small
-    
+
+    # P19: N_TASKS is the sole task-count input (the big/small split is gone).
+    expected_tasks_count = cfgs["N_TASKS"]
+
     # 2. Run generation under a dedicated test_output folder to check serialization and traces
     test_output_root = os.path.join(os.path.dirname(__file__), "test_output")
     os.makedirs(test_output_root, exist_ok=True)
     config_name = os.path.splitext(os.path.basename(config_path))[0]
     config_output_dir = os.path.join(test_output_root, config_name)
-    
+
     import shutil
     if os.path.exists(config_output_dir):
         shutil.rmtree(config_output_dir)
     os.makedirs(config_output_dir, exist_ok=True)
-    
+
     # Run generation: n_sec must cover at least 2 hyper-periods.
-    # Compute required time from periods in the already-standardized config.
-    periods_ms = [int(p) for p in cfgs.get("SMALL_PERIODS_MS", []) + cfgs.get("BIG_PERIODS_MS", [])]
+    # Compute required time from periods in the already-standardized config
+    # (P19: single unified PERIODS_MS pool).
+    periods_ms = [int(p) for p in cfgs["PERIODS_MS"]]
     hp_ms = _compute_hyper_period(periods_ms)
     required_n_sec = max(2 * hp_ms // 1000, 10)  # at least 2× hyper-period, or 10s
 

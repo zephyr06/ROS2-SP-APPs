@@ -20,17 +20,45 @@ from Gen_Taskset.lib.taskset_generator import generate_taskset_parameters
 class TestGenerationConfigParser(unittest.TestCase):
 
     def test_standardize_config_hz_conversion(self):
+        """P19: old-shape Hz configs are aliased to the unified PERIODS_MS.
+
+        The big-pool periods come first, then the small-pool periods,
+        preserving the historical composition. Hz→ms conversion:
+        big [1,2,5]→[1000,500,200], small [10,20,50]→[100,50,20].
+        """
         config = {
             "SMALL_PERIOD_HZ": [10, 20, 50],
             "BIG_PERIOD_HZ": [1, 2, 5],
+            "N_BIG_PERIOD_TASKS": 2,
+            "N_SMALL_PERIOD_TASKS": 3,
             "D1_RANGE": [-10, 10],
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
-        # 1000 / 10 = 100, 1000 / 20 = 50, 1000 / 50 = 20
-        self.assertEqual(res["SMALL_PERIODS_MS"], [100, 50, 20])
-        # 1000 / 1 = 1000, 1000 / 2 = 500, 1000 / 5 = 200
-        self.assertEqual(res["BIG_PERIODS_MS"], [1000, 500, 200])
+        # Big-pool periods first, then small-pool periods
+        self.assertEqual(res["PERIODS_MS"], [1000, 500, 200, 100, 50, 20])
+        self.assertEqual(res["N_TASKS"], 5)
+        # Old paired keys must be deleted from the standardized config.
+        for old_key in (
+            "SMALL_PERIOD_HZ", "BIG_PERIOD_HZ",
+            "SMALL_PERIODS_MS", "BIG_PERIODS_MS",
+            "N_BIG_PERIOD_TASKS", "N_SMALL_PERIOD_TASKS",
+        ):
+            self.assertNotIn(old_key, res)
+
+    def test_standardize_config_legacy_hz_split_aliased(self):
+        """P19: the legacy single HZ list is split at 10 Hz and aliased to
+        PERIODS_MS. Hz < 10 → big pool, Hz >= 10 → small pool, big first."""
+        config = {
+            "HZ": [0.5, 2.0, 10, 25],
+            "D1_RANGE": [-10, 10],
+            "D2_RANGE": [0, 360],
+            "MEAN_CPU_UTIL": 0.5
+        }
+        res = standardize_config(config)
+        # 0.5→2000, 2.0→500 (big, <10 Hz) then 10→100, 25→40 (small, >=10 Hz)
+        self.assertEqual(res["PERIODS_MS"], [2000, 500, 100, 40])
+        self.assertNotIn("HZ", res)
 
     def test_standardize_config_defaults(self):
         config = {
@@ -38,11 +66,41 @@ class TestGenerationConfigParser(unittest.TestCase):
             "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
-        self.assertEqual(res["SMALL_PERIODS_MS"], [100, 50, 33, 20])
-        self.assertEqual(res["BIG_PERIODS_MS"], [4000, 2000, 1000])
-        self.assertEqual(res["N_BIG_PERIOD_TASKS"], 2)
-        self.assertEqual(res["N_SMALL_PERIOD_TASKS"], 8)
+        # No period info: merged big+small defaults
+        self.assertEqual(res["PERIODS_MS"], [4000, 2000, 1000, 100, 50, 33, 20])
+        # No count info: default N_BIG(2) + N_SMALL(8)
         self.assertEqual(res["N_TASKS"], 10)
+
+    def test_standardize_config_canonical_new_keys(self):
+        """P19: a canonical PERIODS_MS+N_TASKS config passes through untouched."""
+        config = {
+            "PERIODS_MS": [1000, 500, 100],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "MEAN_CPU_UTIL": 0.9,
+            "Et_SCALE_FACTOR": 2.0
+        }
+        res = standardize_config(config)
+        self.assertEqual(res["PERIODS_MS"], [1000, 500, 100])
+        self.assertEqual(res["N_TASKS"], 3)
+
+    def test_standardize_config_rejects_bad_n_tasks(self):
+        """P19: N_TASKS must be a positive integer (P17's degenerate all-zero
+        case is now N_TASKS < 1)."""
+        for bad in (0, -1):
+            with self.assertRaises(ValueError):
+                standardize_config({
+                    "PERIODS_MS": [100], "N_TASKS": bad,
+                    "D1_RANGE": [-5, 5], "MEAN_CPU_UTIL": 0.9,
+                })
+
+    def test_standardize_config_rejects_empty_periods(self):
+        """P19: PERIODS_MS must be a non-empty list."""
+        with self.assertRaises(ValueError):
+            standardize_config({
+                "PERIODS_MS": [], "N_TASKS": 3,
+                "D1_RANGE": [-5, 5], "MEAN_CPU_UTIL": 0.9,
+            })
 
     def test_standardize_config_map_params_derives_d1_range(self):
         """Configs with MAP_WIDTH_M / MAP_HEIGHT_M should auto-derive D1_RANGE and D2_RANGE."""
@@ -160,7 +218,7 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
             self.assertTrue(os.path.exists(path))
 
     def test_synthesized_config_has_correct_task_counts(self):
-        """N=10/14/18 synthesize a config with N_TASKS==N, N_BIG==2, N_SMALL==N-2."""
+        """N=10/14/18 synthesize a config with N_TASKS==N (P19: no big/small split)."""
         for n in (10, 14, 18):
             path = resolve_taskset_config_path(n, temp_dir=self._temp())
             # Must NOT be the on-disk file (none exists for these N)
@@ -169,8 +227,9 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
             )
             cfg = load_generation_config(path)
             self.assertEqual(cfg["N_TASKS"], n, msg=f"N={n}")
-            self.assertEqual(cfg["N_BIG_PERIOD_TASKS"], 2, msg=f"N={n}")
-            self.assertEqual(cfg["N_SMALL_PERIOD_TASKS"], n - 2, msg=f"N={n}")
+            # P19: the big/small count keys are gone from the canonical config.
+            self.assertNotIn("N_BIG_PERIOD_TASKS", cfg)
+            self.assertNotIn("N_SMALL_PERIOD_TASKS", cfg)
 
     def test_synthesized_config_per_core_util_and_cores(self):
         """Synthesized configs hold MEAN_CPU_UTIL=0.9 per-core, N_CORES=2 (P13)."""
@@ -183,12 +242,11 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
         """Synthesized config's INCLUDE must resolve base-template params."""
         path = resolve_taskset_config_path(16, temp_dir=self._temp())
         cfg = load_generation_config(path)
-        # Base-template params present after INCLUDE resolution
-        self.assertIn("SMALL_PERIODS_MS", cfg)
-        self.assertIn("BIG_PERIODS_MS", cfg)
-        # The base template sets these periods from SMALL_PERIOD_HZ / BIG_PERIOD_HZ
-        self.assertEqual(cfg["SMALL_PERIODS_MS"], [100, 50, 33, 20])
-        self.assertEqual(cfg["BIG_PERIODS_MS"], [1000, 500, 200])
+        # P19: the base template now sets the unified PERIODS_MS pool
+        self.assertIn("PERIODS_MS", cfg)
+        self.assertEqual(
+            cfg["PERIODS_MS"], [1000, 500, 200, 100, 50, 33, 20]
+        )
 
     def test_rejects_num_tasks_below_one(self):
         """P17: num_tasks < 1 must be rejected (the floor dropped from >= 2 to
@@ -198,8 +256,8 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
                 resolve_taskset_config_path(bad, temp_dir=self._temp())
 
     def test_accepts_num_tasks_one_single_rate(self):
-        """P17: N=1 synthesizes a single-task config (N_BIG=0, N_SMALL=1),
-        the minimal single-rate taskset the former N_BIG=2 hardcode could not
+        """P17/P19: N=1 synthesizes a single-task config (N_TASKS=1), the
+        minimal single-rate taskset the former N_BIG=2 hardcode could not
         represent.
 
         Feasibility: the synthesized N=1 config drops to N_CORES=1 so that
@@ -210,8 +268,9 @@ class TestResolveTasksetConfigPath(unittest.TestCase):
         path = resolve_taskset_config_path(1, temp_dir=self._temp())
         cfg = load_generation_config(path)
         self.assertEqual(cfg["N_TASKS"], 1)
-        self.assertEqual(cfg["N_BIG_PERIOD_TASKS"], 0)
-        self.assertEqual(cfg["N_SMALL_PERIOD_TASKS"], 1)
+        # P19: the big/small count keys are gone; N_TASKS is the sole count.
+        self.assertNotIn("N_BIG_PERIOD_TASKS", cfg)
+        self.assertNotIn("N_SMALL_PERIOD_TASKS", cfg)
         self.assertEqual(cfg["N_CORES"], 1)
         self.assertAlmostEqual(cfg["MEAN_CPU_UTIL"] * cfg["N_CORES"], 0.9)
         # End-to-end feasibility: the generated single task is schedulable.
