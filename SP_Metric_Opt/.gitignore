@@ -41,3 +41,7 @@ simulation_experiments/debug_analysis/
 *.pdf
 *.png
 *.csv
+
+agents/gemini.md
+agents/kimi.md
+agents/dev_log.md
