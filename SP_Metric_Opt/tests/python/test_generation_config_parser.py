@@ -1,6 +1,8 @@
 import unittest
 import os
 import sys
+import tempfile
+import shutil
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,7 +11,9 @@ if PROJECT_ROOT not in sys.path:
 
 from Gen_Taskset.lib.generation_config_parser import (
     standardize_config,
-    validate_generation_config
+    validate_generation_config,
+    resolve_taskset_config_path,
+    load_generation_config,
 )
 
 class TestGenerationConfigParser(unittest.TestCase):
@@ -126,6 +130,77 @@ class TestGenerationConfigParser(unittest.TestCase):
         }
         res = standardize_config(config)
         self.assertNotIn("D1_VARIANCE_FACTOR_TABLE", res)
+
+
+class TestResolveTasksetConfigPath(unittest.TestCase):
+    """Tests for resolve_taskset_config_path (P13 Commit B1)."""
+
+    def setUp(self):
+        self._temp_dirs = []
+
+    def tearDown(self):
+        for d in self._temp_dirs:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def _temp(self):
+        d = tempfile.mkdtemp()
+        self._temp_dirs.append(d)
+        return d
+
+    def test_existing_paper_configs_returned_unchanged(self):
+        """For N=4/6/8 the on-disk paper config path is returned unchanged."""
+        for n in (4, 6, 8):
+            path = resolve_taskset_config_path(n, temp_dir=self._temp())
+            self.assertTrue(
+                path.endswith(f"taskset_cfg_paper_{n}.json"),
+                f"N={n}: expected on-disk paper config, got {path}"
+            )
+            self.assertTrue(os.path.isabs(path))
+            self.assertTrue(os.path.exists(path))
+
+    def test_synthesized_config_has_correct_task_counts(self):
+        """N=10/14/18 synthesize a config with N_TASKS==N, N_BIG==2, N_SMALL==N-2."""
+        for n in (10, 14, 18):
+            path = resolve_taskset_config_path(n, temp_dir=self._temp())
+            # Must NOT be the on-disk file (none exists for these N)
+            self.assertFalse(
+                path.endswith(f"Gen_Taskset/task_sets_config/taskset_cfg_paper_{n}.json")
+            )
+            cfg = load_generation_config(path)
+            self.assertEqual(cfg["N_TASKS"], n, msg=f"N={n}")
+            self.assertEqual(cfg["N_BIG_PERIOD_TASKS"], 2, msg=f"N={n}")
+            self.assertEqual(cfg["N_SMALL_PERIOD_TASKS"], n - 2, msg=f"N={n}")
+
+    def test_synthesized_config_per_core_util_and_cores(self):
+        """Synthesized configs hold MEAN_CPU_UTIL=0.9 per-core, N_CORES=2 (P13)."""
+        path = resolve_taskset_config_path(12, temp_dir=self._temp())
+        cfg = load_generation_config(path)
+        self.assertEqual(cfg["MEAN_CPU_UTIL"], 0.9)
+        self.assertEqual(cfg["N_CORES"], 2)
+
+    def test_synthesized_config_resolves_include(self):
+        """Synthesized config's INCLUDE must resolve base-template params."""
+        path = resolve_taskset_config_path(16, temp_dir=self._temp())
+        cfg = load_generation_config(path)
+        # Base-template params present after INCLUDE resolution
+        self.assertIn("SMALL_PERIODS_MS", cfg)
+        self.assertIn("BIG_PERIODS_MS", cfg)
+        # The base template sets these periods from SMALL_PERIOD_HZ / BIG_PERIOD_HZ
+        self.assertEqual(cfg["SMALL_PERIODS_MS"], [100, 50, 33, 20])
+        self.assertEqual(cfg["BIG_PERIODS_MS"], [1000, 500, 200])
+
+    def test_rejects_num_tasks_below_two(self):
+        """num_tasks < 2 must be rejected (N_BIG_PERIOD_TASKS=2 fixed)."""
+        for bad in (1, 0, -3):
+            with self.assertRaises(ValueError, msg=f"N={bad} should be rejected"):
+                resolve_taskset_config_path(bad, temp_dir=self._temp())
+
+    def test_rejects_non_integer(self):
+        """Non-integer num_tasks must be rejected."""
+        for bad in ("eight", None, 4.5):
+            with self.assertRaises((ValueError, TypeError)):
+                resolve_taskset_config_path(bad, temp_dir=self._temp())
+
 
 if __name__ == "__main__":
     unittest.main()

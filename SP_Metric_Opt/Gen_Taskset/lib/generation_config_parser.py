@@ -1,6 +1,112 @@
 import json
 import math
 import os
+import tempfile
+
+# Directory holding the on-disk paper_* taskset config files (this file lives at
+# Gen_Taskset/lib/, the configs live at Gen_Taskset/task_sets_config/).
+_TASK_SETS_CONFIG_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "task_sets_config",
+)
+# Name of the shared base template that per-N paper configs INCLUDE.
+_PAPER_BASE_TEMPLATE_NAME = "taskset_cfg_paper_base.json"
+
+# Per-core CPU utilization held constant across all task counts (see P13). The
+# synthesized configs below use this value so dynamic N (10/12/14/...) matches
+# the on-disk paper_4/6/8 semantics. Kept in sync with those files.
+_DEFAULT_PER_CORE_CPU_UTIL = 0.9
+
+
+def resolve_taskset_config_path(num_tasks, config_dir=None, temp_dir=None):
+    """Return the path to the taskset config for ``num_tasks`` tasks.
+
+    If an on-disk ``taskset_cfg_paper_{N}.json`` exists in ``config_dir``
+    (default: the repo's ``Gen_Taskset/task_sets_config/``), its path is
+    returned unchanged -- this is the existing behavior for N=4/6/8.
+
+    For any other N (e.g. 10/12/14/16/18), a thin override config is
+    **synthesized** in ``temp_dir`` (default: a process-wide
+    ``tempfile.mkdtemp``) with the same shape as the on-disk paper files:
+    it INCLUDEs ``taskset_cfg_paper_base.json`` and sets only ``N_BIG_PERIOD_TASKS``
+    (=2), ``N_SMALL_PERIOD_TASKS`` (=N-2), ``MEAN_CPU_UTIL``
+    (=0.9 per-core, see P13), ``N_CORES`` (=2) and ``RANDOM_SEED`` (=42; callers
+    override the seed per-taskset anyway).
+
+    The synthesized ``INCLUDE`` is written as an **absolute** path to the real
+    base template, so ``load_generation_config`` resolves it correctly
+    regardless of where the temp file lives. This reuses the existing
+    INCLUDE-resolution path verbatim -- no generator changes.
+
+    Parameters
+    ----------
+    num_tasks : int
+        Total number of tasks. Must be >= 2 (N_BIG=2 fixed, so N>=2 gives
+        >=0 small-period tasks; N<2 is rejected).
+    config_dir : str, optional
+        Directory to look for an existing ``taskset_cfg_paper_{N}.json``.
+        Defaults to the repo config dir.
+    temp_dir : str, optional
+        Directory to write the synthesized config into when no on-disk file
+        exists. If None, ``tempfile.mkdtemp`` is used (caller is responsible
+        for cleanup; the synthesized files are throwaway).
+
+    Returns
+    -------
+    str
+        Absolute path to the config file to feed into
+        ``load_generation_config``.
+    """
+    # Reject bool (a subclass of int) and float outright; accept plain ints and
+    # int-valued strings. bool/float inputs are almost certainly caller bugs.
+    if isinstance(num_tasks, bool) or isinstance(num_tasks, float):
+        raise ValueError(f"num_tasks must be an integer, got {num_tasks!r}")
+    try:
+        n = int(num_tasks)
+    except (TypeError, ValueError):
+        raise ValueError(f"num_tasks must be an integer, got {num_tasks!r}")
+    if n < 2:
+        raise ValueError(
+            f"num_tasks must be >= 2 (N_BIG_PERIOD_TASKS=2 fixed), got {n}"
+        )
+
+    cfg_dir = config_dir or _TASK_SETS_CONFIG_DIR
+    on_disk = os.path.join(cfg_dir, f"taskset_cfg_paper_{n}.json")
+    if os.path.exists(on_disk):
+        return os.path.abspath(on_disk)
+
+    # Synthesize a thin override file equivalent to the on-disk paper configs.
+    # INCLUDE is an absolute path so load_generation_config (which resolves
+    # INCLUDE relative to the config file's directory) finds the real base
+    # template regardless of where the temp file was written.
+    base_template_abs = os.path.join(cfg_dir, "templates", _PAPER_BASE_TEMPLATE_NAME)
+    if not os.path.exists(base_template_abs):
+        raise FileNotFoundError(
+            f"Cannot synthesize taskset config for N={n}: base template not "
+            f"found at {base_template_abs}"
+        )
+
+    small = n - 2
+    synthesized = {
+        "INCLUDE": base_template_abs,
+        "DESC": (
+            f"Paper parameters for {n} tasks (2 big, {small} small) "
+            f"[synthesized]"
+        ),
+        "N_BIG_PERIOD_TASKS": 2,
+        "N_SMALL_PERIOD_TASKS": small,
+        "MEAN_CPU_UTIL": _DEFAULT_PER_CORE_CPU_UTIL,
+        "N_CORES": 2,
+        "RANDOM_SEED": 42,
+    }
+
+    write_dir = temp_dir or tempfile.mkdtemp(prefix="synthesized_taskset_cfg_")
+    os.makedirs(write_dir, exist_ok=True)
+    synth_path = os.path.join(write_dir, f"taskset_cfg_paper_{n}.json")
+    with open(synth_path, "w") as f:
+        json.dump(synthesized, f, indent=4)
+    return synth_path
+
 
 def load_generation_config(config_path: str) -> dict:
     """Reads the JSON configuration file for task set generation.
