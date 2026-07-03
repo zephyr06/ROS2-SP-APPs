@@ -18,3 +18,8 @@ Code refactor principles:
 - Reduce repaeted code
 - Foster modular design
 - Don't consider backward compatibility unless explicitly specified by users
+
+Making plans:
+- First decompose the main task into high-level steps
+- Within each high-level steps, iteratively, find one minimal, small, modular modification change that you can make to make the current code base one step closer to achieving the high-level step goal. The code change must be testable, and all tests must be able to pass after each small step modification. Follow test-driven development to consider what would be good test cases.
+- Keep this iteration loop til the step-level goal is accomponished.
