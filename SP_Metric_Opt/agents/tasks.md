@@ -527,14 +527,385 @@ correct reuse, not the generation-pipeline split.
 
 ---
 
-### P21 -- Implement & Run Experiments for Warm-Start Incremental Priority Assignment
+### P24 -- Periodic Reoptimization (general drift-bound; prerequisite for P21)
 
-- [ ] Add a global configuration flag (e.g., `GlobalVariables::use_warm_start_incremental_opt`) in C++ to enable/disable the warm-start optimization.
-- [ ] Implement the warm-start initialization of `OptimizePA_Incre` from the previous configuration's optimal priority vector to bypass `OptimizeFromScratch` Audsley search calls when the flag is enabled.
-- [ ] Run comparative simulation experiments to measure the execution time speedup ratio and evaluate the final SP optimization quality between the warm-start mode and the baseline from-scratch mode.
-- [ ] Decisive Action:
-  *   If SP quality is close/identical: permanently enable the warm-start optimizer and clean up/remove the global flag.
-  *   If SP quality difference is significant: keep the flag disabled and iterate on improving the variation search logic.
+**Status: DESIGN PHASE — no C++ edits landed; working tree clean on 2026-07-02.
+This is the task we are working on first, before any P21 (warm-start) code.**
+
+**Goal:** the incremental optimizer (`OptimizeIncre_w_TL`, called once per
+`SimulateInterval`) reuses a persistent `timelimit2optimizer_` cache that is
+**never cleared** — every interval after the first only ever calls `OptimizeIncre`
+on cached TL configs. Over a long sim (prod = 60 intervals) the priority
+assignment can drift toward a local optimum as task ETs evolve, with no mechanism
+to re-ground it. P24 adds a general, per-interval **periodic reoptimization**: on
+every N-th interval, re-run the from-scratch coordinate-descent TL search with a
+**wider TL window** (cache kept — a "warm re-explore"). This bounds drift for
+**every** `INCR`-family mode, independent of warm-start (P21 reuses it).
+
+**Agreed design (per user direction 2026-07-02):**
+
+- **Two new params** in `sources/Utils/Parameters.{h,cpp}` + `sources/parameters.yaml`,
+  declared alongside `TimeLimitSearchRadiusIncr` (general tunables, not per-mode
+  runtime flips):
+  - `extern int ReoptimizationPeriod;` — default **10**, `0` = **disabled**
+    (reproduces today's pure cache+scratch baseline exactly — the off-switch the
+    A/B uses). `N>0` = run a reoptimization interval every N-th interval.
+  - `extern int ReoptimizationTimeLimitsSearchRadius;` — default **4**. TL window
+    radius during reoptimization intervals. Normal intervals keep
+    `TimeLimitSearchRadiusIncr` (=2), unchanged. (Renamed from
+    `ReoptimizationSearchRadius` on 2026-07-02 for clarity — it tunes the
+    *time-limit* option window, mirroring `TimeLimitSearchRadiusIncr`.)
+- **Single orchestrator entry point — `Optimize_w_TL_ScratchOrIncre()`** (user
+  direction 2026-07-02): add one new method on
+  `OptimizePA_Incre_with_TimeLimits` that the orchestrator calls from the first
+  interval to the last. The method owns the per-interval counter and the
+  reoptimization-vs-incremental decision, so the orchestrator no longer needs to
+  know about intervals — it just calls the one method per `SimulateInterval`.
+  (See P24.3 for the body.) The INCR_NO_TL / INCR_WCET ablation-flag wrappers
+  stay as thin save/flip/restore shells around this one call — unchanged from how
+  they wrap `OptimizeIncre_w_TL` today.
+- **Cadence = per-interval**, counted inside `Optimize_w_TL_ScratchOrIncre` (one
+  call per `SimulateInterval` → `DeterminePrioritiesAndBudgets`). "Reset by
+  interval count" ≡ "reset by call count" — these are the *same* option, because
+  `DeterminePrioritiesAndBudgets` calls `OptimizeIncre_w_TL` exactly once per
+  `SimulateInterval` (verified in `SimulationOrchestrator.cpp:267-269`, loop at
+  253-257); the call count *is* the interval count, 1:1 and deterministic. The
+  counter lives on `OptimizePA_Incre_with_TimeLimits` (not the orchestrator) so
+  `tests/testIncreOpt_w_TL.cpp` can drive a sequence of
+  `Optimize_w_TL_ScratchOrIncre` calls and assert the reoptimization path fires
+  without a full sim. Counter resets at the start of each `RunSimulation`
+  (optimizer construction / first interval).
+- **Interval 0 = the first reoptimization interval** (option A, user-confirmed):
+  interval 0 uses the wider `ReoptimizationTimeLimitsSearchRadius` window.
+  Reoptimizations then fire at 0, N, 2N, …. This slightly changes today's
+  interval-0 search (more TL configs evaluated) — acceptable and intended.
+- **Warm re-explore, cache kept** (user-confirmed): on a reoptimization interval the
+  `timelimit2optimizer_` cache is **not** cleared. Already-seen TL configs reuse
+  `OptimizeIncre`; only TL combos not yet in the cache get a true
+  `OptimizeFromScratch(K)`. So a reoptimization interval costs ~the narrow→wide
+  delta, not a full cold re-ground. (NB: this is the *incremental* path with a
+  wider radius — it is **not** `OptimizeFromScratch_w_TL`, which uses the full
+  `RecordTimeLimitOptions` list. The 2026-07-02 "full from-scratch on reopt" reading
+  was superseded by this bounded-wider-radius design, because a full-list search on
+  interval 0 — cache empty — would `OptimizeFromScratch(K)` every unseen TL vector:
+  the unpredictable cost the user explicitly rejected earlier.)
+- **Mechanics (verified in code):** `OptimizeIncre_w_TL` uses
+  `RecordCloseTimeLimitOptions`, which today hard-reads
+  `GlobalVariables::TimeLimitSearchRadiusIncr` and returns a windowed slice (radius
+  centered on each task's current ET, clamped to `timePerformancePairs.size()`).
+  P24 **parameterizes** it as `RecordCloseTimeLimitOptions(dag_tasks, radius)` so
+  the reoptimization path passes `ReoptimizationTimeLimitsSearchRadius` while the
+  normal path keeps passing `TimeLimitSearchRadiusIncr`. The radius is bounded by
+  the list length (the loop already clamps `j < timePerformancePairs.size()`), so
+  it never silently degenerates to "search all options" — that only happens if a
+  user sets the radius ≥ list size, which is their explicit knob.
+- **Mode scope (architecturally dictated):** the reoptimization branch lives inside
+  `Optimize_w_TL_ScratchOrIncre` (the single entry point every persistent-INCR mode
+  routes through), so it applies to **INCR / INCR_NO_TL / INCR_WCET** automatically
+  and stays decoupled from mode strings. `INCR_NO_TL` short-circuits via
+  `disable_time_limit_opt` (radius moot there). `INCR_SCRATCH` / `BF` / `RM` have
+  no persistent cache and are structurally excluded.
+- **Why per-interval, not per-eval (user direction):** the number of
+  `EvaluateTimeLimitConfig` calls per interval varies with N (task count), beam
+  width K, `TimeLimitSearchRadiusIncr`, and per-task TL-option count — so a per-eval
+  cadence fires at unpredictable wall-clock points and makes speedup/quality
+  numbers unreproducible. Per-interval is deterministic regardless of taskset size:
+  more tractable, and it prevents the strange issues a varying per-call count would
+  introduce.
+- **Not a no-op in test mode (user correction):** a 7-interval test sim
+  (`70s/10s`) still does from-scratch on interval 0 (interval 0 is a reoptimization
+  interval); with default period 10 it never reaches interval 10, so the *periodic
+  repeat* path is unexercised but behavior is stable/comparable (it does *not* "do
+  nothing" — it does the same from-scratch-on-interval-0 it always did, now with
+  the wider window). Prod runs (`600s/10s` = 60 intervals) fire ~6 reoptimizations
+  and actually bound ET drift.
+
+**Key correctness constraint (verified in code):** on a reoptimization interval,
+the incremental body (`OptimizeIncre_w_TL`, now called via the
+`Optimize_w_TL_ScratchOrIncre` wrapper) must (a) pull in the current interval's DAG
+(`dag_tasks_ = dag_tasks_update`) and apply WCET ablation **before** building the
+wide-window TL options, and (b) re-initialize `time_limits` from the current ET
+config (`InitializeTimeLimitsFromETConfig`) — exactly what the existing
+`OptimizeIncre_w_TL` body already does. The only change is the radius passed to
+`RecordCloseTimeLimitOptions`. `PerformCoordinateDescentForTaskConfigOpt` and
+`EvaluateTimeLimitConfig` are reused unchanged.
+
+**Implementation plan (module-by-module, TDD — NOT started):**
+
+- [ ] **P24.1 (params)** `sources/Utils/Parameters.h` + `.cpp` +
+      `sources/parameters.yaml`: add `extern int ReoptimizationPeriod;` (default
+      **10**) and `extern int ReoptimizationTimeLimitsSearchRadius;` (default
+      **4**), loaded from YAML keys of the same names, declared alongside
+      `TimeLimitSearchRadiusIncr`. Both are general tunables.
+- [ ] **P24.2 (parameterize the radius)** `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`:
+      change `RecordCloseTimeLimitOptions(const DAG_Model&)` to
+      `RecordCloseTimeLimitOptions(const DAG_Model&, int radius)`, replacing the
+      hard-coded `GlobalVariables::TimeLimitSearchRadiusIncr` read with the `radius`
+      param. Update the call sites: the chosen radius is now passed from
+      `OptimizeIncre_w_TL` (see P24.3 — the radius depends on the counter, so
+      `OptimizeIncre_w_TL` takes the radius as a param or the wrapper computes it and
+      passes it down); the constructor's `RecordTimeLimitOptions` call is unaffected
+      (it is the full-list variant). No behavior change yet for normal intervals.
+- [ ] **P24.3 (wrapper + counter + radius decision)** `OptimizePA_Incre_with_TimeLimits`:
+      add the new single entry point the orchestrator calls every interval:
+      `PriorityVec Optimize_w_TL_ScratchOrIncre(const DAG_Model& dag_tasks_update, int K)`.
+      It owns (i) the per-interval counter and (ii) the reoptimization-vs-incremental
+      radius decision, then delegates to the existing `OptimizeIncre_w_TL` body.
+      Concretely:
+      - Add member `int reoptimization_interval_count_ = 0;`. Initialize to 0 at
+        construction; reset to 0 in `OptimizeFromScratch_w_TL` (that method signals
+        a fresh from-scratch run by setting `opt_sp_ = -1.0`). **Do NOT zero it
+        inside `OptimizeIncre_w_TL` / the wrapper's per-call path** — zeroing every
+        call would freeze it at interval 0 so it never advances. (Increment once per
+        call = once per interval; that *is* the per-interval count — see the cadence
+        bullet above.)
+      - In `Optimize_w_TL_ScratchOrIncre`, decide the radius from the *current*
+        counter value, then increment:
+        `int radius = (ReoptimizationPeriod > 0 && reoptimization_interval_count_ %
+        ReoptimizationPeriod == 0) ? ReoptimizationTimeLimitsSearchRadius :
+        TimeLimitSearchRadiusIncr;`
+        `++reoptimization_interval_count_;`  // after the radius decision
+        then call the `OptimizeIncre_w_TL` body with that `radius` (either pass
+        `radius` as a new param to `OptimizeIncre_w_TL`, or have the wrapper set
+        `time_limit_option_for_each_task_ = RecordCloseTimeLimitOptions(dag_tasks_,
+        radius)` and call a radius-taking overload — pick whichever the implementer
+        finds cleanest; the body below that point is unchanged).
+      - Trace: count starts 0 → interval 0 reopt (0%10==0), count→1; intervals 1-9
+        normal (narrow radius); interval 10 reopt (10%10==0); … = option A (reopts
+        at 0, N, 2N, …). With `ReoptimizationPeriod == 0`, radius is always
+        `TimeLimitSearchRadiusIncr` → today's behavior exactly.
+- [ ] **P24.4 (TDD tests)** `tests/testIncreOpt_w_TL.cpp`: failing-then-passing —
+      (a) `ReoptimizationPeriod` defaults to 10,
+      `ReoptimizationTimeLimitsSearchRadius` to 4; (b) `ReoptimizationPeriod == 0`
+      → radius passed is always `TimeLimitSearchRadiusIncr` (assert via a getter or
+      by checking the `time_limit_option_for_each_task_` window size on a task with
+      enough TL options), reproducing today's behavior; (c) with period=N, a
+      sequence of `Optimize_w_TL_ScratchOrIncre` calls uses the wide radius on
+      intervals 0, N, 2N, … and the narrow radius on 1..N-1, N+1..2N-1, … (assert
+      via `reoptimization_interval_count_` and window size); (d) the counter
+      resets to 0 across a fresh optimizer / new `OptimizeFromScratch_w_TL`. Build
+      + run `build/tests/testIncreOpt_w_TL`.
+- [ ] **P24.4b (orchestrator wiring)** `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`:
+      in `DeterminePrioritiesAndBudgets`, replace the `incr_optimizer_.OptimizeIncre_w_TL(...)`
+      call in the `INCR` branch (and the same call inside the `INCR_NO_TL` /
+      `INCR_WCET` save/flip/restore wrappers) with
+      `incr_optimizer_.Optimize_w_TL_ScratchOrIncre(...)`. The orchestrator now
+      makes one call per interval and carries no interval logic. (`INCR_SCRATCH`
+      is untouched — it still constructs a fresh optimizer + `OptimizeFromScratch_w_TL`
+      per interval, structurally outside P24.) Build.
+- [ ] **P24.5 (smoke)** Build the orchestrator; run a short `INCR` sim
+      (`incr_et_8tasks_config`, 7 intervals) — confirms no crash, interval 0 uses
+      the wide window, no repeat fires (period 10 > 7). Then a prod-scale run
+      (`experiment_config`, 60 intervals) confirms ~6 reoptimization intervals fire
+      without regression in SP or `Mean_Scheduler_Execution_Time_s`.
+- [ ] **P24.6 (docs)** Update `tasks.md` checkboxes + `dev_log.md` with the smoke
+      results. `git add` (user commits).
+
+**Open questions:** none — all design choices resolved 2026-07-02 (naming =
+reoptimization; single orchestrator entry point `Optimize_w_TL_ScratchOrIncre`;
+interval 0 = first reopt, option A; cache kept = warm re-explore; reopt =
+wider-radius *incremental* path, not full `OptimizeFromScratch_w_TL`; mode scope =
+all persistent-INCR; cadence = per-interval = per-call (1:1); radius knob renamed
+`ReoptimizationTimeLimitsSearchRadius`; defaults 10 / 4).
+
+**Out of scope:** warm-start incumbent seeding (that is P21, which depends on
+P24); within-interval per-eval escape (deferred — would need a separate
+clearly-named within-interval counter, explicitly *not* this general
+reoptimization).
+
+---
+
+
+
+**Status: DESIGN PHASE — no C++ edits landed; working tree clean on 2026-07-02.
+Plan revised 2026-07-02: the periodic from-scratch **reoptimization** is a
+*general* drift-bound (not a warm-start detail), so it has been split out as its
+own independent task **P24** (lands first — we are working on it before any
+warm-start code). P24 owns the knobs `ReoptimizationPeriod` (per-interval,
+default **10**, `0`=off) and `ReoptimizationTimeLimitsSearchRadius` (default
+**4**), and adds the single orchestrator entry point
+`Optimize_w_TL_ScratchOrIncre` that owns the per-interval counter + radius
+decision. The
+warm-start-specific `WarmStartReseedPeriod` (default 5) from the earlier draft is
+**dropped** — warm-start reuses P24's `ReoptimizationPeriod`. P21 (this task) is
+now warm-start *only* and depends on P24. See "Agreed design" + open questions
+below.**
+
+**Goal (from `agents/improve_efficiency.md` §3.C):** `EvaluateTimeLimitConfig`
+(`sources/Optimization/OptimizeSP_TL_Incre.cpp`) runs a full Audsley beam search
+`OptimizeFromScratch(K)` (O(K·N²) RTA calls) on every *cache-miss* time-limit
+config. The optimizer already has a good priority assignment from the previous
+configuration; warm-start reuses it and calls `OptimizeIncre` (1-D variation search
+on the changed task) instead of `OptimizeFromScratch` — O(N) RTA lookups.
+
+**Agreed design (incumbent-seeding + shared periodic reoptimization, per user
+direction 2026-07-02):**
+
+The scheduler holds a good config before it performs TL optimization and uses it as
+the starting point for the incremental optimization in the outer (TL-option) loop,
+the same way `OptimizeIncre` does in the inner (priority) loop. For a TL-capable
+task, the outer loop picks neighbor time-limit options and evaluates each; within
+each option the optimizer has a complete `DAG_Model` and may run either
+`OptimizeFromScratch` or `OptimizeIncre` (treating the task whose TL changed as one
+of the tasks whose ET changed). Drift toward a local optimum is bounded by the
+**shared periodic reoptimization** added in **P24** — warm-start no longer
+introduces its own.
+
+- **Seed = the incumbent (global-best) config**, not a single evolving optimizer and
+  not a cache neighbor search. The incumbent is already tracked by `UpdateRecords` →
+  `this->opt_pa_` / `opt_sp_` / `res_opt_.id2time_limit`. For each
+  `EvaluateTimeLimitConfig` on the warm path:
+  1. Reconstruct the incumbent DAG: `UpdateExtDistBasedOnTimeLimit(dag_tasks_,
+     incumbent_time_limits)` where `incumbent_time_limits` = `time_limits` with the
+     swept position reverted to its pre-sweep value (so the diff vs `dag_tasks_cur` is
+     exactly the one swept task).
+  2. Seed a per-eval `OptimizePA_Incre` with (incumbent DAG, incumbent `opt_pa_`,
+     incumbent `opt_sp_`).
+  3. `optimizer.OptimizeIncre(dag_tasks_cur)` → `FindTaskWithDifferentEt` diffs
+     incumbent vs new, detects the swept task, searches its 1-D variations.
+  4. `UpdateRecords` promotes the result if it beats the incumbent.
+- **Periodic escape (SHARED, not warm-start-specific):** the re-grounding to a wider
+  from-scratch TL search is driven by `GlobalVariables::ReoptimizationPeriod` +
+  `ReoptimizationTimeLimitsSearchRadius` (**P24**), **not** a `WarmStartReseedPeriod`.
+  Per the 2026-07-02 design decision the reoptimization cadence is **per-interval**
+  (orchestrator level, not per-eval), and it is **active for baseline `INCR` too** —
+  so both arms carry the same drift-bound and the A/B isolates "cache+scratch vs
+  incumbent+`OptimizeIncre`" *between* reoptimizations. Implication for warm-start:
+  see open question 3 below (the earlier per-eval in-sweep escape is *not* provided
+  by a per-interval knob; v1 defers it).
+- **`timelimit2optimizer_` cache + `OptimizeFromScratch`-on-miss stays unchanged for
+  the baseline `INCR`** (flag off). Warm mode bypasses the cache (on the warm path
+  `OptimizeIncre` is already cheap, so the map has nothing to save). This keeps the
+  comparison clean: baseline = current cache+scratch path + shared periodic
+  reoptimization; warm = incumbent-seed + `OptimizeIncre` + the same shared periodic
+  reoptimization.
+- **Experiment vehicle:** a temporary scheduler mode `INCR_WARM` that flips
+  `use_warm_start_incremental_opt` on around the `INCR`
+  `Optimize_w_TL_ScratchOrIncre` call — mirrors `INCR_NO_TL`/`INCR_WCET` exactly.
+  Baseline = `INCR` (flag off). Removed by the Decisive Action (folded into `INCR`
+  if good; dropped if bad).
+- **Testability (one per-eval counter, not two — user direction 2026-07-02):** a
+  single per-eval counter on `OptimizePA_Incre_with_TimeLimits`, reset at each
+  `RunSimulation` start, alongside the per-interval one:
+  - `reoptimization_interval_count_` (P24, per-interval) — incremented inside
+    `Optimize_w_TL_ScratchOrIncre` when an interval takes the reoptimization path.
+    Assertable from a sequence of `Optimize_w_TL_ScratchOrIncre` calls without a
+    full sim.
+  - `warm_start_eval_count_` (P21.2, per-eval) — incremented inside
+    `EvaluateTimeLimitConfig` each time the warm path runs (incumbent-seed +
+    `OptimizeIncre`). Only meaningful when `use_warm_start_incremental_opt` is on.
+    The from-scratch-on-warm-path evals are **not** separately counted — they only
+    occur on reopt intervals, which `reoptimization_interval_count_` already
+    identifies, so a dedicated `from_scratch_eval_count_` is redundant and dropped.
+  Deterministic unit-test assertions (timing micro-tests are too flaky); real speedup
+  measured by the P21.6 experiment via `Mean_Scheduler_Execution_Time_s`.
+  `warm_start_eval_count_` is the signal that disambiguates a null P21.6 speedup
+  ("warm-start didn't fire" vs "fired but didn't help").
+
+**Key correctness constraint (verified in code):** `OptimizeIncre` finds changed
+tasks via `FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update)` — it compares the
+optimizer's *stored* DAG against the update arg. So the seeded optimizer's
+`dag_tasks_` must be the **incumbent's** DAG (the previous config), and the new
+config is passed as `dag_tasks_update`; then exactly the one swept task is detected
+and searched. `OptimizeIncre` errors if `opt_pa_` is empty, so the seed must supply a
+non-empty `opt_pa_` (guaranteed: the first eval uses scratch, establishing the
+incumbent; later evals seed from it).
+
+**Verified coordinate-descent property:** `PerformCoordinateDescentForTaskConfigOpt`
+sets `time_limits[idx] = best_option_val` before moving to the next task, so while
+task `idx` is swept, `time_limits` carries the finalized best for all earlier tasks.
+The candidate `time_limits` (with `idx=val`) therefore differs from the incumbent
+(time_limits with `idx` reverted to its pre-sweep value) in **exactly position
+`idx`** — a clean 1-task diff per `EvaluateTimeLimitConfig`. (At a task-sweep
+boundary the incumbent is re-established as the just-finalized best, so the property
+holds across the whole sweep.)
+
+**Implementation plan (module-by-module, TDD — NOT started, pending alignment):**
+
+> **Prerequisite:** P24 (periodic reoptimization) must land first — P21.2 and
+> P21.3 reference `ReoptimizationPeriod` and the `reoptimization_interval_count_`
+> counter that P24 introduces.
+
+- [ ] **P21.1 (C++ core — warm-start flag only)** `sources/Utils/Parameters.h` +
+      `.cpp`: add `extern bool use_warm_start_incremental_opt;` (default false).
+      Mirrors the existing `disable_time_limit_opt` / `use_wcet_execution_time`
+      ablation flags. **No warm-start-specific reoptimization knob is added** —
+      warm-start reuses `ReoptimizationPeriod` from **P24** (the reoptimization is
+      shared, see design above).
+- [ ] **P21.2 (C++ core — warm-start)** `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`:
+      add `SeedFromIncumbent(OptimizePA_Incre& target, const std::vector<double>&
+      candidate_tl, int swept_idx) const` (reconstructs incumbent DAG = candidate
+      with `candidate_tl[swept_idx]` reverted to incumbent value, copies
+      `opt_pa_`/`opt_sp_`; returns false if `opt_pa_` empty). Wire into
+      `EvaluateTimeLimitConfig` else-branch: when flag on and this is **not** a
+      reoptimization interval (per the shared `ReoptimizationPeriod` counter from
+      P24) → `SeedFromIncumbent` + `OptimizeIncre(dag_tasks_cur)` +
+      `warm_start_eval_count_++`; when flag on and this **is** a reoptimization
+      interval → `OptimizeFromScratch(K)` (same path baseline takes on a
+      reoptimization interval); if seed fails → fall back to `OptimizeFromScratch(K)`.
+      (Only `warm_start_eval_count_` is incremented — the from-scratch-on-warm-path
+      evals are identified by the reopt interval, not a separate counter. See
+      testability note above.) Open question for Gemini: how does
+      `EvaluateTimeLimitConfig` learn `swept_idx`? (See open questions below.)
+      Reset `warm_start_eval_count_` in `OptimizeFromScratch_w_TL` and
+      `Optimize_w_TL_ScratchOrIncre` (the per-interval entry point —
+      `OptimizeIncre_w_TL` is now its delegated body, see P24.3).
+- [ ] **P21.3 (TDD tests)** `tests/testIncreOpt_w_TL.cpp`: failing-then-passing —
+      (a) flag defaults false; (b) with flag ON and `ReoptimizationPeriod`
+      large (so no reoptimization mid-test), `warm_start_eval_count_ > 0` on
+      `OptimizeFromScratch_w_TL` (v19 taskset); (c) with flag ON and a small period,
+      the reoptimization interval takes the from-scratch path (assert via
+      `reoptimization_interval_count_` from P24, since there is no separate
+      from-scratch counter); (d) with flag OFF, `warm_start_eval_count_ == 0`;
+      (e) SP quality: warm-start `opt_sp_` within tolerance of from-scratch
+      `opt_sp_` on the same taskset. Build + run `build/tests/testIncreOpt_w_TL`.
+- [ ] **P21.4 (orchestrator mode)** `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`:
+      add `INCR_WARM` branch in `DeterminePrioritiesAndBudgets` (save/flip/restore
+      flag around `incr_optimizer_.Optimize_w_TL_ScratchOrIncre` + `CollectResults`
+      — the entry point P24.4b wired in for `INCR`/`INCR_NO_TL`/`INCR_WCET`) and add
+      `"INCR_WARM"` to the `RunSimulation()` mode list that constructs
+      `incr_optimizer_`. `tests/RunOrchestrator.cpp`: add `INCR_WARM` to the usage
+      string. Build.
+- [ ] **P21.5 (Python harness)** `simulation_experiments/compare_optimizers.py`: add
+      `"INCR_WARM"` to `ALL_SCHEDULERS`. Run `pytest tests/python -q`.
+- [ ] **P21.6 (experiment + decisive action)** New config
+      `simulation_experiments/configs/warm_start_comparison_config.json`
+      (`main_scheduler_list: ["INCR", "INCR_WARM"]`, a few tasksets, profiling on,
+      prod-scale duration so the per-interval reoptimization actually fires). Run via
+      `./scripts/run_end_to_end.sh`; read `Mean_Scheduler_Execution_Time_s`
+      (speedup ratio) + SP from `comparison_summary.csv`. **Decisive Action** (confirm
+      with user before flipping default — "permanently enable" changes baseline
+      scheduler behavior):
+      * SP quality close/identical + real speedup → set flag default **true**, remove
+        `INCR_WARM` mode + flag (bake warm-start into `EvaluateTimeLimitConfig`).
+      * SP quality significantly worse → remove `INCR_WARM` mode, keep flag false,
+        report + iterate on the variation search (`FindPriorityVec1D_Variations`).
+- [ ] **P21.7 (docs)** Update `tasks.md` checkboxes + `dev_log.md` with results and
+      the decisive-action outcome. `git add` (user commits).
+
+**Open questions for Gemini alignment:**
+1. How does `EvaluateTimeLimitConfig` learn `swept_idx`? Candidate answers: (a)
+   thread it as a new param from `PerformCoordinateDescent`; (b) infer it by diffing
+   `candidate_tl` against `res_opt_.id2time_limit` (no API change, but assumes the
+   incumbent TL vector is recoverable). Recommend (b) to keep the call signature
+   unchanged.
+2. Incumbent TL vector source: derive from `res_opt_.id2time_limit` (ordered by task
+   id) at seed time, vs. store a dedicated `incumbent_time_limits_` member. Recommend
+   the member (explicit, avoids re-deriving / ordering assumptions).
+3. ~~Reoptimization cadence: flat every-Nth eval counter vs. per-task first-option-is-scratch.~~
+   **Resolved 2026-07-02:** per-interval cadence (user direction), counted inside
+   `Optimize_w_TL_ScratchOrIncre` (1 call per `SimulateInterval`, so per-interval
+   ≡ per-call), shared by baseline + warm-start via `ReoptimizationPeriod`
+   (**P24**). The earlier per-eval in-sweep escape is **not**
+   provided by a per-interval knob. v1 defers any within-interval escape: if SP
+   quality degrades in the P21.6 experiment, revisit then (it would need a separate,
+   clearly-named within-interval counter — explicitly *not* the general
+   reoptimization).
+
+**Out of scope:** the `improve_efficiency.md` §1/§2/§3.A/§3.B memory/algorithm
+optimizations (pointer-ize `PriorityPartialPath`, `shared_ptr` cache, flat-vector
+convolve, RTA cache, zero-weight skip) — separate efficiency work; P21 is
+specifically the warm-start (§3.C).
 
 
 ---
