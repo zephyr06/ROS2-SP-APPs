@@ -5,7 +5,6 @@ TIME_LIMIT: 10 # seconds
 # must be no less than 1, granularity balences accuracy and speed;
 Granularity: 10
 Layer_Node_During_Incremental_Optimization: 2
-TimeLimitSearchRadiusIncr: 2
 
 # P24 periodic reoptimization: every ReoptimizationPeriod-th interval, the
 # incremental TL search re-runs with a wider window instead of
@@ -13,6 +12,7 @@ TimeLimitSearchRadiusIncr: 2
 # ReoptimizationPeriod == 0 disables it (today's pure cache+scratch baseline).
 ReoptimizationPeriod: 10
 ReoptimizationTimeLimitsSearchRadius: 4
+TimeLimitSearchRadiusIncr: 2
 
 # simulation export granularity controls:
 # 0: interval SP metrics only (smallest disk usage)

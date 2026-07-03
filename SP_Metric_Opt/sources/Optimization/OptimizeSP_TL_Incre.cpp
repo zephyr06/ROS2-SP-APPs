@@ -54,6 +54,7 @@ size_t Find_Close_ExecutionTime(
     }
     return min_diff_index;
 }
+
 std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
     const DAG_Model& dag_tasks, int radius) {
     std::vector<std::vector<double>> time_limit_option_for_each_task;
@@ -182,8 +183,8 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
-    return ReOptimizePeriodic(dag_tasks_, K,
-                              GlobalVariables::ReoptimizationPeriod);
+    return ReOptimizePeriodic(
+        dag_tasks_, K, GlobalVariables::ReoptimizationTimeLimitsSearchRadius);
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
