@@ -7,6 +7,13 @@ Granularity: 10
 Layer_Node_During_Incremental_Optimization: 2
 TimeLimitSearchRadiusIncr: 2
 
+# P24 periodic reoptimization: every ReoptimizationPeriod-th interval, the
+# incremental TL search re-runs with a wider window instead of
+# TimeLimitSearchRadiusIncr, bounding priority drift over a long sim.
+# ReoptimizationPeriod == 0 disables it (today's pure cache+scratch baseline).
+ReoptimizationPeriod: 10
+ReoptimizationTimeLimitsSearchRadius: 4
+
 # simulation export granularity controls:
 # 0: interval SP metrics only (smallest disk usage)
 # 1: + per-task miss-rate summary

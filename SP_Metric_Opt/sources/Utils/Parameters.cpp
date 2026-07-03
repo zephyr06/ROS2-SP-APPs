@@ -19,6 +19,9 @@ bool disable_time_limit_opt = false;
 bool use_wcet_execution_time = false;
 int TimeLimitSearchRadiusIncr =
     loaded_doc["TimeLimitSearchRadiusIncr"].as<int>();
+int ReoptimizationPeriod = loaded_doc["ReoptimizationPeriod"].as<int>();
+int ReoptimizationTimeLimitsSearchRadius =
+    loaded_doc["ReoptimizationTimeLimitsSearchRadius"].as<int>();
 
 // simulation export controls
 int EXPORT_DETAIL_LEVEL = 3;               // default to FULL for backward compatibility
