@@ -529,8 +529,10 @@ correct reuse, not the generation-pipeline split.
 
 ### P24 -- Periodic Reoptimization (general drift-bound; prerequisite for P21)
 
-**Status: DESIGN PHASE — no C++ edits landed; working tree clean on 2026-07-02.
-This is the task we are working on first, before any P21 (warm-start) code.**
+**Status: IMPLEMENTED (working tree uncommitted, 2026-07-02) — P24.1–P24.6 done;
+`build/tests/testIncreOpt_w_TL` 17/17 green, Release `RunOrchestrator` builds
+clean, smoke + A/B verified no SP regression (SP improves on reopt intervals).
+Prerequisite for P21 (warm-start) is now satisfied.**
 
 **Goal:** the incremental optimizer (`OptimizeIncre_w_TL`, called once per
 `SimulateInterval`) reuses a persistent `timelimit2optimizer_` cache that is
@@ -630,14 +632,14 @@ config (`InitializeTimeLimitsFromETConfig`) — exactly what the existing
 `RecordCloseTimeLimitOptions`. `PerformCoordinateDescentForTaskConfigOpt` and
 `EvaluateTimeLimitConfig` are reused unchanged.
 
-**Implementation plan (module-by-module, TDD — NOT started):**
+**Implementation plan (module-by-module, TDD — DONE 2026-07-02, working tree uncommitted):**
 
-- [ ] **P24.1 (params)** `sources/Utils/Parameters.h` + `.cpp` +
+- [x] **P24.1 (params)** `sources/Utils/Parameters.h` + `.cpp` +
       `sources/parameters.yaml`: add `extern int ReoptimizationPeriod;` (default
       **10**) and `extern int ReoptimizationTimeLimitsSearchRadius;` (default
       **4**), loaded from YAML keys of the same names, declared alongside
       `TimeLimitSearchRadiusIncr`. Both are general tunables.
-- [ ] **P24.2 (parameterize the radius)** `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`:
+- [x] **P24.2 (parameterize the radius)** `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`:
       change `RecordCloseTimeLimitOptions(const DAG_Model&)` to
       `RecordCloseTimeLimitOptions(const DAG_Model&, int radius)`, replacing the
       hard-coded `GlobalVariables::TimeLimitSearchRadiusIncr` read with the `radius`
@@ -646,7 +648,11 @@ config (`InitializeTimeLimitsFromETConfig`) — exactly what the existing
       `OptimizeIncre_w_TL` takes the radius as a param or the wrapper computes it and
       passes it down); the constructor's `RecordTimeLimitOptions` call is unaffected
       (it is the full-list variant). No behavior change yet for normal intervals.
-- [ ] **P24.3 (wrapper + counter + radius decision)** `OptimizePA_Incre_with_TimeLimits`:
+      Implemented: `RecordCloseTimeLimitOptions(dag, radius)` +
+      `OptimizeIncre_w_TL(dag, K, radius)`; all call sites in
+      `tests/{testIncreOpt_w_TL,testBF_w_TL,AnalyzePriorityAssignmentIncrementalExample}.cpp`
+      updated to pass `TimeLimitSearchRadiusIncr`.
+- [x] **P24.3 (wrapper + counter + radius decision)** `OptimizePA_Incre_with_TimeLimits`:
       add the new single entry point the orchestrator calls every interval:
       `PriorityVec Optimize_w_TL_ScratchOrIncre(const DAG_Model& dag_tasks_update, int K)`.
       It owns (i) the per-interval counter and (ii) the reoptimization-vs-incremental
@@ -674,7 +680,7 @@ config (`InitializeTimeLimitsFromETConfig`) — exactly what the existing
         normal (narrow radius); interval 10 reopt (10%10==0); … = option A (reopts
         at 0, N, 2N, …). With `ReoptimizationPeriod == 0`, radius is always
         `TimeLimitSearchRadiusIncr` → today's behavior exactly.
-- [ ] **P24.4 (TDD tests)** `tests/testIncreOpt_w_TL.cpp`: failing-then-passing —
+- [x] **P24.4 (TDD tests)** `tests/testIncreOpt_w_TL.cpp`: failing-then-passing —
       (a) `ReoptimizationPeriod` defaults to 10,
       `ReoptimizationTimeLimitsSearchRadius` to 4; (b) `ReoptimizationPeriod == 0`
       → radius passed is always `TimeLimitSearchRadiusIncr` (assert via a getter or
@@ -685,7 +691,7 @@ config (`InitializeTimeLimitsFromETConfig`) — exactly what the existing
       via `reoptimization_interval_count_` and window size); (d) the counter
       resets to 0 across a fresh optimizer / new `OptimizeFromScratch_w_TL`. Build
       + run `build/tests/testIncreOpt_w_TL`.
-- [ ] **P24.4b (orchestrator wiring)** `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`:
+- [x] **P24.4b (orchestrator wiring)** `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`:
       in `DeterminePrioritiesAndBudgets`, replace the `incr_optimizer_.OptimizeIncre_w_TL(...)`
       call in the `INCR` branch (and the same call inside the `INCR_NO_TL` /
       `INCR_WCET` save/flip/restore wrappers) with
@@ -693,12 +699,34 @@ config (`InitializeTimeLimitsFromETConfig`) — exactly what the existing
       makes one call per interval and carries no interval logic. (`INCR_SCRATCH`
       is untouched — it still constructs a fresh optimizer + `OptimizeFromScratch_w_TL`
       per interval, structurally outside P24.) Build.
-- [ ] **P24.5 (smoke)** Build the orchestrator; run a short `INCR` sim
+- [x] **P24.5 (smoke)** Build the orchestrator; run a short `INCR` sim
       (`incr_et_8tasks_config`, 7 intervals) — confirms no crash, interval 0 uses
       the wide window, no repeat fires (period 10 > 7). Then a prod-scale run
       (`experiment_config`, 60 intervals) confirms ~6 reoptimization intervals fire
       without regression in SP or `Mean_Scheduler_Execution_Time_s`.
-- [ ] **P24.6 (docs)** Update `tasks.md` checkboxes + `dev_log.md` with the smoke
+      **Verified 2026-07-02 (CORRECTED):** short smoke (dur70, 7 intervals, INCR)
+      ran clean — no crash, 7 SP values emitted. A/B on the same 7-interval taskset
+      (period 0 vs period 3, the latter firing reopts at 0/3/6 = the periodic
+      **repeat** path, not just interval 0), run with the **correct** `duration_ms`
+      arg (= `scheduler_trigger_interval*1000` = 10000, the per-interval horizon —
+      NOT the total sim 70000; see `runorchestrator-duration-arg-semantics` memory):
+
+      | config | reopt intervals | exec (s) | avg SP |
+      |---|---|---|---|
+      | P24 OFF (period 0) | none | 0.568 | 1.56568 |
+      | P24 ON period 10 (default, reopt @0) | 0 | 0.613 | 1.60964 |
+      | P24 ON period 3 (reopt @0,3,6) | 0,3,6 | 0.712 | 1.73874 |
+      | P24 ON period 1 (reopt every interval) | all | 0.750 | 2.12851 |
+
+      **No SP regression — SP improves** (the wider re-explore finds better
+      assignments); real exec cost is **~+45 ms per reopt interval** (period 3 vs
+      off: 0.712−0.568 = 0.144s over 3 reopts), NOT the +1.35s/reopt-interval logged
+      in the original (bogus) A/B (which passed 70000 as `duration_ms`). The
+      60-interval prod run is ~60×0.08s ≈ 5s, not 19+ min — P18's ">0.1s/interval"
+      was likewise inflated by the same arg misuse and needs re-measurement.
+      `build/tests/testIncreOpt_w_TL` = **17/17 green** (13 existing + 4 P24);
+      `release/tests/RunOrchestrator` Release build clean.
+- [x] **P24.6 (docs)** Update `tasks.md` checkboxes + `dev_log.md` with the smoke
       results. `git add` (user commits).
 
 **Open questions:** none — all design choices resolved 2026-07-02 (naming =
@@ -712,6 +740,104 @@ all persistent-INCR; cadence = per-interval = per-call (1:1); radius knob rename
 P24); within-interval per-eval escape (deferred — would need a separate
 clearly-named within-interval counter, explicitly *not* this general
 reoptimization).
+
+### P24-Eval — Re-optimization interval sweep (per-activation optimizer runtime)
+
+**Status: IN PROGRESS (2026-07-03).** Requested by user after discovering the
+P24.5 A/B exec times were bogus (RunOrchestrator `duration_ms` arg misuse — see
+`runorchestrator-duration-arg-semantics` memory). Re-measure correctly and sweep
+the re-optimization interval to characterize the cost/quality trade-off.
+
+**Goal:** measure the **average per-activation optimizer runtime** (NOT total
+`Mean_Scheduler_Execution_Time_s`, which is dominated by the per-ms discrete-event
+sim loop and therefore conflates optimizer cost with sim cost). Report how
+per-activation optimizer runtime varies with the re-optimization period and with
+task-set size.
+
+**Method:**
+- **Sweep:** `ReoptimizationPeriod ∈ {0, 1, 3, 5, 10, 20}` (0 = off = today's
+  pure-cache baseline). 6 configs.
+- **Task counts:** `N ∈ {6, 8, 10, 12}`.
+- **Replicates:** 10 random task sets per `(period, N)` cell.
+- **Scale:** 60 intervals each (`n_sec=600`, `scheduler_trigger_interval=10` →
+  `duration_ms=10000` per interval, the CORRECT arg).
+- **Scheduler:** INCR only (no BF — user explicitly: "only focus on INCR
+  performance evaluation, don't consider BF for speed up").
+- **Metric:** average per-activation optimizer runtime = (sum of optimizer
+  wall-clock over all activation intervals) / (number of activations). An
+  "activation" = one call to `Optimize_w_TL_ScratchOrIncre` (= one `SimulateInterval`).
+  Isolate via chrono instrumentation around the optimizer call, written to
+  `optimizer_runtime_per_interval.csv` per run; NOT the existing
+  `scheduler_execution_time.txt` (which times the whole `RunSimulation`).
+
+**Task-set source:** reuse the on-disk `tasks{6,8,10}_dur600_interval10_seed1000`
+tasksets (10 each, 9 for N=10 — already 60 intervals). Generate 10 fresh
+`tasks12_dur600_interval10_seed1000` tasksets matching the same generator config
+for a fair cross-N comparison.
+
+**Sub-tasks:**
+- [x] **P24-Eval.1 (instrument)** Add `std::chrono` timing around
+      `Optimize_w_TL_ScratchOrIncre` in `DeterminePrioritiesAndBudgets`; record
+      `(interval_idx, radius, runtime_s)` per interval and write
+      `optimizer_runtime_per_interval.csv` at `ExportResults`. Isolates optimizer
+      cost from the per-ms sim loop. Build release.
+      **DONE (working tree 2026-07-03):** timing wraps the `OptimizeIncre_w_TL`
+      call inside `Optimize_w_TL_ScratchOrIncre` (the optimizer body only, not
+      the per-ms sim loop). New `PerActivationRuntime{interval_idx,radius,
+      runtime_s}` struct + `per_activation_runtimes_` member + const accessor on
+      `OptimizePA_Incre_with_TimeLimits`; `SimulationOrchestrator::GetPerActivation
+      Runtimes()` forwards it; `tests/RunOrchestrator.cpp` writes
+      `optimizer_runtime_per_interval.csv` (one row/interval, to `output/mode/`)
+      and reads an optional `REOPTIMIZATION_PERIOD` env-var override so the
+      reopt-period sweep varies it per-run without editing the tracked YAML.
+      Release `RunOrchestrator` builds clean + verified on a smoke run (CSV has
+      61 lines = header + 60 intervals, radius 2 for period=0, 4 for period=1).
+- [x] **P24-Eval.2 (gen tasksets)** Generate fresh `dur600` tasksets; verify 60
+      interval files each.
+      **DONE (2026-07-03):** regenerated 10 tasksets each for N=6,8,10,12 (not
+      just N=12 — the on-disk `tasks{6,8,10}_dur600_*` were stale, generated
+      pre-P13/P14/P19: N=6 all @ per-core load 1.2, N=8 half 1.6/half 0.9, N=10
+      @ 0.9 — invalid for a cross-N comparison). New
+      `simulation_experiments/gen_p24eval_tasksets.py` mirrors
+      compare_optimizers's generation path (same config resolution, seed scheme
+      `base_seed+idx`, `UPDATE_INTERVAL_S`, `run_full_generation_pipeline`) but
+      generates ONLY tasksets — no scheduler sim — so the dirs stay clean for
+      the sweep. All 4 N values now draw from the same current canonical config
+      (paper_base: `CPU_UTIL_RANDOM_RANGE [0.5,1.5]`, unified `PERIODS_MS`),
+      so the N axis is the only structural varying factor. Verified: 10
+      tasksets/N, 60 interval files each.
+- [~] **P24-Eval.3 (run sweep)** Run INCR for the 6 periods × 4 task counts × 10
+      tasksets (240 runs, 60 intervals each). Collect CSV from each.
+      **PARTIAL (2026-07-03):** `simulation_experiments/run_p24eval_sweep.py`
+      runs each cell via `RunOrchestrator <ts_dir> <ts_dir>/INCR INCR 10000`
+      (per-interval horizon) with `REOPTIMIZATION_PERIOD` env-var, copies the
+      runtime CSV to `p24_eval/runtime_p{P}_N{N}_ts{idx}.csv`, writes a
+      `sweep_manifest.csv`. The previous sweep run completed **210/240 cells**:
+      N∈{6,8,10} × all 6 periods {0,1,3,5,10,20} (180) + N=12 × periods {0,1,3}
+      (30). **30 cells missing: N=12 × periods {5,10,20}** (sweep stopped there).
+      The script's resume-skip (`_cell_done`) caches the 210 done cells, so
+      re-running it with the full grid runs ONLY the 30 missing (~3-5 min, `-j 6`).
+      Nothing currently running. One script bug found+fixed earlier (f-string
+      `({el:.1fs elapsed)` → `({el:.1f}s elapsed)`).
+- [x] **P24-Eval.4 (report)** Aggregate: average per-activation optimizer runtime
+      per `(period, N)`, with activations-per-run (= reopt count) for context.
+      Table in dev_log.md. Do NOT report total exec.
+      **DONE (2026-07-03, on 210/240 cells):** `simulation_experiments/
+      aggregate_p24eval.py` reads the copied CSVs (+ manifest, with a mid-sweep
+      filename-scan fallback), pools all activations across replicates, writes
+      `p24eval_summary.csv` + `.md` (Markdown table: mean/std/median/max runtime,
+      reopt/run, **reps**, mean SP). Fixed: the stale on-disk `sweep_manifest.csv`
+      had only 180 rows (no N=12 at all), so the 30 existing N=12 cells (p0/p1/p3)
+      were invisible — rebuilt the manifest from the on-disk CSVs (210 rows,
+      `avg_sp` re-read from each taskset's SP summary; old manifest backed up to
+      `sweep_manifest.stale.bak`). Added a `reps` column to the table so partial
+      cells are explicit. Table pasted into `dev_log.md` (P24-Eval section). N=12
+      p5/p10/p20 are absent from the table because they were not run — re-run
+      P24-Eval.3 to fill them, then re-aggregate.
+
+**Reporting:** average per-activation optimizer runtime (s), one row per
+`(period, N)`, plus the number of reopt activations per 60-interval run
+(60/period for period>0; 0 for period=0). No total-exec column.
 
 ---
 
@@ -779,6 +905,8 @@ introduces its own.
   comparison clean: baseline = current cache+scratch path + shared periodic
   reoptimization; warm = incumbent-seed + `OptimizeIncre` + the same shared periodic
   reoptimization.
+  > [!WARNING]
+  > Deciding whether to trigger incremental or from-scratch priority optimization based on the presence of a cached time-limit combination (`timelimit2optimizer_.count(time_limits)`) is not a reliable method. As the number of possible time-limit combinations explodes, cache misses dominate, rendering incremental optimization less useful. P21 addresses this by introducing a true warm-start path that bypasses the cache and seeds from the incumbent.
 - **Experiment vehicle:** a temporary scheduler mode `INCR_WARM` that flips
   `use_warm_start_incremental_opt` on around the `INCR`
   `Optimize_w_TL_ScratchOrIncre` call — mirrors `INCR_NO_TL`/`INCR_WCET` exactly.

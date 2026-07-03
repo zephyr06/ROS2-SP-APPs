@@ -1,6 +1,8 @@
 	\section{Task configuration Optimization}
 	\label{section_config_opt}
     
+    \sen{we'll change the idea of this section, and treat tasks that need to optimize TLs as a special type of env-dependent task, then trigger incremental optimization after assuming tasks' ET change.}
+    \sen{we shall modify the paper's scope and definition of such types of tasks to be more precise and consistent. this method is a more elegant method than simplying searching the possible combination.}
     
     We consider two strategies for task configuration optimization: \textit{brute-force} and \textit{incremental}. The brute-force strategy enumerates all possible task configuration parameters and selects the configuration that maximizes the SP metric. While exhaustive, this approach is computationally expensive and impractical for online optimization due to the large search space.
 
