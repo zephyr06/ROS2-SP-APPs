@@ -39,6 +39,33 @@ class TestCompareOptimizers(unittest.TestCase):
         )
         self.assertEqual(path, "/base/my_exp_v2")
 
+    def test_resolve_run_output_dir_run_root_nests_under_sim(self):
+        """P23: when run_root is set, sims land under <run_root>/sim/<subfolder>
+        so they co-locate with the figures (not at the top of output_dir)."""
+        path = resolve_run_output_dir(
+            "/base", None, num_tasks=6, n_sec=300,
+            scheduler_trigger_interval=10, base_seed=42, run_root="/rr/runA"
+        )
+        self.assertEqual(path, "/rr/runA/sim/tasks6_dur300_interval10_seed42")
+
+    def test_resolve_run_output_dir_run_root_with_custom_name(self):
+        """P23: a custom run_name under run_root still nests under sim/."""
+        path = resolve_run_output_dir(
+            "/base", "custom_exp", num_tasks=8, n_sec=120,
+            scheduler_trigger_interval=60, base_seed=99, run_root="/rr/runA"
+        )
+        self.assertEqual(path, "/rr/runA/sim/custom_exp")
+
+    def test_resolve_run_output_dir_run_root_none_keeps_legacy_layout(self):
+        """P23: run_root=None (standalone invocation) keeps the legacy
+        <output_dir>/<subfolder> layout, so compare_optimizers stays usable
+        on its own."""
+        path = resolve_run_output_dir(
+            "/base", None, num_tasks=6, n_sec=300,
+            scheduler_trigger_interval=10, base_seed=42, run_root=None
+        )
+        self.assertEqual(path, "/base/tasks6_dur300_interval10_seed42")
+
     def test_all_schedulers_list(self):
         """Ensure the default scheduler list includes the expected modes."""
         expected = {

@@ -225,17 +225,24 @@ def plot_per_taskset_line(results_by_taskset, schedulers, output_path):
 
 
 def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec,
-                           scheduler_trigger_interval, base_seed):
+                           scheduler_trigger_interval, base_seed, run_root=None):
     """Return the full output directory path for a comparison run.
 
     Parameters
     ----------
     base_output_dir : str
         The parent directory (e.g. simulation_experiments/optimizer_comparison).
+        Used only when *run_root* is None (standalone invocation).
     run_name : str or None
         Explicit subfolder name. If None, auto-generated from parameters.
     num_tasks, n_sec, scheduler_trigger_interval, base_seed : int
         Parameters used for auto-naming when run_name is None.
+    run_root : str or None
+        When set by the e2e orchestrator (``--run_root``), the run's raw sim
+        output is co-located under the run folder at
+        ``<run_root>/sim/<subfolder>`` (P23) so it lives next to the derived
+        figures. When None (standalone ``compare_optimizers`` invocation), the
+        legacy layout is kept: ``<base_output_dir>/<subfolder>``.
     """
     if run_name:
         subfolder = run_name
@@ -244,6 +251,8 @@ def resolve_run_output_dir(base_output_dir, run_name, num_tasks, n_sec,
             f"tasks{num_tasks}_dur{n_sec}_"
             f"interval{scheduler_trigger_interval}_seed{base_seed}"
         )
+    if run_root:
+        return os.path.join(run_root, "sim", subfolder)
     return os.path.join(base_output_dir, subfolder)
 
 
@@ -289,6 +298,14 @@ def main():
               "If omitted, a name is auto-generated from num_tasks, "
               "n_sec, scheduler_trigger_interval, and base_seed "
               "(e.g. tasks6_dur300_interval10_seed1000).")
+    )
+    parser.add_argument(
+        "--run_root", type=str, default=None,
+        help=("End-to-end run root (passed by run_end_to_end_experiments). "
+              "When set, raw sim output is co-located under the run folder at "
+              "<run_root>/sim/<subfolder> (P23) so it lives next to the derived "
+              "figures. When omitted (standalone invocation), sim output goes "
+              "to <output_dir>/<subfolder> as before.")
     )
     parser.add_argument(
         "--bin_dir", type=str, default="release",
@@ -358,7 +375,7 @@ def main():
 
     output_dir_abs = resolve_run_output_dir(
         base_output_dir, args.run_name, args.num_tasks, args.n_sec,
-        scheduler_trigger_interval, args.base_seed
+        scheduler_trigger_interval, args.base_seed, run_root=args.run_root
     )
 
     bin_dir_abs = (

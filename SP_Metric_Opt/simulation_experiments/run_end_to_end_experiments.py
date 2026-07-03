@@ -19,10 +19,13 @@ simulate's tasksets. Run the whole pipeline or don't run it at all.
    :mod:`simulation_experiments.compare_optimizers` with the *union* of the
    main and ablation scheduler lists (so one simulation pass produces data
    for both the main and ablation figures). This populates
-   ``optimizer_comparison/tasks{N}_dur{D}_interval{I}_seed{S}/``.
+   ``optimizer_comparison/runs/<run_id>/sim/tasks{N}_dur{D}_interval{I}_seed{S}/``
+   (P23: raw sim output is co-located under the run root, next to the figures).
 2. **sweep** -- Run :mod:`simulation_experiments.interval_sweep` to sweep
    ``scheduler_trigger_interval`` over ``interval_sweep_seconds_list`` and
-   produce Figure 2. Results go to ``tasks{N}_sweep_interval{I}_...``.
+   produce Figure 2. Results go to
+   ``runs/<run_id>/sim/tasks{N}_sweep_interval{I}_...`` and Figure 2 to
+   ``runs/<run_id>/figures/``.
 3. **aggregate** -- Run :mod:`simulation_experiments.aggregate_across_tasks`
    to scan the simulated directories and emit Figures 1A-1F, the ablation
    figures, and Figure 3.
@@ -58,7 +61,7 @@ if PROJECT_ROOT not in sys.path:
 
 from simulation_experiments.experiment_config_loader import (
     load_experiment_config,
-    build_run_id,
+    build_run_root,
     DEFAULT_CONFIG_PATH,
 )
 
@@ -102,7 +105,7 @@ def build_scheduler_union(cfg):
     return union
 
 
-def build_simulate_command(num_tasks, cfg, output_parent, verbose):
+def build_simulate_command(num_tasks, cfg, output_parent, verbose, run_root):
     """Construct the ``compare_optimizers`` command for one task count.
 
     Parameters
@@ -115,6 +118,10 @@ def build_simulate_command(num_tasks, cfg, output_parent, verbose):
         Absolute path to ``optimizer_comparison/``.
     verbose : int
         Verbosity level forwarded to the subprocess.
+    run_root : str
+        Absolute path to this run's co-located root (``<output_parent>/runs/
+        <run_id>``). Forwarded as ``--run_root`` so compare_optimizers writes
+        its raw sim output under ``<run_root>/sim/`` (P23), next to the figures.
 
     Returns
     -------
@@ -135,6 +142,7 @@ def build_simulate_command(num_tasks, cfg, output_parent, verbose):
         "--schedulers", *schedulers,
         "--bin_dir", cfg.get("bin_dir", "release"),
         "--output_dir", output_parent,
+        "--run_root", run_root,
         "--export_level",
         str(cfg.get("export_detail_level", 1)),
         "--important_task_pct",
@@ -248,7 +256,7 @@ def run_command(cmd, dry_run):
     return True
 
 
-def stage_simulate(cfg, output_parent, verbose, dry_run):
+def stage_simulate(cfg, output_parent, run_root, verbose, dry_run):
     """Run the per-task-count simulation stage."""
     task_counts = cfg.get("num_tasks_for_cross_task_comparison", [4, 6])
     _print_header(
@@ -257,7 +265,7 @@ def stage_simulate(cfg, output_parent, verbose, dry_run):
     )
     for num_tasks in task_counts:
         _print_header(f"Simulating {num_tasks} tasks", width=50)
-        cmd = build_simulate_command(num_tasks, cfg, output_parent, verbose)
+        cmd = build_simulate_command(num_tasks, cfg, output_parent, verbose, run_root)
         if not run_command(cmd, dry_run):
             return False
     return True
@@ -335,6 +343,13 @@ def main():
         else os.path.join(PROJECT_ROOT, args.output_parent)
     )
 
+    # P23: one co-located run root per config. All three stages derive their
+    # paths from this: simulate writes sims under <run_root>/sim/, sweep
+    # reuses/writes there + emits Fig 2 under <run_root>/figures/, aggregate
+    # scans <run_root>/sim/ and writes Figs 1A-1F/3 under <run_root>/figures/.
+    # Computed once here and threaded through so every stage agrees on the path.
+    run_root = build_run_root(output_parent, cfg)
+
     # Pre-flight: validate the binary exists. The simulate and sweep stages
     # both invoke RunOrchestrator, and both always run (there is no
     # stage-selection flag), so the binary is always required unless this is a
@@ -367,7 +382,7 @@ def main():
     # sweep reuses simulate's tasksets), so there is no stage-selection flag.
     # A failed stage aborts the pipeline.
     stages = [
-        ("simulate", lambda: stage_simulate(cfg, output_parent, args.verbose, args.dry_run)),
+        ("simulate", lambda: stage_simulate(cfg, output_parent, run_root, args.verbose, args.dry_run)),
         ("sweep", lambda: stage_sweep(cfg, output_parent, args.verbose, args.dry_run)),
         ("aggregate", lambda: stage_aggregate(cfg, output_parent, args.dry_run)),
     ]
@@ -377,7 +392,7 @@ def main():
             sys.exit(1)
 
     elapsed = time.time() - start
-    figures_dir = os.path.join(output_parent, "runs", build_run_id(cfg), "figures")
+    figures_dir = os.path.join(run_root, "figures")
     _print_header(
         f"Pipeline complete in {elapsed:.1f}s. "
         f"Figures: {figures_dir}",

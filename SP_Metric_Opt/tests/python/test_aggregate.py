@@ -174,11 +174,26 @@ class TestAggregateData(unittest.TestCase):
         only the matching dir's records are ingested -- the
         "last-write-wins" pollution bug noted in the dev log must not
         recur. Without a cfg, the legacy path still ingests both.
+
+        P23: when scoped (cfg given), aggregate scans ``<run_root>/sim/`` for
+        the run's dirs, so the matching dir must live there. The legacy path
+        still scans ``output_parent`` directly.
         """
         temp_base = tempfile.mkdtemp()
         try:
-            current = os.path.join(temp_base, "tasks6_dur70_interval10_seed1000")
-            stale = os.path.join(temp_base, "tasks6_dur300_interval10_seed1000")
+            cfg = {
+                "num_tasks_for_cross_task_comparison": [6],
+                "simulation_duration_seconds": 70,
+                "scheduler_trigger_interval_seconds": 10,
+                "base_random_seed": 1000,
+            }
+            # Scoped path: dirs live under <run_root>/sim/.
+            run_root = agg.build_run_root(temp_base, cfg)
+            sim_dir = os.path.join(run_root, "sim")
+            current = os.path.join(sim_dir, "tasks6_dur70_interval10_seed1000")
+            # Stale dir (dur300) also under sim/ -- scoped ingestion must skip
+            # it because its prefix does not match the run's parameters.
+            stale = os.path.join(sim_dir, "tasks6_dur300_interval10_seed1000")
             _write_summary_csv(current, [
                 {"scheduler": "INCR", "mean_sp": 0.90, "std_sp": 0.05, "mean_sched_time": 0.01},
             ])
@@ -186,17 +201,20 @@ class TestAggregateData(unittest.TestCase):
                 {"scheduler": "INCR", "mean_sp": 0.10, "std_sp": 0.02, "mean_sched_time": 0.01},
             ])
 
-            cfg = {
-                "num_tasks_for_cross_task_comparison": [6],
-                "simulation_duration_seconds": 70,
-                "scheduler_trigger_interval_seconds": 10,
-                "base_random_seed": 1000,
-            }
-
             scoped = agg.aggregate_data_from_directories(cfg=cfg, output_parent=temp_base)
             self.assertEqual(len(scoped), 1)
             self.assertEqual(scoped[0]["mean_sp"], 0.90)  # current run, not stale
 
+            # Legacy path (no cfg): also drop a tasks6 dir at the top level so
+            # the unscoped scan finds two there.
+            legacy_current = os.path.join(temp_base, "tasks6_dur70_interval10_seed1000")
+            legacy_stale = os.path.join(temp_base, "tasks6_dur300_interval10_seed1000")
+            _write_summary_csv(legacy_current, [
+                {"scheduler": "INCR", "mean_sp": 0.90, "std_sp": 0.05, "mean_sched_time": 0.01},
+            ])
+            _write_summary_csv(legacy_stale, [
+                {"scheduler": "INCR", "mean_sp": 0.10, "std_sp": 0.02, "mean_sched_time": 0.01},
+            ])
             legacy = agg.aggregate_data_from_directories(output_parent=temp_base)
             self.assertEqual(len(legacy), 2)
         finally:
@@ -676,6 +694,40 @@ class TestGenerateDistributionBoxplot(unittest.TestCase):
             agg.OPTIMIZER_COMPARISON_DIR = orig_dir
 
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.MATPLOTLIB_AVAILABLE", True)
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.save_figure")
+    def test_boxplot_scans_run_root_sim(self, mock_save):
+        """P23: when run_root is set, the boxplot finds the single-task dir
+        under <run_root>/sim/ (not the module-global OPTIMIZER_COMPARISON_DIR).
+
+        The global dir is intentionally left empty so a legacy-scan fallback
+        would produce nothing; only the run_root-scoped scan should find data.
+        """
+        temp_base = tempfile.mkdtemp()
+        try:
+            # Global dir is empty -> any fallback to OPTIMIZER_COMPARISON_DIR
+            # finds nothing. The data lives only under <run_root>/sim/.
+            orig_dir = agg.OPTIMIZER_COMPARISON_DIR
+            agg.OPTIMIZER_COMPARISON_DIR = temp_base
+            agg.FIGURES_OUTPUT_DIR = os.path.join(temp_base, "figures")
+
+            run_root = os.path.join(temp_base, "run_root")
+            sim_dir = os.path.join(run_root, "sim")
+            exp_dir = os.path.join(sim_dir, "tasks4_dur300_interval10_seed1000")
+            sched_dir = os.path.join(exp_dir, "taskset_0", "INCR", "INCR")
+            os.makedirs(sched_dir, exist_ok=True)
+            with open(os.path.join(sched_dir, "interval_sp_metrics.txt"), "w") as f:
+                for i in range(10):
+                    f.write(f"{i},0.{90 + i}\n")
+
+            cfg = {"num_tasks_for_single_task_figures": 4,
+                   "main_scheduler_list": ["INCR"]}
+            agg.generate_distribution_boxplot(cfg, run_root=run_root)
+            mock_save.assert_called_once()
+        finally:
+            shutil.rmtree(temp_base)
+            agg.OPTIMIZER_COMPARISON_DIR = orig_dir
+
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.MATPLOTLIB_AVAILABLE", True)
     def test_boxplot_no_experiment_dir(self):
         temp_base = tempfile.mkdtemp()
         try:
@@ -687,6 +739,64 @@ class TestGenerateDistributionBoxplot(unittest.TestCase):
         finally:
             shutil.rmtree(temp_base)
             agg.OPTIMIZER_COMPARISON_DIR = orig_dir
+
+
+class TestCopyConfigIntoRunRoot(unittest.TestCase):
+    """P23: the driving config JSON is copied into the run root so a run is
+    self-describing."""
+
+    def test_copies_config_json_into_run_root(self):
+        import json
+        tmp = tempfile.mkdtemp()
+        try:
+            # Source config file outside the run root.
+            src = os.path.join(tmp, "my_config.json")
+            with open(src, "w") as f:
+                json.dump({"mode": "test"}, f)
+            run_root = os.path.join(tmp, "runs", "run_test_x")
+            os.makedirs(run_root, exist_ok=True)
+
+            agg._copy_config_into_run_root({"_config_source_path": src}, run_root)
+
+            dst = os.path.join(run_root, "config.json")
+            self.assertTrue(os.path.exists(dst))
+            with open(dst) as f:
+                self.assertEqual(json.load(f), {"mode": "test"})
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_skips_when_source_already_in_run_root(self):
+        """If the config path already resolves to the run root's config.json,
+        nothing is copied (no clobber / no error)."""
+        tmp = tempfile.mkdtemp()
+        try:
+            run_root = os.path.join(tmp, "runs", "run_test_y")
+            os.makedirs(run_root, exist_ok=True)
+            dst = os.path.join(run_root, "config.json")
+            with open(dst, "w") as f:
+                f.write("ORIGINAL")
+            mtime_before = os.path.getmtime(dst)
+
+            # Source == destination (already in run root).
+            agg._copy_config_into_run_root(
+                {"_config_source_path": dst}, run_root)
+
+            with open(dst) as f:
+                self.assertEqual(f.read(), "ORIGINAL")  # untouched
+            self.assertEqual(os.path.getmtime(dst), mtime_before)
+        finally:
+            shutil.rmtree(tmp)
+
+    def test_skips_silently_when_no_source_path(self):
+        """No _config_source_path -> no copy, no crash."""
+        tmp = tempfile.mkdtemp()
+        try:
+            run_root = os.path.join(tmp, "runs", "run_test_z")
+            os.makedirs(run_root, exist_ok=True)
+            agg._copy_config_into_run_root({}, run_root)
+            self.assertFalse(os.path.exists(os.path.join(run_root, "config.json")))
+        finally:
+            shutil.rmtree(tmp)
 
 
 class TestIntegrationStyleFigureGeneration(unittest.TestCase):

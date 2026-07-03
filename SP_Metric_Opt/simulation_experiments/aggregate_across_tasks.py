@@ -51,6 +51,7 @@ import csv
 import glob
 import os
 import re
+import shutil
 import sys
 
 import numpy as np
@@ -75,6 +76,7 @@ from simulation_experiments.plotting_config import (
 from simulation_experiments.experiment_config_loader import (
     load_experiment_config,
     build_run_id,
+    build_run_root,
     DEFAULT_CONFIG_PATH,
 )
 
@@ -357,7 +359,18 @@ def aggregate_data_from_directories(cfg=None, output_parent=None):
         ``std_sched_time``, ``important_miss_rate``,
         ``non_important_miss_rate``.
     """
-    base_dir = output_parent if output_parent is not None else OPTIMIZER_COMPARISON_DIR
+    # P23: when scoped to a run (cfg given), the simulate + sweep stages wrote
+    # their dirs under <run_root>/sim/, not at the top of output_parent -- so
+    # scan there. The unscoped/legacy path (cfg is None, direct callers/tests)
+    # still scans output_parent itself.
+    if cfg is not None:
+        scan_parent = build_run_root(
+            output_parent if output_parent is not None else OPTIMIZER_COMPARISON_DIR,
+            cfg,
+        )
+        base_dir = os.path.join(scan_parent, "sim")
+    else:
+        base_dir = output_parent if output_parent is not None else OPTIMIZER_COMPARISON_DIR
     records = []
     if not os.path.isdir(base_dir):
         print(f"Warning: directory not found: {base_dir}")
@@ -737,7 +750,7 @@ def generate_ablation_group_figures(records, cfg, figures_dir=None):
     )
 
 
-def generate_distribution_boxplot(cfg, figures_dir=None):
+def generate_distribution_boxplot(cfg, figures_dir=None, run_root=None):
     """Generate Fig 1F: SP distribution box plot for a single fixed task count.
 
     Reads raw ``interval_sp_metrics.txt`` files from a representative experiment
@@ -751,6 +764,13 @@ def generate_distribution_boxplot(cfg, figures_dir=None):
     in [0, 1]. The divisor is a constant ceiling, not a per-scheduler mean,
     so boxplot whiskers cannot exceed 1.0. Same transform the line figures
     apply, kept consistent across all SP-metric figures.
+
+    Parameters
+    ----------
+    run_root : str | None
+        P23: when set, the experiment dirs live under ``<run_root>/sim/``;
+        scan there for the single-task dir. When None, fall back to the
+        module-global :data:`OPTIMIZER_COMPARISON_DIR` (legacy/standalone path).
     """
     if not MATPLOTLIB_AVAILABLE:
         print("matplotlib not available; skipping Fig 1F.")
@@ -760,17 +780,23 @@ def generate_distribution_boxplot(cfg, figures_dir=None):
     scheduler_list = cfg.get("main_scheduler_list", ["INCR", "BF", "RM", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
 
+    # P23: sims now live under <run_root>/sim/; only the legacy/standalone path
+    # scans the module-global OPTIMIZER_COMPARISON_DIR directly.
+    scan_dir = os.path.join(run_root, "sim") if run_root else OPTIMIZER_COMPARISON_DIR
+
     # Find the first matching experiment directory
-    candidate_dirs = [
-        d for d in os.listdir(OPTIMIZER_COMPARISON_DIR)
-        if d.startswith(f"tasks{target_tasks}_")
-        and os.path.isdir(os.path.join(OPTIMIZER_COMPARISON_DIR, d))
-    ]
+    candidate_dirs = []
+    if os.path.isdir(scan_dir):
+        candidate_dirs = [
+            d for d in os.listdir(scan_dir)
+            if d.startswith(f"tasks{target_tasks}_")
+            and os.path.isdir(os.path.join(scan_dir, d))
+        ]
     if not candidate_dirs:
         print(f"No experiment directory found for task count {target_tasks}; skipping Fig 1F.")
         return
 
-    exp_dir = os.path.join(OPTIMIZER_COMPARISON_DIR, sorted(candidate_dirs)[0])
+    exp_dir = os.path.join(scan_dir, sorted(candidate_dirs)[0])
 
     # Collect per-scheduler SP values
     boxplot_data = []
@@ -848,6 +874,31 @@ def _draw_sp_boxplot(boxplot_data, labels, ylabel, title, output_stem):
     plt.close(fig)
 
 
+def _copy_config_into_run_root(cfg, run_root):
+    """Copy the driving config JSON into the run root (P23).
+
+    Makes a run self-describing: the exact config file that produced the run's
+    sims and figures sits next to them as ``config.json``. Uses
+    :func:`shutil.copy2` to preserve mtime. Skips silently when the source path
+    is unknown, or when the source already resolves to the destination (so a
+    re-run never clobbers or errors). The run root must already exist.
+    """
+    src = cfg.get("_config_source_path")
+    if not src:
+        return
+    src_abs = os.path.abspath(src)
+    dst = os.path.join(run_root, "config.json")
+    if os.path.abspath(dst) == src_abs:
+        # The config already lives in the run root -- nothing to copy.
+        return
+    try:
+        shutil.copy2(src_abs, dst)
+        print(f"Copied config -> {dst}")
+    except OSError as exc:
+        # Non-fatal: the run still produced figures; just note the miss.
+        print(f"Warning: could not copy config into run root: {exc}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Aggregate results across task counts and generate publication figures."
@@ -889,13 +940,23 @@ def main():
         else os.path.join(PROJECT_ROOT, args.output_parent)
     )
 
-    # Scope figures to this run so different runs don't clobber each other.
+    # P23: co-locate this run's figures and raw sim output under one run root.
+    # The simulate + sweep stages wrote their dirs under <run_root>/sim/; this
+    # stage scans there and writes figures under <run_root>/figures/.
+    run_root = build_run_root(output_parent, cfg)
     run_id = build_run_id(cfg)
-    figures_dir = os.path.join(output_parent, "runs", run_id, "figures")
+    figures_dir = os.path.join(run_root, "figures")
     os.makedirs(figures_dir, exist_ok=True)
 
     print(f"Run id: {run_id}")
     print(f"Figures dir: {figures_dir}")
+
+    # P23: copy the driving config JSON into the run root so the run is
+    # self-describing -- the exact config that produced these figures and sim
+    # dirs sits next to them. Aggregate is the natural home: it runs last (the
+    # run root already exists) and this is a benign, non-clobbering input copy.
+    _copy_config_into_run_root(cfg, run_root)
+
     print("Scanning experiment directories ...")
     records = aggregate_data_from_directories(cfg=cfg, output_parent=output_parent)
     if not records:
@@ -906,7 +967,9 @@ def main():
         # could surprise a user who expected a quick re-plot with a long sim).
         # Show exactly what was looked for so the gap is obvious, then point
         # at the entry point that runs the dependent stages in order.
+        sim_dir = os.path.join(run_root, "sim")
         print("No experiment records found for this run's parameters.")
+        print(f"(Looked under: {sim_dir})")
         dur = cfg.get("simulation_duration_seconds")
         interv = cfg.get("scheduler_trigger_interval_seconds")
         seed = cfg.get("base_random_seed")
@@ -918,7 +981,7 @@ def main():
             ]
             print("Expected experiment directories (none found on disk):")
             for name in expected:
-                print(f"  - {name}")
+                print(f"  - {os.path.join(sim_dir, name)}")
             print("(These are created by the simulate stage, which writes a "
                   "comparison_summary.csv into each.)")
         print(
@@ -936,7 +999,7 @@ def main():
     generate_ablation_group_figures(records, cfg, figures_dir=figures_dir)
 
     print("Generating distribution box plot (Fig 1F) ...")
-    generate_distribution_boxplot(cfg, figures_dir=figures_dir)
+    generate_distribution_boxplot(cfg, figures_dir=figures_dir, run_root=run_root)
 
     print("Generating Fig 3: Important-Task Miss Rate ...")
     generate_important_task_miss_rate_figure(records, cfg, figures_dir=figures_dir)

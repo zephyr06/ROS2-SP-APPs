@@ -249,6 +249,94 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
             )
         mock_run.assert_called_once()
 
+    def _write_fresh_main_dir_under_sim(self, tmp, num_tasks, n_tasksets,
+                                        n_sec, interval_sec, base_seed):
+        """Like _write_fresh_main_dir, but nested under <run_root>/sim/ (P23).
+
+        compare_optimizers now writes the main-step dir there when run with
+        --run_root, so _main_step_dir (run_root set) must find it there.
+        """
+        from Gen_Taskset.lib.generation_config_parser import (
+            load_generation_config, resolve_taskset_config_path,
+        )
+        from simulation_experiments.experiment_config_loader import (
+            build_experiment_dir_name,
+        )
+        # run_root is <tmp>/runs/run_<...>; the main dir sits under its sim/.
+        run_root = os.path.join(tmp, "run_root")
+        sim_dir = os.path.join(run_root, "sim")
+        main_dir = os.path.join(
+            sim_dir,
+            build_experiment_dir_name(num_tasks, n_sec, interval_sec, base_seed),
+        )
+        os.makedirs(main_dir, exist_ok=True)
+        with open(os.path.join(main_dir, "comparison_summary.csv"), "w") as f:
+            f.write("Scheduler,Mean_SP_Metric,Std_SP_Metric,Mean_Miss_Rate,"
+                    "Std_Miss_Rate,Mean_Scheduler_Execution_Time_s,"
+                    "Important_Miss_Rate,Non_Important_Miss_Rate\n")
+            f.write("INCR,1.5,0.1,0.0,0.0,0.01,0.0,0.0\n")
+        base_config = load_generation_config(
+            resolve_taskset_config_path(num_tasks))
+        for idx in range(n_tasksets):
+            ts_dir = os.path.join(main_dir, f"taskset_{idx}")
+            os.makedirs(ts_dir, exist_ok=True)
+            with open(os.path.join(ts_dir,
+                                   "taskset_characteristics_interval_0.yaml"), "w") as f:
+                f.write("tasks: []\n")
+            cfg_i = dict(base_config)
+            cfg_i["RANDOM_SEED"] = base_seed + idx
+            cfg_i["UPDATE_INTERVAL_S"] = interval_sec
+            with open(os.path.join(ts_dir, "generator_config.json"), "w") as f:
+                json.dump(cfg_i, f)
+        return run_root, main_dir
+
+    def test_run_root_reuses_main_dir_under_sim(self):
+        """P23: with run_root set, reuse finds the main-step dir under
+        <run_root>/sim/ and returns it without running compare_optimizers."""
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        run_root, main_dir = self._write_fresh_main_dir_under_sim(
+            tmp, num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=10,
+            base_seed=1000)
+        with unittest.mock.patch.object(sweep.subprocess, "run") as mock_run:
+            out = sweep.run_single_interval(
+                num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=10,
+                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                bin_dir="release", output_parent=tmp, export_level=1,
+                important_task_pct=0.1, num_workers=None, resume=False,
+                verbose=0, reuse_matching_interval=True, run_root=run_root,
+            )
+        mock_run.assert_not_called()
+        # Returned the reused main-step dir under <run_root>/sim/.
+        self.assertEqual(out, main_dir)
+        self.assertTrue(out.endswith("sim/tasks6_dur30_interval10_seed1000"))
+
+    def test_run_root_writes_sweep_dir_under_sim_and_forwards_flag(self):
+        """P23: with run_root set and no reusable main dir, the sweep writes
+        its own dir under <run_root>/sim/ and forwards --run_root to the
+        compare_optimizers subprocess."""
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        run_root = os.path.join(tmp, "run_root")
+        with unittest.mock.patch.object(sweep.subprocess, "run") as mock_run:
+            mock_run.return_value = unittest.mock.MagicMock(returncode=0)
+            out = sweep.run_single_interval(
+                num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=5,
+                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                bin_dir="release", output_parent=tmp, export_level=1,
+                important_task_pct=0.1, num_workers=None, resume=False,
+                verbose=0, reuse_matching_interval=True, run_root=run_root,
+            )
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        # Sweep's own dir lands under <run_root>/sim/.
+        self.assertTrue(out.endswith("sim/tasks6_sweep_interval5_seed1000"))
+        self.assertEqual(out, os.path.join(run_root, "sim",
+                                           "tasks6_sweep_interval5_seed1000"))
+        # --run_root is forwarded to the child compare_optimizers.
+        self.assertIn("--run_root", cmd)
+        self.assertEqual(cmd[cmd.index("--run_root") + 1], run_root)
+
 
 if __name__ == "__main__":
     unittest.main()

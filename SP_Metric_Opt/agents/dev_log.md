@@ -806,3 +806,163 @@ opt-in (see below).
 
 Full suite **253 passing** (was 245 at HEAD; +8 P14 tests).
 
+### End-to-end: always run all stages + actionable aggregate (P22)
+
+The e2e orchestrator offered a `--steps` flag (and `STEPS` env-var) to run a
+*subset* of stages. That was a footgun: the three stages are dependent (aggregate
+reads what simulate wrote; sweep reuses simulate's tasksets), so selecting a subset
+against stale or missing data produced confusing "No experiment records found"
+failures rather than doing the right thing. Per user request ("the only case is
+run end-to-end"), the stage-selection knob is removed entirely. The INCR-ET
+measurement config also drops its `prod_mode` block (test/prod had drifted to
+different task counts), and aggregate's empty-data path becomes actionable.
+
+**Implemented in commit `46a62b49` (branch `clean_simulation`):**
+- `run_end_to_end_experiments.py`: removed `--steps` arg, `ALL_STAGES` constant,
+  and the `stage_funcs` loop. `main()` runs simulate → sweep → aggregate
+  unconditionally in fixed order; a failed stage still aborts. Binary pre-flight
+  simplified (always required unless `--dry_run`).
+- `scripts/run_end_to_end.sh`: dropped `STEPS` env-var, its usage example, and the
+  `--steps` forwarding block. Header prints the fixed stage order.
+- `aggregate_across_tasks.py`: the empty-data path (was a bare "Run simulations
+  first." + exit 1) now prints the exact expected dir prefixes it looked for
+  (`tasks{N}_dur{D}_interval{I}_seed{S}`), notes none matched, and points at
+  `./scripts/run_end_to_end.sh`. Stays **read-only** -- does NOT auto-run simulate,
+  so a direct re-plot can't surprise the user with a long C++ sim.
+- `configs/incr_et_8tasks_config.json` (new, single-purpose INCR-ET measurement
+  config): `test_mode` block only (no `prod_mode`) -- `[10]` tasks, `2` tasksets,
+  `70s` duration, `10s` interval, seed `1000`, `main_scheduler_list: ["INCR"]`,
+  `enable_execution_time_profiling: true`. The loader only errors if the
+  *requested* mode's block is missing, so test-only is fine. Scheduler avg ET =
+  `Mean_Scheduler_Execution_Time_s` ("Avg Sched Time") in `comparison_summary.csv`
+  under `tasks{N}_dur{D}_interval{I}_seed{S}/`.
+- `tests/python/test_run_end_to_end.py`: rewritten `TestMainPipeline` --
+  `test_all_stages_always_run`, `test_steps_flag_rejected` (argparse exits 2),
+  `test_failed_stage_aborts`, `test_dry_run_prints_and_does_not_execute`; dropped
+  the `--steps`-subset tests. 17 e2e + 35 aggregate tests pass.
+
+**Numbering note:** the commit title still reads `P21: ...` -- it was tagged P21
+before a collision was noticed with the (unstarted, long-reserved) warm-start P21
+at `tasks.md` L530. Resolved by renumber: the warm-start work keeps **P21**, this
+e2e refactor is **P22**, and the next task (unify output folders) is **P23**. The
+commit title was not amended. Supersedes the `--steps` documentation in P10/P20.
+
+### Unify sim + figures output under one run folder (P23)
+
+Sims and figures currently live at *different* levels of
+`optimizer_comparison/`: per-task-count sim dirs (`tasks{N}_dur{D}_interval{I}_seed{S}`
+from compare_optimizers, `tasks{N}_sweep_interval{I}_seed{S}` from interval_sweep)
+are top-level siblings of `runs/`, while figures are nested under
+`runs/<run_id>/figures/`. The goal is to co-locate each run's full sim output
+(incl. the task-set config -- `generator_config.json`, `taskset_param.yaml`,
+`taskset_characteristics*.yaml`, `path_Et_task_*.txt`, the per-scheduler
+`INCR/...` output) with its derived figures under the run dir, and drop a copy of
+the driving config JSON into the run dir so a run is self-describing.
+
+**Target layout:**
+
+```
+optimizer_comparison/
+└── runs/run_test_dur70_interval10_seed1000_tasks10/   <- build_run_id
+    ├── config.json                                    <- copy of the active config file
+    ├── figures/                                       <- derived figures (unchanged)
+    └── sim/                                           <- ALL raw sim output
+        ├── tasks10_dur70_interval10_seed1000/         <- main-step sim + taskset_*/
+        └── tasks10_sweep_interval5_seed1000/          <- sweep sim + taskset_*/
+```
+
+**Key constraint:** the three stages must agree on where sims live.
+compare_optimizers writes the sim dir; interval_sweep *reconstructs that same path*
+to reuse the main step's tasksets (`_main_step_dir` →
+`output_parent/tasks{N}_dur...`); aggregate *scans* that location for
+`comparison_summary.csv`. So moving sims under `runs/<run_id>/sim/` means all three
+writers/readers, plus the orchestrator wiring `output_parent`, must move together.
+The run dir is `build_run_id(cfg)` -- one per run -- so "where sims go" is a
+function of cfg, computed once and threaded through.
+
+**Approved design (see `tasks.md` P23 for the full checkbox breakdown):**
+- New `build_run_root(output_parent, cfg)` helper in `experiment_config_loader.py`
+  (reuses `build_run_id`); sims → `<run_root>/sim/`, figures → `<run_root>/figures/`.
+- `compare_optimizers.resolve_run_output_dir` gains `run_root=None` + a `--run_root`
+  CLI arg; standalone use falls back to today's path (only the orchestrator opts in).
+- `interval_sweep` `_main_step_dir`/`_main_dir_is_fresh`/`run_single_interval` take
+  `run_root`; sweep dir → `<run_root>/sim/...`; fig2 → `<run_root>/figures`. No new
+  CLI arg (derives `run_root` from cfg internally).
+- `aggregate` scans `<run_root>/sim/` when cfg-scoped (legacy unscoped branch keeps
+  scanning `output_parent`); `generate_distribution_boxplot` (Fig 1F, reads the
+  module-global `OPTIMIZER_COMPARISON_DIR`) gets `run_root` threaded from `main()`;
+  empty-data message points at `<run_root>/sim/`. Module globals stay as defaults
+  for the unscoped/standalone fallback.
+- Copy the driving config JSON into `<run_root>/config.json` in `aggregate.main()`
+  (last stage, run root guaranteed to exist, read-only otherwise so a copy is
+  benign) via `shutil.copy2`.
+- Orchestrator computes `run_root` once, passes `--run_root` to the simulate
+  command only; sweep + aggregate derive it internally (no new args).
+- Tests: `test_compare_optimizers` (run_root path variant), `test_interval_sweep`
+  (the reuse test is critical -- the fresh main dir must be written where
+  `_main_step_dir` now looks, under `sim/`), `test_aggregate` (build dirs under
+  `sim/`, thread `run_root` for Fig 1F), `test_run_end_to_end` (assert `--run_root`
+  in the simulate cmd).
+
+**Legacy / old data:** old top-level sim dirs (`tasks4/6/8/10_dur70_...`,
+`tasks*_sweep_...`, `tasks1_dur300_...`, `tasks*_dur600_...`) are left in place --
+not migrated. Once aggregate's scan root moves to `<run_root>/sim/`, those become
+invisible to new runs (desired clean per-run isolation); user deletes by hand. No
+migration script.
+
+**Status: implemented (working tree, uncommitted).** Full plan in
+`/home/zephyr/.claude/plans/scalable-swimming-wombat.md`.
+
+**Implemented (this change, branch `clean_simulation`):**
+- `experiment_config_loader.py`: added `build_run_root(output_parent, cfg)` →
+  `os.path.join(output_parent, "runs", build_run_id(cfg))`. Reuses `build_run_id`
+  unchanged (no id-scheme change); two runs differing in mode/duration/interval/
+  seed/task-count list get separate roots and never clobber.
+- `compare_optimizers.py`: `resolve_run_output_dir(..., run_root=None)`. When set,
+  sims land at `<run_root>/sim/<subfolder>` (co-located with figures); when None
+  (standalone CLI), the legacy `<base_output_dir>/<subfolder>` layout is kept so the
+  module stays usable on its own. New `--run_root` CLI arg (default None) -- only
+  the e2e orchestrator opts in.
+- `interval_sweep.py`: `_main_step_dir`, `_main_dir_is_fresh`, `run_single_interval`
+  take `run_root`. With it set: the sweep writes its own dir to
+  `<run_root>/sim/tasks{N}_sweep_interval{I}_seed{S}`, *and* reuse looks for the
+  main step's dir there too (so P20 reuse still finds it after compare_optimizers
+  relocated under `sim/`). The `--run_root` flag is forwarded to the child
+  `compare_optimizers` subprocess. `main()` derives `run_root` from cfg internally
+  (no new CLI arg); Fig 2 → `<run_root>/figures/`.
+- `aggregate_across_tasks.py`: `aggregate_data_from_directories` scans
+  `<run_root>/sim/` when cfg-scoped (the legacy unscoped branch, `cfg is None`, still
+  scans `output_parent` directly). `generate_distribution_boxplot` (Fig 1F, which
+  reads the module-global `OPTIMIZER_COMPARISON_DIR`) gained `run_root=None` threaded
+  from `main()`; it scans `<run_root>/sim/` when set, falling back to the global dir
+  only on the legacy/standalone path. `main()` computes `run_root`, sets
+  `figures_dir = <run_root>/figures`, and the empty-data message now points at
+  `<run_root>/sim/`. New `_copy_config_into_run_root` copies the driving config JSON
+  (`cfg["_config_source_path"]`) into `<run_root>/config.json` via `shutil.copy2`,
+  skipping silently when the source is unknown or already resolves to the destination
+  (re-runs never clobber). Module globals stay as defaults for the standalone path.
+- `run_end_to_end_experiments.py`: computes `run_root` once in `main()`, passes
+  `--run_root` to the simulate command only (sweep + aggregate derive it internally
+  from cfg -- no new args). Final figures-dir print uses `<run_root>/figures`.
+- `configs/experiment_config.json` (prod_mode): `num_tasks_for_single_task_figures`
+  8 → 10, so the Fig 1F box-plot target matches the smallest prod cross-task count.
+- Tests: `test_compare_optimizers.py` (+3 -- run_root nests under `sim/` for both
+  auto-named and custom `run_name`; `run_root=None` keeps the legacy layout);
+  `test_interval_sweep.py` (+2 -- the critical reuse test: a fresh main dir under
+  `<run_root>/sim/` is found and reused without a subprocess; and the sweep writes
+  its own dir under `<run_root>/sim/` while forwarding `--run_root` to the child);
+  `test_aggregate.py` (scoped-ingestion test rebuilt to put dirs under `<run_root>/sim/`
+  while the legacy unscoped path still scans the top level; +1 box-plot test that the
+  `run_root`-scoped scan finds data the empty global dir would miss; +3 for
+  `_copy_config_into_run_root` -- copies, skips when source == destination, skips when
+  no source path); `test_run_end_to_end.py` (simulate command assertions now build the
+  expected `run_root` and assert `--run_root` is forwarded).
+
+Full suite **262 passing** (`tests/python/` 248 + `Gen_Taskset/tests/` 14). `--dry_run`
+confirms `--run_root` is forwarded to `compare_optimizers`, sweep + aggregate derive it
+internally, and the final figures path is `<run_root>/figures`. (A real smoke run with
+the INCR config to confirm `runs/<run_id>/{config.json,figures/,sim/tasks...}` on disk
+is left to the user -- it needs the compiled `RunOrchestrator` binary, not available
+in this doc-sync pass.)
+
+

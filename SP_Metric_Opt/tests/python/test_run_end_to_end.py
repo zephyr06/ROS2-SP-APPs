@@ -54,7 +54,9 @@ class TestBuildCommands(unittest.TestCase):
     def test_simulate_command_carries_config_values(self):
         cfg = _cfg("test")
         cfg["bin_dir"] = "release"
-        cmd = e2e.build_simulate_command(6, cfg, "/tmp/out", verbose=1)
+        run_root = e2e.build_run_root("/tmp/out", cfg)
+        cmd = e2e.build_simulate_command(6, cfg, "/tmp/out", verbose=1,
+                                         run_root=run_root)
 
         self.assertEqual(cmd[1], "-m")
         self.assertEqual(cmd[2], "simulation_experiments.compare_optimizers")
@@ -69,6 +71,9 @@ class TestBuildCommands(unittest.TestCase):
                          str(cfg["scheduler_trigger_interval_seconds"]))
         self.assertEqual(cmd[cmd.index("--base_seed") + 1],
                          str(cfg["base_random_seed"]))
+        # P23: --run_root is forwarded so sims land under <run_root>/sim/.
+        self.assertIn("--run_root", cmd)
+        self.assertEqual(cmd[cmd.index("--run_root") + 1], run_root)
         # Scheduler union is passed positionally after --schedulers
         sched_idx = cmd.index("--schedulers")
         schedulers_passed = cmd[sched_idx + 1:cmd.index("--bin_dir", sched_idx)]
@@ -82,21 +87,27 @@ class TestBuildCommands(unittest.TestCase):
         cfg = _cfg("test")
         cfg["bin_dir"] = "release"
         cfg["analysis"]["enable_resume_from_existing_results"] = True
-        cmd = e2e.build_simulate_command(4, cfg, "/tmp/out", verbose=1)
+        run_root = e2e.build_run_root("/tmp/out", cfg)
+        cmd = e2e.build_simulate_command(4, cfg, "/tmp/out", verbose=1,
+                                         run_root=run_root)
         self.assertIn("--resume", cmd)
 
     def test_simulate_command_no_resume_by_default(self):
         cfg = _cfg("test")
         cfg["bin_dir"] = "release"
         cfg["analysis"]["enable_resume_from_existing_results"] = False
-        cmd = e2e.build_simulate_command(4, cfg, "/tmp/out", verbose=1)
+        run_root = e2e.build_run_root("/tmp/out", cfg)
+        cmd = e2e.build_simulate_command(4, cfg, "/tmp/out", verbose=1,
+                                         run_root=run_root)
         self.assertNotIn("--resume", cmd)
 
     def test_simulate_command_num_workers(self):
         cfg = _cfg("test")
         cfg["bin_dir"] = "release"
         cfg["parallel_worker_processes"] = 8
-        cmd = e2e.build_simulate_command(8, cfg, "/tmp/out", verbose=1)
+        run_root = e2e.build_run_root("/tmp/out", cfg)
+        cmd = e2e.build_simulate_command(8, cfg, "/tmp/out", verbose=1,
+                                         run_root=run_root)
         self.assertEqual(cmd[cmd.index("--num_workers") + 1], "8")
 
     def test_simulate_command_keeps_prompt_policy(self):
@@ -106,7 +117,9 @@ class TestBuildCommands(unittest.TestCase):
         """
         cfg = _cfg("test")
         cfg["bin_dir"] = "release"
-        cmd = e2e.build_simulate_command(6, cfg, "/tmp/out", verbose=1)
+        run_root = e2e.build_run_root("/tmp/out", cfg)
+        cmd = e2e.build_simulate_command(6, cfg, "/tmp/out", verbose=1,
+                                         run_root=run_root)
         self.assertNotIn("--on_taskset_config_change", cmd)
 
     def test_sweep_command(self):

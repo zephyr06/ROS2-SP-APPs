@@ -36,7 +36,7 @@ from simulation_experiments.plotting_config import (
 )
 from simulation_experiments.experiment_config_loader import (
     load_experiment_config,
-    build_run_id,
+    build_run_root,
     DEFAULT_CONFIG_PATH,
 )
 
@@ -54,7 +54,8 @@ DEFAULT_OUTPUT_PARENT = os.path.join(
 )
 
 
-def _main_step_dir(num_tasks, n_sec, interval_sec, base_seed, output_parent):
+def _main_step_dir(num_tasks, n_sec, interval_sec, base_seed, output_parent,
+                   run_root=None):
     """Return the canonical main-step experiment dir path for these params.
 
     The main step (compare_optimizers without --run_name) writes to
@@ -62,18 +63,23 @@ def _main_step_dir(num_tasks, n_sec, interval_sec, base_seed, output_parent):
     :func:`build_experiment_dir_name`. The sweep can reuse that dir's results
     when its interval matches the main step's, so it must reconstruct the same
     name to *find* it.
+
+    When *run_root* is set (e2e orchestrator), the main step wrote its dir under
+    ``<run_root>/sim/`` (P23), so the reconstructed lookup path is
+    ``<run_root>/sim/<name>``. When None (standalone sweep), the legacy
+    ``<output_parent>/<name>`` layout is used.
     """
     from simulation_experiments.experiment_config_loader import (
         build_experiment_dir_name,
     )
-    return os.path.join(
-        output_parent,
-        build_experiment_dir_name(num_tasks, n_sec, interval_sec, base_seed),
-    )
+    name = build_experiment_dir_name(num_tasks, n_sec, interval_sec, base_seed)
+    if run_root:
+        return os.path.join(run_root, "sim", name)
+    return os.path.join(output_parent, name)
 
 
 def _main_dir_is_fresh(num_tasks, n_tasksets, n_sec, interval_sec, base_seed,
-                       output_parent):
+                       output_parent, run_root=None):
     """Check whether the main-step dir has fresh, reusable tasksets.
 
     "Fresh" means: every ``taskset_{idx}`` inside it was generated under a
@@ -91,7 +97,7 @@ def _main_dir_is_fresh(num_tasks, n_tasksets, n_sec, interval_sec, base_seed,
     from simulation_experiments.run_sim_experiments import _should_generate
 
     main_dir = _main_step_dir(num_tasks, n_sec, interval_sec, base_seed,
-                              output_parent)
+                              output_parent, run_root=run_root)
     if not os.path.exists(os.path.join(main_dir, "comparison_summary.csv")):
         return None
 
@@ -136,6 +142,7 @@ def run_single_interval(
     verbose,
     reuse_matching_interval=False,
     on_taskset_config_change="prompt",
+    run_root=None,
 ):
     """Launch compare_optimizers.py for a single trigger interval.
 
@@ -158,14 +165,22 @@ def run_single_interval(
         TTY). The e2e orchestrator does **not** override this -- it shares
         tasksets across stages (``reuse_matching_interval``), it does not
         silence the drift guard. See ``agents/tasks.md`` (P20).
+    run_root : str or None
+        P23: when set (e2e orchestrator), the sweep writes its own sim dir under
+        ``<run_root>/sim/`` and looks for the main step's dir there too (so
+        reuse still finds it after compare_optimizers relocated). When None
+        (standalone), the legacy ``<output_parent>/`` layout is used.
     """
-    output_dir = os.path.join(
-        output_parent, f"tasks{num_tasks}_sweep_interval{interval_sec}_seed{base_seed}"
-    )
+    sweep_name = f"tasks{num_tasks}_sweep_interval{interval_sec}_seed{base_seed}"
+    if run_root:
+        output_dir = os.path.join(run_root, "sim", sweep_name)
+    else:
+        output_dir = os.path.join(output_parent, sweep_name)
 
     if reuse_matching_interval:
         reused = _main_dir_is_fresh(
-            num_tasks, n_tasksets, n_sec, interval_sec, base_seed, output_parent
+            num_tasks, n_tasksets, n_sec, interval_sec, base_seed, output_parent,
+            run_root=run_root,
         )
         if reused is not None:
             if verbose >= 1:
@@ -186,12 +201,14 @@ def run_single_interval(
         "--schedulers", *schedulers,
         "--bin_dir", bin_dir,
         "--output_dir", output_parent,
-        "--run_name", os.path.basename(output_dir),
+        "--run_name", sweep_name,
         "--export_level", str(export_level),
         "--important_task_pct", str(important_task_pct),
         "--verbose", str(verbose),
         "--on_taskset_config_change", on_taskset_config_change,
     ]
+    if run_root:
+        cmd += ["--run_root", run_root]
     if num_workers is not None:
         cmd += ["--num_workers", str(num_workers)]
     if resume:
@@ -405,6 +422,11 @@ def main():
         grid_line_alpha=plotting_cfg.get("grid_line_alpha", 0.5),
     )
 
+    # P23: co-locate this run's sim output and figures under one run root. The
+    # sweep writes its own sim dirs and looks for the main step's tasksets under
+    # <run_root>/sim/, and writes Figure 2 under <run_root>/figures/.
+    run_root = build_run_root(args.output_parent, cfg)
+
     all_data = []
     first_output_dir = None
     for interval_sec in interval_list:
@@ -424,6 +446,7 @@ def main():
             verbose=args.verbose,
             reuse_matching_interval=args.reuse_matching_interval,
             on_taskset_config_change=args.on_taskset_config_change,
+            run_root=run_root,
         )
         if first_output_dir is None:
             first_output_dir = output_dir
@@ -450,8 +473,8 @@ def main():
                 if first_output_dir is not None else None)
 
     # Scope Figure 2 to this run so different runs don't clobber each other.
-    run_id = build_run_id(cfg)
-    figures_dir = os.path.join(args.output_parent, "runs", run_id, "figures")
+    # P23: figures live under the run root alongside the sim output.
+    figures_dir = os.path.join(run_root, "figures")
     os.makedirs(figures_dir, exist_ok=True)
     fig2_path = os.path.join(figures_dir, "fig2_sp_vs_interval")
     generate_interval_sweep_figure(all_data, cfg, fig2_path, ideal_sp=ideal_sp)

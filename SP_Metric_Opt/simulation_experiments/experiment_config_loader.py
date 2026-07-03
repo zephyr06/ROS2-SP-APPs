@@ -130,6 +130,34 @@ def build_run_id(config_dict):
     return f"{prefix}_{base}" if prefix else base
 
 
+def build_run_root(output_parent, config_dict):
+    """Return the co-located run directory for one end-to-end run.
+
+    Everything a single run produces lives under this path: raw simulation
+    output under ``<run_root>/sim/`` and derived figures under
+    ``<run_root>/figures/``. Co-locating them (P23) means the task-set
+    simulation config sits next to the figures it drove, instead of scattered
+    at the top level of ``output_parent``.
+
+    The run id itself comes from :func:`build_run_id`, so two runs that differ
+    in mode/duration/interval/seed/task-count list get separate run roots and
+    never clobber each other.
+
+    Parameters
+    ----------
+    output_parent : str
+        Base output directory (e.g. ``.../optimizer_comparison``).
+    config_dict : dict
+        The dictionary returned by :func:`load_experiment_config`.
+
+    Returns
+    -------
+    str
+        ``os.path.join(output_parent, "runs", build_run_id(config_dict))``.
+    """
+    return os.path.join(output_parent, "runs", build_run_id(config_dict))
+
+
 def resolve_config_value(config_dict, key, default=None):
     """Safely fetch a value from the loaded config with an optional default.
 

@@ -529,5 +529,144 @@ correct reuse, not the generation-pipeline split.
 
 ### P21 -- Implement & Run Experiments for Warm-Start Incremental Priority Assignment
 
-- [ ] Implement warm-start initialization of `OptimizePA_Incre` from the previous configuration's optimal priority vector to bypass `OptimizeFromScratch` Audsley search calls.
-- [ ] Run profiling experiments to evaluate the performance speedup ratio and verify the scheduling priority quality under multi-task execution time updates.
+- [ ] Add a global configuration flag (e.g., `GlobalVariables::use_warm_start_incremental_opt`) in C++ to enable/disable the warm-start optimization.
+- [ ] Implement the warm-start initialization of `OptimizePA_Incre` from the previous configuration's optimal priority vector to bypass `OptimizeFromScratch` Audsley search calls when the flag is enabled.
+- [ ] Run comparative simulation experiments to measure the execution time speedup ratio and evaluate the final SP optimization quality between the warm-start mode and the baseline from-scratch mode.
+- [ ] Decisive Action:
+  *   If SP quality is close/identical: permanently enable the warm-start optimizer and clean up/remove the global flag.
+  *   If SP quality difference is significant: keep the flag disabled and iterate on improving the variation search logic.
+
+
+---
+
+### P22 -- End-to-end: always run all stages; actionable aggregate empty-data (DONE)
+
+**Goal:** the e2e orchestrator had a `--steps` flag (and `STEPS` env-var) to run a
+*subset* of stages. That was a footgun: the three stages are dependent (aggregate
+reads what simulate wrote; sweep reuses simulate's tasksets), so selecting a subset
+against stale or missing data produced confusing "No experiment records found"
+failures instead of doing the right thing. Per user request ("the only case is run
+end-to-end"), the stage-selection knob is removed entirely. Separately, the INCR-ET
+measurement config drops its `prod_mode` block (a drift footgun: test/prod had
+drifted to different task counts), and aggregate's empty-data path becomes
+actionable instead of a bare error.
+
+**Implemented (commit `46a62b49`, branch `clean_simulation`):**
+- [x] **P22.1** `run_end_to_end_experiments.py`: remove `--steps` arg,
+      `ALL_STAGES` constant, and the `stage_funcs` loop. `main()` runs
+      simulate → sweep → aggregate unconditionally in fixed order; a failed stage
+      still aborts. Binary pre-flight simplified (always required unless
+      `--dry_run`).
+- [x] **P22.2** `scripts/run_end_to_end.sh`: drop the `STEPS` env-var, its usage
+      example, and the `--steps` forwarding block. Header prints the fixed stage
+      order (`simulate -> sweep -> aggregate`).
+- [x] **P22.3** `aggregate_across_tasks.py`: the empty-data path (was a bare "Run
+      simulations first." + exit 1) now prints the exact expected dir prefixes it
+      looked for (`tasks{N}_dur{D}_interval{I}_seed{S}`), notes none matched, and
+      points at `./scripts/run_end_to_end.sh`. Stays **read-only** -- does NOT
+      auto-run simulate, so a direct re-plot can't surprise the user with a long
+      C++ sim.
+- [x] **P22.4** `configs/incr_et_8tasks_config.json` (new): single-purpose
+      INCR-only ET measurement config. `test_mode` block only (no `prod_mode`):
+      `[10]` tasks, `2` tasksets, `70s` duration, `10s` interval, seed `1000`,
+      `main_scheduler_list: ["INCR"]`, `enable_execution_time_profiling: true`.
+      Run it with
+      `CONFIG_JSON=simulation_experiments/configs/incr_et_8tasks_config.json ./scripts/run_end_to_end.sh`.
+      Scheduler avg ET = `Mean_Scheduler_Execution_Time_s` ("Avg Sched Time") in
+      `comparison_summary.csv`.
+- [x] **P22.5** Tests: `test_run_end_to_end.py` rewritten -- `test_all_stages_always_run`,
+      `test_steps_flag_rejected` (argparse exits 2), `test_failed_stage_aborts`,
+      `test_dry_run_prints_and_does_not_execute`; dropped the `--steps`-subset
+      tests. 17 e2e + 35 aggregate tests pass.
+
+**Note:** the commit title still reads `P21: ...` (it was tagged P21 before the
+warm-start collision was noticed). This entry records it as **P22** per the
+renumber decision (warm-start keeps P21). Supersedes the `--steps` documentation in
+P10/P20.
+
+---
+
+### P23 -- Unify sim + figures output under one run folder (DONE)
+
+**Goal:** co-locate each run's simulation output (incl. the task-set simulation
+config -- periods, utilizations, characteristics YAMLs, generator config) with its
+derived figures under the run dir, instead of sims scattered at the top level and
+figures nested under `runs/<run_id>/`. Also drop a copy of the driving config JSON
+into the run dir so a run is self-describing.
+
+**Current layout (the problem)** -- sims and figures live at *different* levels:
+
+```
+optimizer_comparison/                                 <- output_parent (base)
+├── tasks10_dur70_interval10_seed1000/                <- main-step sim (compare_optimizers)
+│   └── taskset_0/  (generator_config.json, taskset_param.yaml,
+│                   taskset_characteristics*.yaml, path_Et_task_*.txt, INCR/, *.png)
+├── tasks10_sweep_interval5_seed1000/                 <- sweep sim (interval_sweep)
+└── runs/run_test_dur70_interval10_seed1000_tasks10/  <- build_run_id
+    └── figures/                                      <- aggregate (+ sweep fig2) write here
+```
+
+**Target layout:**
+
+```
+optimizer_comparison/
+└── runs/run_test_dur70_interval10_seed1000_tasks10/   <- build_run_id
+    ├── config.json                                    <- copy of the active config file
+    ├── figures/                                       <- derived figures (unchanged)
+    └── sim/                                           <- ALL raw sim output
+        ├── tasks10_dur70_interval10_seed1000/         <- main-step sim + taskset_*/
+        └── tasks10_sweep_interval5_seed1000/          <- sweep sim + taskset_*/
+```
+
+**Key constraint:** the three stages must agree on where sims live.
+compare_optimizers writes the sim dir; interval_sweep *reconstructs that same path*
+to reuse the main step's tasksets (`_main_step_dir` → `output_parent/tasks{N}_dur...`);
+aggregate *scans* that location for `comparison_summary.csv`. So moving sims under
+`runs/<run_id>/sim/` means all three writers/readers, plus the orchestrator, must
+move together. The run dir is `build_run_id(cfg)` -- one per run -- so "where sims
+go" is a function of cfg, computed once and threaded through.
+
+**Design (approved):**
+- [x] **P23.1** New helper `build_run_root(output_parent, cfg)` in
+      `experiment_config_loader.py` → `os.path.join(output_parent, "runs",
+      build_run_id(cfg))`. Sims derive as `<run_root>/sim/`, figures as
+      `<run_root>/figures/`. Reuses `build_run_id` (no id-scheme change).
+- [x] **P23.2** `compare_optimizers.py`: `resolve_run_output_dir()` gains a
+      `run_root=None` param. When set, sims go to `<run_root>/sim/<subfolder>`;
+      when None (standalone CLI), falls back to today's `<output_dir>/<subfolder>`
+      so the module stays usable by itself. New `--run_root` CLI arg (default
+      None) -- only the e2e orchestrator opts in.
+- [x] **P23.3** `interval_sweep.py`: `_main_step_dir()` + `_main_dir_is_fresh()`
+      + `run_single_interval()` take `run_root`; the sweep dir is written to
+      `<run_root>/sim/tasks{N}_sweep_interval{I}_seed{S}`; fig2 →
+      `<run_root>/figures/`. `main()` computes `run_root` from cfg. **No new CLI
+      arg** -- sweep derives `run_root` internally (it already loads cfg).
+- [x] **P23.4** `aggregate_across_tasks.py`: `aggregate_data_from_directories()`
+      scans `<run_root>/sim/` when cfg-scoped (legacy unscoped branch keeps
+      scanning `output_parent`). `generate_distribution_boxplot()` (Fig 1F, reads
+      the module-global `OPTIMIZER_COMPARISON_DIR`) gets `run_root` threaded from
+      `main()`. `main()` computes `run_root`, sets `figures_dir = <run_root>/figures`,
+      updates the empty-data message to point at `<run_root>/sim/`. Module globals
+      stay as defaults for the unscoped/standalone fallback path.
+- [x] **P23.5** Copy the driving config JSON into the run root in
+      `aggregate.main()` (last stage, run root guaranteed to exist, read-only
+      otherwise so a copy is benign): `shutil.copy2(cfg["_config_source_path"],
+      <run_root>/config.json)`, skipping if already there.
+- [x] **P23.6** Orchestrator `run_end_to_end_experiments.py`: compute `run_root`
+      once in `main()`; pass `--run_root` to the simulate command only (sweep +
+      aggregate derive it from cfg internally -- no new args). Final figures-dir
+      print uses `<run_root>/figures`.
+- [x] **P23.7** Tests: `test_compare_optimizers.py` (run_root path variant),
+      `test_interval_sweep.py` (reuse test is critical -- fresh main dir must be
+      written where `_main_step_dir` now looks, under `sim/`), `test_aggregate.py`
+      (build dirs under `sim/`, thread `run_root` for Fig 1F),
+      `test_run_end_to_end.py` (assert `--run_root` present in simulate cmd).
+
+**Legacy / old data:** old top-level sim dirs (`tasks4/6/8/10_dur70_...`,
+`tasks*_sweep_...`, `tasks1_dur300_...`, `tasks*_dur600_...`) are **left in place**
+-- not migrated. Once aggregate's scan root moves to `<run_root>/sim/`, those become
+invisible to new runs (desired clean per-run isolation); user deletes by hand.
+
+**Verification:** unit tests green + `--dry_run` shows `--run_root`; real smoke run
+with the INCR config confirms `runs/<run_id>/{config.json,figures/,sim/tasks...}`;
+re-run reuses the same run dir + tasksets (P20 reuse still finds them under `sim/`).
