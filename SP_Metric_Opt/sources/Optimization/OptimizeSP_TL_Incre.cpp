@@ -82,9 +82,10 @@ std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
 void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = false;
-    if (optimizer.opt_sp_ > opt_sp_) {
+    if (optimizer.opt_sp_ > opt_sp_ &&
+        !ApproxEqualSP(optimizer.opt_sp_, opt_sp_)) {
         should_update = true;
-    } else if (std::abs(optimizer.opt_sp_ - opt_sp_) < 1e-9) {
+    } else if (ApproxEqualSP(optimizer.opt_sp_, opt_sp_)) {
         double sum_new = 0;
         for (double val : time_limits) {
             if (val != -1.0)
@@ -169,10 +170,10 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
         for (double val : time_limit_option_for_each_task_[idx]) {
             time_limits[idx] = val;
             double sp_val = EvaluateTimeLimitConfig(K, time_limits);
-            if (sp_val > best_sp) {
+            if (sp_val > best_sp && !ApproxEqualSP(sp_val, best_sp)) {
                 best_sp = sp_val;
                 best_option_val = val;
-            } else if (std::abs(sp_val - best_sp) < 1e-9) {
+            } else if (ApproxEqualSP(sp_val, best_sp)) {
                 if (val < best_option_val) {
                     best_option_val = val;
                 }

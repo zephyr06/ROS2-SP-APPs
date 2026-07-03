@@ -275,21 +275,21 @@ TEST_F(TaskSetForTest_robotics_v19, ReOptimizePeriodic) {
     EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
-    EXPECT_EQ(800,
+    EXPECT_EQ(400,
               res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
-    //   Conservative max-value compression makes the system appear more
-    //   schedulable, so scratch-mode optimizer now selects 800.
-    // In incremental mode, should return 800
+    //   All TL options are effectively unschedulable and produce near-identical
+    //   SP.  ApproxEqualSP treats them as equal, so the tie-breaker picks
+    //   the lowest (tightest) time limit.
 }
 
 TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
                                          sp_parameters);  // high utilization
 
-    opt.ReOptimizePeriodic(2);  // result is 800 with conservative compression
+    opt.ReOptimizePeriodic(2);  // high utilization → all TLs tied → tie-breaker
     ResourceOptResult res_opt = opt.CollectResults();
-    EXPECT_EQ(800,
-              res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
+    EXPECT_EQ(400,
+              res_opt.id2time_limit[0]);  // picks lowest TL when SP is identical
 
     DAG_Model dag_tasks_updated =
         ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
@@ -474,10 +474,11 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     opt_incre.OptimizeIncre_w_TL(dag_tasks_warm, 2);
     ResourceOptResult res_incre = opt_incre.CollectResults();
 
-    // The local search window is restricted to neighbors near the warm-start
-    // ET (1000). Under search radius increment 1, the options are [800, 1000].
-    // Both options yield the same SP; the tie-breaker selects 800.
-    EXPECT_EQ(800, res_incre.id2time_limit[0]);
+    // The incremental search window (radius=6, from parameters.yaml) covers
+    // all TL options [400, 600, 800, 1000].  Because TSP is unschedulable under
+    // every option, ApproxEqualSP treats them as equal; the tie-breaker
+    // deterministically picks the smallest TL: 400.
+    EXPECT_EQ(400, res_incre.id2time_limit[0]);
 
     // Scratch explored the full option set so it should be at least as good.
     EXPECT_GE(res_scratch.sp_opt + 1e-6, res_incre.sp_opt);

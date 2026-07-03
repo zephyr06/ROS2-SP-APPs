@@ -11,7 +11,7 @@ Layer_Node_During_Incremental_Optimization: 2
 # TimeLimitSearchRadiusIncr, bounding priority drift over a long sim.
 # ReoptimizationPeriod == 0 disables it (today's pure cache+scratch baseline).
 ReoptimizationPeriod: 10
-ReoptimizationTimeLimitsSearchRadius: 4
+ReoptimizationTimeLimitsSearchRadius: 6
 TimeLimitSearchRadiusIncr: 2
 
 # simulation export granularity controls:
@@ -26,7 +26,7 @@ EXPORT_DETAIL_LEVEL: 0
 METRIC_SAMPLE_INTERVAL_SECONDS: 0
 
 # ************** for debug purposes
-debugMode: 0
+debugMode: 1
 printRTA: 0
 
 

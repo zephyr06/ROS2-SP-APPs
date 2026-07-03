@@ -5,6 +5,17 @@
 
 namespace SP_OPT_PA {
 
+// Relative-tolerance comparison for SP values.  Near-identical SPs produced by
+// probabilistic RTA numerical noise are treated as equal so that the
+// tie-breaker (tightest TL / smallest sum) can make a deterministic choice.
+inline bool ApproxEqualSP(double a, double b, double rel_tol = 1e-9) {
+    double diff = std::abs(a - b);
+    if (diff <= rel_tol)
+        return true;  // guard for values near zero
+    double max_abs = std::max(std::abs(a), std::abs(b));
+    return diff <= rel_tol * max_abs;
+}
+
 // this function must return values sorted from low to high
 std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
     const DAG_Model& dag_tasks, int radius);
