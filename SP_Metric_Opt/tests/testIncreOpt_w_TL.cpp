@@ -51,7 +51,8 @@ public:
 
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
   std::vector<std::vector<double>> time_limit_options =
-      RecordCloseTimeLimitOptions(dag_tasks);
+      RecordCloseTimeLimitOptions(dag_tasks,
+                                  GlobalVariables::TimeLimitSearchRadiusIncr);
   // Closest to ET ~202 is 184.1 (index 0). Radius=2 => indices [0,2] => 3 opts.
   EXPECT_EQ(3, time_limit_options[0].size());
   EXPECT_EQ(184.1, time_limit_options[0][0]);
@@ -250,7 +251,8 @@ public:
 
 TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
   std::vector<std::vector<double>> time_limit_options =
-      RecordCloseTimeLimitOptions(dag_tasks);
+      RecordCloseTimeLimitOptions(dag_tasks,
+                                  GlobalVariables::TimeLimitSearchRadiusIncr);
   EXPECT_EQ(4, time_limit_options.size()); // 4 tasks
   // With TimeLimitSearchRadiusIncr=2 the window around closest ET (1000) is
   // indices [1,3] => [600, 800, 1000] (3 options).
@@ -314,7 +316,8 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
       "\n-------- TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions "
       "...\n");
   std::vector<std::vector<double>> time_limit_options =
-      RecordCloseTimeLimitOptions(dag_tasks);
+      RecordCloseTimeLimitOptions(dag_tasks,
+                                  GlobalVariables::TimeLimitSearchRadiusIncr);
 
   EXPECT_EQ(4, time_limit_options.size()); // 4 tasks
 
@@ -349,7 +352,8 @@ TEST_F(TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL) {
   // try to get which task has performance_records_time
   int perfTask = 0;
   std::vector<std::vector<double>> time_limit_options =
-      RecordCloseTimeLimitOptions(dag_tasks);
+      RecordCloseTimeLimitOptions(dag_tasks,
+                                  GlobalVariables::TimeLimitSearchRadiusIncr);
   for (int i = 0; i < static_cast<int>(time_limit_options.size()); i++) {
     if (time_limit_options[i][0] != -1) {
       perfTask = i;
@@ -489,12 +493,9 @@ TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
   TaskSet tasks = {t};
   DAG_Model dag(tasks, mapPrev, 0, 0);
 
-  int saved_radius = GlobalVariables::TimeLimitSearchRadiusIncr;
-
   // Radius 2 → indices [2, 6] → 5 options: {20,30,40,50,60}
   {
-    GlobalVariables::TimeLimitSearchRadiusIncr = 2;
-    auto opts = RecordCloseTimeLimitOptions(dag);
+    auto opts = RecordCloseTimeLimitOptions(dag, 2);
     ASSERT_EQ(1u, opts.size());
     EXPECT_EQ(5u, opts[0].size());
     EXPECT_DOUBLE_EQ(20.0, opts[0][0]);
@@ -504,8 +505,7 @@ TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
 
   // Radius 0 → single option (closest only)
   {
-    GlobalVariables::TimeLimitSearchRadiusIncr = 0;
-    auto opts = RecordCloseTimeLimitOptions(dag);
+    auto opts = RecordCloseTimeLimitOptions(dag, 0);
     ASSERT_EQ(1u, opts.size());
     EXPECT_EQ(1u, opts[0].size());
     EXPECT_DOUBLE_EQ(40.0, opts[0][0]);
@@ -513,15 +513,12 @@ TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
 
   // Large radius 5 → indices [0, 9] because only 10 options exist
   {
-    GlobalVariables::TimeLimitSearchRadiusIncr = 5;
-    auto opts = RecordCloseTimeLimitOptions(dag);
+    auto opts = RecordCloseTimeLimitOptions(dag, 5);
     ASSERT_EQ(1u, opts.size());
     EXPECT_EQ(10u, opts[0].size());
     EXPECT_DOUBLE_EQ(0.0, opts[0][0]);
     EXPECT_DOUBLE_EQ(90.0, opts[0][9]);
   }
-
-  GlobalVariables::TimeLimitSearchRadiusIncr = saved_radius;
 }
 
 int main(int argc, char **argv) {

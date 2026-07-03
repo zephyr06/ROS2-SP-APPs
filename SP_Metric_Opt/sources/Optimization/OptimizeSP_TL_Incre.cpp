@@ -55,7 +55,7 @@ Find_Close_ExecutionTime(const std::vector<TimePerfPair> &time_perf_pairs,
   return min_diff_index;
 }
 std::vector<std::vector<double>>
-RecordCloseTimeLimitOptions(const DAG_Model &dag_tasks) {
+RecordCloseTimeLimitOptions(const DAG_Model &dag_tasks, int radius) {
   std::vector<std::vector<double>> time_limit_option_for_each_task;
   time_limit_option_for_each_task.reserve(dag_tasks.tasks.size());
   for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
@@ -64,10 +64,8 @@ RecordCloseTimeLimitOptions(const DAG_Model &dag_tasks) {
         dag_tasks.tasks[i].timePerformancePairs,
         dag_tasks.tasks[i].execution_time_dist.GetAvgValue());
     for (int j = max(
-             0, static_cast<int>(close_time_limit_index) -
-                    GlobalVariables::TimeLimitSearchRadiusIncr);
-         j <= static_cast<int>(close_time_limit_index) +
-                  GlobalVariables::TimeLimitSearchRadiusIncr &&
+             0, static_cast<int>(close_time_limit_index) - radius);
+         j <= static_cast<int>(close_time_limit_index) + radius &&
          j < static_cast<int>(dag_tasks.tasks[i].timePerformancePairs.size());
          j++) {
       time_limit_option_for_each_task[i].push_back(
@@ -203,7 +201,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
   opt_sp_ = -1.0;
   dag_tasks_ = dag_tasks_update;
   ApplyWCETAblationIfRequired(dag_tasks_);
-  time_limit_option_for_each_task_ = RecordCloseTimeLimitOptions(dag_tasks_);
+  time_limit_option_for_each_task_ = RecordCloseTimeLimitOptions(
+      dag_tasks_, GlobalVariables::TimeLimitSearchRadiusIncr);
   std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
   if (GlobalVariables::disable_time_limit_opt) {
     InitializeTimeLimitsToSmallest(time_limits);

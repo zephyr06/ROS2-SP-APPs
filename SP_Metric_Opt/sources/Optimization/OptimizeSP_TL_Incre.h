@@ -6,7 +6,7 @@
 namespace SP_OPT_PA {
 
 std::vector<std::vector<double>>
-RecordCloseTimeLimitOptions(const DAG_Model &dag_tasks);
+RecordCloseTimeLimitOptions(const DAG_Model &dag_tasks, int radius);
 
 struct HashKey4Vector {
   std::size_t operator()(const std::vector<double> &v) const {
