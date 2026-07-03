@@ -3,6 +3,7 @@ Generatl coding rules:
 - Reduce usage of optional arguments, as that is error-prone. Users may easily forget to pass certain configurations. If something important is needed but not passed, raise an error to request the configurations
 - Work by module, commit by module. Foster modular design and development
 - Regularly update dev_log.md and tasks.md, whenever you make certain progress. Agent converations can be lost very easily.
+- Modular development: work on a small sub task each time, and ask user to review and commit after done one small sub task.
 
 Design rules:
 - We don't consider backward compatibility and ruthlessly prune features that are not used anymore.
