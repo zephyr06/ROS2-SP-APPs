@@ -272,7 +272,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     } else if (scheduler_mode_ == "INCR_SCRATCH") {
         OptimizePA_Incre_with_TimeLimits scratch_opt(dag_tasks, sp_parameters);
-        scratch_opt.OptimizeFromScratch_w_TL(
+        scratch_opt.ReOptimizePeriodic(
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = scratch_opt.CollectResults();
     } else if (scheduler_mode_ == "INCR_NO_TL") {

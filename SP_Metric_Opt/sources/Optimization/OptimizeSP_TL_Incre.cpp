@@ -182,7 +182,7 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
   }
 }
 
-PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeFromScratch_w_TL(int K) {
+PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
   opt_sp_ = -1.0;
   ApplyWCETAblationIfRequired(dag_tasks_);
   time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);

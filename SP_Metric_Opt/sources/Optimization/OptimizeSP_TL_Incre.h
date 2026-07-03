@@ -36,7 +36,7 @@ public:
 
   void TraverseTimeLimitOptions(int K, uint task_id,
                                 std::vector<double> &time_limits);
-  PriorityVec OptimizeFromScratch_w_TL(int K);
+  PriorityVec ReOptimizePeriodic(int K);
 
   PriorityVec OptimizeIncre_w_TL(const DAG_Model &dag_tasks_update, int K);
 

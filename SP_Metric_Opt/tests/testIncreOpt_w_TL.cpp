@@ -82,7 +82,7 @@ public:
 
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
   OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-  opt.OptimizeFromScratch_w_TL(2);
+  opt.ReOptimizePeriodic(2);
   ResourceOptResult res_opt = opt.CollectResults();
   PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
 
@@ -96,7 +96,7 @@ TEST_F(TaskSetForTest_robotics_v18, optimize_no_tl) {
   // 1. Run with TL optimization enabled (default behavior)
   GlobalVariables::disable_time_limit_opt = false;
   OptimizePA_Incre_with_TimeLimits opt_with_tl(dag_tasks, sp_parameters);
-  opt_with_tl.OptimizeFromScratch_w_TL(2);
+  opt_with_tl.ReOptimizePeriodic(2);
   ResourceOptResult res_opt = opt_with_tl.CollectResults();
   double opt_sp = res_opt.sp_opt;
 
@@ -128,7 +128,7 @@ TEST_F(TaskSetForTest_robotics_v18, optimize_no_tl) {
   // 2. Run with TL optimization disabled
   GlobalVariables::disable_time_limit_opt = true;
   OptimizePA_Incre_with_TimeLimits opt_no_tl(dag_tasks, sp_parameters);
-  opt_no_tl.OptimizeFromScratch_w_TL(2);
+  opt_no_tl.ReOptimizePeriodic(2);
   ResourceOptResult res_no_tl = opt_no_tl.CollectResults();
   double no_tl_sp = res_no_tl.sp_opt;
 
@@ -150,14 +150,14 @@ TEST_F(TaskSetForTest_robotics_v18, optimize_wcet) {
   // 1. Run with WCET baseline disabled (default behavior)
   GlobalVariables::use_wcet_execution_time = false;
   OptimizePA_Incre_with_TimeLimits opt_normal(dag_tasks, sp_parameters);
-  opt_normal.OptimizeFromScratch_w_TL(2);
+  opt_normal.ReOptimizePeriodic(2);
   ResourceOptResult res_normal = opt_normal.CollectResults();
   double tl_normal = res_normal.id2time_limit[0];
 
   // 2. Run with WCET baseline enabled
   GlobalVariables::use_wcet_execution_time = true;
   OptimizePA_Incre_with_TimeLimits opt_wcet(dag_tasks, sp_parameters);
-  opt_wcet.OptimizeFromScratch_w_TL(2);
+  opt_wcet.ReOptimizePeriodic(2);
   ResourceOptResult res_wcet = opt_wcet.CollectResults();
   double tl_wcet = res_wcet.id2time_limit[0];
 
@@ -265,10 +265,10 @@ TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
   EXPECT_EQ(-1, time_limit_options[2][0]);
   EXPECT_EQ(-1, time_limit_options[3][0]);
 }
-TEST_F(TaskSetForTest_robotics_v19, OptimizeFromScratch_w_TL) {
+TEST_F(TaskSetForTest_robotics_v19, ReOptimizePeriodic) {
   OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
   EXPECT_FALSE(opt.IfInitialized());
-  opt.OptimizeFromScratch_w_TL(2);
+  opt.ReOptimizePeriodic(2);
   EXPECT_TRUE(opt.IfInitialized());
   ResourceOptResult res_opt = opt.CollectResults();
   PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
@@ -283,7 +283,7 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
   OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
                                        sp_parameters); // high utilization
 
-  opt.OptimizeFromScratch_w_TL(
+  opt.ReOptimizePeriodic(
       2); // result is 800 with conservative compression
   ResourceOptResult res_opt = opt.CollectResults();
   EXPECT_EQ(800,
@@ -342,11 +342,11 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
   }
 }
 
-TEST_F(TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL) {
+TEST_F(TaskSetForTest_robotics_v19_2, ReOptimizePeriodic) {
   // NOTE: this test failed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // compare with the testcase (TaskSetForTest_robotics_v19) before, the only
   // difference is that this testcase added two tasks with very small
-  // cpu_utilization and big weight supposedly, OptimizeFromScratch_w_TL
+  // cpu_utilization and big weight supposedly, ReOptimizePeriodic
   // should also return 400 for task0
 
   // try to get which task has performance_records_time
@@ -361,7 +361,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL) {
     }
   }
 
-  printf("\n-------- TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL "
+  printf("\n-------- TaskSetForTest_robotics_v19_2, ReOptimizePeriodic "
          "...\n");
   OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
   EXPECT_FALSE(opt.IfInitialized());
@@ -373,7 +373,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, OptimizeFromScratch_w_TL) {
   //     printf("task%d:
   //     exeT=%f\n",i,(double)(dag_tasks.GetTask(i).getExecutionTime()));
   // }
-  opt.OptimizeFromScratch_w_TL(2);
+  opt.ReOptimizePeriodic(2);
   EXPECT_TRUE(opt.IfInitialized());
   ResourceOptResult res_opt = opt.CollectResults();
   PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
@@ -452,7 +452,7 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
 
   // 1. Optimize from scratch (can explore all time limit options)
   OptimizePA_Incre_with_TimeLimits opt_scratch(dag_tasks, sp_parameters);
-  opt_scratch.OptimizeFromScratch_w_TL(2);
+  opt_scratch.ReOptimizePeriodic(2);
   ResourceOptResult res_scratch = opt_scratch.CollectResults();
 
   // With floor behaviour any TL in [400, 599) yields the same perf (0.5),
