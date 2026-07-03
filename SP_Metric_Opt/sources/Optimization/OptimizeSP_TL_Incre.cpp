@@ -168,6 +168,8 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
         double best_sp = -2.0;
         double best_option_val = time_limits[idx];
         for (double val : time_limit_option_for_each_task_[idx]) {
+            if (val == -1 && best_sp > -1)  // there are no options to evaluate
+                continue;
             time_limits[idx] = val;
             double sp_val = EvaluateTimeLimitConfig(K, time_limits);
             if (sp_val > best_sp && !ApproxEqualSP(sp_val, best_sp)) {
