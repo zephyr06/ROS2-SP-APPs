@@ -39,6 +39,11 @@ public:
   PriorityVec ReOptimizePeriodic(int K);
 
   PriorityVec OptimizeIncre_w_TL(const DAG_Model &dag_tasks_update, int K);
+  PriorityVec OptimizeIncre_w_TL(const DAG_Model &dag_tasks_update, int K,
+                                 int radius);
+
+  PriorityVec ReOptimizePeriodic(const DAG_Model &dag_tasks_update, int K,
+                                 int radius);
 
   void ApplyWCETAblationIfRequired(DAG_Model &dag_tasks);
 

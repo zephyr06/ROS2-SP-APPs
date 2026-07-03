@@ -59,7 +59,7 @@ int main(int argc, char *argv[]) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
     // read a DAG and optimize it for the first time
-    PriorityVec pa_opt = opt.OptimizeFromScratch_w_TL(
+    PriorityVec pa_opt = opt.ReOptimizePeriodic(
         GlobalVariables::Layer_Node_During_Incremental_Optimization);
 
     TimerType finish_time = CurrentTimeInProfiler;
