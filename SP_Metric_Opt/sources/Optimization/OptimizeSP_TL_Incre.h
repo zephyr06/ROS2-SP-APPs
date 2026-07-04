@@ -51,15 +51,16 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
                                   std::vector<double>& time_limits);
 
     // 1-arg overload: entry point for the INCR_SCRATCH ablation. Delegates to
-    // the 3-arg ReOptimizePeriodic(dag, K, ReoptimizationTimeLimitSearchRadius).
-    // INCR_SCRATCH constructs a FRESH optimizer each interval (see
-    // SimulationOrchestrator INCR_SCRATCH branch), so prev_optimizer_ is always
-    // uninitialized here → SeedIncumbentBaseline takes its interval-0 branch
-    // (RM + min-TL) every call. This makes INCR_SCRATCH an AMNESIAC wide-radius
-    // reopt: the compare-and-keep guard measures the search against a synthetic
-    // RM baseline, NOT against the previous interval's adopted solution. Contrast
-    // with Optimize_w_TL_ScratchOrIncre (INCR with ReoptimizationPeriod=1),
-    // which reuses a persistent optimizer so prev_optimizer_ carries the prior
+    // the 3-arg ReOptimizePeriodic(dag, K,
+    // ReoptimizationTimeLimitSearchRadius). INCR_SCRATCH constructs a FRESH
+    // optimizer each interval (see SimulationOrchestrator INCR_SCRATCH branch),
+    // so prev_optimizer_ is always uninitialized here → SeedIncumbentBaseline
+    // takes its interval-0 branch (RM + min-TL) every call. This makes
+    // INCR_SCRATCH an AMNESIAC wide-radius reopt: the compare-and-keep guard
+    // measures the search against a synthetic RM baseline, NOT against the
+    // previous interval's adopted solution. Contrast with
+    // Optimize_w_TL_ScratchOrIncre (INCR with ReoptimizationPeriod=1), which
+    // reuses a persistent optimizer so prev_optimizer_ carries the prior
     // interval's incumbent — its compare-and-keep is measured against that
     // running best. INCR(period=1) therefore weakly dominates INCR_SCRATCH in
     // SP (never worse, sometimes strictly better); INCR_SCRATCH is kept only as

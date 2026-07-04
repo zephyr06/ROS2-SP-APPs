@@ -13,6 +13,28 @@
 
 namespace SP_OPT_PA {
 
+namespace {
+// True for the INCR_P<n> period-override modes (e.g. INCR_P1, INCR_P10,
+// INCR_P60). These are INCR dispatches whose ReoptimizationPeriod is
+// overridden at binary startup: RunOrchestrator.cpp parses the <n> suffix
+// from the mode string and assigns GlobalVariables::ReoptimizationPeriod
+// before the orchestrator is constructed. The orchestrator treats any
+// INCR_P* exactly as INCR (same incr_optimizer_, same
+// Optimize_w_TL_ScratchOrIncre dispatch); only the period differs. Keeping
+// the INCR_P<n> string end-to-end (rather than normalizing to "INCR") means
+// the output subdir is named INCR_P<n> consistently across ExportResults and
+// RunOrchestrator's exec-time write, so the Python analysis finds both
+// artifacts under taskset_dir/INCR_P<n>/INCR_P<n>/.
+bool IsINCRPeriodVariant(const std::string& mode) {
+    const std::string prefix = "INCR_P";
+    if (mode.rfind(prefix, 0) != 0) return false;
+    if (mode.size() == prefix.size()) return false;  // bare "INCR_P" — no digits
+    for (size_t i = prefix.size(); i < mode.size(); i++) {
+        if (mode[i] < '0' || mode[i] > '9') return false;
+    }
+    return true;
+}
+}  // namespace
 BaseSimulationOrchestrator::BaseSimulationOrchestrator(
     const std::string& input_folder, const std::string& output_folder,
     LLint interval_duration_ms)
@@ -245,8 +267,9 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
         return;
     }
 
-    if (scheduler_mode_ == "INCR" || scheduler_mode_ == "INCR_NO_TL" ||
-        scheduler_mode_ == "INCR_WCET" || scheduler_mode_ == "INCR_SCRATCH") {
+    if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_) ||
+        scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET" ||
+        scheduler_mode_ == "INCR_SCRATCH") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
     }
@@ -264,7 +287,7 @@ ResourceOptResult
 FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     ResourceOptResult res;
-    if (scheduler_mode_ == "INCR") {
+    if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_)) {
         // INCR-ET-debug: per-interval cost breakdown. Marks whether THIS call
         // took the wide-radius reopt path or the narrow-radius incremental path
         // (decided by reoptimization_interval_count_ % period == 0, BEFORE the
