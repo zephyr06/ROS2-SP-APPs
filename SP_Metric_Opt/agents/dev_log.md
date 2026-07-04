@@ -1,40 +1,87 @@
 # Development Log
 
-> ## SESSION STATUS (as of 2026-07-02, end of session) — read this first
+> ## SESSION STATUS (as of 2026-07-04, Commit 6 staged) — read this first
 >
-> **P24 (Periodic Reoptimization) is COMPLETE and staged, awaiting user commit.**
-> Branch `clean_simulation`. 11 files staged via `git add` (NOT committed — per
-> `agent_coding_rules.md` only the user runs `git commit`):
-> `sources/Utils/Parameters.{h,cpp}`, `sources/parameters.yaml`,
-> `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`,
-> `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`,
-> `tests/{testIncreOpt_w_TL,testBF_w_TL,AnalyzePriorityAssignmentIncrementalExample}.cpp`,
-> `agents/tasks.md`, `agents/dev_log.md`.
-> Three untracked files left alone (unrelated to P24): `CLAUDE.md`,
-> `agents/improve_efficiency.md`, `agents/plan_publication_figures.md`.
+> **Branch `clean_simulation`. HEAD = `6cd0f24f`.** P25 Commits 1–5 are
+> **committed**. **P25 Commit 6 is implemented and staged for review** (not yet
+> committed — `git add` only, per `agent_coding_rules.md`).
 >
-> **Verified state:** `build/tests/testIncreOpt_w_TL` = **17/17 green** (13
-> existing + 4 P24 `Reoptimization.*`); `tests/testBF_w_TL` = 5/5 green; Release
-> `release/tests/RunOrchestrator` builds clean. Smoke (7-interval INCR, period 10)
-> ran clean; A/B (period 3 → reopts at 0/3/6) showed **no SP regression — SP improves
-> +11%**. **ET corrected**: real overhead is **~+45 ms per reopt interval** (period 3
-> vs off: 0.568s → 0.712s), NOT the +1.35s/reopt-interval logged in the original A/B —
-> that was a RunOrchestrator `duration_ms` arg misuse (passed 70000 = total sim; the
-> arg is per-interval horizon, e2e passes 10000). The 60-interval prod run is ~5s, not
-> 19+ min. See [[runorchestrator-duration-arg-semantics]]. Full P24 write-up at
-> `## 2026-07-02 → "Periodic reoptimization … (P24)"` below; memory file
-> `p24-reoptimization-design.md`.
+> **Commit 6 — counter-driven dispatcher wired in.**
+> `Optimize_w_TL_ScratchOrIncre(dag,K)` is added to `OptimizeSP_TL_Incre.{h,cpp}`:
+> a persistent `reoptimization_interval_count_` (starts 0, advances every call,
+> **never resets**) drives a modular routing decision — `count %
+> ReoptimizationPeriod == 0` → wide-radius `ReOptimizePeriodic` (compare-and-
+> keep, `ReoptimizationTimeLimitSearchRadius`), else → narrow-radius
+> `OptimizeIncre_w_TL` (`IncrementalTimeLimitSearchRadius`). At `count == 0` this routes
+> to `ReOptimizePeriodic`, whose `SeedIncumbentBaseline` interval-0 branch
+> synthesizes the RM+min-TL incumbent — so the dispatcher doubles as the
+> interval-0 bootstrap, fixing a latent bug where the INCR paths threw
+> (`CoutError` at `OptimizeSP_TL_Incre.cpp:153`) on the very first interval
+> because `prev_optimizer_` was uninitialized. The orchestrator's
+> INCR/INCR_NO_TL/INCR_WCET branches (`SimulationOrchestrator.cpp:267,281,289`)
+> now call the dispatcher instead of `OptimizeIncre_w_TL` directly; the
+> `disable_time_limit_opt` / `use_wcet_execution_time` flag save/restore is
+> preserved. `INCR_SCRATCH` is untouched (separate ablation, 1-arg
+> `ReOptimizePeriodic`).
 >
-> **Two open threads the next session should pick up:**
-> 1. **User to review + commit** the staged P24 changes (HEAD is still `fa2043ba`).
-> 2. **P21 (warm-start)** is the next planned task — P24 prerequisite now satisfied.
->    P21 reuses `ReoptimizationPeriod` (warm-start's own reseed knob was dropped).
->    Confirm with the user before starting; the user should commit P24 first.
-> 3. **P18 (per-interval >0.1 s slowness)** is a real bottleneck that blocks
->    60-interval prod wall-clock runs (the 60-interval P24 A/B was abandoned as
->    P18-blocked; cadence proven by unit test instead). Candidate for a perf pass
->    if prod-scale runs are to become practical. Flagged to user, awaiting decision
->    on P21 vs P18 priority.
+> **Radius-forwarding fix (folded into Commit 6).** The 2-arg
+> `OptimizeIncre_w_TL(dag,K)` was forwarding to `ReoptimizationTimeLimitSearchRadius`
+> (6, wide) instead of `IncrementalTimeLimitSearchRadius` (2, narrow) — a leftover
+> from the Commit 5 refactor that collapsed the two-radius design. Corrected to
+> forward to `IncrementalTimeLimitSearchRadius`, restoring Commit 1's intent
+> (`P24_task.md:93`). The `OptimizeWithOptimizationSpace` test assertion was
+> updated: under radius 2 the incremental window for ET=1000 is [600,800,1000]
+> (TL=400 unreachable), and TL=600 is the schedulable optimum under the new DAG
+> (800/1000 unschedulable), so the result is in [600,1000] — not the bootstrap
+> TL=400.
+>
+> **`ReoptimizationPeriod == 0` semantics dropped.** Per user decision the knob
+> is now positive-only (min 1); the "0 disables" path is gone (it would have
+> crashed the INCR interval-0 bootstrap, since `0 % 0` is undefined / the
+> incremental branch has no incumbent). `parameters.yaml:12` comment to be
+> updated in Commit 7.
+>
+> **Radius-knob rename (mechanical, no behavior change).** The two TL-window
+> radii were renamed to a consistent `Reoptimization`/`Incremental` prefix
+> style, matching the sibling `ReoptimizationPeriod` knob:
+> `TimeLimitSearchRadiusIncr` → `IncrementalTimeLimitSearchRadius` (2, narrow);
+> `ReoptimizationTimeLimitsSearchRadius` → `ReoptimizationTimeLimitSearchRadius`
+> (6, wide; also singularized `TimeLimit`). Touched 9 files: `parameters.yaml`
+> (YAML keys), `Parameters.{h,cpp}`, `OptimizeSP_TL_Incre.cpp`,
+> `tests/{testIncreOpt_w_TL,testBF_w_TL}.cpp`,
+> `tests/debug_analysis/run_radius_comparison.py` (reads/writes the YAML key —
+> moved in lockstep), `agents/{tasks,P24_task}.md`. Historical session log
+> `agents/claude_sessions/session_clean_simulation_2026-06-21.md` deliberately
+> NOT rewritten (point-in-time record). `ctest` 16/16 green after rebuild.
+> **Gotcha:** `cmake --build build` reported success but did NOT relink the
+> test executables when only the shared lib's global changed — had to rebuild
+> `testIncreOpt_w_TL`/`testBF_w_TL` explicitly. Watch for this on future
+> global/header renames.
+>
+> **Tests.** `testIncreOpt_w_TL` = **26/26 green** (23 prior + 3 new dispatcher
+> tests under `CounterDispatcherSynthetic`: `CounterAdvancesEveryCall_NeverResets`,
+> `TriggersReoptAtCountZero_BootstrapsIncumbent`,
+> `RoutesToIncrementalAtNonModularCount`). Full `ctest` **16/16 green**. Full
+> build clean (RunOrchestrator + AnalyzePriorityAssignmentIncrementalExample
+> link).
+>
+> **Working-tree noise (unrelated to P25, pre-existing):** `git status` shows
+> modifications to `Gen_Taskset/tests/test_integration.py`,
+> `simulation_experiments/{compare_optimizers,run_end_to_end_experiments,
+> run_sim_experiments}.py`, `tests/python/test_trajectory_physical.py`, and the
+> `agents/*.md` docs. These are not part of P25 Commit 6; left alone.
+>
+> **Open threads:**
+> 1. **P25 Commit 7:** full ctest (done) + A/B re-run (period on vs off) +
+>    dev_log before/after numbers, confirming compare-and-keep runs at runtime.
+>    Also update `parameters.yaml:12` comment (drop "0 disables").
+> 2. **Memory file `p24-reoptimization-design.md`** — rewritten this session to
+>    match the 4-tuple model + Commit 6's dispatcher + the radius rename (was
+>    stale: described the removed `restore_incumbent`/`SumTimeLimits` design and
+>    said Commit 5 was uncommitted).
+> 3. **P18 (per-interval >0.1 s slowness at N≥8)** — real bottleneck per the
+>    P24-Eval numbers (N=12 period-0 mean 0.80s/activation). Flagged, not
+>    blocking.
 
 ## 2026-07-01
 
@@ -1306,4 +1353,266 @@ immediately.
 `OptimizeFromScratch_w_TL(K)` both kept; `Optimize_w_TL_ScratchOrIncre` stays the
 counter-driven entry point. No `SimulationOrchestrator` change (already calls
 the single entry point 1:1 per interval, state already persists).
+
+---
+
+## 2026-07-03 → "Benchmark/diag/eval consolidation + repo hygiene"
+
+Consolidated the scattered benchmark / diagnostic / eval-scratch files into a
+single ignored `benchmark/` folder and cleaned up tracked-but-ignored state.
+
+**Moved into `benchmark/` (all previously untracked, scattered):**
+- `bench_incr_commit.cpp` — the INCR-vs-commit benchmark driver (was
+  `Testing/bench_incr_commit.cpp`). Times `OptimizeIncre_w_TL` (cold + warm) on
+  5 × 10-task tasksets, prints SP + ms + eval_count. Built standalone at `-O2`
+  against the Release `libSP_OPT.so`; not wired into CMake.
+- `diag_p25.cpp` — the v19/v19_2 time-limit sanity diagnostic (was
+  `tests/diag_p25.cpp`). Standalone, not wired into CMake.
+- `run_p24eval_sweep.py`, `aggregate_p24eval.py`, `gen_p24eval_tasksets.py` —
+  the P24-Eval re-optimization sweep harness (was in `simulation_experiments/`).
+- `logs/` — sweep run logs + stale `.pid` (was
+  `simulation_experiments/logs/`).
+
+**Path patches made so the moved p24eval scripts still run from `benchmark/`:**
+each script's `OPTIMIZER_COMPARISON_DIR` / `P24_EVAL_DIR` / `DEFAULT_BIN` were
+`dirname(__file__)/...`-relative, which broke on move. Re-rooted them on
+`_REPO_ROOT = dirname(dirname(__file__))` (location-independent), pointing
+output at `simulation_experiments/optimizer_comparison/p24_eval` and the binary
+at `release/tests/RunOrchestrator`. `gen_p24eval_tasksets.py` also got a
+`sys.path.insert(0, _REPO_ROOT)` bootstrap (mirrors `compare_optimizers.py`) so
+its `from Gen_Taskset...` import resolves when run directly as a script.
+Verified: all three compile, import, resolve paths, and `gen_p24eval --help`
+runs from the new location.
+
+**`.gitignore`:** added root-anchored `/benchmark/` and `/Testing/` (the latter
+is CMake's ephemeral `Testing/Temporary/` cost-log dir).
+
+**Untracked `agents/dev_log.md`:** it was listed in `.gitignore` (line 48) but
+still tracked — gitignore does not auto-untrack already-tracked files. Ran
+`git rm --cached agents/dev_log.md` (file kept on disk) so the ignore now takes
+effect. This file is now a local-only working log.
+
+**Net `git status` after staging:** the bench/diag/eval/log noise no longer
+appears; only the pre-existing working-tree edits + `.gitignore` + the
+`dev_log.md` untrack remain. Per `agent_coding_rules.md`, changes are staged
+(`git add`) for user review; user runs `git commit`.
+
+**Note for next session:** the entry above (P24 design, lines ~1297-1299) says
+`testOptimizeIncrePA.cpp:ComplexityLinear_3N` reads
+`timelimit2optimizer_.size()` and "depends on the cache." That was true when
+written but commit `57d8db5d` already replaced it with `eval_count_` — the log
+is stale on that one point, no action needed.
+
+### P25 Commit 3 — Extract `EvaluateTimeLimitConfig_ScratchOrIncre` + `bool from_scratch` (2026-07-03)
+
+Per `agents/P24_task.md` Commit 3. The from-scratch vs incremental decision was
+previously **implicit** — `EvaluateTimeLimitConfig` picked the path by inspecting
+`prev_optimizer_.IfInitialized()` (Commit 2's incumbent), so a caller could not
+force a fresh `OptimizeFromScratch` while an incumbent existed. Commit 3 makes
+the dispatch **explicit** via a `bool from_scratch` plumbed from the public entry
+points down through coordinate descent to the evaluator.
+
+**Changes (`sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}` only):**
+1. Renamed `EvaluateTimeLimitConfig` → `EvaluateTimeLimitConfig_ScratchOrIncre`,
+   added `bool from_scratch` param. Three-branch body:
+   - `from_scratch == true` → fresh `OptimizePA_Incre(dag_cur, sp_parameters_)`
+     + `OptimizeFromScratch(K)` (ignores `prev_optimizer_` — escapes PA drift).
+   - `from_scratch == false` && `prev_optimizer_.IfInitialized()` → warm-start
+     copy of `prev_optimizer_` + `OptimizeIncre` (Commit 2 incremental path).
+   - `from_scratch == false` && no incumbent → `OptimizeFromScratch(K)` fallback
+     (first evaluation ever; behavior unchanged from before).
+2. `PerformCoordinateDescentForTaskConfigOpt` gained `bool from_scratch = false`
+   (defaulted so unchanged call sites — none in-tree after this commit, but the
+   default keeps the signature backward-compatible); it forwards the flag to
+   every `EvaluateTimeLimitConfig_ScratchOrIncre` call in the descent loop.
+3. `OptimizeIncre_w_TL(dag, K, radius)` calls descent + the `disable_time_limit_opt`
+   short-circuit with `from_scratch = false` (incremental entry).
+4. `ReOptimizePeriodic(dag, K, radius)` calls them with `from_scratch = true`
+   (from-scratch entry — this is the renamed `OptimizeFromScratch_w_TL(dag,K,radius)`
+   of the design doc; the rename itself was commit `c2121bbb`, not redone here).
+
+**Naming note vs. design doc.** `P24_task.md`'s Commit 3 spec references
+`OptimizeFromScratch_w_TL(dag, K, radius)` as the from-scratch entry. In the
+current tree that method is named `ReOptimizePeriodic(dag, K, radius)` (renamed
+in commit `c2121bbb "rename some methods"`). Commit 3 is purely the bool-dispatch
+extraction; it does **not** rename anything. The mapping is:
+`OptimizeIncre_w_TL` → `from_scratch=false`; `ReOptimizePeriodic` →
+`from_scratch=true`. `SimulationOrchestrator.cpp` already routes `INCR` family →
+`OptimizeIncre_w_TL` and `INCR_SCRATCH` → `ReOptimizePeriodic`, so the orchestrator
+correctly exercises both dispatch branches with no orchestrator change.
+
+**Verification:**
+- Debug `ctest` → **16/16 green** (incl. `testIncreOpt_w_TL` 17/17, `testOptimizeIncrePA`,
+  `testBF_w_TL`, `AnalyzePriorityAssignmentIncrementalExample`). Baseline before
+  the edit was also 16/16 — no regression.
+- Release `RunOrchestrator` builds clean.
+- Runtime smoke (release, `duration_ms=10000` per [[runorchestrator-duration-arg-semantics]]):
+  - 1-task taskset: INCR and INCR_SCRATCH both SP 4.93704 (identical — single task,
+    no PA freedom).
+  - 8-task taskset (`tasks8_dur600_interval10_seed1000/taskset_0`): INCR SP 1.32579
+    (6.37s), INCR_SCRATCH SP 1.70743 (8.99s). The from-scratch path finds a better
+    PA (full beam re-search per interval) at higher cost — the expected
+    quality/cost trade-off, confirming both dispatch branches run correctly at runtime.
+
+**Files changed (working tree, uncommitted):** `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`.
+`git add` only — user commits (per `agent_coding_rules.md`). Awaiting user review
+before Commit 4 (rename `OptimizeFromScratch_w_TL(int K)` → `ReOptimizePeriodic(int K)`,
+mechanical).
+
+
+### P25 Commit 5 — compare-and-keep `ReOptimizePeriodic(dag,K,radius)` + 4-tuple refactor (2026-07-03/04, landed at `6cd0f24f`)
+
+> **STATUS: committed.** HEAD `6cd0f24f` "add SeedIncumbentBaseline to
+> re-construct a baseline solution before performing incremental / from-scratch
+> optimization" lands Commits 4 (rename) + 5 (compare-and-keep + refactor +
+> helpers + tests) together. The three C++ files are clean in the working tree.
+> `ctest` 16/16 green; `testIncreOpt_w_TL` 23/23.
+
+Per `agents/P24_task.md` Commit 5. Implements the compare-and-keep
+reoptimization entry point `ReOptimizePeriodic(const DAG_Model&, int, int)` and
+refactors it around the **4-tuple optimizer-status model** `{dag, sp, pa, tl}`,
+eliminating the earlier `restore_incumbent` / `SumTimeLimits` block (which the
+memory file still describes — stale).
+
+**Model: optimizer status = `{dag, sp, pa, tl}` carried in `prev_optimizer_`.**
+Compare-and-keep is just `UpdateRecords`'s existing compare guard (strictly-
+greater SP wins, tie-break lower TL-sum) once `opt_sp_` holds the seeded
+baseline instead of `-1.0`. So the algorithm is: seed the incumbent baseline
+into state → run a fresh wide-radius from-scratch coordinate descent → the
+guard inside `UpdateRecords` adopts a candidate only if it strictly improves SP
+(or ties with lower TL-sum); otherwise the baseline survives untouched. **No
+separate restore step.**
+
+**New helpers (each kept short, one job):**
+- `SeedIncumbentBaseline()` — establishes the baseline BEFORE the search. Two
+  branches: (a) have incumbent → re-eval its `{pa, tl}` under the NEW DAG (its
+  carried SP was computed under an older DAG) via `EvaluateSPWithPriorityVec`;
+  that re-evaluated tuple is the baseline. (b) interval 0 (no incumbent) →
+  synthesize one from RM priorities + every task at its smallest TL option, and
+  evaluate it. Guarantees a valid baseline to compare against.
+- `SeedStateFromIncumbent(dag_with_tl, pa, sp, tl)` — seeds the full 4-tuple
+  into state (`opt_sp_`/`opt_pa_`/`res_opt_`/`prev_optimizer_`). This is the
+  baseline `UpdateRecords`' guard measures the search against, so `opt_sp_`
+  must hold it (NOT `-1.0`) when the search runs.
+- `ReconstructTimeLimitVec()` — rebuilds the positional per-task TL vector (in
+  task order) from `res_opt_.id2time_limit`; tasks with no recorded TL get -1.
+- `RateMonotonicPriorityVec()` — period-ascending priority vector (index 0 =
+  highest priority); mirrors the orchestrator's RM mode. **Ties broken by
+  average execution time ascending** (lower ET = higher priority) so the order
+  is deterministic for tasks that share a period.
+- `SmallestTimeLimitVec() const` — one TL per task, each at its smallest option
+  (-1 if no `timePerformancePairs`). Extracted from the inline `tl_min` loop
+  that was duplicated in `SeedIncumbentBaseline`'s interval-0 branch; both
+  `InitializeTimeLimitsToSmallest` and `SeedIncumbentBaseline` now call it
+  (single source of truth).
+
+**`ReOptimizePeriodic(dag,K,radius)` body** (the compare-and-keep entry):
+1. `dag_tasks_ = dag_tasks_update`; `ApplyWCETAblationIfRequired`;
+   `RecordCloseTimeLimitOptions(dag, radius)`.
+2. `SeedIncumbentBaseline()` — baseline in state (`opt_sp_` holds it, not -1.0).
+3. Fresh wide-radius from-scratch descent (`PerformCoordinateDescentForTaskConfigOpt`
+   with `from_scratch=true`, or `OptimizeWithTimeLimitOptDisabled` if
+   `disable_time_limit_opt`). Each candidate is compared against the seeded
+   baseline inside `UpdateRecords`; adopted only if strictly better. Otherwise
+   baseline survives.
+4. Return `opt_pa_`.
+
+**Tests added (`tests/testIncreOpt_w_TL.cpp`, 15→23 total):** 2 compare-and-keep
+end-to-end tests under `CompareAndKeepSynthetic` (`AdoptsWhenWideSearchWins`,
+`KeepsIncumbentWhenWideSearchLoses`) + 7 direct unit tests for the new helpers:
+`SmallestTimeLimitVec`, `ReconstructTimeLimitVec` (default -1 + round-trip),
+`RateMonotonicPriorityVec` (period-ascending AND ET-tiebreaker), `SeedStateFromIncumbent`
+(writes full 4-tuple), `SeedIncumbentBaseline` (interval-0 RM+minTL branch AND
+re-eval-incumbent-under-new-DAG branch). The re-eval test mutates T_noise ET to
+1900ms (breaks schedulability over the 2000ms period) so the SP delta is
+observable — distinguishes "re-evaluated under new DAG" from "stale incumbent
+SP carried forward".
+
+**Files (committed at `6cd0f24f`):** `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`,
+`tests/testIncreOpt_w_TL.cpp`.
+
+
+### P25 Commit 6 — counter-driven dispatcher `Optimize_w_TL_ScratchOrIncre` + radius fix (2026-07-04, staged)
+
+> Closes the gap: compare-and-keep was unit-tested but never ran at runtime.
+> The `ReoptimizationPeriod` (10) / `ReoptimizationTimeLimitsSearchRadius` (6)
+> knobs were dead config — loaded from `parameters.yaml` but read by zero lines.
+
+**Dispatcher.** Added `Optimize_w_TL_ScratchOrIncre(dag,K)` to
+`OptimizePA_Incre_with_TimeLimits` (header decl + cpp def). Owns a persistent
+`reoptimization_interval_count_` (starts 0, advances by 1 after every call,
+**never resets** — modular arithmetic alone decides). Routing:
+
+```
+count % ReoptimizationPeriod == 0  → ReOptimizePeriodic(dag, K, wide_radius)   // compare-and-keep
+else                               → OptimizeIncre_w_TL(dag, K, narrow_radius) // incremental
+count++
+```
+
+Both delegates already set `dag_tasks_` and honor `disable_time_limit_opt` /
+`use_wcet_execution_time`, so the dispatcher body is just the counter + routing.
+
+**Interval-0 bootstrap (latent bug fix).** `DeterminePrioritiesAndBudgets` runs
+at every interval including interval 0 (`SimulateInterval` loop from `i=0`). At
+interval 0 `incr_optimizer_` is fresh (`prev_optimizer_` uninitialized), so the
+old INCR path's `OptimizeIncre_w_TL` →
+`EvaluateTimeLimitConfig_ScratchOrIncre(...,false)` hit the `CoutError`
+contract-violation (`OptimizeSP_TL_Incre.cpp:153`) and threw. The dispatcher
+fixes this for free: at `count == 0`, `0 % period == 0` routes to
+`ReOptimizePeriodic`, whose `SeedIncumbentBaseline` interval-0 branch
+synthesizes an RM+min-TL incumbent. The dispatcher thus doubles as the
+interval-0 bootstrap.
+
+**Orchestrator wiring.** `SimulationOrchestrator.cpp` INCR (:267), INCR_NO_TL
+(:281), INCR_WCET (:289) switched from `incr_optimizer_.OptimizeIncre_w_TL(dag,K)`
+to `incr_optimizer_.Optimize_w_TL_ScratchOrIncre(dag,K)`. The
+`disable_time_limit_opt` / `use_wcet_execution_time` flag save/restore around
+INCR_NO_TL / INCR_WCET is preserved (both delegated paths honor those flags).
+`INCR_SCRATCH` (:273) untouched — separate ablation, builds a fresh `scratch_opt`
+each interval and calls the 1-arg `ReOptimizePeriodic(K)` (does not touch the
+counter).
+
+**Radius-forwarding fix.** The 2-arg `OptimizeIncre_w_TL(dag,K)` was forwarding
+to `ReoptimizationTimeLimitsSearchRadius` (6, the wide/reopt radius) instead of
+`TimeLimitSearchRadiusIncr` (2, the narrow/incremental radius) — a leftover from
+the Commit 5 refactor that collapsed the two-radius design. Corrected to forward
+to `TimeLimitSearchRadiusIncr`, restoring Commit 1's intent (`P24_task.md:93`).
+Now: incremental path = narrow radius (2), reopt path = wide radius (6) — the
+two-radius distinction is real again.
+
+**`ReoptimizationPeriod == 0` dropped.** Per user decision the knob is now
+positive-only (min 1). The "0 disables" path is gone — it would have crashed
+the INCR interval-0 bootstrap (the incremental branch has no incumbent →
+`CoutError`). `parameters.yaml:12` comment still says "0 disables"; will be
+updated in Commit 7.
+
+**Tests (`tests/testIncreOpt_w_TL.cpp`, 23→26):**
+- Updated `OptimizeWithOptimizationSpace` comment + assertion: under radius 2
+  the incremental window for ET=1000 is [600,800,1000] (TL=400 unreachable);
+  TL=600 is the schedulable optimum under the new DAG (800/1000 unschedulable),
+  so the result is in [600,1000], not the bootstrap TL=400. Old `EXPECT_EQ(400)`
+  was coupled to the radius-6 bug.
+- 3 new tests under `CounterDispatcherSynthetic` (10 evenly-spaced TL options,
+  ET=45 → closest index 4; radius 2 → 5 opts, radius 6 → 10 opts):
+  `CounterAdvancesEveryCall_NeverResets` (3 calls → counter==3),
+  `TriggersReoptAtCountZero_BootstrapsIncumbent` (count==0 routes to reopt,
+  `IfInitialized()` true, 10 opts recorded — proves the reopt branch ran and
+  bootstrapped rather than throwing),
+  `RoutesToIncrementalAtNonModularCount` (call 2 at count==1 → 5 opts recorded
+  — proves the narrow incremental branch ran, distinguishable from reopt).
+
+**Verification.** `testIncreOpt_w_TL` 26/26 green; full `ctest` 16/16 green;
+full build clean (RunOrchestrator + AnalyzePriorityAssignmentIncrementalExample
+link against the changed `OptimizeSP_TL_Incre.{h,cpp}` +
+`SimulationOrchestrator.cpp`).
+
+**Files (staged, NOT committed — `git add` only per `agent_coding_rules.md`):**
+`sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`,
+`sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`,
+`tests/testIncreOpt_w_TL.cpp`.
+
+**Next (Commit 7):** runtime A/B (period on vs off) + before/after SP/ET
+numbers; update `parameters.yaml:12` comment; rewrite stale memory file
+`p24-reoptimization-design.md`.
+
 

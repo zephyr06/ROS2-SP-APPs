@@ -86,32 +86,3 @@ The following proposed algorithmic optimization is placed on hold for correctnes
 *   **Bottleneck:** For task `i`, the algorithm calls `GetRTA_OneTask(tasks[i], hp_tasks)`, which performs $i$ convolutions of all higher-priority task execution times from scratch.
 *   **Optimization Proposal:** Maintain a running convolved distribution `hp_conv` of all higher priority tasks as we iterate through the taskset, and convolve task `i` with `hp_conv` once. 
 *   **Status:** **ON HOLD** (Needs verification to ensure dynamic preemptions and deadlines are evaluated correctly under merged convolutions).
-
----
-
-## 3. Advanced Optimization Proposals (INCR Acceleration)
-
-These are new advanced optimizations proposed to accelerate the time-limit and priority optimization engine.
-
-### **A. Memoize Response Time Analysis (RTA Cache)**
-*   **Location:** `sources/Safety_Performance_Metric/RTA.cpp`
-*   **Bottleneck:** RTA is called repeatedly for the same task under overlapping sets of higher-priority tasks.
-*   **Optimization:** Implement an RTA cache mapped by task ID and a bitmask representing the subset of assigned higher-priority tasks sharing the same core/processor.
-
-### **B. Exclude Zero-Weight (Unimportant) Tasks from Budget sweeps**
-*   **Location:** `sources/Optimization/OptimizeSP_TL_Incre.cpp` (method `PerformCoordinateDescentForTaskConfigOpt`)
-*   **Bottleneck:** The coordinate descent optimizes budgets for all tasks, including tasks with `sp_weight = 0` (e.g. logging/visualization nodes) which do not contribute to the SP metric.
-*   **Optimization:** Set zero-weight tasks to their minimum budgets and skip them during the budget optimization loop.
-
-### **C. Incremental Priority Assignment Warm-Starting (Highest Speedup)**
-*   **Location:** `sources/Optimization/OptimizeSP_TL_Incre.cpp` (method `EvaluateTimeLimitConfig`)
-*   **Bottleneck:** Trying a new budget configuration constructs a new `OptimizePA_Incre` solver and runs a full Audsley beam search from scratch (`OptimizeFromScratch(K)`), taking $O(K \cdot N^2)$ RTA calls.
-*   **Optimization:** Initialize the solver with the optimal priority vector from the previous configuration, and invoke `OptimizeIncre` instead of `OptimizeFromScratch`. This leverages the delta-nature of coordinate descent updates to achieve a $O(N)$ RTA lookup time.
-*   **Seeding & Caching Mechanics**:
-    *   **Cache the Incumbent DAG Model**: Seeding the optimizer for `OptimizeIncre` requires the incumbent DAG model to serve as the baseline comparison. Generating the incumbent DAG model via `UpdateExtDistBasedOnTimeLimit` on every single cache-miss evaluation is a bottleneck. We store `DAG_Model incumbent_dag_` as a member of `OptimizePA_Incre_with_TimeLimits`, initialize it at the start of the interval search, and update it *only* in `UpdateRecords` when a new best config is promoted. The search loops then reuse `incumbent_dag_` directly as the seeding DAG.
-    *   **Short-Circuit Optimization on Incumbent Config**: Since the coordinate descent sweeps all option values for a task, it is guaranteed to evaluate the current incumbent configuration at some point. By comparing the candidate `time_limits` against the cached `incumbent_time_limits_`, we can detect an exact match (`swept_idx == -1`) and immediately return `res_opt_.sp_opt` (or `opt_sp_`) without executing `OptimizeIncre` or running RTA at all, saving $N$ evaluations per coordinate descent run.
-*   **Implementation & Verification Caveats**:
-    *   **Multi-Task ET Changes**: While coordinate descent updates one task budget at a time, actual execution times between trigger intervals may change for *multiple* tasks simultaneously (e.g., due to robot position changes in the map). The incremental solver must support evaluating multi-task ET changes safely, which is trickier but still highly viable using local variation searches.
-    *   **Experimental Validation**: Before committing this as the default scheduler logic, dedicated simulation experiments must be run to measure the runtime speedup ratio and verify that the priority assignment quality does not degrade compared to the `FromScratch` beam search.
-
-
