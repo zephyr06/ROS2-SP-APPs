@@ -76,9 +76,11 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // data members
     ResourceOptResult res_opt_;
     std::vector<std::vector<double>> time_limit_option_for_each_task_;
-    // For each task id, it maps time limit to the optimizer
-    std::unordered_map<std::vector<double>, OptimizePA_Incre, HashKey4Vector>
-        timelimit2optimizer_;
+    // Old implementation is based on timelimit2optimizer_: For each task id, it
+    // maps time limit to the optimizer
+    // We want to try a simpler approach
+    OptimizePA_Incre prev_optimizer_;
+    int eval_count_ = 0;
 };
 
 inline PriorityVec PerformOptimizePA_Incre_w_TimeLimits(
