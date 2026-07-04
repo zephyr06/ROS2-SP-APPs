@@ -76,6 +76,12 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     void PerformCoordinateDescentForTaskConfigOpt(
         int K, std::vector<double>& time_limits, bool from_scratch = false);
 
+    // Fast path when GlobalVariables::disable_time_limit_opt is set: pin every
+    // task's TL to its smallest option and evaluate that single config (no
+    // coordinate-descent search). Returns the resulting priority assignment.
+    PriorityVec OptimizeWithTimeLimitOptDisabled(
+        int K, std::vector<double>& time_limits, bool from_scratch);
+
     inline ResourceOptResult CollectResults() const { return res_opt_; }
 
     // data members

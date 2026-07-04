@@ -216,6 +216,13 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
         GlobalVariables::ReoptimizationTimeLimitsSearchRadius);
 }
 
+PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(
+    int K, std::vector<double>& time_limits, bool from_scratch) {
+    InitializeTimeLimitsToSmallest(time_limits);
+    EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+    return opt_pa_;
+}
+
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K, int radius) {
     opt_sp_ = -1.0;
@@ -225,10 +232,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
         RecordCloseTimeLimitOptions(dag_tasks_, radius);
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
-        InitializeTimeLimitsToSmallest(time_limits);
-        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
-                                               /*from_scratch=*/false);
-        return opt_pa_;
+        return OptimizeWithTimeLimitOptDisabled(K, time_limits,
+                                                /*from_scratch=*/false);
     }
     PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
                                              /*from_scratch=*/false);
@@ -244,10 +249,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
         RecordCloseTimeLimitOptions(dag_tasks_, radius);
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
-        InitializeTimeLimitsToSmallest(time_limits);
-        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
-                                               /*from_scratch=*/true);
-        return opt_pa_;
+        return OptimizeWithTimeLimitOptDisabled(K, time_limits,
+                                                /*from_scratch=*/true);
     }
     PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
                                              /*from_scratch=*/true);
