@@ -73,6 +73,10 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     std::vector<double> InitializeTimeLimitsFromETConfig();
     void InitializeTimeLimitsToSmallest(std::vector<double>& time_limits);
+    // One time-limit per task, each at its smallest option (-1 if a task has no
+    // time-performance pairs). Return-by-value variant;
+    // InitializeTimeLimitsToSmallest delegates here.
+    std::vector<double> SmallestTimeLimitVec() const;
     void PerformCoordinateDescentForTaskConfigOpt(
         int K, std::vector<double>& time_limits, bool from_scratch = false);
 
@@ -81,6 +85,16 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // coordinate-descent search). Returns the resulting priority assignment.
     PriorityVec OptimizeWithTimeLimitOptDisabled(
         int K, std::vector<double>& time_limits, bool from_scratch);
+
+    // Compare-and-keep reoptimization helpers (see ReOptimizePeriodic 3-arg).
+    // SeedIncumbentBaseline establishes the incumbent 4-tuple {dag, sp, pa, tl}
+    // in state so UpdateRecords' compare guard acts as compare-and-keep.
+    std::vector<double> ReconstructTimeLimitVecFromResOpt();
+    PriorityVec RateMonotonicPriorityVec();
+    void SeedStateFromIncumbent(const DAG_Model& dag_with_tl,
+                                const PriorityVec& pa, double sp,
+                                const std::vector<double>& tl);
+    void SeedIncumbentBaseline();
 
     inline ResourceOptResult CollectResults() const { return res_opt_; }
 

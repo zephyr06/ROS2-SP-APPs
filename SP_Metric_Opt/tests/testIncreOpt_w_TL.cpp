@@ -485,6 +485,264 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     EXPECT_GE(res_scratch.sp_opt + 1e-6, res_incre.sp_opt);
 }
 
+// Synthetic 2-task DAG for compare-and-keep tests. Only T_perf (task 0) carries
+// time-limit options [400,600,800,1000] with perf [0.5,0.6,0.8,1.0]; T_noise is
+// a small fixed-ET task that keeps the set trivially schedulable at every TL.
+// Because the system is always schedulable, SP is strictly increasing in TL
+// (higher TL → higher perf term), which makes the keep/adopt decision fully
+// deterministic and independent of probabilistic-RTA noise:
+//   TL=400 → SP 1.5, TL=600 → SP 1.6, TL=800 → SP 1.7, TL=1000 → SP 1.8.
+// T_perf's avg ET (~500.3 from the Gaussian dist) is closest to TL=600, so:
+//   radius 0 → window [600]        (best TL=600, SP 1.6)
+//   radius 1 → window [400,600,800] (best TL=800, SP 1.7)
+//   radius 2 → window [400,600,800,1000] (best TL=1000, SP 1.8)
+class CompareAndKeepSynthetic : public ::testing::Test {
+   public:
+    void SetUp() override {
+        const double et_perf = 500.0;
+        std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
+        Task t_perf(0, dist_perf, 2000, 2000, 0, "T_perf");
+        t_perf.execution_time_dist = FiniteDist(GaussianDist(et_perf, 0.5), 5);
+        for (int i = 0; i < 4; ++i) {
+            t_perf.timePerformancePairs.push_back(
+                TimePerfPair(400 + i * 200, 0.5 + i * 0.1));
+        }
+
+        std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+        Task t_noise(1, dist_noise, 2000, 2000, 1, "T_noise");
+        t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+
+        TaskSet tasks = {t_perf, t_noise};
+        dag_tasks = DAG_Model(tasks, mapPrev, 0, 0);
+        sp_parameters = SP_Parameters(dag_tasks);
+    }
+
+    MAP_Prev mapPrev;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+// Compare-and-keep ADOPT path: a wide from-scratch search that strictly beats
+// the incumbent must be adopted. Bootstrap the incumbent with radius 0 (forced
+// to the closest TL=600, SP 1.6), then re-optimize with radius 1 whose
+// from-scratch search finds TL=800 (SP 1.7 > 1.6). The from-scratch result wins
+// and becomes the new incumbent.
+TEST_F(CompareAndKeepSynthetic, ReOptimizePeriodic_AdoptsWhenWideSearchWins) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Bootstrap the incumbent. First call has no incumbent to compare against,
+    // so the from-scratch result (radius 0 → TL=600) simply becomes it.
+    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/0);
+    ResourceOptResult after_bootstrap = opt.CollectResults();
+    EXPECT_EQ(600, after_bootstrap.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(1.6, after_bootstrap.sp_opt);
+
+    // Re-optimize with a wider radius. The from-scratch search explores
+    // [400,600,800] and selects TL=800 (SP 1.7), strictly better than the
+    // incumbent's 1.6 → the from-scratch result is adopted.
+    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/1);
+    ResourceOptResult after_reopt = opt.CollectResults();
+    EXPECT_EQ(800, after_reopt.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(1.7, after_reopt.sp_opt);
+}
+
+// Compare-and-keep KEEP path: when the wide from-scratch search does NOT beat
+// the incumbent (re-evaluated under the new DAG), the incumbent is preserved.
+// Bootstrap with radius 2 (TL=1000, SP 1.8 — the global optimum), then
+// re-optimize with the NARROWER radius 1 whose from-scratch search can only
+// reach TL=800 (SP 1.7 < 1.8). The incumbent wins and is restored.
+TEST_F(CompareAndKeepSynthetic,
+       ReOptimizePeriodic_KeepsIncumbentWhenWideSearchLoses) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Bootstrap with the wide radius so the incumbent is already the global
+    // optimum (TL=1000, SP 1.8).
+    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/2);
+    ResourceOptResult after_bootstrap = opt.CollectResults();
+    EXPECT_EQ(1000, after_bootstrap.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(1.8, after_bootstrap.sp_opt);
+
+    // Re-optimize with a narrower radius. The from-scratch search can only
+    // reach TL=800 (SP 1.7), which is strictly worse than the incumbent's 1.8
+    // under the same DAG → the incumbent is preserved (TL and SP unchanged).
+    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/1);
+    ResourceOptResult after_reopt = opt.CollectResults();
+    EXPECT_EQ(1000, after_reopt.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(1.8, after_reopt.sp_opt);
+}
+
+// --- Direct unit tests for the compare-and-keep helpers ---
+// Each new helper extracted during the refactor gets its own coverage below so
+// the seeded-baseline / RM-bootstrap contract is checked in isolation, not only
+// via the end-to-end Adopt/Keep paths above.
+
+TEST_F(CompareAndKeepSynthetic, SmallestTimeLimitVec) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    std::vector<double> tl = opt.SmallestTimeLimitVec();
+    ASSERT_EQ(2u, tl.size());
+    // T_perf (task 0): smallest of [400,600,800,1000] = 400.
+    EXPECT_DOUBLE_EQ(400.0, tl[0]);
+    // T_noise (task 1): no time-performance pairs → -1.
+    EXPECT_DOUBLE_EQ(-1.0, tl[1]);
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ReconstructTimeLimitVecFromResOpt_DefaultsToMinusOneWhenUnset) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    // Fresh opt: res_opt_.id2time_limit is empty → every task maps to -1.
+    std::vector<double> tl = opt.ReconstructTimeLimitVecFromResOpt();
+    ASSERT_EQ(2u, tl.size());
+    EXPECT_DOUBLE_EQ(-1.0, tl[0]);
+    EXPECT_DOUBLE_EQ(-1.0, tl[1]);
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ReconstructTimeLimitVecFromResOpt_RoundTripsSavedTimeLimits) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    // Save a known TL vector (T_perf=800, T_noise=-1) and reconstruct in task
+    // order. Exercises the id→positional mapping and the -1 pass-through.
+    std::vector<double> saved = {800.0, -1.0};
+    opt.res_opt_.SaveTimeLimits(dag_tasks.tasks, saved);
+    std::vector<double> tl = opt.ReconstructTimeLimitVecFromResOpt();
+    ASSERT_EQ(2u, tl.size());
+    EXPECT_DOUBLE_EQ(800.0, tl[0]);
+    EXPECT_DOUBLE_EQ(-1.0, tl[1]);
+}
+
+TEST(RateMonotonicPriorityVec, SortsByPeriodAscending) {
+    // Three tasks with distinct periods [100, 50, 200]. RM priority = period
+    // ascending, so index 1 (period 50) is highest priority (position 0),
+    // then index 0 (period 100), then index 2 (period 200). Distinct periods
+    // make the result deterministic regardless of sort stability.
+    std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
+    Task t0(0, d, 100, 100, 0, "T0");
+    Task t1(1, d, 50, 50, 1, "T1");
+    Task t2(2, d, 200, 200, 2, "T2");
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1, t2};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag);
+
+    OptimizePA_Incre_with_TimeLimits opt(dag, sp);
+    PriorityVec pa = opt.RateMonotonicPriorityVec();
+    ASSERT_EQ(3u, pa.size());
+    EXPECT_EQ(1, pa[0]);
+    EXPECT_EQ(0, pa[1]);
+    EXPECT_EQ(2, pa[2]);
+}
+
+TEST(RateMonotonicPriorityVec, BreaksPeriodTiesByExecutionTimeAscending) {
+    // Three tasks, two of which share period 100. ET tiebreaker: lower ET gets
+    // higher priority (earlier position). T0 (period 100, ET 30) and T1
+    // (period 100, ET 10) tie on period; T1's lower ET wins position 0, T0
+    // position 1. T2 (period 200) sorts last regardless of ET.
+    std::vector<Value_Proba> d0 = {Value_Proba(30.0, 1.0)};
+    std::vector<Value_Proba> d1 = {Value_Proba(10.0, 1.0)};
+    std::vector<Value_Proba> d2 = {Value_Proba(50.0, 1.0)};
+    Task t0(0, d0, 100, 100, 0, "T0");
+    Task t1(1, d1, 100, 100, 1, "T1");
+    Task t2(2, d2, 200, 200, 2, "T2");
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1, t2};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag);
+
+    OptimizePA_Incre_with_TimeLimits opt(dag, sp);
+    PriorityVec pa = opt.RateMonotonicPriorityVec();
+    ASSERT_EQ(3u, pa.size());
+    EXPECT_EQ(1, pa[0]);  // period 100, ET 10 — lower ET beats T0
+    EXPECT_EQ(0, pa[1]);  // period 100, ET 30
+    EXPECT_EQ(2, pa[2]);  // period 200
+}
+
+TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    EXPECT_FALSE(opt.IfInitialized());
+
+    PriorityVec pa = {0, 1};
+    std::vector<double> tl = {800.0, -1.0};
+    DAG_Model dag_with_tl = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl);
+    const double sp = 1.234;  // arbitrary sentinel — must be stored verbatim
+
+    opt.SeedStateFromIncumbent(dag_with_tl, pa, sp, tl);
+
+    // opt_sp_ / opt_pa_ / res_opt_ hold the seeded tuple verbatim.
+    EXPECT_DOUBLE_EQ(sp, opt.opt_sp_);
+    EXPECT_EQ(pa, opt.opt_pa_);
+    EXPECT_DOUBLE_EQ(sp, opt.res_opt_.sp_opt);
+    EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
+
+    // prev_optimizer_ now carries the same {sp, pa} tuple (plus the TL-applied
+    // DAG).
+    EXPECT_TRUE(opt.prev_optimizer_.IfInitialized());
+    EXPECT_DOUBLE_EQ(sp, opt.prev_optimizer_.opt_sp_);
+    EXPECT_EQ(pa, opt.prev_optimizer_.opt_pa_);
+}
+
+TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    EXPECT_FALSE(opt.prev_optimizer_.IfInitialized());
+
+    // Compute the expected interval-0 baseline — RM priorities + smallest TL —
+    // with the same primitives the helper uses internally, then verify the
+    // helper seeds exactly that.
+    PriorityVec pa_rm = opt.RateMonotonicPriorityVec();
+    std::vector<double> tl_min = opt.SmallestTimeLimitVec();
+    DAG_Model dag_min = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_min);
+    double expected_sp =
+        EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_rm);
+
+    opt.SeedIncumbentBaseline();
+
+    EXPECT_TRUE(opt.prev_optimizer_.IfInitialized());
+    EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
+    EXPECT_EQ(pa_rm, opt.opt_pa_);
+    // Min-TL baseline: T_perf=400, T_noise=-1.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       SeedIncumbentBaseline_ReEvalsIncumbentUnderNewDAG) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Establish an incumbent with TL=800 (NOT the min 400) so the
+    // with-incumbent branch is distinguishable from the interval-0 min-TL
+    // branch.
+    PriorityVec pa = opt.RateMonotonicPriorityVec();
+    std::vector<double> tl_incumbent = {800.0, -1.0};
+    DAG_Model dag_with_tl =
+        UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_incumbent);
+    double sp_incumbent =
+        EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters, pa);
+    opt.SeedStateFromIncumbent(dag_with_tl, pa, sp_incumbent, tl_incumbent);
+    ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
+
+    // Mutate T_noise's ET to a value that breaks schedulability for the
+    // incumbent's {pa, tl} (response time ≈ T_perf's 800 + T_noise's 1900 ≫
+    // 2000 deadline → deadline miss → safety drops). This makes re-evaluating
+    // the incumbent's {pa, tl} under the new DAG yield a different SP than the
+    // stale sp_incumbent, so the re-eval is observable. (T_noise has no TL, so
+    // UpdateExtDistBasedOnTimeLimit copies its ET through unchanged.)
+    opt.dag_tasks_.tasks[1].execution_time_dist =
+        FiniteDist(GaussianDist(1900.0, 0.5), 5);
+    DAG_Model dag_new_with_tl =
+        UpdateExtDistBasedOnTimeLimit(opt.dag_tasks_, tl_incumbent);
+    double expected_sp =
+        EvaluateSPWithPriorityVec(dag_new_with_tl, sp_parameters, pa);
+    ASSERT_NE(sp_incumbent, expected_sp);  // sanity: the DAG really did change
+
+    opt.SeedIncumbentBaseline();
+
+    // With-incumbent branch: TL stays 800 (NOT reset to min 400) and SP is the
+    // re-evaluated value under the new DAG (not the stale sp_incumbent).
+    EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
+    EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
+    EXPECT_EQ(pa, opt.opt_pa_);
+}
+
 TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
     // Build a synthetic task with 10 evenly-spaced TL options [0, 10, 20, ...
     // 90]
