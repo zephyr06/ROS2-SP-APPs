@@ -207,13 +207,13 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
     return ReOptimizePeriodic(
-        dag_tasks_, K, GlobalVariables::ReoptimizationTimeLimitsSearchRadius);
+        dag_tasks_, K, GlobalVariables::ReoptimizationTimeLimitSearchRadius);
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
     return OptimizeIncre_w_TL(dag_tasks_update, K,
-                              GlobalVariables::TimeLimitSearchRadiusIncr);
+                              GlobalVariables::IncrementalTimeLimitSearchRadius);
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
@@ -227,10 +227,10 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     bool trigger_reopt = (reoptimization_interval_count_ % period == 0);
     if (trigger_reopt) {
         ReOptimizePeriodic(dag_tasks_update, K,
-                           GlobalVariables::ReoptimizationTimeLimitsSearchRadius);
+                           GlobalVariables::ReoptimizationTimeLimitSearchRadius);
     } else {
         OptimizeIncre_w_TL(dag_tasks_update, K,
-                           GlobalVariables::TimeLimitSearchRadiusIncr);
+                           GlobalVariables::IncrementalTimeLimitSearchRadius);
     }
     reoptimization_interval_count_++;
     return opt_pa_;

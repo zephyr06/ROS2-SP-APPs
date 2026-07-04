@@ -52,7 +52,7 @@ class TaskSetForTest_robotics_v20 : public ::testing::Test {
 TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::TimeLimitSearchRadiusIncr);
+                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
     // Closest to ET ~202 is 184.1 (index 0). Radius=2 => indices [0,2] => 3
     // opts.
     EXPECT_EQ(3, time_limit_options[0].size());
@@ -255,9 +255,9 @@ class TestDDLMissLessTasks : public ::testing::Test {
 TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::TimeLimitSearchRadiusIncr);
+                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
     EXPECT_EQ(4, time_limit_options.size());  // 4 tasks
-    // With TimeLimitSearchRadiusIncr=2 the window around closest ET (1000) is
+    // With IncrementalTimeLimitSearchRadius=2 the window around closest ET (1000) is
     // indices [1,3] => [600, 800, 1000] (3 options).
     EXPECT_EQ(3, time_limit_options[0].size());  // 3 options for TSP
     EXPECT_EQ(600, time_limit_options[0][0]);
@@ -315,7 +315,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
         "...\n");
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::TimeLimitSearchRadiusIncr);
+                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
 
     EXPECT_EQ(4, time_limit_options.size());  // 4 tasks
 
@@ -327,7 +327,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
         }
     }
 
-    // With TimeLimitSearchRadiusIncr=2 the window is [1,3] => [600,800,1000].
+    // With IncrementalTimeLimitSearchRadius=2 the window is [1,3] => [600,800,1000].
     EXPECT_EQ(3, time_limit_options[perfTask].size());  // 3 options for TSP
     EXPECT_EQ(600, time_limit_options[perfTask][0]);
     EXPECT_EQ(800, time_limit_options[perfTask][1]);
@@ -351,7 +351,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, ReOptimizePeriodic) {
     int perfTask = 0;
     std::vector<std::vector<double>> time_limit_options =
         RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::TimeLimitSearchRadiusIncr);
+                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
     for (int i = 0; i < static_cast<int>(time_limit_options.size()); i++) {
         if (time_limit_options[i][0] != -1) {
             perfTask = i;
@@ -475,7 +475,7 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     opt_incre.OptimizeIncre_w_TL(dag_tasks_warm, 2);
     ResourceOptResult res_incre = opt_incre.CollectResults();
 
-    // The incremental search uses the narrow radius (TimeLimitSearchRadiusIncr,
+    // The incremental search uses the narrow radius (IncrementalTimeLimitSearchRadius,
     // from parameters.yaml). For TSP with ET pinned at 1000ms the closest TL is
     // 1000 (index 3), so radius 2 gives the window [600, 800, 1000] — TL=400 is
     // NOT searched and cannot be the result. Under ET=1000 the higher-TL
@@ -753,8 +753,8 @@ TEST_F(CompareAndKeepSynthetic,
 //
 // Synthetic 2-task DAG: T_perf (task 0) carries 10 evenly-spaced TL options
 // [0,10,...,90] with ET=45 (closest option = index 4, value 40). T_noise is a
-// small fixed-ET task. With TimeLimitSearchRadiusIncr=2 the narrow window is
-// indices [2,6] → 5 options; with ReoptimizationTimeLimitsSearchRadius=6 the
+// small fixed-ET task. With IncrementalTimeLimitSearchRadius=2 the narrow window is
+// indices [2,6] → 5 options; with ReoptimizationTimeLimitSearchRadius=6 the
 // wide window is indices [0,9] → 10 options (clamped). The dispatcher re-runs
 // the wide-radius ReOptimizePeriodic every ReoptimizationPeriod-th call and the
 // narrow-radius OptimizeIncre_w_TL otherwise. Because the dispatcher overwrites
@@ -822,7 +822,7 @@ TEST_F(CounterDispatcherSynthetic,
 
     EXPECT_TRUE(opt.IfInitialized());
     EXPECT_EQ(1, opt.reoptimization_interval_count_);
-    // Wide radius (ReoptimizationTimeLimitsSearchRadius=6) covers all 10
+    // Wide radius (ReoptimizationTimeLimitSearchRadius=6) covers all 10
     // options for T_perf (ET=45, closest index 4, window [0,9] clamped).
     EXPECT_EQ(10u, opt.time_limit_option_for_each_task_[0].size());
 }
@@ -843,7 +843,7 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
     // count == 1 → 1 % 10 != 0 → incremental (narrow).
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     EXPECT_EQ(2, opt.reoptimization_interval_count_);
-    // Narrow radius (TimeLimitSearchRadiusIncr=2) → window [2,6] → 5 options.
+    // Narrow radius (IncrementalTimeLimitSearchRadius=2) → window [2,6] → 5 options.
     EXPECT_EQ(5u, opt.time_limit_option_for_each_task_[0].size());
 }
 
