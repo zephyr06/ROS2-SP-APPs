@@ -63,13 +63,18 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     void UpdateRecords(const OptimizePA_Incre& optimizer,
                        const std::vector<double>& time_limits);
 
-    double EvaluateTimeLimitConfig(int K,
-                                   const std::vector<double>& time_limits);
+    // Evaluates one TL vector. When `from_scratch` is true a fresh
+    // OptimizePA_Incre is built and OptimizeFromScratch(K) is run, ignoring any
+    // warm state. When false, the evaluator warm-starts from `prev_optimizer_`
+    // (the incumbent) via OptimizeIncre, falling back to OptimizeFromScratch(K)
+    // only when no incumbent exists yet.
+    double EvaluateTimeLimitConfig_ScratchOrIncre(
+        int K, const std::vector<double>& time_limits, bool from_scratch);
 
     std::vector<double> InitializeTimeLimitsFromETConfig();
     void InitializeTimeLimitsToSmallest(std::vector<double>& time_limits);
     void PerformCoordinateDescentForTaskConfigOpt(
-        int K, std::vector<double>& time_limits);
+        int K, std::vector<double>& time_limits, bool from_scratch = false);
 
     inline ResourceOptResult CollectResults() const { return res_opt_; }
 

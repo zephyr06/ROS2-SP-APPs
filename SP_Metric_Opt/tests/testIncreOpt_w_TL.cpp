@@ -464,6 +464,10 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
 
     // 2. Optimize incrementally starting from warm start (ET pinned at 1000ms)
     OptimizePA_Incre_with_TimeLimits opt_incre(dag_tasks, sp_parameters);
+    // Bootstrap the incumbent with a from-scratch call first — the incremental
+    // path requires prev_optimizer_ to be initialized (otherwise the contract
+    // violation in EvaluateTimeLimitConfig_ScratchOrIncre fires).
+    opt_incre.ReOptimizePeriodic(2);
     DAG_Model dag_tasks_warm = dag_tasks;
     dag_tasks_warm.tasks[0].execution_time_dist =
         GetUnitExecutionTimeDist(1000.0);

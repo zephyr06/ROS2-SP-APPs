@@ -119,23 +119,40 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     }
 }
 
-double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig(
-    int K, const std::vector<double>& time_limits) {
+double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
+    int K, const std::vector<double>& time_limits, bool from_scratch) {
     eval_count_++;
     DAG_Model dag_tasks_cur =
         UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
 
     double current_sp = -1.0;
-    if (prev_optimizer_.IfInitialized()) {
+    if (from_scratch) {
+        // Reoptimization path: ignore any warm state and re-search from scratch.
+        // This escapes PA drift by exploring the full beam for the current TL.
+        OptimizePA_Incre optimizer(dag_tasks_cur, sp_parameters_);
+        optimizer.OptimizeFromScratch(K);
+        current_sp = optimizer.opt_sp_;
+        UpdateRecords(optimizer, time_limits);
+    } else if (prev_optimizer_.IfInitialized()) {
+        // Incremental path: warm-start from the incumbent and diff-search.
         OptimizePA_Incre optimizer = prev_optimizer_;
         optimizer.OptimizeIncre(dag_tasks_cur);
         current_sp = optimizer.opt_sp_;
         UpdateRecords(optimizer, time_limits);
     } else {
-        OptimizePA_Incre optimizer(dag_tasks_cur, sp_parameters_);
-        optimizer.OptimizeFromScratch(K);
-        current_sp = optimizer.opt_sp_;
-        UpdateRecords(optimizer, time_limits);
+        // Contract violation: the incremental path (from_scratch=false) needs
+        // an incumbent to warm-start from, but prev_optimizer_ is uninitialized.
+        // Under the incremental-scheduler contract the from-scratch bootstrap is
+        // scheduler-driven — from_scratch is called at interval 0 (and, in
+        // future, periodically to escape drift) — so OptimizeIncre_w_TL is never
+        // the bootstrap. Reaching here means a caller invoked the incremental
+        // path before any from_scratch call established an incumbent. Bootstrap
+        // with a from_scratch call (e.g. ReOptimizePeriodic) first.
+        CoutError(
+            "EvaluateTimeLimitConfig_ScratchOrIncre: incremental path "
+            "(from_scratch=false) requested but prev_optimizer_ is "
+            "uninitialized. Bootstrap with a from_scratch call first "
+            "(e.g. ReOptimizePeriodic).");
     }
     return current_sp;
 }
@@ -158,7 +175,7 @@ OptimizePA_Incre_with_TimeLimits::InitializeTimeLimitsFromETConfig() {
 }
 
 void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
-    int K, std::vector<double>& time_limits) {
+    int K, std::vector<double>& time_limits, bool from_scratch) {
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
     std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
     std::sort(sorted_indices.begin(), sorted_indices.end(),
@@ -171,7 +188,9 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
             if (val == -1 && best_sp > -1)  // there are no options to evaluate
                 continue;
             time_limits[idx] = val;
-            double sp_val = EvaluateTimeLimitConfig(K, time_limits);
+            double sp_val =
+                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                                       from_scratch);
             if (sp_val > best_sp && !ApproxEqualSP(sp_val, best_sp)) {
                 best_sp = sp_val;
                 best_option_val = val;
@@ -207,10 +226,12 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         InitializeTimeLimitsToSmallest(time_limits);
-        EvaluateTimeLimitConfig(K, time_limits);
+        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                               /*from_scratch=*/false);
         return opt_pa_;
     }
-    PerformCoordinateDescentForTaskConfigOpt(K, time_limits);
+    PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
+                                             /*from_scratch=*/false);
     return opt_pa_;
 }
 
@@ -224,10 +245,12 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         InitializeTimeLimitsToSmallest(time_limits);
-        EvaluateTimeLimitConfig(K, time_limits);
+        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                               /*from_scratch=*/true);
         return opt_pa_;
     }
-    PerformCoordinateDescentForTaskConfigOpt(K, time_limits);
+    PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
+                                             /*from_scratch=*/true);
     return opt_pa_;
 }
 
