@@ -37,6 +37,11 @@ test_taskset_*gen*/*
 simulation_experiments/optimizer_comparison/
 simulation_experiments/debug_analysis/
 
+# Benchmarking, diagnostics, and scratch evaluation harness
+# (bench drivers, p24-eval sweep scripts, run logs/pid files). Local-only.
+/benchmark/
+/Testing/
+
 # Binary / Output / Log formats
 *.log
 *.pdf
