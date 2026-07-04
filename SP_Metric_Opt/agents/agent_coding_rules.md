@@ -13,6 +13,7 @@ Design rules:
 
 Working with commit history:
 - Agenst only run `git add`, then ask user for review. Only users can run `git commit`
+- Only add relevant changes to a commit's core purpose, don't add file chagnes that are not related to a commit's goal
 - Ensure all tests pass before handling code review to users
 
 Code refactor principles:
