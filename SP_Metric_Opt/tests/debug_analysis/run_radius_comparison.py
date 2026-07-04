@@ -9,7 +9,7 @@ Reports:
 
 How it works
 ------------
-The C++ binary reads TimeLimitSearchRadiusIncr from sources/parameters.yaml
+The C++ binary reads IncrementalTimeLimitSearchRadius from sources/parameters.yaml
 at startup.  To compare radii without recompiling, the script:
   1. Backs up the original YAML.
   2. Overwrites it with the desired radius value.
@@ -60,7 +60,7 @@ INCR_ABLATIONS = ["INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"]
 
 
 def override_radius_in_yaml(new_radius: int):
-    """Replace TimeLimitSearchRadiusIncr in parameters.yaml (backup first)."""
+    """Replace IncrementalTimeLimitSearchRadius in parameters.yaml (backup first)."""
     if not os.path.exists(PARAMS_BACKUP):
         shutil.copy(PARAMS_YAML, PARAMS_BACKUP)
 
@@ -69,8 +69,8 @@ def override_radius_in_yaml(new_radius: int):
 
     with open(PARAMS_YAML, "w") as f:
         for line in lines:
-            if line.strip().startswith("TimeLimitSearchRadiusIncr"):
-                f.write(f"TimeLimitSearchRadiusIncr: {new_radius}\n")
+            if line.strip().startswith("IncrementalTimeLimitSearchRadius"):
+                f.write(f"IncrementalTimeLimitSearchRadius: {new_radius}\n")
             else:
                 f.write(line)
 
@@ -277,7 +277,7 @@ def main():
         # ---- INCR variants for each radius ----
         for radius in INCR_RADII:
             override_radius_in_yaml(radius)
-            print(f"\n--- INCR variants with TimeLimitSearchRadiusIncr = {radius} ---")
+            print(f"\n--- INCR variants with IncrementalTimeLimitSearchRadius = {radius} ---")
 
             for mode in INCR_ABLATIONS:
                 values, elapsed_ms = run_scheduler(run_input_dir, run_output_dir, mode, duration_ms)
