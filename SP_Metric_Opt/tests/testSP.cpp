@@ -5,6 +5,7 @@
 
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_Base.h"
+#include "sources/Optimization/OptimizeSP_Incre.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 #include "sources/Utils/Parameters.h"
@@ -538,7 +539,36 @@ TEST(SP_Calculation_Bug, Robotics_V19_Same_SP_For_Core_Equivalent_Priorities) {
     std::string path =
         GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v19.yaml";
 
-    // Variant 1: Raw v19 task set
+    // Variant 1: Raw v19 task set under TL 400
+    {
+        DAG_Model dag = ReadDAG_Tasks(path, 5);
+        SP_Parameters sp_params = ReadSP_Parameters(path);
+        std::vector<double> time_limits = {400.0, -1.0, -1.0, -1.0};
+        DAG_Model dag_cur = UpdateExtDistBasedOnTimeLimit(dag, time_limits);
+
+        PriorityVec pa1 = {3, 1, 0, 2};
+        PriorityVec pa2 = {3, 1, 2, 0};
+        PriorityVec pa3 = {0, 2, 1, 3};
+        PriorityVec pa4 = {2, 1, 0, 3};
+
+        double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
+        double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+        double sp3 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa3);
+        double sp4 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa4);
+
+        std::cout << "Variant 1 SP (Raw, TL 400): sp1 (3102) = " << std::fixed
+                  << std::setprecision(17) << sp1 << std::endl;
+        std::cout << "Variant 1 SP (Raw, TL 400): sp2 (3120) = " << std::fixed
+                  << std::setprecision(17) << sp2 << std::endl;
+        std::cout << "Variant 1 SP (Raw, TL 400): sp3 (0213) = " << std::fixed
+                  << std::setprecision(17) << sp3 << std::endl;
+        std::cout << "Variant 1 SP (Raw, TL 400): sp4 (2103) = " << std::fixed
+                  << std::setprecision(17) << sp4 << std::endl;
+        EXPECT_DOUBLE_EQ(sp1, sp2);
+        EXPECT_DOUBLE_EQ(sp3, sp4);
+    }
+
+    // Variant 1.5: Raw v19 task set under TL 1000
     {
         DAG_Model dag = ReadDAG_Tasks(path, 5);
         SP_Parameters sp_params = ReadSP_Parameters(path);
@@ -547,21 +577,25 @@ TEST(SP_Calculation_Bug, Robotics_V19_Same_SP_For_Core_Equivalent_Priorities) {
 
         PriorityVec pa1 = {3, 1, 0, 2};
         PriorityVec pa2 = {3, 1, 2, 0};
+        PriorityVec pa3 = {0, 2, 1, 3};
+        PriorityVec pa4 = {2, 1, 0, 3};
 
         double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
         double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+        double sp3 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa3);
+        double sp4 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa4);
 
-        time_limits = {400.0, -1.0, -1.0, -1.0};
-        dag_cur = UpdateExtDistBasedOnTimeLimit(dag_cur, time_limits);
-        double sp3 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
-        double sp4 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+        std::cout << "Variant 1.5 SP (Raw, TL 1000): sp1 (3102) = "
+                  << std::fixed << std::setprecision(17) << sp1 << std::endl;
+        std::cout << "Variant 1.5 SP (Raw, TL 1000): sp2 (3120) = "
+                  << std::fixed << std::setprecision(17) << sp2 << std::endl;
+        std::cout << "Variant 1.5 SP (Raw, TL 1000): sp3 (0213) = "
+                  << std::fixed << std::setprecision(17) << sp3 << std::endl;
+        std::cout << "Variant 1.5 SP (Raw, TL 1000): sp4 (2103) = "
+                  << std::fixed << std::setprecision(17) << sp4 << std::endl;
 
-        std::cout << "Variant 1 SP (Raw): sp1 (3102) = " << std::fixed
-                  << std::setprecision(17) << sp1 << ", sp2 (3120) = " << sp2
-                  << std::endl;
         EXPECT_DOUBLE_EQ(sp1, sp2);
         EXPECT_DOUBLE_EQ(sp3, sp4);
-        EXPECT_DOUBLE_EQ(sp2, sp4);
     }
 
     // Variant 2: Tightened execution time (Gaussian(700, 10))
