@@ -261,6 +261,40 @@ TEST_F(TaskSetForTest_robotics_v19, optimize) {
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
     EXPECT_EQ(400, res_opt.id2time_limit[0]);
 }
+
+TEST(SP_Calculation_Bug, OptimizeFromScratch_SP_Consistency) {
+    std::string path =
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v19.yaml";
+    DAG_Model dag = ReadDAG_Tasks(path, 5);
+    SP_Parameters sp_params = ReadSP_Parameters(path);
+
+    // Apply time limit 1000 to TSP (Task 0)
+    std::vector<double> time_limits = {1000.0, -1.0, -1.0, -1.0};
+    DAG_Model dag_cur = UpdateExtDistBasedOnTimeLimit(dag, time_limits);
+
+    OptimizePA_Incre optimizer(dag_cur, sp_params);
+    PriorityVec pa = optimizer.OptimizeFromScratch(2);
+    double opt_sp = optimizer.opt_sp_;
+
+    double sum_w = 0;
+    for (uint i = 0; i < dag_cur.tasks.size(); i++) {
+        double w = sp_params.weights_node[i];
+        double perf = dag_cur.tasks[i].GetPerfCoefficient();
+        std::cout << "Task " << dag_cur.tasks[i].name << " (ID " << i
+                  << ") weight=" << w << ", perf=" << perf << std::endl;
+        sum_w += w * perf;
+    }
+    std::cout << "Computed sum_sp_weights: " << sum_w << std::endl;
+
+    double expected_sp = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa);
+    std::cout << "OptimizeFromScratch Consistency: opt_sp = " << std::fixed
+              << std::setprecision(17) << opt_sp
+              << ", expected_sp = " << expected_sp << std::endl;
+    std::cout << "pa: ";
+    for (int x : pa) std::cout << x << " ";
+    std::cout << std::endl;
+    EXPECT_DOUBLE_EQ(expected_sp, opt_sp);
+}
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

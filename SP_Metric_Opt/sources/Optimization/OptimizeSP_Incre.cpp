@@ -55,9 +55,9 @@ void PriorityPartialPath::UpdateSP(int task_id) {
     double perf_coeff = dag_tasks.tasks[task_id].GetPerfCoefficient();
     double weight = 1.0 * sp_parameters.weights_node[task_id];
     double effective_weight = weight * perf_coeff;
-    double sp_cur = ObtainSP({rta_curr}, {dag_tasks.tasks[task_id].deadline},
-                             {sp_parameters.thresholds_node[task_id]},
-                             {effective_weight});
+    double sp_cur =
+        ObtainSP({rta_curr}, {dag_tasks.tasks[task_id].deadline},
+                 {sp_parameters.thresholds_node[task_id]}, {effective_weight});
     sp_lost += effective_weight - sp_cur;
 }
 
@@ -127,11 +127,13 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
     opt_pa_ = res;
     double sum_sp_weights = 0;
     for (int i = 0; i < N; i++) {
-        sum_sp_weights +=
-            sp_parameters_.weights_node[i] * dag_tasks_.tasks[i].GetPerfCoefficient();
+        sum_sp_weights += sp_parameters_.weights_node[i] *
+                          dag_tasks_.tasks[i].GetPerfCoefficient();
     }
-    opt_sp_ = sum_sp_weights -
-              partial_paths[0].sp_lost;  // SP range for each node is 0 to 1
+    // old method is opt_sp_ = sum_sp_weights - partial_paths[0].sp_lost;
+    // But that method doesn't exactly generate the same result as directly
+    // calling evaluting SP
+    opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_, sp_parameters_, opt_pa_);
     return res;
 }
 
@@ -162,7 +164,8 @@ PriorityVec RemoveOneTask(const PriorityVec& pa_vec, int task_id) {
             break;
         }
     }
-    if (!found) CoutError("Task not found in RemoveOneTask");
+    if (!found)
+        CoutError("Task not found in RemoveOneTask");
     return res;
 }
 int GetProrityIndex(const PriorityVec& pa_vec, int task_id) {
