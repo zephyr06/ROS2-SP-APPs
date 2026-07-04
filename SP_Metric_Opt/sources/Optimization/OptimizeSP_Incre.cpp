@@ -241,6 +241,11 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
     //           << "\n";
     std::vector<DiffObj> tasks_with_diff_et =
         FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
+
+    // INCR-ET-debug: how many tasks changed ET vs the carried (frozen) baseline
+    // DAG, and how many full ObtainSP_DAG evals the variation sweep costs.
+    int dbg_sp_calls_before = g_incr_et_debug_sp_dag_calls;
+    int dbg_n_variations = 0;
     for (DiffObj task_diff_obj : tasks_with_diff_et) {
         int task_id = task_diff_obj.task_id;
         bool et_increased = task_diff_obj.increase;
@@ -251,6 +256,7 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
                 AnalyzePriorityChangeStatus(sp_parameters_, task_id,
                                             et_increased));
         for (const PriorityVec& priority_assignment : pa_vec_variations) {
+            dbg_n_variations++;
             double sp_eval = EvaluateSPWithPriorityVec(
                 dag_tasks_update, sp_parameters_, priority_assignment);
             PrintPA_IfDebugMode(priority_assignment, sp_eval);
@@ -259,6 +265,14 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
                 opt_pa_ = priority_assignment;
             }
         }
+    }
+    if (GlobalVariables::debugMode == 1) {
+        std::cerr << "[INCR-ET-DBG] OptimizeIncre: ndiff="
+                  << tasks_with_diff_et.size()
+                  << " nvar=" << dbg_n_variations
+                  << " sp_dag_calls=" << (g_incr_et_debug_sp_dag_calls -
+                                          dbg_sp_calls_before)
+                  << "\n";
     }
     // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
     //           << "\n";

@@ -86,10 +86,18 @@ double ObtainSP_TaskSet_And_TimeLimits(const TaskSet& tasks,
         ApplyTimeLimitsToTasksExecutionTime(tasks, time_limits), sp_parameters);
 }
 
+// INCR-ET-debug: count full DAG SP evaluations. OptimizeIncre calls this once
+// per priority variation; OptimizeFromScratch does NOT (it uses the cheaper
+// per-task GetRTA_OneTask). The asymmetry is the leading suspect for the
+// "INCR per-act ET grows with period" issue, so count these when debugMode is on.
+int g_incr_et_debug_sp_dag_calls = 0;
+
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters) {
-    if (GlobalVariables::debugMode == 1)
+    if (GlobalVariables::debugMode == 1) {
         BeginTimer("ObtainSP_DAG");
+        g_incr_et_debug_sp_dag_calls++;
+    }
     double sp_overall = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 
     std::vector<FiniteDist> reaction_time_dists =
