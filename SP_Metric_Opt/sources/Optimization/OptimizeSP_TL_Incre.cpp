@@ -205,6 +205,10 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     }
 }
 
+// 1-arg overload — INCR_SCRATCH entry point. See header for why this is an
+// amnesiac wide-radius reopt (fresh optimizer each interval → prev_optimizer_
+// uninitialized → RM+min-TL baseline every call), distinct from the persistent
+// optimizer used by Optimize_w_TL_ScratchOrIncre (INCR with period=1).
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
     return ReOptimizePeriodic(
         dag_tasks_, K, GlobalVariables::ReoptimizationTimeLimitSearchRadius);
