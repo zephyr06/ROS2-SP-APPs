@@ -1,9 +1,11 @@
 // #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <iomanip>
 
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_Base.h"
+#include "sources/Optimization/OptimizeSP_TL_BF.h"
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/readwrite.h"
@@ -125,8 +127,7 @@ TEST_F(TaskSetForTest_2tasks1chain, SP_Calculation_dag) {
 
 TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_And_TimeLimits_NoLimits) {
     std::vector<double> time_limits = {-1, -1};
-    double sp_no_limits =
-        ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
+    double sp_no_limits = ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
     double sp_ref = ObtainSP_DAG(dag_tasks, sp_parameters);
     EXPECT_NEAR(sp_ref, sp_no_limits, 1e-9);
 }
@@ -135,8 +136,7 @@ TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_And_TimeLimits_WithLimit) {
     // Apply a time limit of 2 to task 0, replacing its distribution with a
     // unit distribution at value 2.
     std::vector<double> time_limits = {2, -1};
-    double sp_limited =
-        ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
+    double sp_limited = ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
 
     DAG_Model dag_expected = dag_tasks;
     dag_expected.tasks[0].execution_time_dist = GetUnitExecutionTimeDist(2);
@@ -403,8 +403,8 @@ TEST(GetPerfCoefficient, ExactMatch) {
     // Distribution with average 5.0
     std::vector<Value_Proba> dist_vec = {Value_Proba(5, 1.0)};
     Task task(0, dist_vec, 10, 10, 0);
-    task.timePerformancePairs = {
-        TimePerfPair(3, 0.5), TimePerfPair(5, 0.8), TimePerfPair(7, 1.0)};
+    task.timePerformancePairs = {TimePerfPair(3, 0.5), TimePerfPair(5, 0.8),
+                                 TimePerfPair(7, 1.0)};
     EXPECT_DOUBLE_EQ(0.8, task.GetPerfCoefficient());
 }
 
@@ -413,24 +413,22 @@ TEST(GetPerfCoefficient, InBetween_FloorToLower) {
     // Floor behavior: return the closest lower entry (0.5)
     std::vector<Value_Proba> dist_vec = {Value_Proba(4, 1.0)};
     Task task(0, dist_vec, 10, 10, 0);
-    task.timePerformancePairs = {
-        TimePerfPair(3, 0.5), TimePerfPair(5, 0.8), TimePerfPair(7, 1.0)};
+    task.timePerformancePairs = {TimePerfPair(3, 0.5), TimePerfPair(5, 0.8),
+                                 TimePerfPair(7, 1.0)};
     EXPECT_DOUBLE_EQ(0.5, task.GetPerfCoefficient());
 }
 
 TEST(GetPerfCoefficient, BelowSmallest_ReturnsZero) {
     std::vector<Value_Proba> dist_vec = {Value_Proba(2, 1.0)};
     Task task(0, dist_vec, 10, 10, 0);
-    task.timePerformancePairs = {
-        TimePerfPair(3, 0.5), TimePerfPair(5, 1.0)};
+    task.timePerformancePairs = {TimePerfPair(3, 0.5), TimePerfPair(5, 1.0)};
     EXPECT_DOUBLE_EQ(0.0, task.GetPerfCoefficient());
 }
 
 TEST(GetPerfCoefficient, AboveLargest_ReturnsLast) {
     std::vector<Value_Proba> dist_vec = {Value_Proba(10, 1.0)};
     Task task(0, dist_vec, 10, 10, 0);
-    task.timePerformancePairs = {
-        TimePerfPair(3, 0.5), TimePerfPair(5, 1.0)};
+    task.timePerformancePairs = {TimePerfPair(3, 0.5), TimePerfPair(5, 1.0)};
     EXPECT_DOUBLE_EQ(1.0, task.GetPerfCoefficient());
 }
 
@@ -493,8 +491,9 @@ TEST_F(TaskSetForTest_PerfFactor, SP_Calculation_CorrectWeightedValue) {
         double ddl_miss = GetDDL_MissProbability(rtas[i], tasks[i].deadline);
         double weight = sp_parameters.weights_node.at(task_id);
         double perf_coeff = tasks[i].GetPerfCoefficient();
-        sp_expected += SP_Func(ddl_miss, sp_parameters.thresholds_node.at(task_id))
-                       * weight * perf_coeff;
+        sp_expected +=
+            SP_Func(ddl_miss, sp_parameters.thresholds_node.at(task_id)) *
+            weight * perf_coeff;
     }
     EXPECT_NEAR(sp_expected, sp_actual, 1e-9);
 }
@@ -533,6 +532,58 @@ TEST(GetPerfTerm, AboveLargestTime) {
     std::vector<TimePerfPair> pairs = {TimePerfPair(1.0, 0.5),
                                        TimePerfPair(3.0, 0.9)};
     EXPECT_DOUBLE_EQ(0.9, GetPerfTerm(pairs, 4.0));
+}
+
+TEST(SP_Calculation_Bug, Robotics_V19_Same_SP_For_Core_Equivalent_Priorities) {
+    std::string path =
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v19.yaml";
+
+    // Variant 1: Raw v19 task set
+    {
+        DAG_Model dag = ReadDAG_Tasks(path, 5);
+        SP_Parameters sp_params = ReadSP_Parameters(path);
+        std::vector<double> time_limits = {1000.0, -1.0, -1.0, -1.0};
+        DAG_Model dag_cur = UpdateExtDistBasedOnTimeLimit(dag, time_limits);
+
+        PriorityVec pa1 = {3, 1, 0, 2};
+        PriorityVec pa2 = {3, 1, 2, 0};
+
+        double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
+        double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+
+        time_limits = {400.0, -1.0, -1.0, -1.0};
+        dag_cur = UpdateExtDistBasedOnTimeLimit(dag_cur, time_limits);
+        double sp3 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
+        double sp4 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+
+        std::cout << "Variant 1 SP (Raw): sp1 (3102) = " << std::fixed
+                  << std::setprecision(17) << sp1 << ", sp2 (3120) = " << sp2
+                  << std::endl;
+        EXPECT_DOUBLE_EQ(sp1, sp2);
+        EXPECT_DOUBLE_EQ(sp3, sp4);
+        EXPECT_DOUBLE_EQ(sp2, sp4);
+    }
+
+    // Variant 2: Tightened execution time (Gaussian(700, 10))
+    {
+        DAG_Model dag = ReadDAG_Tasks(path, 5);
+        SP_Parameters sp_params = ReadSP_Parameters(path);
+        dag.tasks[0].execution_time_dist =
+            FiniteDist(GaussianDist(700.0, 10.0), 5);
+        std::vector<double> time_limits = {400.0, -1.0, -1.0, -1.0};
+        DAG_Model dag_cur = UpdateExtDistBasedOnTimeLimit(dag, time_limits);
+
+        PriorityVec pa1 = {3, 1, 0, 2};
+        PriorityVec pa2 = {3, 1, 2, 0};
+
+        double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
+        double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+
+        std::cout << "Variant 2 SP (Tightened): sp1 (3102) = " << std::fixed
+                  << std::setprecision(17) << sp1 << ", sp2 (3120) = " << sp2
+                  << std::endl;
+        EXPECT_DOUBLE_EQ(sp1, sp2);
+    }
 }
 
 int main(int argc, char** argv) {
