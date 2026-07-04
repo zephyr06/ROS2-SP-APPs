@@ -847,6 +847,63 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
     EXPECT_EQ(5u, opt.time_limit_option_for_each_task_[0].size());
 }
 
+// INCR frozen-baseline regression: OptimizeIncre must advance the carried
+// baseline DAG (prev_optimizer_.dag_tasks_) to the current interval's DAG, so
+// that consecutive incremental calls diff consecutive-interval DAGs (small
+// ndiff) instead of stale-reopt-DAG vs fresh-DAG (ndiff saturates at N every
+// interval → per-act ET grows with ReoptimizationPeriod).
+//
+// Mechanism under test: OptimizeIncre_w_TL → EvaluateTimeLimitConfig_ScratchOrIncre
+// (incremental branch) does `OptimizePA_Incre optimizer = prev_optimizer_;` then
+// `optimizer.OptimizeIncre(dag_tasks_cur);`. OptimizeIncre diffs optimizer.dag_tasks_
+// (copied from prev_optimizer_, i.e. the FROZEN reopt-interval DAG) against
+// dag_tasks_cur. UpdateRecords then writes `prev_optimizer_ = optimizer` — but
+// only if OptimizeIncre advanced optimizer.dag_tasks_ to dag_tasks_cur. Without
+// that advance, prev_optimizer_.dag_tasks_ stays frozen at the reopt DAG forever.
+//
+// Observable: T_noise (task 1) has no time-performance pairs → its TL is always
+// -1 → UpdateExtDistBasedOnTimeLimit passes its execution_time_dist through
+// unchanged. So prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist is a
+// direct, debugMode-independent window onto whether the baseline DAG advanced.
+// Bootstrap establishes the original ET there; a second interval with a MUTATED
+// T_noise ET must propagate that mutation into prev_optimizer_.dag_tasks_.
+TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Bootstrap the incumbent. After ReOptimizePeriodic, prev_optimizer_.dag_tasks_
+    // holds the TL-applied bootstrap DAG; T_noise's TL is -1 so its ET there is
+    // the ORIGINAL fixture value (FiniteDist around 50.0).
+    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/2);
+    ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
+    const double original_noise_et =
+        opt.prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist.GetAvgValue();
+    EXPECT_NEAR(original_noise_et, 50.0, 5.0);
+
+    // Second interval: same DAG except T_noise's ET is mutated to a clearly
+    // different value. T_perf is left untouched so the only ET change vs the
+    // bootstrap is on T_noise.
+    const double mutated_noise_et = 1234.0;
+    DAG_Model dag_v2 = dag_tasks;
+    dag_v2.tasks[1].execution_time_dist =
+        GetUnitExecutionTimeDist(mutated_noise_et);
+
+    opt.OptimizeIncre_w_TL(dag_v2, 2);
+
+    // FIX UNDER TEST: OptimizeIncre must advance prev_optimizer_.dag_tasks_ to
+    // the current interval's DAG. T_noise's TL is -1 → its ET in the TL-applied
+    // dag_tasks_cur equals dag_v2's mutated ET → prev_optimizer_.dag_tasks_ must
+    // now carry the mutated ET. Before the fix, prev_optimizer_.dag_tasks_ stays
+    // frozen at the bootstrap DAG → T_noise's ET remains ~50.0 (the original),
+    // and this expectation FAILS.
+    const double carried_noise_et =
+        opt.prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist.GetAvgValue();
+    EXPECT_NEAR(carried_noise_et, mutated_noise_et, 5.0)
+        << "prev_optimizer_.dag_tasks_ was not advanced by OptimizeIncre; "
+        << "the incremental diff baseline is frozen at the reopt DAG. "
+        << "Expected ~" << mutated_noise_et << " (current interval), got "
+        << carried_noise_et << " (bootstrap value ~" << original_noise_et << ").";
+}
+
 TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
     // Build a synthetic task with 10 evenly-spaced TL options [0, 10, 20, ...
     // 90]

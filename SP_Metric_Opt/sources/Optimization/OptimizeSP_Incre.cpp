@@ -262,6 +262,15 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
     }
     // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
     //           << "\n";
+    // Advance the carried baseline DAG to the current interval's DAG so the
+    // NEXT incremental call diffs consecutive-interval DAGs (small ndiff)
+    // instead of stale-reopt-DAG vs fresh-DAG (ndiff saturates at N every
+    // interval → per-act ET grows with ReoptimizationPeriod). FindTaskWithDifferentEt
+    // above already captured the diff against the OLD dag_tasks_, so this
+    // assignment only affects future calls. UpdateRecords (in the TL-with-incremental
+    // path) copies this optimizer into prev_optimizer_, so the advanced DAG
+    // propagates across intervals.
+    dag_tasks_ = dag_tasks_update;
     return opt_pa_;
 }
 }  // namespace SP_OPT_PA
