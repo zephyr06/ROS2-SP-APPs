@@ -475,11 +475,17 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     opt_incre.OptimizeIncre_w_TL(dag_tasks_warm, 2);
     ResourceOptResult res_incre = opt_incre.CollectResults();
 
-    // The incremental search window (radius=6, from parameters.yaml) covers
-    // all TL options [400, 600, 800, 1000].  Because TSP is unschedulable under
-    // every option, ApproxEqualSP treats them as equal; the tie-breaker
-    // deterministically picks the smallest TL: 400.
-    EXPECT_EQ(400, res_incre.id2time_limit[0]);
+    // The incremental search uses the narrow radius (TimeLimitSearchRadiusIncr,
+    // from parameters.yaml). For TSP with ET pinned at 1000ms the closest TL is
+    // 1000 (index 3), so radius 2 gives the window [600, 800, 1000] — TL=400 is
+    // NOT searched and cannot be the result. Under ET=1000 the higher-TL
+    // candidates (800, 1000) are unschedulable (deadline miss → safety drop),
+    // so the schedulable TL=600 wins; the bootstrap incumbent (TL=400, computed
+    // under the old ET=700 DAG) is replaced because TL=600 strictly improves SP
+    // under the new DAG. The result is therefore the schedulable optimum within
+    // the narrow window, not the bootstrap TL.
+    EXPECT_GE(res_incre.id2time_limit[0], 600);
+    EXPECT_LE(res_incre.id2time_limit[0], 1000);
 
     // Scratch explored the full option set so it should be at least as good.
     EXPECT_GE(res_scratch.sp_opt + 1e-6, res_incre.sp_opt);
@@ -741,6 +747,104 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
     EXPECT_EQ(pa, opt.opt_pa_);
+}
+
+// --- Counter-driven dispatcher (Optimize_w_TL_ScratchOrIncre) ---
+//
+// Synthetic 2-task DAG: T_perf (task 0) carries 10 evenly-spaced TL options
+// [0,10,...,90] with ET=45 (closest option = index 4, value 40). T_noise is a
+// small fixed-ET task. With TimeLimitSearchRadiusIncr=2 the narrow window is
+// indices [2,6] → 5 options; with ReoptimizationTimeLimitsSearchRadius=6 the
+// wide window is indices [0,9] → 10 options (clamped). The dispatcher re-runs
+// the wide-radius ReOptimizePeriodic every ReoptimizationPeriod-th call and the
+// narrow-radius OptimizeIncre_w_TL otherwise. Because the dispatcher overwrites
+// time_limit_option_for_each_task_ on each call, the recorded size reflects the
+// LAST call's radius — the distinguishing observable between the two branches.
+class CounterDispatcherSynthetic : public ::testing::Test {
+   public:
+    void SetUp() override {
+        const double et_perf = 45.0;
+        std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
+        Task t_perf(0, dist_perf, 1000, 1000, 0, "T_perf");
+        t_perf.execution_time_dist = FiniteDist(GaussianDist(et_perf, 0.5), 5);
+        for (int i = 0; i < 10; ++i) {
+            t_perf.timePerformancePairs.push_back(
+                TimePerfPair(i * 10, i * 0.1));
+        }
+
+        std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+        Task t_noise(1, dist_noise, 1000, 1000, 1, "T_noise");
+        t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+
+        TaskSet tasks = {t_perf, t_noise};
+        dag_tasks = DAG_Model(tasks, mapPrev, 0, 0);
+        sp_parameters = SP_Parameters(dag_tasks);
+
+        saved_period_ = GlobalVariables::ReoptimizationPeriod;
+        GlobalVariables::ReoptimizationPeriod = 10;
+    }
+
+    void TearDown() override {
+        GlobalVariables::ReoptimizationPeriod = saved_period_;
+    }
+
+    MAP_Prev mapPrev;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int saved_period_;
+};
+
+// The counter advances by 1 after every dispatch and never resets. Three
+// consecutive calls → counter == 3 regardless of which branch each call took.
+TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    EXPECT_EQ(0, opt.reoptimization_interval_count_);
+
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    EXPECT_EQ(1, opt.reoptimization_interval_count_);
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    EXPECT_EQ(2, opt.reoptimization_interval_count_);
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    EXPECT_EQ(3, opt.reoptimization_interval_count_);
+}
+
+// count == 0 → 0 % period == 0 → ReOptimizePeriodic (wide radius). On a fresh
+// opt this is the interval-0 bootstrap: SeedIncumbentBaseline synthesizes an
+// RM+min-TL incumbent, so the call succeeds (no CoutError) and leaves the opt
+// initialized. The wide radius is observable: 10 TL options recorded for T_perf.
+TEST_F(CounterDispatcherSynthetic,
+       TriggersReoptAtCountZero_BootstrapsIncumbent) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    EXPECT_FALSE(opt.IfInitialized());
+    EXPECT_EQ(0, opt.reoptimization_interval_count_);
+
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+
+    EXPECT_TRUE(opt.IfInitialized());
+    EXPECT_EQ(1, opt.reoptimization_interval_count_);
+    // Wide radius (ReoptimizationTimeLimitsSearchRadius=6) covers all 10
+    // options for T_perf (ET=45, closest index 4, window [0,9] clamped).
+    EXPECT_EQ(10u, opt.time_limit_option_for_each_task_[0].size());
+}
+
+// count == 0 routes to reopt (wide, 10 options); count == 1 is not modular
+// (1 % 10 != 0) so the second call routes to the incremental branch (narrow
+// radius, 5 options). The recorded size after the second call is 5, proving the
+// incremental branch — not reopt — ran. The incumbent established by the first
+// call lets the incremental path's warm-start contract hold (no CoutError).
+TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // count == 0 → reopt (wide). Establishes the incumbent.
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    ASSERT_EQ(1, opt.reoptimization_interval_count_);
+    ASSERT_EQ(10u, opt.time_limit_option_for_each_task_[0].size());
+
+    // count == 1 → 1 % 10 != 0 → incremental (narrow).
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    EXPECT_EQ(2, opt.reoptimization_interval_count_);
+    // Narrow radius (TimeLimitSearchRadiusIncr=2) → window [2,6] → 5 options.
+    EXPECT_EQ(5u, opt.time_limit_option_for_each_task_[0].size());
 }
 
 TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {

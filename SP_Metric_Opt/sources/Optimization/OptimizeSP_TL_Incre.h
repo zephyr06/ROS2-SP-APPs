@@ -58,6 +58,17 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     PriorityVec ReOptimizePeriodic(const DAG_Model& dag_tasks_update, int K,
                                    int radius);
 
+    // Counter-driven dispatcher: every ReoptimizationPeriod-th call re-runs the
+    // TL search with the wide radius (ReOptimizePeriodic, compare-and-keep);
+    // otherwise runs the narrow-radius incremental search (OptimizeIncre_w_TL).
+    // count == 0 routes to ReOptimizePeriodic, whose SeedIncumbentBaseline
+    // interval-0 branch synthesizes an RM+min-TL incumbent — so the dispatcher
+    // also serves as the interval-0 bootstrap for the INCR paths. The counter
+    // advances by 1 after every call and never resets (modular arithmetic alone
+    // decides reopt vs incremental).
+    PriorityVec Optimize_w_TL_ScratchOrIncre(const DAG_Model& dag_tasks_update,
+                                             int K);
+
     void ApplyWCETAblationIfRequired(DAG_Model& dag_tasks);
 
     void UpdateRecords(const OptimizePA_Incre& optimizer,
@@ -106,6 +117,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // We want to try a simpler approach
     OptimizePA_Incre prev_optimizer_;
     int eval_count_ = 0;
+    int reoptimization_interval_count_ = 0;
 };
 
 inline PriorityVec PerformOptimizePA_Incre_w_TimeLimits(

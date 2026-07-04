@@ -212,9 +212,28 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
-    return OptimizeIncre_w_TL(
-        dag_tasks_update, K,
-        GlobalVariables::ReoptimizationTimeLimitsSearchRadius);
+    return OptimizeIncre_w_TL(dag_tasks_update, K,
+                              GlobalVariables::TimeLimitSearchRadiusIncr);
+}
+
+PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
+    const DAG_Model& dag_tasks_update, int K) {
+    // Modular reopt: every ReoptimizationPeriod-th call (count % period == 0)
+    // takes the wide-radius compare-and-keep path; otherwise the narrow-radius
+    // incremental path. count == 0 routes to ReOptimizePeriodic, which
+    // bootstraps the incumbent at interval 0 (the incremental path cannot run
+    // without an incumbent). The counter advances every call and never resets.
+    int period = GlobalVariables::ReoptimizationPeriod;
+    bool trigger_reopt = (reoptimization_interval_count_ % period == 0);
+    if (trigger_reopt) {
+        ReOptimizePeriodic(dag_tasks_update, K,
+                           GlobalVariables::ReoptimizationTimeLimitsSearchRadius);
+    } else {
+        OptimizeIncre_w_TL(dag_tasks_update, K,
+                           GlobalVariables::TimeLimitSearchRadiusIncr);
+    }
+    reoptimization_interval_count_++;
+    return opt_pa_;
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(

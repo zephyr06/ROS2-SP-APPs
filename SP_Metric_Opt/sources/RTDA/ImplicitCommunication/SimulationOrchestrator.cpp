@@ -264,7 +264,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     ResourceOptResult res;
     if (scheduler_mode_ == "INCR") {
-        incr_optimizer_.OptimizeIncre_w_TL(
+        incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();
@@ -278,7 +278,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     } else if (scheduler_mode_ == "INCR_NO_TL") {
         bool prev = GlobalVariables::disable_time_limit_opt;
         GlobalVariables::disable_time_limit_opt = true;
-        incr_optimizer_.OptimizeIncre_w_TL(
+        incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();
@@ -286,7 +286,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     } else if (scheduler_mode_ == "INCR_WCET") {
         bool prev = GlobalVariables::use_wcet_execution_time;
         GlobalVariables::use_wcet_execution_time = true;
-        incr_optimizer_.OptimizeIncre_w_TL(
+        incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();
