@@ -1,10 +1,21 @@
 # Development Log
 
-> ## SESSION STATUS (as of 2026-07-04, Commit 6 staged) — read this first
+> ## SESSION STATUS (as of 2026-07-04, Fix A + Fix B committed) — read this first
 >
-> **Branch `clean_simulation`. HEAD = `6cd0f24f`.** P25 Commits 1–5 are
-> **committed**. **P25 Commit 6 is implemented and staged for review** (not yet
-> committed — `git add` only, per `agent_coding_rules.md`).
+> **Branch `clean_simulation`. HEAD = `de4e9636`.** P25 Commits 1–6 are
+> **committed**, and the post-Commit-6 INCR-ET bug fix bundle (Fix A + latent
+> `SeedStateFromIncumbent` bug + Fix B) is also **committed**. `ctest` 16/16
+> green in the DEBUG build. The **only** open P25 thread is the runtime A/B
+> re-run (see Open thread 1 below).
+>
+> - `9b3eeacf` — **Commit 6**: counter-driven dispatcher + radius-knob rename +
+>   radius-forwarding fix (described below).
+> - `986a9cfe` — **Fix A**: `OptimizeIncre` advances `dag_tasks_` after the diff
+>   loop (the frozen-baseline root cause of the INCR-ET-grows-with-period bug;
+>   full record in `agents/debug_runtime0704_incr.md`).
+> - `de4e9636` — **Fix B + latent prerequisite**: `{-1}`-only skip + zero-work
+>   fallback in `PerformCoordinateDescentForTaskConfigOpt`, and the
+>   `prev_optimizer_.sp_parameters_` carry in `SeedStateFromIncumbent`.
 >
 > **Commit 6 — counter-driven dispatcher wired in.**
 > `Optimize_w_TL_ScratchOrIncre(dag,K)` is added to `OptimizeSP_TL_Incre.{h,cpp}`:
@@ -72,9 +83,28 @@
 > `agents/*.md` docs. These are not part of P25 Commit 6; left alone.
 >
 > **Open threads:**
-> 1. **P25 Commit 7:** full ctest (done) + A/B re-run (period on vs off) +
->    dev_log before/after numbers, confirming compare-and-keep runs at runtime.
->    Also update `parameters.yaml:12` comment (drop "0 disables").
+> 1. ~~**P25 runtime A/B re-run (the only pending P25 item).**~~ **RESOLVED
+>    2026-07-04 19:41 — PARTIAL PASS.** Fix A + Fix B were committed and
+>    TDD-green; the runtime A/B was re-run on the fixed binary (rebuilt 19:34,
+>    HEAD `de4e9636`). **Result:** pathological 3× growth eliminated (P10/P30/P60
+>    collapsed 301–343→88–91 ts0, 185–194→72–75 ts2, toward the P1≈INCR_SCRATCH
+>    floor; P60/P1 3.4×→1.47× ts0, 2.1×→1.13× ts2; numerical pass bar P30/P60 vs
+>    P10 ≤ 1.1–1.3× met on both) BUT the literal flip
+>    `INCR_P1 ≥ P10 ≥ P30 ≈ P60` was NOT met (P1 still cheapest) — residual gap
+>    is the per-variation `ObtainSP_DAG` asymmetry **Fix C** (deferred) addresses.
+>    Full before/after tables + procedure: `agents/finished_tasks/P24_task.md`
+>    § "DONE: A/B re-run"; see also the 2026-07-04 19:41 entry below. (Original
+>    thread text, kept for the procedure record: `cmake --build release` first
+>    — the on-disk release binary predated `986a9cfe`/`de4e9636`, so without a
+>    rebuild the A/B re-runs the *old* frozen-baseline code and reproduces the
+>    bug instead of confirming the fix — then
+>    `python3 -m simulation_experiments.repro_et_grows_with_period --taskset 0
+>    --reps 3` and `--taskset 2 --reps 1`, serial/contention-free. Prod-run
+>    tasksets were present locally, no regeneration needed. Parallel-period-sweep
+>    variant config: `simulation_experiments/configs/p25_period_ab_config.json`
+>    via `MODE=prod CONFIG_JSON=<that> ./scripts/run_end_to_end.sh`; the period-0
+>    "off" baseline was dropped in Commit 6, `parameters.yaml:12` comment updated
+>    in `71eb6aa8`.)
 > 2. **Memory file `p24-reoptimization-design.md`** — rewritten this session to
 >    match the 4-tuple model + Commit 6's dispatcher + the radius rename (was
 >    stale: described the removed `restore_incumbent`/`SumTimeLimits` design and
@@ -504,24 +534,53 @@ no errors. Verified the union scheduler list (7 schedulers: INCR, BF, RM,
 CFS, INCR_NO_TL, INCR_WCET, INCR_SCRATCH) flows through both main and
 ablation figures from a single simulate pass.
 
-#### Known issue: aggregator picks up stale experiment dirs (filed, not yet fixed)
+#### Resolved: aggregator no longer ingests stale experiment dirs (fixed by `c6c09e23`)
 
-The real test run also exposed a latent aggregation bug:
-`aggregate_data_from_directories()` ingests **every** `tasks{N}_*` directory,
-with last-write-wins per `(num_tasks, scheduler)`. Result dirs are named only
-by `(num_tasks, duration, interval, seed)` — so runs with different
-durations coexist and silently corrupt each other's bars. In this run the
+This entry previously documented an open bug — kept here for context, then
+updated with the resolution. The original symptom: `aggregate_data_from_directories()`
+ingested **every** `tasks{N}_*` directory with last-write-wins per
+`(num_tasks, scheduler)`. Result dirs were named only by
+`(num_tasks, duration, interval, seed)`, so runs with different durations
+coexisted and silently corrupted each other's bars. In the cited run the
 6-task bars were polluted by a stale `tasks6_dur300` dir (9 schedulers,
 incl. RM_FAST/RM_SLOW, from 2026-06-28) and a leftover `tasks4_dur30`
-partial dir from the failed run — yielding 23 records instead of 14.
+partial dir from the failed run — yielding 23 records instead of 14. The
+sweep-dir exclusion (added earlier that session) handled the `*_sweep_*`
+collision but not the `*_dur{D}_*` collision.
 
-The sweep-dir exclusion (added earlier this session) handles the
-`*_sweep_*` collision but not the `*_dur{D}_*` collision. Proper fix (not
-yet applied): have the aggregator select, per task count, only the directory
-matching the configured `simulation_duration_seconds` + `base_random_seed`
-(rather than every matching dir), or scope aggregation to a specific
-run-name prefix. For now, stale dirs were removed by hand before
-re-aggregating.
+Resolution landed in commit `c6c09e23 reorganize output folders from
+simulation exp` (P23 run-root co-location). The production aggregate path
+(`aggregate_across_tasks.py:961`, called with `cfg=`) now:
+
+1. Scans `<run_root>/sim/`, not the top of `output_parent`. Each run gets
+   its own directory `runs/run_<mode>_dur<D>_interval<I>_seed<S>_tasks<Nx...>/`
+   (`build_run_id`, `experiment_config_loader.py:122`), so a `tasks6_dur300`
+   dir from a different run lives under a different run root and is never
+   scanned (`aggregate_across_tasks.py:366-373`).
+2. Filters by exact prefix within that run root — `allowed_prefixes =
+   [tasks{n}_dur{dur}_interval{interv}_seed{seed} for n in task_counts]`
+   — so both the `*_dur{D}_*` collision and the `*_sweep_*` collision are
+   rejected (`aggregate_across_tasks.py:386-399`). Simulate and sweep write
+   under the same `<run_root>/sim/` the aggregator scans
+   (`compare_optimizers.py:255`, `interval_sweep.py:77,176`).
+3. The legacy `cfg=None` path (direct callers / old tests) keeps the
+   previous "ingest every `tasks{N}_*` except sweep" behaviour
+   (`aggregate_across_tasks.py:401-406`).
+
+Locked in by `tests/python/test_aggregate.py`, which writes a current
+`tasks6_dur70_interval10_seed1000` and a stale
+`tasks6_dur300_interval10_seed1000` side-by-side under the same `sim/` and
+asserts only the current run's record (`mean_sp == 0.90`, not the stale
+`0.10`) is ingested.
+
+Residual gap: `num_tasksets` is deliberately excluded from the run id
+(`experiment_config_loader.py:102-104`), so two runs differing only in
+sampling depth share a run root and their `tasks{N}_dur{D}_..._seed{S}`
+dirs collide (last-write-wins within that run root). Intentional — `mode`
+is treated as the primary axis. If you ever vary `num_tasksets`
+independently with mode/dur/interval/seed held fixed, set a
+`plotting.run_name_prefix` to namespace the runs (or clear the run root
+first).
 
 ---
 
@@ -588,7 +647,7 @@ All scripts pass `bash -n` and have executable permissions.
 ## 2026-06-20
 
 ### Task 1: Fix opt_sp_ initialization bug
-- Changed `opt_sp_` initialization from `0` to `-1` in `OptimizeFromScratch_w_TL` and `OptimizeIncre_w_TL` to properly support negative safety performance values (staged, awaiting commit).
+- Changed `opt_sp_` initialization from `0` to `-1` in `OptimizeFromScratch_w_TL` and `OptimizeIncre_w_TL` to properly support negative safety performance values (committed — landed in `d8eb8495`).
 
 ### Task 2: Linear Coordinate Descent for Task Configuration Optimization
 - Replaced the exponential recursive traversal logic in task execution time limit configuration with a linear coordinate descent algorithm.
@@ -1532,7 +1591,7 @@ SP carried forward".
 `tests/testIncreOpt_w_TL.cpp`.
 
 
-### P25 Commit 6 — counter-driven dispatcher `Optimize_w_TL_ScratchOrIncre` + radius fix (2026-07-04, staged)
+### P25 Commit 6 — counter-driven dispatcher `Optimize_w_TL_ScratchOrIncre` + radius fix (2026-07-04, committed as `9b3eeacf`)
 
 > Closes the gap: compare-and-keep was unit-tested but never ran at runtime.
 > The `ReoptimizationPeriod` (10) / `ReoptimizationTimeLimitsSearchRadius` (6)
@@ -1606,13 +1665,194 @@ full build clean (RunOrchestrator + AnalyzePriorityAssignmentIncrementalExample
 link against the changed `OptimizeSP_TL_Incre.{h,cpp}` +
 `SimulationOrchestrator.cpp`).
 
-**Files (staged, NOT committed — `git add` only per `agent_coding_rules.md`):**
+**Files (committed in `9b3eeacf`):**
 `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`,
 `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp`,
 `tests/testIncreOpt_w_TL.cpp`.
+
+> **Update (2026-07-04, later):** the "staged, NOT committed" status above is
+> historical — Commit 6 landed as `9b3eeacf`. The post-Commit-6 INCR-ET fix
+> bundle (Fix A `986a9cfe` + Fix B/latent bug `de4e9636`) followed; see the
+> 2026-07-04 Fix A / Fix B entries below and `agents/debug_runtime0704_incr.md`.
 
 **Next (Commit 7):** runtime A/B (period on vs off) + before/after SP/ET
 numbers; update `parameters.yaml:12` comment; rewrite stale memory file
 `p24-reoptimization-design.md`.
 
 
+
+---
+
+### 2026-07-04 — Reproduced "INCR ET grows with reoptimization period" (NOT fixed at time of writing — fixed later same day, see next entry + `agents/debug_runtime0704_incr.md`)
+
+> **Update (2026-07-04, later):** the bug documented below **is now fixed** —
+> Fix A (`986a9cfe`) + Fix B + latent `SeedStateFromIncumbent` bug (`de4e9636`),
+> TDD-verified (16/16 ctest green). The "before" table here is preserved as the
+> pre-fix snapshot. Only the runtime A/B re-run on the fixed binary is pending
+> (see Open thread 1 / `agents/finished_tasks/P24_task.md` § "PENDING: A/B
+> re-run"). Full root-cause + fix record: `agents/debug_runtime0704_incr.md`.
+
+User report: in the P25 period A/B, INCR's per-activation ET appears *longer*
+when more incremental optimization is used (larger period). Asked to reproduce
+with an explicit test case and record in `P24_task.md`; explicitly told **not**
+to solve it yet.
+
+**Repro.** Built `simulation_experiments/repro_et_grows_with_period.py`: reuses
+the existing P25 prod-run tasksets (no regeneration, deterministic across arms)
+and runs every arm **serially** — one `RunOrchestrator` process at a time — to
+remove the parallel-worker contention confound (prod used 4 workers × 6 arms on
+8 cores; `RunOrchestrator` measures whole-process wall-clock, so concurrent arms
+inflate each other's ET non-uniformly). Writes to
+`optimizer_comparison/et_repro/<tag>/` so the prod run is untouched.
+
+**Result (tasks=6, 30 intervals, per-act ET = wall_ms/30; min of 3 reps on ts0):**
+
+| arm | ts0 ms/act | ts2 ms/act |
+|-----|-----------|-----------|
+| BF | 1099.8 | 6102.3 |
+| INCR_P1 | 101.5 | 94.0 |
+| INCR_P10 | 301.1 | 184.6 |
+| INCR_P30 | 342.7 | 193.3 |
+| INCR_P60 | 342.4 | 194.3 |
+| INCR_SCRATCH | 106.4 | 93.9 |
+
+Pattern is real and algorithmic (survives serial execution, reproduces on 2
+tasksets): `INCR_P1` ≈ `INCR_SCRATCH` (fastest); ET jumps ~3× at P=10, climbs to
+P=30, plateaus at P=60. Because P=30/P=60 have *fewer* reopt steps than P=10 yet
+cost *more*, the cost is dominated by the **incremental path between reopts**,
+not the reopt step itself — likely the incumbent drifts over a long period,
+making each intervening incremental step more expensive. P=1 keeps the incumbent
+fresh, so incremental steps are trivially cheap.
+
+**Recorded in:** `agents/finished_tasks/P24_task.md` → "KNOWN ISSUE" section
+(now updated: fix applied & TDD-verified, runtime A/B re-run pending).
+**Memory:** `p25-incr-et-grows-with-period.md`. **Status at time of writing:**
+not solved (fixed later same day — see next entry).
+
+---
+
+### 2026-07-04 — Fix B + latent `SeedStateFromIncumbent` bug (TDD, 16/16 green)
+
+Continues the P25 INCR-ET TDD cycle from Fix A (see
+`agents/debug_runtime0704_incr.md` §6). Two changes this pass, both verified by
+failing-first tests that now pass:
+
+**Latent bug — `SeedStateFromIncumbent` forgot `sp_parameters_`
+(`sources/Optimization/OptimizeSP_TL_Incre.cpp`).** `SeedStateFromIncumbent`
+seeded `prev_optimizer_`'s `dag`/`opt_pa_`/`opt_sp_` but NOT `sp_parameters_`.
+`IfInitialized()` only checks `!opt_pa_.empty()`, so the incremental branch
+(`EvaluateTimeLimitConfig_ScratchOrIncre`, `from_scratch=false`) took
+`optimizer = prev_optimizer_` with an **empty** `sp_parameters_` →
+`OptimizeIncre`'s SP-eval (`ObtainSP_TaskSet` → `thresholds_node.at(id)`) threw
+`_Map_base::at`. In production this is **masked** because `UpdateRecords`
+(`prev_optimizer_ = optimizer`, a full copy) usually fires between a reopt and
+the next incremental call, populating `sp_parameters_` as a side effect. It only
+bites when `UpdateRecords` never fires in that window — exactly the all-`{-1}`
+no-improvement case Fix B's fallback depends on. Fix: one line,
+`prev_optimizer_.sp_parameters_ = sp_parameters_;` in `SeedStateFromIncumbent`.
+Verified safe in isolation (full ctest green save the two Fix B red tests, which
+failed cleanly on assertions instead of crashing — proving the latent bug is
+fixed and Test A now reaches its intended assertion).
+
+**Fix B — `{-1}`-only per-task skip + zero-work fallback
+(`sources/Optimization/OptimizeSP_TL_Incre.cpp`,
+`PerformCoordinateDescentForTaskConfigOpt`).**
+1. **Skip** a task whose only TL option is `-1` (`opts.size()==1 &&
+   opts[0]==-1.0`). `RecordCloseTimeLimitOptions` only pushes `-1` when a task
+   has zero `timePerformancePairs`, so this is the exact no-pairs predicate and
+   can't skip a task with real options. This is the main cost win on the reused
+   P25 tasksets (every task is `{-1}`-only): the descent no longer runs N
+   redundant incumbent re-evals per interval.
+2. **Zero-work fallback.** When *every* task was `{-1}`-only (loop ran zero
+   evals), run **one** `EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+   from_scratch)` with the incumbent `time_limits`. This makes `UpdateRecords`
+   fire, and Fix A's `dag_tasks_ = dag_tasks_update` inside `OptimizeIncre`
+   propagates the current interval's DAG into `prev_optimizer_` — otherwise the
+   frozen-baseline pathology Fix A fixes would silently return (the `{-1}`-only
+   skip starves `UpdateRecords`). Guarded on `!dag_tasks_.tasks.empty()` so
+   empty-DAG callers keep the prior "no evals, no crash" behavior, and gated on
+   `!any_eval_ran` so it never double-counts when the descent already produced
+   >0 evals.
+
+**TDD (red→green).** Added two tests in `tests/testIncreOpt_w_TL.cpp`
+(`CompareAndKeepSynthetic` fixture): `PerformCoordinateDescent_AllMinusOneOnly_…`
+(asserts eval_count delta == 1 — the fallback — AND `prev_optimizer_.dag_tasks_`
+advances to the current interval's ET, the trap guard) and
+`PerformCoordinateDescent_SkipsMinusOneOnlyTaskInMixedSet` (mixed set: `{-1}`-only
+task skipped, fallback does NOT fire, delta == `t_perf_option_count`). Both FAIL
+on the latent-bug-fixed-but-Fix-B-not-yet code (deltas 2 and +1) and PASS after
+Fix B.
+
+**Status: 16/16 ctest green in the DEBUG build** (`testIncreOpt_w_TL` 29/29,
+`testOptimizeIncrePA` green). The Fix A + latent-bug-fix + Fix B bundle is now
+**committed** (`986a9cfe` Fix A, `de4e9636` Fix B + latent bug). The only
+remaining item is the runtime A/B re-run (`repro_et_grows_with_period.py`) to
+confirm the ordering flips to `INCR_P1 ≥ INCR_P10 ≥ INCR_P30 ≈ INCR_P60` (ET
+non-increasing in period) — pending the next session; needs
+`cmake --build release` (the on-disk release binary predates the fix commits)
+and possibly regenerating the prod-run tasksets (absent locally in the
+2026-07-04 TDD session). Full record: `agents/debug_runtime0704_incr.md`;
+re-run procedure: `agents/finished_tasks/P24_task.md` § "DONE: A/B re-run".
+
+---
+
+## 2026-07-04 19:41 — P25 runtime A/B re-run on the fixed binary (Fix A+B):
+PARTIAL PASS — pathological growth eliminated; literal directional flip NOT met
+(Fix C deferred)
+
+Followed `agents/finished_tasks/P24_task.md` § "DONE: A/B re-run". Rebuilt the
+release binary (`cmake --build release`, 19:34 build, HEAD `de4e9636`) — the
+on-disk binary (12:30) predated both Fix A (`986a9cfe`, 14:11) and Fix B
+(`de4e9636`, 19:15). The uncommitted `tests/RunOrchestrator.cpp`
+`INCR_P<n>` period-override edit is required for the A/B (committed
+`SimulationOrchestrator.cpp` `IsINCRPeriodVariant` depends on it parsing the
+`<n>` suffix) and was compiled in. `debugMode: 0` in `parameters.yaml`
+(instrumentation inert, no A/B skew). Prod-run tasksets present locally (no
+regeneration). Ran `repro_et_grows_with_period.py` serially on ts0 (3 reps)
+and ts2 (1 rep); before-snapshots preserved as `et_repro_result_BEFORE_fix.json`.
+
+Per-activation ET (min ms/act, 30 intervals; before → after):
+
+| arm          | ts0 before→after | ts2 before→after |
+|--------------|------------------|------------------|
+| BF           | 1099.8 → 1120.8  | 6102.3 → 5522.0  |
+| INCR_P1      | 101.5 → **62.0** | 94.0 → **65.2**  |
+| INCR_P10     | 301.1 → 87.7     | 184.6 → 74.9     |
+| INCR_P30     | 342.7 → 90.8     | 193.3 → 71.9     |
+| INCR_P60     | 342.4 → 90.8     | 194.3 → 73.4     |
+| INCR_SCRATCH | 106.4 → 62.7     | 93.9 → 69.0      |
+
+**Verdict — partial pass:**
+- ✅ **Pathological growth eliminated.** P10/P30/P60 collapsed from 301–343 →
+  88–91 (ts0) and 185–194 → 72–75 (ts2), toward the P1 ≈ INCR_SCRATCH floor
+  (~62–69). P60/P1 ratio: 3.4× → 1.47× (ts0), 2.1× → 1.13× (ts2).
+- ✅ **Numerical pass criterion met.** P30/P60 do not exceed P10 by the 1.1–1.3×
+  bar: ts0 1.035× (was 1.14×), ts2 0.96× (was 1.05×, now slightly below P10).
+- ❌ **Literal directional flip NOT met.** `INCR_P1 ≥ P10 ≥ P30 ≈ P60` is false
+  on both: P1 is still the *cheapest* INCR arm (62 < 88–91 ts0; 65 < 72–75 ts2).
+  The direction flattened, not flipped.
+- **Why (understood, not a regression):** §4a/§6 of `debug_runtime0704_incr.md`
+  predict exactly this for a Fix A+B-only deployment. Fix A killed the
+  frozen-baseline pathology (the actual bug — `ndiff` saturating at 6 every
+  incremental interval → ~132 `ObtainSP_DAG`/interval). The residual P1 < P60
+  gap is the per-variation `ObtainSP_DAG` asymmetry: `OptimizeIncre` re-scores
+  every priority variation with the full `ObtainSP_DAG` kernel, while
+  `OptimizeFromScratch` uses cheap `GetRTA_OneTask` during beam search and calls
+  `ObtainSP_DAG` once at the end. So an INCRE interval is still slightly costlier
+  than a REOPT interval. **Fix C** (deferred in §6 — make `OptimizeIncre`'s
+  per-variation scoring incremental too) is the lever for a full flip. Fix A+B
+  brought INCRE down from pathological (3.4× REOPT) to moderately above REOPT
+  (1.13–1.47×); Fix C would bring it below.
+
+**Conclusion:** the issue ("INCR per-act ET grows with reoptimization period")
+is resolved in the sense that motivated the bug report — the period no longer
+inflates ET by 3×; P10/P30/P60 are flat and near the floor. The stricter "ET
+decreases as period grows" expectation was based on the same root-cause
+analysis that §7 later showed mechanistically wrong (cost scales with "is the
+incremental path exercised," not staleness), so the literal flip was
+over-optimistic given Fix C was deferred. Re-opening for a full flip is a
+Fix C task, not a Fix A/B regression.
+
+Full record: `agents/debug_runtime0704_incr.md`; procedure + before/after
+tables: `agents/finished_tasks/P24_task.md` § "DONE: A/B re-run"; memory
+[[p25-incr-et-grows-with-period]].

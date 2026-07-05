@@ -1,2 +1,0 @@
-# leave applications folder out of consideration 
-`/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/applications` contains code that are not supposed to wrong in the standard environment, so leave it out unless user specifically mentions it.
