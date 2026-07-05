@@ -57,6 +57,16 @@ class TestCoordinateSystem(unittest.TestCase):
             "N_ENV_DEPENDENT_TASKS": 1,
             "RANDOM_SEED": 42,
             "N_CORES": 2,
+            "MAX_UTIL_PER_TASK": 0.95,
+            "MIN_PERIOD_ENV_DEPENDENT": 0,
+            "PERF_RECORD_TASK_PROBABILITY": 0.5,
+            "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "FIXED_TASK_SIGMA_RATIO": 0.001,
+            "MAX_TIME_LIMIT_OPTIONS": 10,
+            "SP_WEIGHTS_SUM": 5.0,
         }
         std = standardize_config(config)
         params = generate_taskset_parameters(std)
@@ -85,6 +95,16 @@ class TestCoordinateSystem(unittest.TestCase):
             "N_ENV_DEPENDENT_TASKS": 1,
             "RANDOM_SEED": 42,
             "N_CORES": 2,
+            "MAX_UTIL_PER_TASK": 0.95,
+            "MIN_PERIOD_ENV_DEPENDENT": 0,
+            "PERF_RECORD_TASK_PROBABILITY": 0.5,
+            "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "FIXED_TASK_SIGMA_RATIO": 0.001,
+            "MAX_TIME_LIMIT_OPTIONS": 10,
+            "SP_WEIGHTS_SUM": 5.0,
         }
         std = standardize_config(config)
         params = generate_taskset_parameters(std)

@@ -1,3 +1,5 @@
+import json
+import sys
 import numpy as np
 import random
 import yaml
@@ -6,6 +8,135 @@ from .generation_config_parser import standardize_config
 
 # Keep common parameters that are shared across gaussian tasks in a GMM task
 SHARED_TASK_PARAMS = ["period", "D1_MIN", "D1_MAX", "D1_sigma", "D2_MIN", "D2_MAX", "D2_sigma"]
+
+# ---------------------------------------------------------------------------
+# Config integrity: every generation parameter must be set explicitly.
+# ---------------------------------------------------------------------------
+# A forgotten parameter previously fell through to a hard-coded default in
+# standardize_config / generate_taskset_parameters, so two runs that looked
+# identical could silently diverge because one forgot a key. These registries
+# make that impossible: REQUIRED keys must be present, and if one is missing
+# the user is prompted (interactive) or the run aborts with a clear list
+# (non-interactive). The ``suggest`` value is the former silent default,
+# surfaced as a *suggestion* the user can accept with Enter -- it is never
+# applied without the user's consent.
+REQUIRED_CONFIG_PARAMS = [
+    {"key": "N_TASKS",                    "suggest": 10,                       "desc": "total number of tasks"},
+    {"key": "PERIODS_MS",                 "suggest": [1000, 500, 200, 100, 50, 33, 20], "desc": "period pool (ms) every task draws from"},
+    {"key": "N_CORES",                    "suggest": 2,                        "desc": "number of processor cores"},
+    {"key": "MAX_UTIL_PER_TASK",          "suggest": 0.95,                     "desc": "per-task utilization cap"},
+    {"key": "MIN_PERIOD_ENV_DEPENDENT",   "suggest": 0,                        "desc": "min period (ms) for env-dependent tasks"},
+    {"key": "PERF_RECORD_TASK_PROBABILITY", "suggest": 0.5,                    "desc": "probability a non-env task becomes a perf-record task"},
+    {"key": "N_GMM_COMPONENTS_PER_TASK",  "suggest": 4,                        "desc": "GMM components per task"},
+    {"key": "FINAL_Et_OVER_PERIOD_RANGE", "suggest": [0.05, 0.9],              "desc": "final ET/period range for perf-task time-limit options"},
+    {"key": "SP_THRESHOLD_RANGE",         "suggest": [0.5, 0.9],               "desc": "fallback SP threshold range (used when SP_THRESHOLDS_SET is empty)"},
+    {"key": "SP_THRESHOLDS_SET",          "suggest": [0.2, 0.4, 0.6, 0.8, 1.0], "desc": "SP threshold option set sampled per task"},
+    {"key": "FIXED_TASK_SIGMA_RATIO",     "suggest": 0.001,                    "desc": "sigma/mean ratio for perf (near-deterministic) tasks"},
+    {"key": "MAX_TIME_LIMIT_OPTIONS",     "suggest": 10,                       "desc": "number of time-limit options generated for perf tasks"},
+    {"key": "SP_WEIGHTS_SUM",             "suggest": 5.0,                      "desc": "total SP weight sum tasks are normalized to"},
+    {"key": "Et_OVER_PERIOD_RANGE",       "suggest": [0.1, 0.3],               "desc": "ET/period sampling range"},
+    {"key": "SIGMA_OVER_Et_RANGE",        "suggest": [0.5, 0.6],               "desc": "sigma/ET sampling range"},
+    {"key": "RO_1_Et_RANGE",              "suggest": [-0.9, -0.7],             "desc": "ro_1_Et correlation sampling range"},
+    {"key": "RO_2_Et_RANGE",              "suggest": [-0.1, 0.1],              "desc": "ro_2_Et correlation sampling range"},
+    {"key": "D1_RANGE",                   "suggest": [-100, 100],              "desc": "map x range (derived from MAP_WIDTH_M if set)"},
+    {"key": "D2_RANGE",                   "suggest": [-100, 100],              "desc": "map y range (derived from MAP_HEIGHT_M if set)"},
+    # Note: CPU_UTIL_RANDOM_RANGE is also required, but it is enforced by a hard
+    # raise inside standardize_config (it predates this integrity gate and keeps
+    # its own error message/tests), so it is intentionally NOT listed here.
+]
+# Keys whose absence is a documented, meaningful choice rather than a forgotten
+# value. These are never prompted and never cause a raise; the generator reads
+# them with cfgs.get(key) and treats None as the opt-out signal.
+OPTIONAL_CONFIG_PARAMS = [
+    {"key": "RANDOM_SEED",            "desc": "absent = OS entropy (non-reproducible run)"},
+    {"key": "MAX_UTIL_PER_ENV_TASK",  "desc": "absent = env tasks use MAX_UTIL_PER_TASK"},
+    {"key": "N_ENV_DEPENDENT_TASKS",  "desc": "absent = random count in [1, N_TASKS]"},
+]
+
+
+def _parse_prompted_value(raw: str, suggest):
+    """Parse a value typed at the integrity prompt.
+
+    ``json.loads`` handles ints, floats, bools, lists, and null; if the raw
+    string is not valid JSON it is kept as a plain string.
+    """
+    raw = raw.strip()
+    if raw == "":
+        return suggest
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return raw
+
+
+def _write_back_resolved_keys(config_path: str, resolved: dict) -> None:
+    """Persist interactively-resolved keys into the top-level config file.
+
+    Only the keys the user just resolved are merged in; existing keys are
+    left untouched. The INCLUDE base template is never written to -- only the
+    top-level config_path the user actually passed in.
+    """
+    try:
+        with open(config_path, "r") as f:
+            on_disk = json.load(f)
+        if not isinstance(on_disk, dict):
+            return
+        on_disk.update(resolved)
+        with open(config_path, "w") as f:
+            json.dump(on_disk, f, indent=4)
+    except OSError as e:
+        print(f"  Warning: could not write resolved values back to "
+              f"{config_path} ({e}); using them for this run only.")
+
+
+def validate_config_integrity(cfgs: dict, config_path: str = None) -> dict:
+    """Ensure every required taskset-generation parameter is explicitly set.
+
+    Missing required keys trigger an interactive prompt (offering the suggested
+    default, accepted by pressing Enter) when stdin is a TTY; resolved values
+    are written back to ``config_path`` so the user is not re-prompted next
+    run. In a non-interactive session (parallel e2e/compare_optimizers worker,
+    CI, piped stdin) -- or when no ``config_path`` is available -- raises
+    ``ValueError`` listing every missing key with its suggestion and
+    description. Idempotent: a complete config returns unchanged.
+    """
+    missing = [e for e in REQUIRED_CONFIG_PARAMS if e["key"] not in cfgs]
+    if not missing:
+        return cfgs
+
+    # Non-interactive: cannot prompt. Fail loudly with the full list so the
+    # user knows exactly what to add. Mirrors the sys.stdin.isatty() guard in
+    # simulation_experiments/run_sim_experiments.py (the parallel
+    # compare_optimizers harness runs workers without a TTY).
+    if not sys.stdin.isatty() or config_path is None:
+        lines = ["Taskset generation config is missing required parameters:"]
+        for e in missing:
+            lines.append(f"  - {e['key']} (suggested: {e['suggest']!r}) -- {e['desc']}")
+        where = f" {config_path}" if config_path else " your config file"
+        lines.append(f"Add the missing keys to{where} (or run interactively to be prompted).")
+        raise ValueError("\n".join(lines))
+
+    # Interactive: prompt per key with the suggestion, write resolved values back.
+    print("\nTaskset generation config is missing required parameters.")
+    print("Suggested values are the former silent defaults -- press Enter to accept,")
+    print("or type a value (JSON: int/float/list/bool/null).\n")
+    resolved = {}
+    for e in missing:
+        key = e["key"]
+        desc = e["desc"]
+        suggest = e["suggest"]
+        print(f"{key} -- {desc}")
+        print(f"  suggested: {suggest!r}")
+        try:
+            raw = input(f"  {key} [Enter to accept]: ")
+        except EOFError:
+            raw = ""
+        value = _parse_prompted_value(raw, suggest)
+        cfgs[key] = value
+        resolved[key] = value
+        print()
+    _write_back_resolved_keys(config_path, resolved)
+    return cfgs
 
 def uunifast_distribution(n: int, target_util: float, max_util_cap: float = 0.95) -> list[float]:
     """Classic UUniFast algorithm for generating n utilization values that sum to target_util.
@@ -188,7 +319,7 @@ def generate_mix_gaussian_task(
     """
     gaussian_task_params = []
     weights = []
-    n_weights = cfgs.get("N_GMM_COMPONENTS_PER_TASK", 4)
+    n_weights = cfgs["N_GMM_COMPONENTS_PER_TASK"]  # presence enforced by validate_config_integrity
 
     total = 0.0
     for _ in range(n_weights):
@@ -237,6 +368,11 @@ def generate_mix_gaussian_task(
 def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bool = False, n_sec: int = None) -> dict:
     """Orchestrates generation of all GMMTaskModels scaled to a sampled per-core utilization."""
     cfgs = standardize_config(cfgs)
+    # Defense-in-depth: if a caller bypassed load_generation_config (e.g. a test
+    # or direct call) and the config is incomplete, surface it here rather than
+    # silently falling back to a default. config_path is unknown at this layer,
+    # so a missing key raises (non-interactive) rather than prompting.
+    validate_config_integrity(cfgs, config_path=None)
 
     # Seeding for reproducibility
     seed = cfgs.get("RANDOM_SEED")
@@ -269,14 +405,14 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     # If N_ENV_DEPENDENT_TASKS is specified in config, use it.
     # Otherwise default to ALL tasks being env-dependent for maximum
     # per-interval utilization variance (100-200% per-core swings).
-    n_env_dependent_cfg = cfgs.get("N_ENV_DEPENDENT_TASKS", None)
+    n_env_dependent_cfg = cfgs.get("N_ENV_DEPENDENT_TASKS")  # optional: None = random count
     if n_env_dependent_cfg is None:
         n_env_dependent = random.randint(1, n_tasks)
     else:
         n_env_dependent = min(int(n_env_dependent_cfg), n_tasks)
 
     # Small sigma base for perf tasks so ET is effectively deterministic
-    FIXED_TASK_SIGMA_RATIO = cfgs.get("FIXED_TASK_SIGMA_RATIO", 0.001)
+    FIXED_TASK_SIGMA_RATIO = cfgs["FIXED_TASK_SIGMA_RATIO"]  # presence enforced by validate_config_integrity
 
     # 1. Generate periods (all drawn from the unified PERIODS_MS pool)
     periods = []
@@ -291,7 +427,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
 
     # Pick env-dependent tasks weighted by utilization from tasks whose
     # period is >= MIN_PERIOD_ENV_DEPENDENT (avoids short-period blow-ups).
-    min_period_env = cfgs.get("MIN_PERIOD_ENV_DEPENDENT", 0)
+    min_period_env = cfgs["MIN_PERIOD_ENV_DEPENDENT"]  # presence enforced by validate_config_integrity
     env_candidates = [i for i in range(n_tasks) if periods[i] >= min_period_env]
 
     if n_env_dependent == n_tasks or len(env_candidates) <= n_env_dependent:
@@ -337,7 +473,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     # All non-env tasks are eligible regardless of period (the former
     # MIN_PERIOD_WITH_PERFORMANCE_RECORDS period floor was removed in P16);
     # the legacy key is still accepted by the config loader but is now a no-op.
-    perf_prob = cfgs.get("PERF_RECORD_TASK_PROBABILITY", 0.5)
+    perf_prob = cfgs["PERF_RECORD_TASK_PROBABILITY"]  # presence enforced by validate_config_integrity
     perf_candidates = []
     for i in range(n_tasks):
         if i in env_task_indices:
@@ -393,9 +529,9 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     for i in range(n_tasks):
         taskset_param[i].deadline = int(round(taskset_param[i].period * random.uniform(0.5, 1.0)))
 
-    trd_min = cfgs.get('SP_THRESHOLD_RANGE', [0.5, 0.9])[0]
-    trd_max = cfgs.get('SP_THRESHOLD_RANGE', [0.5, 0.9])[1]
-    sp_thresholds_set = cfgs.get("SP_THRESHOLDS_SET", [0.2, 0.4, 0.6, 0.8, 1.0])
+    trd_min = cfgs['SP_THRESHOLD_RANGE'][0]  # presence enforced by validate_config_integrity
+    trd_max = cfgs['SP_THRESHOLD_RANGE'][1]
+    sp_thresholds_set = cfgs["SP_THRESHOLDS_SET"]
 
     for i in range(n_tasks):
         taskset_param[i].sp_weight = 1.0
@@ -416,9 +552,9 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
 
     # 5. Compute C++-facing derived fields (deadline, weights, execution bounds,
     #    performance records, total running time) before serialization.
-    g_final_et_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
+    g_final_et_range = cfgs["FINAL_Et_OVER_PERIOD_RANGE"]  # presence enforced by validate_config_integrity
     n_ms = (n_sec * 1000) if n_sec is not None else 100000
-    max_time_limit_options = cfgs.get("MAX_TIME_LIMIT_OPTIONS", 10)
+    max_time_limit_options = cfgs["MAX_TIME_LIMIT_OPTIONS"]
 
     tasks_dict_list = []
     for i in range(n_tasks):
@@ -488,7 +624,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         })
 
     # Normalize weights to SP_WEIGHTS_SUM
-    g_total_weights = cfgs.get("SP_WEIGHTS_SUM", 5.0)
+    g_total_weights = cfgs["SP_WEIGHTS_SUM"]  # presence enforced by validate_config_integrity
     total_weights = sum(t['sp_weight'] for t in tasks_dict_list)
     if total_weights > 0.0:
         for t in tasks_dict_list:

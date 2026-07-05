@@ -45,6 +45,13 @@ class TestUUniFast(unittest.TestCase):
             "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "MAX_UTIL_PER_TASK": 0.95,
+            "PERF_RECORD_TASK_PROBABILITY": 0.5,
+            "N_GMM_COMPONENTS_PER_TASK": 2,
+            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "FIXED_TASK_SIGMA_RATIO": 0.001,
+            "MAX_TIME_LIMIT_OPTIONS": 10,
+            "SP_WEIGHTS_SUM": 5.0,
         })
 
     def test_uunifast_respects_max_util_cap(self):

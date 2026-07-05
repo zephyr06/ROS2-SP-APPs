@@ -25,10 +25,16 @@ def test_config_specifications_validation():
         "N_GMM_COMPONENTS_PER_TASK": 2,
         "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "CPU_UTIL_RANDOM_RANGE": [1.6, 1.6],
-        "Et_SCALE_FACTOR": 1.5,
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "N_CORES": 2,
-        "RANDOM_SEED": 42
+        "RANDOM_SEED": 42,
+        "MAX_UTIL_PER_TASK": 0.95,
+        "MIN_PERIOD_ENV_DEPENDENT": 0,
+        "SP_THRESHOLD_RANGE": [0.5, 0.9],
+        "PERF_RECORD_TASK_PROBABILITY": 0.5,
+        "FIXED_TASK_SIGMA_RATIO": 0.001,
+        "MAX_TIME_LIMIT_OPTIONS": 10,
+        "SP_WEIGHTS_SUM": 5.0
     }
 
     # Canonical keys pass through standardize_config unchanged.
@@ -97,7 +103,7 @@ def test_config_specifications_validation():
         assert abs(t["Et_sigma"] - expected_sigma) < 1e-7
 
     # 5b. Total weight sum consistency
-    expected_weight_sum = cfgs.get("SP_WEIGHTS_SUM", 5.0)
+    expected_weight_sum = cfgs["SP_WEIGHTS_SUM"]
     assert abs(sum(t["sp_weight"] for t in res1["tasks"]) - expected_weight_sum) < 1e-4
 
     # 8. Processor assignments and cores range consistency
@@ -182,7 +188,7 @@ def test_all_configurations_specifications(config_path):
     
     # Verify weight normalization sum
     total_weights_sum = sum(t["sp_weight"] for t in char_data["tasks"])
-    expected_weights_sum = cfgs.get("SP_WEIGHTS_SUM", 5.0)
+    expected_weights_sum = cfgs["SP_WEIGHTS_SUM"]
     assert abs(total_weights_sum - expected_weights_sum) < 1e-4
     
     # Verify task parameters and core allocation bounds

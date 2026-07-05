@@ -39,7 +39,12 @@ def generate_path_only(cfgs: dict, stops: list, n_steps: int = 1000, reverse_pro
     Y_MIN = cfgs['D2_RANGE'][0]
     Y_MAX = cfgs['D2_RANGE'][1]
 
-    # Speed adjustment: step size per simulation move (default to 5 for exploration)
+    # Speed adjustment: step size per simulation move. ROBOT_STEP_SIZE is a
+    # *derived* param: the orchestrator computes it from ROBOT_SPEED_MPS
+    # (step_m = speed_mps * prd_max / 1000) and writes it into cfgs before
+    # calling here, so the production path always has it. The .get(5.0) fallback
+    # is intentionally kept for standalone trajectory tests (e.g. test_trajectory)
+    # that pass a minimal cfgs without going through the orchestrator.
     step_size = cfgs.get("ROBOT_STEP_SIZE", 5.0)
 
     src_stop = random.randint(0, N - 1)    

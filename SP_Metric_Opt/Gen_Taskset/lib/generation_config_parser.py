@@ -170,10 +170,28 @@ def load_generation_config(config_path: str) -> dict:
 
     # Standardize/convert parameters
     config = standardize_config(config)
+
+    # Integrity check: every required parameter must be set explicitly. This is
+    # the primary gate -- it has the file path, so an interactive session can
+    # prompt and write resolved values back to the config on disk. Deferred
+    # import avoids a circular dependency (taskset_generator imports
+    # standardize_config from this module).
+    from .taskset_generator import validate_config_integrity
+    validate_config_integrity(config, config_path=config_path)
+
     return config
 
 def standardize_config(config: dict) -> dict:
-    """Validates configuration keys, sets defaults, and unifies the period pool.
+    """Validates configuration keys and unifies the period pool.
+
+    This function is a **validator only**: it rejects legacy keys, type/range-
+    checks values that are present, and derives ``D1_RANGE``/``D2_RANGE`` from
+    ``MAP_WIDTH_M``/``MAP_HEIGHT_M`` when both are set. It no longer supplies
+    silent defaults for forgotten parameters -- that is the job of
+    :func:`taskset_generator.validate_config_integrity`, which is called by
+    ``load_generation_config`` (and as a defense-in-depth guard inside
+    ``generate_taskset_parameters``) and prompts the user / raises with a
+    clear list of missing keys + suggestions instead of masking them.
 
     P19 collapsed the former paired big/small period schema (``BIG_PERIODS_MS``
     + ``SMALL_PERIODS_MS`` / ``N_BIG_PERIOD_TASKS`` + ``N_SMALL_PERIOD_TASKS``)
@@ -201,10 +219,9 @@ def standardize_config(config: dict) -> dict:
             f"(list of periods in ms) instead. Found: {sorted(found_period_legacy)}"
         )
 
-    # Canonical default when no period info is given -- the base template's pool
-    # (so a bare config still works and matches the on-disk paper configs).
-    if "PERIODS_MS" not in config:
-        config["PERIODS_MS"] = [1000, 500, 200, 100, 50, 33, 20]
+    # No silent default for PERIODS_MS -- a forgotten pool is surfaced by
+    # validate_config_integrity (called from load_generation_config /
+    # generate_taskset_parameters) with a suggestion, never auto-filled.
 
     # Legacy key check
     _LEGACY_KEYS = {
@@ -212,6 +229,12 @@ def standardize_config(config: dict) -> dict:
         "N_MIX_WEIGHTS_PER_TASK",
         "N_PROCESSORS",
         "MIN_PERIOID_WITH_PERFORMANCE_RECORDS",
+        # Et_SCALE_FACTOR was a scaling factor for execution times that was set
+        # in every shipped config but read nowhere in the generation path (grep
+        # finds zero reads in Gen_Taskset/lib/ or sources/). Removed as dead
+        # config; listed here so a config that still sets it is rejected loudly
+        # rather than silently ignored.
+        "Et_SCALE_FACTOR",
     }
     found_legacy = _LEGACY_KEYS & config.keys()
     if found_legacy:
@@ -229,26 +252,27 @@ def standardize_config(config: dict) -> dict:
             f"(total task count) instead. Found: {sorted(found_count_legacy)}"
         )
 
-    if "N_TASKS" not in config:
-        config["N_TASKS"] = 10
+    # Type/range validation only -- presence is enforced by
+    # validate_config_integrity, so guard each check to avoid KeyError before
+    # the integrity check can produce its friendly message. Explicit rejection
+    # here avoids a cryptic divide-by-zero in uunifast_distribution.
+    if "N_TASKS" in config:
+        if not isinstance(config["N_TASKS"], int) or config["N_TASKS"] < 1:
+            raise ValueError(
+                f"N_TASKS must be a positive integer, got {config['N_TASKS']!r}"
+            )
+    if "PERIODS_MS" in config:
+        if not isinstance(config["PERIODS_MS"], list) or len(config["PERIODS_MS"]) == 0:
+            raise ValueError(
+                "PERIODS_MS must be a non-empty list of periods (ms), "
+                f"got {config['PERIODS_MS']!r}"
+            )
 
-    # Validation: the only hard requirements are at least one task total and a
-    # non-empty period pool. Explicit rejection avoids a cryptic divide-by-zero
-    # in uunifast_distribution.
-    if not isinstance(config["N_TASKS"], int) or config["N_TASKS"] < 1:
-        raise ValueError(
-            f"N_TASKS must be a positive integer, got {config['N_TASKS']!r}"
-        )
-    if not isinstance(config["PERIODS_MS"], list) or len(config["PERIODS_MS"]) == 0:
-        raise ValueError(
-            "PERIODS_MS must be a non-empty list of periods (ms), "
-            f"got {config['PERIODS_MS']!r}"
-        )
-
-    # Per-task utilization caps
-    config["MAX_UTIL_PER_TASK"] = config.get("MAX_UTIL_PER_TASK", 0.95)
+    # Per-task utilization cap: no default (integrity check enforces presence).
     # Optional tighter cap applied only to env-dependent tasks.
-    # If None, env tasks use the same MAX_UTIL_PER_TASK cap as everyone else.
+    # If None/absent, env tasks use the same MAX_UTIL_PER_TASK cap as everyone
+    # else; absent is a documented opt-out (OPTIONAL_CONFIG_PARAMS), so the
+    # .get(..., None) here is intentional and not a silent default.
     config["MAX_UTIL_PER_ENV_TASK"] = config.get("MAX_UTIL_PER_ENV_TASK", None)
     # MIN_PERIOD_WITH_PERFORMANCE_RECORDS was a period floor that gated which
     # non-env tasks could become time-limit (performance-record) tasks. It was
@@ -259,42 +283,20 @@ def standardize_config(config: dict) -> dict:
         "MIN_PERIOD_WITH_PERFORMANCE_RECORDS", 0
     )
 
-    # Minimum period for tasks that may be marked env-dependent.
-    # (Short-period env tasks are prone to ET > period with strong spatial correlations.)
-    config["MIN_PERIOD_ENV_DEPENDENT"] = config.get("MIN_PERIOD_ENV_DEPENDENT", 0)
-
-    # Probability of selecting a non-env-dependent task as a performance-record task
-    config["PERF_RECORD_TASK_PROBABILITY"] = config.get(
-        "PERF_RECORD_TASK_PROBABILITY", 0.5
-    )
-
-    # GMM properties
-    config["N_GMM_COMPONENTS_PER_TASK"] = config.get("N_GMM_COMPONENTS_PER_TASK", 4)
-
-    # Scale factor
-    config["Et_SCALE_FACTOR"] = config.get("Et_SCALE_FACTOR", 2.0)
-    config["FINAL_Et_OVER_PERIOD_RANGE"] = config.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
-    
-    # Backward-compat alias
+    # Backward-compat alias: N_PROCESSORS -> N_CORES (alias only, not a default).
     if "N_CORES" not in config and "N_PROCESSORS" in config:
         config["N_CORES"] = config["N_PROCESSORS"]
 
-    # N_CORES default logic. P14 made CPU_UTIL_RANDOM_RANGE the sole load input
-    # (a [low, high] per-core range, not a single scalar), so the old
-    # "2 cores when MEAN_CPU_UTIL > 1.0" heuristic has nothing to test. Default
-    # to 1 core; all shipped configs set N_CORES explicitly, so this only
-    # applies to bare configs that omit it.
-    if "N_CORES" not in config:
-        config["N_CORES"] = 1
-
-    # P14: the per-core CPU utilization range is now **required**. Each task set
-    # samples its per-core utilization uniformly from [low, high] (the first draw
-    # off the seeded RNG, so the realized value is reproducible under a fixed
+    # P14: the per-core CPU utilization range is required. Each task set samples
+    # its per-core utilization uniformly from [low, high] (the first draw off the
+    # seeded RNG, so the realized value is reproducible under a fixed
     # RANDOM_SEED), sweeping under- to over-subscribed loads within one run.
-    # The former fixed-MEAN_CPU_UTIL scalar was removed as the load source
-    # (P13); a config that omits the range now raises instead of silently
-    # falling back, since a forgotten range would otherwise lock every task set
-    # to one load point and quietly defeat the experiment's purpose.
+    # The former fixed-MEAN_CPU_UTIL scalar was removed as the load source (P13);
+    # a config that omits the range raises instead of silently falling back,
+    # since a forgotten range would otherwise lock every task set to one load
+    # point and quietly defeat the experiment's purpose. (This key predates the
+    # validate_config_integrity gate and keeps its hard raise here; the other
+    # required keys are enforced by validate_config_integrity.)
     if "CPU_UTIL_RANDOM_RANGE" not in config:
         raise ValueError(
             "CPU_UTIL_RANDOM_RANGE is required: set a [low, high] per-core "
@@ -317,9 +319,6 @@ def standardize_config(config: dict) -> dict:
             f"got [{low}, {high}]"
         )
     config["CPU_UTIL_RANDOM_RANGE"] = [float(low), float(high)]
-
-    # SP threshold option set
-    config["SP_THRESHOLDS_SET"] = config.get("SP_THRESHOLDS_SET", [0.2, 0.4, 0.6, 0.8, 1.0])
 
     # Physical map dimensions: center both D1_RANGE (x) and D2_RANGE (y) at origin.
     # Cartesian coordinates: D1 = x, D2 = y.

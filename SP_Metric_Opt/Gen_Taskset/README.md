@@ -15,13 +15,12 @@ Scenario configurations are specified in JSON files (e.g., inside `Gen_Taskset/t
   * `Et_OVER_PERIOD_RANGE` (list `[min, max]`): Bounds for initial mean execution time ratio ($E_t / P$).
   * `SIGMA_OVER_Et_RANGE` (list `[min, max]`): Ratio of standard deviation ($\sigma$) over mean execution time.
   * `FINAL_Et_OVER_PERIOD_RANGE` (list `[min, max]`): Absolute physical bounds for $E_t / P$.
-  * `Et_SCALE_FACTOR` (float): Scaling factor to adjust execution times to fit target processor utilization.
 * **Correlations & GMM Parameters**:
   * `RO_1_Et_RANGE` (list `[min, max]`): Correlation coefficient between $X$-dimension and execution time.
   * `RO_2_Et_RANGE` (list `[min, max]`): Correlation coefficient between $Y$-dimension and execution time.
-  * `N_MIX_WEIGHTS_PER_TASK` (int): Number of GMM components per task.
+  * `N_GMM_COMPONENTS_PER_TASK` (int): Number of GMM components per task.
 * **Target System Constraints**:
-  * `MEAN_CPU_UTIL` (float): Target aggregate CPU utilization for the generated taskset.
+  * `CPU_UTIL_RANDOM_RANGE` (list `[low, high]`): Per-core utilization range; each task set samples one value uniformly (replaces the former fixed `MEAN_CPU_UTIL` scalar, removed in P13).
   * `N_CORES` (int): Number of target CPU processor cores.
   * `SP_WEIGHTS_SUM` (float): Sum of safety priority weights for SP-Metric calculation.
 

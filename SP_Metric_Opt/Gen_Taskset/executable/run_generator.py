@@ -5,7 +5,7 @@ import os
 # Adjust path to enable absolute imports if executed directly
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline, generate_additional_execution_traces
+from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline, generate_additional_execution_traces, validate_trajectory_config
 from Gen_Taskset.lib.generation_config_parser import load_generation_config
 
 def main():
@@ -37,7 +37,11 @@ def main():
     if args.gen_path_for_taskset:
         # 1. Load existing generation config
         cfgs = load_generation_config(cfg_file_abs)
-        
+        # 2nd integrity gate: trajectory-layer params (ROBOT_SPEED_MPS) that the
+        # generation gate does not cover. run_full_generation_pipeline calls this
+        # itself, but the --gen_path_for_taskset branch bypasses it.
+        validate_trajectory_config(cfgs, config_path=cfg_file_abs)
+
         # 2. Resolve output directory
         output_dir = args.dir_path
         if output_dir is None:

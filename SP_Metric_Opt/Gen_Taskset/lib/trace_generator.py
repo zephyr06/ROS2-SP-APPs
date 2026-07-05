@@ -23,7 +23,7 @@ def generate_execution_time_trace(
     # Pre-read GMM parameters for faster execution
     weights = task_param['weights']
     components_dicts = task_param['tasks']
-    g_final_Et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
+    g_final_Et_over_period_range = cfgs["FINAL_Et_OVER_PERIOD_RANGE"]  # presence enforced by validate_config_integrity
 
     # Reconstruct GaussianComponent objects from dicts for sampling
     from .gmm_model import GaussianComponent

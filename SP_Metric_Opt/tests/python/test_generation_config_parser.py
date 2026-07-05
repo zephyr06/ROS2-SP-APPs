@@ -27,7 +27,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "SMALL_PERIOD_HZ": [10, 20, 50],
             "BIG_PERIOD_HZ": [1, 2, 5],
             "D1_RANGE": [-10, 10],
-            "Et_SCALE_FACTOR": 2.0
         }
         with self.assertRaises(ValueError) as cm:
             standardize_config(config)
@@ -54,33 +53,41 @@ class TestGenerationConfigParser(unittest.TestCase):
             "N_SMALL_PERIOD_TASKS": 3,
             "PERIODS_MS": [1000, 100, 50],
             "D1_RANGE": [-10, 10],
-            "Et_SCALE_FACTOR": 2.0
         }
         with self.assertRaises(ValueError) as cm:
             standardize_config(config)
         self.assertIn("N_TASKS", str(cm.exception))
 
-    def test_standardize_config_defaults(self):
-        # With period + count + range provided, the canonical defaults fill in
-        # the rest (PERIODS_MS pool, N_TASKS). The range is required, so a bare
-        # config without it raises (see test_standardize_config_requires_range).
+    def test_standardize_config_no_silent_defaults(self):
+        """The refactor removed the silent PERIODS_MS / N_TASKS defaults: a
+        config that omits a required parameter no longer gets auto-filled --
+        validate_config_integrity surfaces it (non-interactive: raises) so a
+        forgotten value can never make two runs silently diverge. standardize_config
+        is now a validator only and does NOT raise on a missing key itself; the
+        integrity gate does."""
+        from Gen_Taskset.lib.taskset_generator import validate_config_integrity
         config = {
             "D1_RANGE": [-5, 5],
-            "Et_SCALE_FACTOR": 2.0,
             "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
         }
+        # standardize_config passes through without filling PERIODS_MS/N_TASKS.
         res = standardize_config(config)
-        # No period info: canonical default pool (the base template's PERIODS_MS)
-        self.assertEqual(res["PERIODS_MS"], [1000, 500, 200, 100, 50, 33, 20])
-        # No count info: default N_TASKS
-        self.assertEqual(res["N_TASKS"], 10)
+        self.assertNotIn("PERIODS_MS", res)
+        self.assertNotIn("N_TASKS", res)
+        # The integrity gate (non-interactive, no config_path) lists every
+        # missing required key rather than masking it with a default.
+        with self.assertRaises(ValueError) as cm:
+            validate_config_integrity(res, config_path=None)
+        msg = str(cm.exception)
+        self.assertIn("PERIODS_MS", msg)
+        self.assertIn("N_TASKS", msg)
+        self.assertIn("missing required parameters", msg)
 
     def test_standardize_config_requires_range(self):
         """P14: CPU_UTIL_RANDOM_RANGE is required -- a config that omits it
         raises ValueError (no silent fixed-scalar fallback)."""
         config = {
             "D1_RANGE": [-5, 5],
-            "Et_SCALE_FACTOR": 2.0,
         }
         with self.assertRaises(ValueError) as cm:
             standardize_config(config)
@@ -93,7 +100,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "N_TASKS": 3,
             "D1_RANGE": [-5, 5],
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
-            "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
         self.assertEqual(res["PERIODS_MS"], [1000, 500, 100])
@@ -124,7 +130,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "MAP_HEIGHT_M": 200,
             "D2_RANGE": [0, 360],
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
-            "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
         # Both ranges derived from map dims and centered at 0
@@ -139,7 +144,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "MAP_HEIGHT_M": 150,
             "D2_RANGE": [0, 360],
             "CPU_UTIL_RANDOM_RANGE": [1.2, 1.2],
-            "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
         self.assertEqual(res["D1_RANGE"], [-150, 150])
@@ -152,7 +156,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "D1_RANGE": [-50, 50],
             "D2_RANGE": [0, 360],
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
-            "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
         # D1_RANGE derivation only happens when BOTH map params present
@@ -200,7 +203,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "D1_RANGE": [-20, 20],
             "D2_RANGE": [0, 360],
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
-            "Et_SCALE_FACTOR": 2.0
         }
         res = standardize_config(config)
         self.assertNotIn("D1_VARIANCE_FACTOR_TABLE", res)
@@ -213,7 +215,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "PERIODS_MS": [1000, 100, 50],
             "N_TASKS": 3,
             "D1_RANGE": [-5, 5],
-            "Et_SCALE_FACTOR": 2.0,
             "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
         }
         res = standardize_config(config)
@@ -226,7 +227,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "PERIODS_MS": [1000, 100, 50],
             "N_TASKS": 3,
             "D1_RANGE": [-5, 5],
-            "Et_SCALE_FACTOR": 2.0,
         }
         for bad in ([0.5], [0.5, 1.5, 2.0], "0.5-1.5",
                     [1.5, 0.5], [-0.2, 1.5], [True, 1.5]):
@@ -241,7 +241,6 @@ class TestGenerationConfigParser(unittest.TestCase):
             "PERIODS_MS": [1000, 100, 50],
             "N_TASKS": 3,
             "D1_RANGE": [-5, 5],
-            "Et_SCALE_FACTOR": 2.0
         }
         with self.assertRaises(ValueError) as cm:
             standardize_config(config)

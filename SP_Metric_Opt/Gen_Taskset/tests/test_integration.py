@@ -32,10 +32,19 @@ def test_integration_pipeline():
         "SP_THRESHOLD_RANGE": [0.5, 0.9],
         "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
-        "Et_SCALE_FACTOR": 1.5,
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "SP_WEIGHTS_SUM": 10.0,      # Custom weight sum limit
-        "ROBOT_STEP_SIZE": 3.0       # Custom step size
+        # ROBOT_STEP_SIZE is now *derived* by the orchestrator from
+        # ROBOT_SPEED_MPS (step_m = speed_mps * prd_max / 1000; prd_max=2000
+        # here, so 1.5 m/s -> 3.0 m/step). The trajectory-layer integrity gate
+        # requires ROBOT_SPEED_MPS; the assertion below checks movement against
+        # the derived 3.0 step bound.
+        "ROBOT_SPEED_MPS": 1.5,
+        "MAX_UTIL_PER_TASK": 0.95,
+        "MIN_PERIOD_ENV_DEPENDENT": 0,
+        "FIXED_TASK_SIGMA_RATIO": 0.001,
+        "MAX_TIME_LIMIT_OPTIONS": 10,
+        "N_CORES": 1
     }
     config_path = os.path.join(output_dir, "test_config.json")
     with open(config_path, "w") as f:
@@ -133,10 +142,12 @@ def test_integration_pipeline():
             
             assert et >= 1.0
             
-            # Assert movement steps do not exceed ROBOT_STEP_SIZE
+            # Assert movement steps do not exceed the derived ROBOT_STEP_SIZE
+            # (step_m = ROBOT_SPEED_MPS * prd_max / 1000; prd_max=2000 here).
+            robot_step_size = config_data["ROBOT_SPEED_MPS"] * 2000 / 1000
             if prev_x is not None and prev_y is not None:
                 # The change can only be at most ROBOT_STEP_SIZE in X or Y
-                assert abs(x - prev_x) <= config_data["ROBOT_STEP_SIZE"]
-                assert abs(y - prev_y) <= config_data["ROBOT_STEP_SIZE"]
+                assert abs(x - prev_x) <= robot_step_size
+                assert abs(y - prev_y) <= robot_step_size
                 
             prev_x, prev_y = x, y

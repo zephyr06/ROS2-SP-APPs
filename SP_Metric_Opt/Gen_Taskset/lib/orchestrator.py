@@ -28,6 +28,85 @@ def _compute_hyper_period(periods_ms: list[int]) -> int:
         return hp
 
 
+# ---------------------------------------------------------------------------
+# Trajectory-layer config integrity (the 2nd gate).
+# ---------------------------------------------------------------------------
+# ``validate_config_integrity`` in taskset_generator.py gates the *generation*
+# parameters read by ``generate_taskset_parameters`` (GMM / ET / SP / period
+# params). The orchestrator reads a second, smaller set of params for path +
+# trace generation that ``generate_taskset_parameters`` never touches:
+#
+#   - ROBOT_SPEED_MPS : robot speed; orchestrator derives ROBOT_STEP_SIZE from it
+#                       (step_m = speed_mps * prd_max / 1000) and trajectory.py
+#                       consumes ROBOT_STEP_SIZE. A forgotten ROBOT_SPEED_MPS
+#                       previously fell through to the 1.0 default below, so a
+#                       config that meant to set a non-unit speed could silently
+#                       run at 1.0 m/s. Required here so that cannot happen.
+#
+# UPDATE_INTERVAL_S and ROBOT_STEP_SIZE are intentionally NOT required:
+#   - UPDATE_INTERVAL_S is a *runtime* knob injected by run_sim_experiments /
+#     compare_optimizers (``config_dict["UPDATE_INTERVAL_S"] =
+#     scheduler_trigger_interval``) and is also a legitimate standalone-call
+#     default (10 s) when the orchestrator is invoked directly; the .get(10)
+#     below is the documented runtime default, not a forgotten-value mask.
+#   - ROBOT_STEP_SIZE is *derived* (computed from ROBOT_SPEED_MPS in
+#     generate_additional_execution_traces and written into cfgs); trajectory.py
+#     keeps a .get(5.0) fallback only for standalone trajectory tests that pass
+#     a minimal cfgs without going through the orchestrator.
+TRAJECTORY_REQUIRED_CONFIG_PARAMS = [
+    {"key": "ROBOT_SPEED_MPS", "suggest": 1.0, "desc": "robot speed (m/s); ROBOT_STEP_SIZE is derived from it"},
+]
+
+
+def validate_trajectory_config(cfgs: dict, config_path: str = None) -> dict:
+    """Ensure every trajectory-layer parameter the orchestrator reads is set.
+
+    A thinner, layer-specific companion to
+    :func:`taskset_generator.validate_config_integrity`: it only covers the
+    params read in this module (``generate_additional_execution_traces`` /
+    ``run_full_generation_pipeline``) that the generation gate does not cover,
+    so a forgotten ``ROBOT_SPEED_MPS`` cannot silently fall back to 1.0 m/s.
+
+    Same interactive behavior as the generation gate: prompts on a TTY (writing
+    resolved values back to ``config_path``) and raises ``ValueError`` listing
+    the missing key(s) otherwise. Idempotent: a complete config returns
+    unchanged.
+    """
+    missing = [e for e in TRAJECTORY_REQUIRED_CONFIG_PARAMS if e["key"] not in cfgs]
+    if not missing:
+        return cfgs
+
+    if not sys.stdin.isatty() or config_path is None:
+        lines = ["Trajectory config is missing required parameters:"]
+        for e in missing:
+            lines.append(f"  - {e['key']} (suggested: {e['suggest']!r}) -- {e['desc']}")
+        where = f" {config_path}" if config_path else " your config file"
+        lines.append(f"Add the missing keys to{where} (or run interactively to be prompted).")
+        raise ValueError("\n".join(lines))
+
+    # Interactive: reuse the generation gate's prompt + write-back helpers so
+    # the two gates behave identically (single source of truth for the UX).
+    from .taskset_generator import _parse_prompted_value, _write_back_resolved_keys
+    print("\nTrajectory config is missing required parameters.")
+    print("Suggested values are the former silent defaults -- press Enter to accept,")
+    print("or type a value (JSON: int/float/list/bool/null).\n")
+    resolved = {}
+    for e in missing:
+        key, desc, suggest = e["key"], e["desc"], e["suggest"]
+        print(f"{key} -- {desc}")
+        print(f"  suggested: {suggest!r}")
+        try:
+            raw = input(f"  {key} [Enter to accept]: ")
+        except EOFError:
+            raw = ""
+        value = _parse_prompted_value(raw, suggest)
+        cfgs[key] = value
+        resolved[key] = value
+        print()
+    _write_back_resolved_keys(config_path, resolved)
+    return cfgs
+
+
 def generate_additional_execution_traces(
     cfgs: dict,
     dir_path: str,
@@ -39,6 +118,11 @@ def generate_additional_execution_traces(
     interact: bool = False
 ) -> None:
     """Appends additional path and execution time trace files for an existing taskset."""
+    # UPDATE_INTERVAL_S is a runtime knob, not a generation param: it is injected
+    # by run_sim_experiments / compare_optimizers (config_dict["UPDATE_INTERVAL_S"]
+    # = scheduler_trigger_interval) and is also a legitimate standalone default
+    # when the orchestrator is called directly. The .get(10) here is the
+    # documented runtime default, intentionally NOT in TRAJECTORY_REQUIRED.
     update_interval_s = cfgs.get("UPDATE_INTERVAL_S", 10)
     n_ms = n_sec * 1000
     n_intervals = max(1, math.ceil(n_sec / update_interval_s))
@@ -71,9 +155,9 @@ def generate_additional_execution_traces(
     #   step_m = speed_mps * (prd_max / 1000) [meters per step]
     #   total_distance = n_steps * step_m = (n_sec * 1000 / prd_max) * step_m
     #                  = n_sec * speed_mps
-    speed_mps = cfgs.get("ROBOT_SPEED_MPS", 1.0)
+    speed_mps = cfgs["ROBOT_SPEED_MPS"]  # presence enforced by validate_trajectory_config
     step_m = speed_mps * prd_max / 1000.0
-    cfgs['ROBOT_STEP_SIZE'] = step_m
+    cfgs['ROBOT_STEP_SIZE'] = step_m  # derived; trajectory.py reads it (with a 5.0 standalone fallback)
 
     # If continuing path trace generation, fill existing bounds
     if path_idx > 0:
@@ -146,7 +230,7 @@ def generate_additional_execution_traces(
                         task_Ets[i][idx]['Ets'].append(f)
 
             # Normalize CPU util per interval
-            n_cores = cfgs.get("N_CORES", 1)
+            n_cores = cfgs["N_CORES"]  # presence enforced by validate_config_integrity
             for idx in range(len(cpu_utils)):
                 # Average-per-core utilization as a percentage:
                 #  (sum of execution times in ms) / (n_cores * interval_ms) * 100
@@ -162,7 +246,7 @@ def generate_additional_execution_traces(
     if dir_path is not None:
         nn = math.ceil(n_sec / update_interval_s)
         xx = [update_interval_s * idx for idx in range(nn)]
-        n_cores = cfgs.get("N_CORES", 1)
+        n_cores = cfgs["N_CORES"]  # presence enforced by validate_config_integrity
 
         # --- aggregate CPU util ---
         fig, ax = plt.subplots()
@@ -252,7 +336,7 @@ def generate_additional_execution_traces(
                     export_taskset_to_yaml(old_task_char, os.path.join(dir_path, "taskset_characteristics.yaml"))
 
                 # Write processor-specific files for CSPSimulation_2 compatibility
-                n_cores = cfgs.get("N_CORES", 1)
+                n_cores = cfgs["N_CORES"]  # presence enforced by validate_config_integrity
                 for pp in range(n_cores):
                     old_task_char_p, perf_sel = convert_taskset_parameters_to_cpp_yaml(
                         params,
@@ -298,6 +382,10 @@ def run_full_generation_pipeline(
         raise FileNotFoundError(f"Configuration file not found: {cfg_file}")
 
     cfgs = load_generation_config(cfg_file)
+    # 2nd integrity gate: trajectory-layer params the orchestrator reads
+    # (ROBOT_SPEED_MPS) that the generation gate in generate_taskset_parameters
+    # does not cover. Mirrors validate_config_integrity's interactive/raise UX.
+    validate_trajectory_config(cfgs, config_path=cfg_file)
 
     if dir_path is None:
         cfg_file_name = os.path.basename(cfg_file)
