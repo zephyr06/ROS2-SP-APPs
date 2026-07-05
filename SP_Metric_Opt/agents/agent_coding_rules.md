@@ -29,3 +29,9 @@ Making plans:
 
 Code readabiliy is important
 - Don't use very short names or names with only a few letters such as "K" or "tl", long names are okay.
+
+Tests
+- If you modified any C++ code, run `make check.SP_OPT -j5` in build folder for testing.
+
+Variable names (during coding and chat)
+- Use informative names, especially during chat. Variable names must be clear even without context, bad examples include `ndiff` or `nvar`, good examples could be `num_tasks_with_diff_et`
