@@ -904,6 +904,104 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
         << carried_noise_et << " (bootstrap value ~" << original_noise_et << ").";
 }
 
+// Fix 2 (the {-1}-only skip + zero-work fallback in PerformCoordinateDescent).
+//
+// When EVERY task lacks timePerformancePairs, RecordCloseTimeLimitOptions gives
+// each task the option set {-1} (no TL freedom). The coordinate descent used to
+// evaluate one config per task anyway (N expensive OptimizeIncre sweeps) because
+// the existing inner `if (val == -1 && best_sp > -1) continue;` does NOT skip a
+// task whose ONLY option is -1 (best_sp starts at -2.0, so the guard is false on
+// the first iteration). Fix 2 adds an outer `opts == {-1}` skip so the descent
+// does zero evals — but zero evals means UpdateRecords never runs, so
+// prev_optimizer_ would not advance (re-introducing the frozen-baseline bug Fix
+// A fixed). The zero-work fallback runs one eval with the current (all -1)
+// time_limits so UpdateRecords advances prev_optimizer_.
+//
+// Observable: eval_count_ (public, debugMode-independent, incremented once per
+// EvaluateTimeLimitConfig_ScratchOrIncre call) drops from N to 1, AND
+// prev_optimizer_.dag_tasks_ still advances (T_noise's TL is -1 so its ET passes
+// through UpdateExtDistBasedOnTimeLimit unchanged → a direct window onto whether
+// prev_optimizer_ advanced).
+TEST_F(CompareAndKeepSynthetic,
+       PerformCoordinateDescent_AllMinusOneOnly_RunsOneEvalAndAdvancesPrevOptimizer) {
+    // Build a 2-task DAG where BOTH tasks lack timePerformancePairs → both get
+    // opts == {-1} → the descent does zero evals without the fallback.
+    const double et_perf = 500.0;
+    std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
+    Task t_perf(0, dist_perf, 2000, 2000, 0, "T_perf");
+    t_perf.execution_time_dist = FiniteDist(GaussianDist(et_perf, 0.5), 5);
+    // NOTE: no timePerformancePairs on t_perf (unlike the fixture default).
+
+    std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+    Task t_noise(1, dist_noise, 2000, 2000, 1, "T_noise");
+    t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t_perf, t_noise};
+    DAG_Model dag_no_tl(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag_no_tl);
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_no_tl, sp);
+    opt.ReOptimizePeriodic(dag_no_tl, 2, /*radius=*/2);
+    ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
+    const int eval_count_after_bootstrap = opt.eval_count_;
+
+    // Second interval: mutate T_noise's ET. T_noise's TL is -1 → its ET passes
+    // through UpdateExtDistBasedOnTimeLimit unchanged → if the fallback ran
+    // UpdateRecords, prev_optimizer_.dag_tasks_ carries the mutated ET.
+    const double mutated_noise_et = 1234.0;
+    DAG_Model dag_v2 = dag_no_tl;
+    dag_v2.tasks[1].execution_time_dist =
+        GetUnitExecutionTimeDist(mutated_noise_et);
+
+    opt.OptimizeIncre_w_TL(dag_v2, 2);
+
+    // The win: descent does 1 eval (the zero-work fallback), not N=2.
+    EXPECT_EQ(1, opt.eval_count_ - eval_count_after_bootstrap)
+        << "All-{-1}-only descent should run exactly one eval (the zero-work "
+        << "fallback), not one per task. Before Fix 2 this is 2.";
+
+    // The trap guard: prev_optimizer_ still advanced (fallback's UpdateRecords
+    // ran). Without the fallback, the {-1}-only skip would starve UpdateRecords
+    // and prev_optimizer_.dag_tasks_ would freeze at the bootstrap DAG → the
+    // frozen-baseline bug Fix A fixed returns.
+    const double carried_noise_et =
+        opt.prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist.GetAvgValue();
+    EXPECT_NEAR(carried_noise_et, mutated_noise_et, 5.0)
+        << "prev_optimizer_.dag_tasks_ was not advanced by the fallback eval; "
+        << "the zero-work skip starved UpdateRecords. Expected ~"
+        << mutated_noise_et << " (current interval), got " << carried_noise_et
+        << " (bootstrap value ~50.0).";
+}
+
+// Fix 2 mixed case: when SOME tasks have real TL options and others are
+// {-1}-only, the {-1}-only task is skipped (no redundant incumbent re-eval) and
+// the zero-work fallback does NOT fire (the real-option task already produced
+// >0 evals). Uses the standard fixture (T_perf has 4 TL pairs; T_noise has
+// none → {-1}-only).
+TEST_F(CompareAndKeepSynthetic,
+       PerformCoordinateDescent_SkipsMinusOneOnlyTaskInMixedSet) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    const int radius = 2;
+    opt.ReOptimizePeriodic(dag_tasks, 2, radius);
+    const int eval_count_after_bootstrap = opt.eval_count_;
+
+    // T_perf's option count under this radius — the descent should evaluate
+    // exactly that many configs (T_perf's options). T_noise ({-1}-only) is
+    // skipped, so it adds 0; the fallback does not fire (T_perf's evals > 0).
+    const size_t t_perf_option_count =
+        RecordCloseTimeLimitOptions(dag_tasks, radius)[0].size();
+
+    opt.OptimizeIncre_w_TL(dag_tasks, 2);
+
+    EXPECT_EQ(t_perf_option_count,
+              static_cast<size_t>(opt.eval_count_ - eval_count_after_bootstrap))
+        << "Mixed descent should evaluate only T_perf's "
+        << t_perf_option_count << " options (T_noise is {-1}-only → skipped). "
+        << "Before Fix 2 this is " << (t_perf_option_count + 1)
+        << " (T_noise's redundant eval not skipped).";
+}
+
 TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
     // Build a synthetic task with 10 evenly-spaced TL options [0, 10, 20, ...
     // 90]

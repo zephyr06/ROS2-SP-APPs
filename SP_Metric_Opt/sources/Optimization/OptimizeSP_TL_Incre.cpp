@@ -183,12 +183,26 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     std::sort(sorted_indices.begin(), sorted_indices.end(),
               TaskSortingHeuristic{dag_tasks_, sp_parameters_});
 
+    bool any_eval_ran = false;
     for (size_t idx : sorted_indices) {
+        // Skip a task whose only TL option is -1 (no timePerformancePairs →
+        // RecordCloseTimeLimitOptions recorded {-1}). There is no TL freedom
+        // to search, and OptimizeIncre already does the PA search internally,
+        // so re-evaluating here is a redundant incumbent re-eval. Skipping it
+        // is the main cost win on the reused P25 tasksets (every task is
+        // {-1}-only). opts.size()==1 && opts[0]==-1 is the exact no-pairs
+        // predicate: RecordCloseTimeLimitOptions only pushes -1 when a task
+        // has zero pairs, so a task with real options is never skipped.
+        const std::vector<double>& opts = time_limit_option_for_each_task_[idx];
+        if (opts.size() == 1 && opts[0] == -1.0)
+            continue;
+
         double best_sp = -2.0;
         double best_option_val = time_limits[idx];
-        for (double val : time_limit_option_for_each_task_[idx]) {
-            if (val == -1 && best_sp > -1)  // there are no options to evaluate
+        for (double val : opts) {
+            if (val == -1)  // there are no options to evaluate
                 continue;
+            any_eval_ran = true;
             time_limits[idx] = val;
             double sp_val = EvaluateTimeLimitConfig_ScratchOrIncre(
                 K, time_limits, from_scratch);
@@ -203,6 +217,18 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
         }
         time_limits[idx] = best_option_val;
     }
+
+    // Zero-work fallback. When EVERY task was {-1}-only the loop above ran zero
+    // evals, so UpdateRecords never fired and prev_optimizer_.dag_tasks_ would
+    // stay frozen at the last interval — exactly the frozen-baseline pathology
+    // Fix A addresses. Run a single eval with the incumbent time_limits so
+    // UpdateRecords (and Fix A's dag_tasks_ advance inside OptimizeIncre)
+    // propagate the current interval's DAG into prev_optimizer_. Guarded on
+    // non-empty so empty-DAG callers retain the prior "no evals, no crash"
+    // behavior. Skipped whenever the descent already produced >0 evals.
+    if (!any_eval_ran && !dag_tasks_.tasks.empty()) {
+        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+    }
 }
 
 // 1-arg overload — INCR_SCRATCH entry point. See header for why this is an
@@ -216,8 +242,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
-    return OptimizeIncre_w_TL(dag_tasks_update, K,
-                              GlobalVariables::IncrementalTimeLimitSearchRadius);
+    return OptimizeIncre_w_TL(
+        dag_tasks_update, K, GlobalVariables::IncrementalTimeLimitSearchRadius);
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
@@ -230,8 +256,9 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     int period = GlobalVariables::ReoptimizationPeriod;
     bool trigger_reopt = (reoptimization_interval_count_ % period == 0);
     if (trigger_reopt) {
-        ReOptimizePeriodic(dag_tasks_update, K,
-                           GlobalVariables::ReoptimizationTimeLimitSearchRadius);
+        ReOptimizePeriodic(
+            dag_tasks_update, K,
+            GlobalVariables::ReoptimizationTimeLimitSearchRadius);
     } else {
         OptimizeIncre_w_TL(dag_tasks_update, K,
                            GlobalVariables::IncrementalTimeLimitSearchRadius);
@@ -311,6 +338,16 @@ void OptimizePA_Incre_with_TimeLimits::SeedStateFromIncumbent(
     prev_optimizer_.UpdateDAG(dag_with_tl);
     prev_optimizer_.opt_pa_ = pa;
     prev_optimizer_.opt_sp_ = sp;
+    // Carry sp_parameters_ too. IfInitialized() only checks !opt_pa_.empty(),
+    // so without this the incremental branch
+    // (EvaluateTimeLimitConfig_ScratchOrIncre) takes `optimizer =
+    // prev_optimizer_` with an EMPTY sp_parameters_ → OptimizeIncre's SP-eval
+    // throws _Map_base::at on thresholds_node. In production this is masked
+    // because UpdateRecords (`prev_optimizer_ = optimizer`, a full copy)
+    // usually fires between a reopt and the next incremental call; but a
+    // no-improvement all-{-1} interval never fires UpdateRecords, and Fix B's
+    // zero-work fallback would hit the same crash.
+    prev_optimizer_.sp_parameters_ = sp_parameters_;
 }
 
 // Establish the incumbent baseline BEFORE the from-scratch search. An optimizer
