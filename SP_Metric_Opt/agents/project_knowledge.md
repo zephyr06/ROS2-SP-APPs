@@ -2,6 +2,11 @@ Priority value conventions:
 - smaller values imply higher priority
 - earlier position imply higher priority than later position (small index)
 
+Out-of-scope folders:
+- `/home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/applications` contains
+  code that is not supposed to run in the standard environment, so leave it out
+  unless the user specifically mentions it.
+
 Follow Test-Driven Development:
 - First add test cases and make sure the tests fail based on existing code
 - Then work on fixes to make tests pass
