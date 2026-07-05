@@ -2,9 +2,9 @@
 
 Design:
 - Most tasks get fixed execution times from UUniFast (deterministic, no env variation).
-- N_ENV_DEPENDENT_TASKS tasks get env-dependent execution times: their *mean* ET follows
-  the UUniFast allocation, but spatial variation (via GMM + D1_VARIANCE_FACTOR_TABLE) is
-  added on top.
+- Env-dependent tasks (count set by ENV_DEPENDENT_TASKS_RATIO, ceil-rounded and
+  clamped to [1, N_TASKS]) get env-dependent execution times: their *mean* ET
+  follows the UUniFast allocation, but spatial variation (via GMM) is added on top.
 - The total utilization must exactly match the sampled per-core utilization *
   N_CORES when USE_UUNIFAST is enabled.
 """
@@ -30,12 +30,14 @@ class TestUUniFast(unittest.TestCase):
         return standardize_config({
             "PERIODS_MS": [20, 1000],
             "N_TASKS": 2,
-            "N_ENV_DEPENDENT_TASKS": 1,
+            # Pin the ratio to [0.5, 0.5] so n_env = ceil(0.5*2) = 1
+            # deterministically (the ratio is the sole source of the count now).
+            "ENV_DEPENDENT_TASKS_RATIO": [0.5, 0.5],
             "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
             "N_CORES": 1,
             "RANDOM_SEED": 42,
             "USE_UUNIFAST": use_uunifast,
-            "MIN_PERIOD_ENV_DEPENDENT": 0,  # no filter, so exact N_ENV counts hold
+            "MIN_PERIOD_ENV_DEPENDENT": 0,  # no filter, so exact env counts hold
             # Minimal GMM params (only env-dependent tasks will use them)
             "RO_1_Et_RANGE": [-0.5, 0.5],
             "RO_2_Et_RANGE": [-0.5, 0.5],
@@ -91,8 +93,8 @@ class TestUUniFast(unittest.TestCase):
 
         env_tasks = [t for t in params['tasks'] if t.get('env_dependent')]
         self.assertEqual(
-            len(env_tasks), cfg["N_ENV_DEPENDENT_TASKS"],
-            "Expected exactly N_ENV_DEPENDENT_TASKS env-dependent tasks"
+            len(env_tasks), 1,
+            "Expected exactly 1 env-dependent task (pinned via ratio [0.5, 0.5])"
         )
 
         for t in env_tasks:

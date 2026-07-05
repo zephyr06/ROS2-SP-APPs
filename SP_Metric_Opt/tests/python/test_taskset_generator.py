@@ -28,7 +28,6 @@ class TestTasksetGenerator(unittest.TestCase):
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "CPU_UTIL_RANDOM_RANGE": [1.2, 1.2],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "N_ENV_DEPENDENT_TASKS": 1,
             "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "RANDOM_SEED": 42,
@@ -124,7 +123,6 @@ class TestTasksetGenerator(unittest.TestCase):
         """Normal tasks (non-env, non-perf) have natural random sigma and bounds = mean ± 2σ."""
         cfgs = self.cfgs.copy()
         cfgs["PERF_RECORD_TASK_PROBABILITY"] = 0.0  # no perf tasks
-        cfgs["N_ENV_DEPENDENT_TASKS"] = 1
         cfgs["RANDOM_SEED"] = 42
         res = generate_taskset_parameters(cfgs)
 
@@ -153,7 +151,6 @@ class TestTasksetGenerator(unittest.TestCase):
         """Perf tasks have tiny sigma, no correlations, full range bounds, and performance records."""
         cfgs = self.cfgs.copy()
         cfgs["PERF_RECORD_TASK_PROBABILITY"] = 1.0  # all eligible non-env tasks become perf
-        cfgs["N_ENV_DEPENDENT_TASKS"] = 1
         cfgs["RANDOM_SEED"] = 42
         res = generate_taskset_parameters(cfgs)
 
@@ -181,7 +178,10 @@ class TestTasksetGenerator(unittest.TestCase):
     def test_env_tasks_have_spatial_correlations(self):
         """Env tasks have non-zero spatial correlations and natural random sigma."""
         cfgs = self.cfgs.copy()
-        cfgs["N_ENV_DEPENDENT_TASKS"] = 2
+        # Pin the ratio to [0.5, 0.5] so n_env = ceil(0.5*4) = 2 deterministically
+        # (the ratio is the sole source of the count now). Keeps the >=2 env-task
+        # assertion meaningful without depending on default-range luck.
+        cfgs["ENV_DEPENDENT_TASKS_RATIO"] = [0.5, 0.5]
         cfgs["RANDOM_SEED"] = 42
         res = generate_taskset_parameters(cfgs)
 
@@ -249,7 +249,7 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
 
     def test_all_periods_from_unified_pool(self):
         """Every generated period is a member of the configured PERIODS_MS."""
-        cfgs = dict(self.cfgs, N_TASKS=3, N_ENV_DEPENDENT_TASKS=1)
+        cfgs = dict(self.cfgs, N_TASKS=3)
         res = generate_taskset_parameters(cfgs)
         self.assertEqual(len(res["tasks"]), 3)
         pool = set(cfgs["PERIODS_MS"])
@@ -263,7 +263,7 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
         design -- the period pool is unchanged at large N)."""
         pool = self.cfgs["PERIODS_MS"]
         n_tasks = len(pool) + 3  # strictly more tasks than distinct periods
-        cfgs = dict(self.cfgs, N_TASKS=n_tasks, N_ENV_DEPENDENT_TASKS=1)
+        cfgs = dict(self.cfgs, N_TASKS=n_tasks)
         res = generate_taskset_parameters(cfgs)
         self.assertEqual(len(res["tasks"]), n_tasks)
         # Every period is still a valid pool member; duplicates are expected.
@@ -278,8 +278,15 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
 
     def test_single_task_single_rate(self):
         """N_TASKS=1: the minimal single-rate taskset (the former N=1 corner
-        case). The lone task is schedulable -- its utilization stays < 1.0."""
-        cfgs = dict(self.single_task_cfgs, N_TASKS=1, N_ENV_DEPENDENT_TASKS=0)
+        case). The lone task is schedulable -- its utilization stays < 1.0.
+
+        Note: under the ratio knob, N=1 always yields 1 env-dependent task
+        (ceil(ratio*1) clamped to >=1). The former ``N_ENV_DEPENDENT_TASKS=0``
+        case is no longer representable -- env-dependence only adds spatial
+        variation via the GMM, not a higher mean, so the lone task remains
+        schedulable and this corner case is preserved.
+        """
+        cfgs = dict(self.single_task_cfgs, N_TASKS=1)
         res = generate_taskset_parameters(cfgs)
         self.assertEqual(len(res["tasks"]), 1)
         self.assertIn(res["tasks"][0]["period"], set(cfgs["PERIODS_MS"]))
@@ -386,7 +393,7 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
     def test_sampled_util_in_range_and_total_matches(self):
         """The realized per_core_cpu_util is within [low, high] and the total
         cpu_util = per_core * N_CORES exactly."""
-        cfgs = dict(self.cfgs, N_TASKS=6, N_ENV_DEPENDENT_TASKS=1)
+        cfgs = dict(self.cfgs, N_TASKS=6)
         res = generate_taskset_parameters(cfgs)
         low, high = cfgs["CPU_UTIL_RANDOM_RANGE"]
         self.assertGreaterEqual(res["per_core_cpu_util"], low)
@@ -406,7 +413,7 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
     def test_sampled_util_deterministic_under_fixed_seed(self):
         """The same RANDOM_SEED reproduces the same sampled per-core util
         (it is the first draw off the seeded RNG)."""
-        cfgs = dict(self.cfgs, N_TASKS=6, N_ENV_DEPENDENT_TASKS=1)
+        cfgs = dict(self.cfgs, N_TASKS=6)
         res1 = generate_taskset_parameters(dict(cfgs))
         res2 = generate_taskset_parameters(dict(cfgs))
         self.assertEqual(res1["per_core_cpu_util"], res2["per_core_cpu_util"])
@@ -418,8 +425,7 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
         range genuinely sweeps load, not a point."""
         seen = set()
         for seed in range(1, 31):
-            cfgs = dict(self.cfgs, N_TASKS=4, N_ENV_DEPENDENT_TASKS=1,
-                        RANDOM_SEED=seed)
+            cfgs = dict(self.cfgs, N_TASKS=4, RANDOM_SEED=seed)
             res = generate_taskset_parameters(cfgs)
             seen.add(round(res["per_core_cpu_util"], 4))
         # 30 different seeds should produce more than one distinct sampled util.
@@ -433,7 +439,7 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
         from Gen_Taskset.lib.generation_config_parser import standardize_config
         cfgs = {k: v for k, v in self.cfgs.items()
                 if k != "CPU_UTIL_RANDOM_RANGE"}
-        cfgs.update(N_TASKS=6, N_ENV_DEPENDENT_TASKS=1)
+        cfgs.update(N_TASKS=6)
         with self.assertRaises(ValueError) as cm:
             standardize_config(cfgs)
         self.assertIn("CPU_UTIL_RANDOM_RANGE is required", str(cm.exception))
@@ -445,6 +451,122 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
         for bad in ([0.5], [0.5, 1.5, 2.0], "0.5-1.5", [1.5, 0.5], [-0.2, 1.5]):
             with self.assertRaises(ValueError):
                 standardize_config(dict(self.cfgs, CPU_UTIL_RANDOM_RANGE=bad))
+
+
+class TestEnvDependentTasksRatio(unittest.TestCase):
+    """Env-dependent task count is now ratio-driven, not a literal count.
+
+    The legacy ``N_ENV_DEPENDENT_TASKS`` (a literal integer) is fully removed.
+    The canonical-and-only knob is ``ENV_DEPENDENT_TASKS_RATIO`` ``[low, high]``
+    (default ``[0.1, 0.3]``), sampled uniformly per task set. The count is
+    ``n_env = max(1, min(ceil(ratio * N_TASKS), N_TASKS))`` -- every task set
+    has >= 1 env-dependent task (the clamp), and at most ``N_TASKS``. There is
+    no path to 0 env tasks.
+
+    These tests pin the count via degenerate single-value ratios so the
+    exact-count assertions are deterministic across seeds (the ratio is the
+    sole source of the count, not a per-seed ``randint``).
+    """
+
+    def setUp(self):
+        # Snapshot/restore global RNG state: generate_taskset_parameters reseeds
+        # the global random/np.random streams per call (by design, for
+        # reproducibility), and this class runs many generations across several
+        # seeds. Restoring in tearDown keeps that perturbation from leaking
+        # into later test modules that read global RNG state unseeded.
+        self._random_state = random.getstate()
+        self._np_state = np.random.get_state()
+        # Canonical P19 + P14 shape. N_ENV_DEPENDENT_TASKS is intentionally
+        # absent (it is fully removed); ENV_DEPENDENT_TASKS_RATIO is set per
+        # test via _n_env. MIN_PERIOD_ENV_DEPENDENT=0 so every task is an env
+        # candidate and the exact-count math is not perturbed by the period
+        # filter.
+        self.base_cfgs = {
+            "PERIODS_MS": [1000, 500, 200, 100, 50, 33, 20],
+            "D1_RANGE": [-10.0, 10.0],
+            "D2_RANGE": [0.0, 360.0],
+            "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
+            "SIGMA_OVER_Et_RANGE": [0.5, 0.6],
+            "RO_1_Et_RANGE": [-0.9, -0.7],
+            "RO_2_Et_RANGE": [-0.1, 0.1],
+            "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
+            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
+            "N_CORES": 2,
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
+            "MAX_UTIL_PER_TASK": 0.95,
+            "MIN_PERIOD_ENV_DEPENDENT": 0,
+            "PERF_RECORD_TASK_PROBABILITY": 0.5,
+            "N_GMM_COMPONENTS_PER_TASK": 4,
+            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "FIXED_TASK_SIGMA_RATIO": 0.001,
+            "MAX_TIME_LIMIT_OPTIONS": 10,
+            "SP_WEIGHTS_SUM": 5.0,
+        }
+
+    def tearDown(self):
+        random.setstate(self._random_state)
+        np.random.set_state(self._np_state)
+
+    def _n_env(self, **overrides):
+        """Run generation with base_cfgs + overrides; return realized env count."""
+        cfgs = dict(self.base_cfgs, **overrides)
+        res = generate_taskset_parameters(cfgs)
+        return sum(1 for t in res["tasks"] if t.get("env_dependent"))
+
+    def test_ratio_present_is_honored(self):
+        """A pinned ratio [0.5, 0.5] at N=6 yields exactly ceil(0.5*6)=3 env
+        tasks for EVERY seed (the ratio is the sole source of the count)."""
+        for seed in range(1, 21):
+            n_env = self._n_env(ENV_DEPENDENT_TASKS_RATIO=[0.5, 0.5],
+                                N_TASKS=6, RANDOM_SEED=seed)
+            self.assertEqual(n_env, 3, f"seed={seed}: expected 3 env tasks, got {n_env}")
+
+    def test_ceil_rounding(self):
+        """[0.1, 0.1] at N=6 -> ceil(0.6)=1 env task (ceil, not floor/round),
+        for every seed."""
+        for seed in range(1, 21):
+            n_env = self._n_env(ENV_DEPENDENT_TASKS_RATIO=[0.1, 0.1],
+                                N_TASKS=6, RANDOM_SEED=seed)
+            self.assertEqual(n_env, 1, f"seed={seed}: expected 1 env task, got {n_env}")
+
+    def test_clamp_to_at_most_n_tasks(self):
+        """[1.0, 1.0] at N=4 -> ceil(4.0)=4, clamped to <=N -> all 4 tasks are
+        env-dependent, for every seed."""
+        for seed in range(1, 21):
+            n_env = self._n_env(ENV_DEPENDENT_TASKS_RATIO=[1.0, 1.0],
+                                N_TASKS=4, RANDOM_SEED=seed)
+            self.assertEqual(n_env, 4, f"seed={seed}: expected 4 env tasks, got {n_env}")
+
+    def test_n1_clamps_to_one_env_task(self):
+        """N=1: even [0.0, 0.0] (ceil(0*1)=0) clamps to >=1, so the lone task
+        is env-dependent. The '0 env tasks at N=1' case is no longer
+        representable under the ratio knob. N_CORES=1 keeps the lone task
+        schedulable (mirrors TestP19.single_task_cfgs)."""
+        n_env = self._n_env(ENV_DEPENDENT_TASKS_RATIO=[0.0, 0.0],
+                            N_TASKS=1, N_CORES=1, RANDOM_SEED=42)
+        self.assertEqual(n_env, 1)
+
+    def test_ratio_sampling_varies_across_seeds(self):
+        """A non-degenerate ratio [0.1, 0.3] at N=10 produces >1 distinct n_env
+        across seeds (the per-taskset ratio draw sweeps the count, rather than
+        pinning it)."""
+        seen = set()
+        for seed in range(1, 31):
+            n_env = self._n_env(ENV_DEPENDENT_TASKS_RATIO=[0.1, 0.3],
+                                N_TASKS=10, RANDOM_SEED=seed)
+            seen.add(n_env)
+        self.assertGreater(len(seen), 1,
+                           f"ratio sampling should vary across seeds; got {seen}")
+
+    def test_default_ratio_when_absent_constrains_count(self):
+        """With neither ratio nor legacy count, standardize_config injects the
+        default ratio [0.1, 0.3]. At N=10 the realized n_env must lie in
+        [ceil(0.1*10), ceil(0.3*10)] = [1, 3] for every seed (the default ratio
+        bounds the count; the old random.randint(1, N) did not)."""
+        for seed in range(1, 31):
+            n_env = self._n_env(N_TASKS=10, RANDOM_SEED=seed)
+            self.assertIn(n_env, {1, 2, 3},
+                          f"seed={seed}: default ratio should bound n_env to [1,3], got {n_env}")
 
 
 if __name__ == "__main__":

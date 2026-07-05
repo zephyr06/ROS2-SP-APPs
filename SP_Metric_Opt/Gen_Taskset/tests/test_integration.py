@@ -20,7 +20,10 @@ def test_integration_pipeline():
     config_data = {
         "PERIODS_MS": [2000, 1000, 50, 20],
         "N_TASKS": 3,
-        "N_ENV_DEPENDENT_TASKS": 1,
+        # Pin the ratio so n_env = ceil(1/3 * 3) = 1 deterministically (the
+        # ratio is the sole source of the count now; the legacy literal
+        # N_ENV_DEPENDENT_TASKS is hard-rejected by standardize_config).
+        "ENV_DEPENDENT_TASKS_RATIO": [1/3, 1/3],
         "PERF_RECORD_TASK_PROBABILITY": 1.0,  # All eligible non-env tasks become soft tasks
         "Et_OVER_PERIOD_RANGE": [0.1, 0.3],
         "SIGMA_OVER_Et_RANGE": [0.2, 0.4],
@@ -89,10 +92,11 @@ def test_integration_pipeline():
         if "performance_records_time" in t:
             soft_tasks.append(t)
             
-    # With N_ENV_DEPENDENT_TASKS=1, 2 non-env tasks remain.
-    # PERF_RECORD_TASK_PROBABILITY=1.0 makes ALL non-env tasks soft -- including
-    # short-period tasks. The MIN_PERIOD_WITH_PERFORMANCE_RECORDS period floor
-    # was removed (P16), so every non-env task is eligible regardless of period.
+    # With ENV_DEPENDENT_TASKS_RATIO=[1/3, 1/3] (pinned -> 1 env task), 2 non-env
+    # tasks remain. PERF_RECORD_TASK_PROBABILITY=1.0 makes ALL non-env tasks soft
+    # -- including short-period tasks. The MIN_PERIOD_WITH_PERFORMANCE_RECORDS
+    # period floor was removed (P16), so every non-env task is eligible
+    # regardless of period.
     assert len(soft_tasks) == 2
     soft_task = soft_tasks[0]
 

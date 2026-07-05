@@ -246,6 +246,65 @@ class TestGenerationConfigParser(unittest.TestCase):
             standardize_config(config)
         self.assertIn("CPU_UTIL_RANDOM_RANGE is required", str(cm.exception))
 
+    def test_env_dependent_tasks_ratio_default_injected(self):
+        """A bare config without ENV_DEPENDENT_TASKS_RATIO gets the default
+        [0.1, 0.3] injected by standardize_config (so legacy/bare configs get
+        ratio-based env-task sampling rather than the old randint fallback)."""
+        config = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
+        }
+        res = standardize_config(config)
+        self.assertEqual(res["ENV_DEPENDENT_TASKS_RATIO"], [0.1, 0.3])
+
+    def test_env_dependent_tasks_ratio_normalized_to_floats(self):
+        """A valid ratio is accepted and normalized to floats."""
+        config = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
+            "ENV_DEPENDENT_TASKS_RATIO": [0, 1],  # ints
+        }
+        res = standardize_config(config)
+        self.assertEqual(res["ENV_DEPENDENT_TASKS_RATIO"], [0.0, 1.0])
+        self.assertIsInstance(res["ENV_DEPENDENT_TASKS_RATIO"][0], float)
+        self.assertIsInstance(res["ENV_DEPENDENT_TASKS_RATIO"][1], float)
+
+    def test_env_dependent_tasks_ratio_bad_shape_rejected(self):
+        """A malformed ENV_DEPENDENT_TASKS_RATIO (wrong arity, non-numeric,
+        bool, low > high, or out of [0, 1]) is rejected with ValueError."""
+        base = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
+        }
+        for bad in ([0.5], [0.5, 1.5, 2.0], "0.1-0.3", [0.3, 0.1],
+                    [-0.2, 0.5], [0.1, 1.5], [True, 0.5]):
+            with self.assertRaises(ValueError,
+                                   msg=f"expected ValueError for {bad!r}"):
+                standardize_config(dict(base, ENV_DEPENDENT_TASKS_RATIO=bad))
+
+    def test_legacy_n_env_dependent_tasks_rejected(self):
+        """The legacy literal-count key N_ENV_DEPENDENT_TASKS is fully removed:
+        standardize_config raises ValueError pointing at the canonical
+        ENV_DEPENDENT_TASKS_RATIO (mirrors the P19 legacy-key hard-reject).
+        No config in the repo ships this key, so hard-reject is safe."""
+        config = {
+            "PERIODS_MS": [1000, 100, 50],
+            "N_TASKS": 3,
+            "D1_RANGE": [-5, 5],
+            "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
+            "N_ENV_DEPENDENT_TASKS": 1,
+        }
+        with self.assertRaises(ValueError) as cm:
+            standardize_config(config)
+        self.assertIn("ENV_DEPENDENT_TASKS_RATIO", str(cm.exception))
+        self.assertIn("N_ENV_DEPENDENT_TASKS", str(cm.exception))
+
 
 class TestResolveTasksetConfigPath(unittest.TestCase):
     """Tests for resolve_taskset_config_path (P13 Commit B1)."""

@@ -252,6 +252,22 @@ def standardize_config(config: dict) -> dict:
             f"(total task count) instead. Found: {sorted(found_count_legacy)}"
         )
 
+    # N_ENV_DEPENDENT_TASKS was a literal env-task count. It is fully removed
+    # in favor of the ratio knob ENV_DEPENDENT_TASKS_RATIO [low, high] (sampled
+    # per task set, ceil-rounded, clamped to [1, N_TASKS]). No shipped config
+    # ever set this key (the base template never carried it), so hard-rejecting
+    # a config that still sets it is safe and surfaces the migration loudly --
+    # a silent ignore would let a stale literal count quietly override the
+    # ratio semantics a caller thinks they configured. Mirrors the P19
+    # legacy-key hard-reject pattern.
+    if "N_ENV_DEPENDENT_TASKS" in config:
+        raise ValueError(
+            "N_ENV_DEPENDENT_TASKS is no longer supported; set "
+            "ENV_DEPENDENT_TASKS_RATIO [low, high] (a per-taskset ratio, "
+            "ceil-rounded and clamped to [1, N_TASKS]) instead. "
+            f"Found: N_ENV_DEPENDENT_TASKS={config['N_ENV_DEPENDENT_TASKS']!r}"
+        )
+
     # Type/range validation only -- presence is enforced by
     # validate_config_integrity, so guard each check to avoid KeyError before
     # the integrity check can produce its friendly message. Explicit rejection
@@ -319,6 +335,33 @@ def standardize_config(config: dict) -> dict:
             f"got [{low}, {high}]"
         )
     config["CPU_UTIL_RANDOM_RANGE"] = [float(low), float(high)]
+
+    # Env-dependent task count is ratio-driven, not a literal count. Each task
+    # set samples a ratio uniformly from ENV_DEPENDENT_TASKS_RATIO [low, high]
+    # (default [0.1, 0.3]) and yields n_env = ceil(ratio * N_TASKS) clamped to
+    # [1, N_TASKS] -- every task set has >= 1 env-dependent task. The legacy
+    # literal-count knob N_ENV_DEPENDENT_TASKS is hard-rejected above. The
+    # default is injected here so bare/legacy configs (which never carried the
+    # old count key) get ratio sampling instead of the former random.randint
+    # fallback. Validation mirrors CPU_UTIL_RANDOM_RANGE above.
+    if "ENV_DEPENDENT_TASKS_RATIO" not in config:
+        config["ENV_DEPENDENT_TASKS_RATIO"] = [0.1, 0.3]
+    env_ratio = config["ENV_DEPENDENT_TASKS_RATIO"]
+    if (not isinstance(env_ratio, (list, tuple))
+            or len(env_ratio) != 2
+            or any(not isinstance(v, (int, float)) or isinstance(v, bool)
+                    for v in env_ratio)):
+        raise ValueError(
+            "ENV_DEPENDENT_TASKS_RATIO must be a [low, high] pair of numbers, "
+            f"got {env_ratio!r}"
+        )
+    e_low, e_high = env_ratio
+    if e_low < 0.0 or e_low > e_high or e_high > 1.0:
+        raise ValueError(
+            "ENV_DEPENDENT_TASKS_RATIO requires 0 <= low <= high <= 1.0, "
+            f"got [{e_low}, {e_high}]"
+        )
+    config["ENV_DEPENDENT_TASKS_RATIO"] = [float(e_low), float(e_high)]
 
     # Physical map dimensions: center both D1_RANGE (x) and D2_RANGE (y) at origin.
     # Cartesian coordinates: D1 = x, D2 = y.

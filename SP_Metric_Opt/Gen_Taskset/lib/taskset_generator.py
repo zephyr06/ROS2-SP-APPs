@@ -1,4 +1,5 @@
 import json
+import math
 import sys
 import numpy as np
 import random
@@ -50,7 +51,6 @@ REQUIRED_CONFIG_PARAMS = [
 OPTIONAL_CONFIG_PARAMS = [
     {"key": "RANDOM_SEED",            "desc": "absent = OS entropy (non-reproducible run)"},
     {"key": "MAX_UTIL_PER_ENV_TASK",  "desc": "absent = env tasks use MAX_UTIL_PER_TASK"},
-    {"key": "N_ENV_DEPENDENT_TASKS",  "desc": "absent = random count in [1, N_TASKS]"},
 ]
 
 
@@ -401,15 +401,18 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     # pick_period handles pool exhaustion (duplicate periods) at large N.
     n_tasks = cfgs["N_TASKS"]
 
-    # Determine number of env-dependent tasks.
-    # If N_ENV_DEPENDENT_TASKS is specified in config, use it.
-    # Otherwise default to ALL tasks being env-dependent for maximum
-    # per-interval utilization variance (100-200% per-core swings).
-    n_env_dependent_cfg = cfgs.get("N_ENV_DEPENDENT_TASKS")  # optional: None = random count
-    if n_env_dependent_cfg is None:
-        n_env_dependent = random.randint(1, n_tasks)
-    else:
-        n_env_dependent = min(int(n_env_dependent_cfg), n_tasks)
+    # Determine the number of env-dependent tasks from the per-taskset ratio.
+    # ENV_DEPENDENT_TASKS_RATIO [low, high] (set/validated by
+    # standardize_config; default [0.1, 0.3]) is sampled uniformly AFTER
+    # per_core_cpu_util above (so P14's asserted per-core value is unchanged
+    # for existing seeds) and BEFORE uunifast below. n_env = ceil(ratio*N)
+    # clamped to [1, N] -- every task set has >= 1 env-dependent task. The
+    # legacy literal-count knob N_ENV_DEPENDENT_TASKS is no longer read
+    # (full removal); standardize_config hard-rejects it if a config still
+    # carries it.
+    ratio_low, ratio_high = cfgs["ENV_DEPENDENT_TASKS_RATIO"]
+    ratio = random.uniform(ratio_low, ratio_high)
+    n_env_dependent = max(1, min(math.ceil(ratio * n_tasks), n_tasks))
 
     # Small sigma base for perf tasks so ET is effectively deterministic
     FIXED_TASK_SIGMA_RATIO = cfgs["FIXED_TASK_SIGMA_RATIO"]  # presence enforced by validate_config_integrity
