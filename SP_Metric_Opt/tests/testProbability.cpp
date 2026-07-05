@@ -34,6 +34,41 @@ TEST(FiniteDist, equal) {
 
     EXPECT_TRUE(dist1 == dist1_approx);
 }
+
+// approx_equal must honor its `tolerance` arg: today the per-sample comparison
+// falls through to Value_Proba::operator== (hardcoded 1e-1) and min/max uses
+// near() (absolute 1e-6), so the parameter is a no-op. This test pins the fix.
+TEST(FiniteDist, approx_equal_respects_tolerance) {
+    std::vector<Value_Proba> v1 = {Value_Proba(10.0, 0.5),
+                                   Value_Proba(20.0, 0.5)};
+    std::vector<Value_Proba> v2 = {Value_Proba(10.0, 0.5),
+                                   Value_Proba(20.0, 0.5)};
+    FiniteDist d1(v1);
+    FiniteDist d2(v2);
+    // identical -> equal at any tolerance
+    EXPECT_TRUE(d1.approx_equal(d2, 1e-9));
+    EXPECT_FALSE(d1.approx_not_equal(d2, 1e-9));
+
+    // 5% relative drift on value 20 -> 21. prob unchanged.
+    std::vector<Value_Proba> v3 = {Value_Proba(10.0, 0.5),
+                                   Value_Proba(21.0, 0.5)};
+    FiniteDist d3(v3);
+    // 5% drift: inside a loose 1e-1 tol -> equal; outside a tight 1e-3 -> not.
+    EXPECT_TRUE(d1.approx_equal(d3, 1e-1));
+    EXPECT_FALSE(d1.approx_equal(d3, 1e-3));
+
+    // min/max: near() is absolute 1e-6. Build two dists whose value/prob pairs
+    // are identical but whose min/max differ by 1e-3 (above 1e-6).
+    std::vector<Value_Proba> v4 = {Value_Proba(5.0, 0.5),
+                                   Value_Proba(15.0, 0.5)};
+    FiniteDist d4(v4);
+    FiniteDist d4b(v4);
+    d4b.min_time = 5.0 + 1e-3;
+    d4b.max_time = 15.0 + 1e-3;
+    // 1e-3 on 5.0 is 0.02% relative -> accepted at loose 1e-1, rejected at 1e-9.
+    EXPECT_TRUE(d4.approx_equal(d4b, 1e-1));
+    EXPECT_FALSE(d4.approx_equal(d4b, 1e-9));
+}
 TEST(FiniteDist, V1) {
     GaussianDist gau_dis(10, 1);
     FiniteDist finite_dis(gau_dis, 5, 15, 11);
