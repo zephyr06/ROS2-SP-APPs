@@ -24,6 +24,15 @@ extern bool use_wcet_execution_time;
 // ReoptimizationPeriod == 0 disables it (today's pure cache+scratch baseline).
 extern int ReoptimizationPeriod;
 
+// Trial-and-error walk patience: how many consecutive non-improving SP evals
+// the outward TL walk tolerates before stopping in one direction. Incremental
+// path uses IncrementalTimeLimitSearchPatience (warm-started PA search →
+// effectively unimodal → 0 is safe); reopt path uses
+// ReoptimizationTimeLimitSearchPatience (from-scratch PA search → can be
+// non-unimodal at high util → 1 tolerates a single dip).
+extern int IncrementalTimeLimitSearchPatience;
+extern int ReoptimizationTimeLimitSearchPatience;
+
 // simulation export controls
 extern int EXPORT_DETAIL_LEVEL;               // 0=sp_metrics_only, 1=+miss_rate_per_task, 2=+task_aggregate, 3=+full_job_traces
 extern int METRIC_SAMPLE_INTERVAL_SECONDS;    // 0=un-sampled (all intervals), N>0=sample every N seconds

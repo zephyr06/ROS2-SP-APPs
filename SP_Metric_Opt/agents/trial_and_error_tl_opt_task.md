@@ -1,9 +1,13 @@
 # Task: Trial-and-Error Time Limit Optimization (Dynamic Radius Search)
 
-> **STATUS: REWORK IN PROGRESS 2026-07-05** — the radius-bounded window turned
-> out to *defeat* the trial-and-error design. See "Rework: decouple the walk
-> from the radius" below; the original (radius-capped) landing described in the
-> rest of this doc is being superseded.
+> **STATUS: REWORK LANDED 2026-07-05** (working tree, uncommitted) — the radius
+> was decoupled from the walk; see "Rework: decouple the walk from the radius"
+> below. The follow-up task **"hoist `patience` to a tunable global parameter
+> (2026-07-05)"** at the bottom of this doc is **DONE 2026-07-05**: `patience` is
+> now a pair of YAML-loaded globals (`IncrementalTimeLimitSearchPatience` /
+> `ReoptimizationTimeLimitSearchPatience`) replacing the hardcoded ternary, 16/16
+> ctest green. The original (radius-capped) landing described in the rest of this
+> doc is superseded by the rework.
 >
 > **Original landing (radius-capped): DONE 2026-07-05** (working tree,
 > uncommitted). The four proposed changes below are implemented;
@@ -384,4 +388,128 @@ scratch half (→400).
   observable.
 - `PerformCoordinateDescent_SkipsMinusOneOnlyTaskInMixedSet`: eval-count
   recomputed against full-set walk.
+
+---
+
+## New task: hoist `patience` to a tunable global parameter (2026-07-05)
+
+> **STATUS: DONE 2026-07-05** (working tree, uncommitted — `git add` only per
+> `agent_coding_rules.md`). Implemented as two params (the default; see "Open
+> question" resolution below). 16/16 ctest green with the default values; no
+> test-expectation updates needed. The synthetic stub-test from the verification
+> plan was **not** added (the user asked to keep it simple, and the existing
+> `patience=1` stub already proves the value reaches the walk; a non-default-
+> value stub would only re-prove the same plumbing).
+
+### Rationale
+
+`patience` — the consecutive-non-improving-SP budget the trial-and-error walk
+tolerates before stopping in one direction — is currently a *derived local* in
+[`PerformCoordinateDescentForTaskConfigOpt`](file:///home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/sources/Optimization/OptimizeSP_TL_Incre.cpp#L265):
+
+```cpp
+int patience = from_scratch ? 1 : 0;
+```
+
+It is forwarded to every `OptimizeSingleTaskTimeLimit` call but is not externally
+tunable: the incremental value (0, strict break) and the reopt value (1, tolerate
+one non-monotonic dip) are baked into the source. The radius knobs
+(`IncrementalTimeLimitSearchRadius` / `ReoptimizationTimeLimitSearchRadius`) were
+removed in the rework above, but they were the right *shape* — a pair of YAML-loaded
+globals, one per path, tunable without recompiling. `patience` should follow that
+same pattern so the walk's explore-vs-cost tradeoff can be tuned per experiment
+(e.g. patience=0 on both paths for a strict ablation, or patience=2 on the reopt
+path to push past noisier non-unimodal SP landscapes at high utilization) without
+touching source.
+
+### Proposed changes
+
+#### 1. Configuration (`sources/parameters.yaml`)
+
+Add two keys adjacent to `ReoptimizationPeriod`, with the current baked-in values
+as the defaults (so behavior is byte-for-byte unchanged until someone edits the
+yaml):
+
+```yaml
+# Trial-and-error walk patience: number of consecutive non-improving SP evals
+# the walk tolerates before stopping in one direction (see
+# PerformCoordinateDescentForTaskConfigOpt -> OptimizeSingleTaskTimeLimit).
+#   IncrementalTimeLimitSearchPatience (warm-started incremental path): 0 = strict
+#     break on the first non-improving step. The warm-started PA search makes
+#     SP-vs-TL effectively unimodal, so a dip never hides a better option.
+#   ReoptimizationTimeLimitSearchPatience (from-scratch reopt path): 1 = tolerate
+#     one non-monotonic dip. From-scratch PA search can be non-unimodal at high
+#     utilization, so a single dip must not hide a strictly better option further out.
+IncrementalTimeLimitSearchPatience: 0
+ReoptimizationTimeLimitSearchPatience: 1
+```
+
+#### 2. Globals (`sources/Utils/Parameters.h` + `Parameters.cpp`)
+
+Declare and load the two ints, mirroring `ReoptimizationPeriod` exactly:
+
+```cpp
+// Parameters.h  (inside namespace GlobalVariables, next to ReoptimizationPeriod)
+extern int IncrementalTimeLimitSearchPatience;
+extern int ReoptimizationTimeLimitSearchPatience;
+
+// Parameters.cpp (next to the ReoptimizationPeriod load)
+int IncrementalTimeLimitSearchPatience =
+    loaded_doc["IncrementalTimeLimitSearchPatience"].as<int>();
+int ReoptimizationTimeLimitSearchPatience =
+    loaded_doc["ReoptimizationTimeLimitSearchPatience"].as<int>();
+```
+
+#### 3. Source (`sources/Optimization/OptimizeSP_TL_Incre.cpp`)
+
+Replace the derived local at line 265 of `PerformCoordinateDescentForTaskConfigOpt`
+with the global lookup. The comment block above it shrinks to a pointer-to-yaml:
+
+```cpp
+// Patience = consecutive-non-improving-SP budget the walk tolerates before
+// stopping in one direction. Tunable per path via parameters.yaml:
+//   from_scratch  -> ReoptimizationTimeLimitSearchPatience   (default 1)
+//   incremental   -> IncrementalTimeLimitSearchPatience      (default 0)
+// See parameters.yaml for the modality rationale (warm-started vs from-scratch).
+int patience = from_scratch
+    ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
+    : GlobalVariables::IncrementalTimeLimitSearchPatience;
+```
+
+The rest of the walk is **unchanged** — `patience` is already a parameter throughout
+`OptimizeSingleTaskTimeLimit` and its call sites; only its *source* moves from a
+hardcoded ternary to a YAML-loaded global. `IsBetterTimeLimitOption`,
+`FindTimeLimitOptionIndex`, and the `{-1}`-only skip are untouched.
+
+### Verification plan
+
+- **Defaults reproduce today's behavior.** `cmake --build build --target check.SP_OPT -j5`
+  → expect 16/16 ctest green with `0`/`1` (the current baked-in values). No
+  test-expectation updates should be needed.
+- **Prove the global is actually read on the walk path** (not just compiled in):
+  add one `TrialAndErrorTLWalkSynthetic` case that sets
+  `GlobalVariables::ReoptimizationTimeLimitSearchPatience = 2` (with `from_scratch=true`)
+  and asserts the walk steps past **two** consecutive non-improving evals before
+  breaking — the existing `patience=1` stub test is the template; the new one proves
+  a non-default yaml value reaches `OptimizeSingleTaskTimeLimit`. Restore the default
+  in the fixture teardown.
+- **(Optional, sibling to the open runtime A/B follow-up)** run a reused P25 taskset
+  at patience `0/0` vs `0/1` vs `1/2` and report eval-count / SP tradeoff.
+
+### Open question — RESOLVED: two params
+
+**Two params (default) vs one.** Faithful mirror of the old radius = two params
+(incremental / reopt), preserving the `from_scratch` distinction, because the
+incremental-vs-reopt SP-vs-TL modality difference is real (warm-started vs
+from-scratch). The alternative is a single `TimeLimitSearchPatience` applied to both
+paths, dropping the `from_scratch` branch entirely — simpler, and the cleaner
+ablation, but it loses the per-path tuning.
+
+**Resolution (2026-07-05): two params.** Implemented as
+`IncrementalTimeLimitSearchPatience` (default `0`) and
+`ReoptimizationTimeLimitSearchPatience` (default `1`) in `parameters.yaml`,
+`Parameters.{h,cpp}`, and read at the call site in `OptimizeSP_TL_Incre.cpp`. This
+preserves the `from_scratch` modality distinction while making the walk's
+explore-vs-cost tradeoff tunable per-experiment without recompiling. To ablate as a
+single value, set both keys to the same number.
 

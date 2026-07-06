@@ -14,12 +14,21 @@ Layer_Node_During_Incremental_Optimization: 2
 #
 # Trial-and-error walk: PerformCoordinateDescentForTaskConfigOpt steps outward
 # from each task's baseline TL across the FULL per-task option set and stops
-# after `patience` consecutive non-improving SP evals (incremental path:
-# patience=0 strict; reopt path: patience=1, tolerates one non-monotonic dip).
-# The walk is not radius-capped — a tie-break or strictly-better option beyond
-# the old radius wall is reachable — and usually stops well before the option-
-# set boundary, so the average eval count per task is far below the set size.
+# after `patience` consecutive non-improving SP evals. The walk is not radius-
+# capped — a tie-break or strictly-better option beyond the old radius wall is
+# reachable — and usually stops well before the option-set boundary, so the
+# average eval count per task is far below the set size.
+#
+# `patience` is tunable per-path: incremental warm-starts the PA search from
+# the incumbent, so SP-vs-TL is effectively unimodal and patience=0 (strict)
+# is safe and cheapest; reopt re-searches priorities from scratch per candidate,
+# so SP-vs-TL can be non-unimodal at high utilization and patience=1 tolerates
+# a single dip so a strictly-better option further out is not missed. Lower to
+# shorten the walk (cheaper, may miss a dip-hidden better option); raise to
+# search further (costlier, more thorough).
 ReoptimizationPeriod: 10
+IncrementalTimeLimitSearchPatience: 0
+ReoptimizationTimeLimitSearchPatience: 1
 
 # simulation export granularity controls:
 # 0: interval SP metrics only (smallest disk usage)

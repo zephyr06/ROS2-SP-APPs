@@ -256,13 +256,17 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
               TaskSortingHeuristic{dag_tasks_, sp_parameters_});
 
     // Patience governs how many consecutive non-improving steps the
-    // trial-and-error walk tolerates before stopping. The incremental path
-    // warm-starts the PA search from the incumbent, so SP-vs-TL is effectively
-    // unimodal and strict (patience=0) is safe and cheapest. The reopt path
-    // re-searches priorities from scratch per candidate, so SP-vs-TL can be
-    // non-unimodal at high utilization; patience=1 tolerates a single dip so a
-    // strictly-better option further out is not missed.
-    int patience = from_scratch ? 1 : 0;
+    // trial-and-error walk tolerates before stopping, sourced from the
+    // YAML-loaded globals so it is tunable per-experiment without recompiling.
+    // The incremental path warm-starts the PA search from the incumbent, so
+    // SP-vs-TL is effectively unimodal and strict (patience=0) is safe and
+    // cheapest. The reopt path re-searches priorities from scratch per
+    // candidate, so SP-vs-TL can be non-unimodal at high utilization;
+    // patience=1 tolerates a single dip so a strictly-better option further
+    // out is not missed. See sources/parameters.yaml for tuning guidance.
+    int patience = from_scratch
+                        ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
+                        : GlobalVariables::IncrementalTimeLimitSearchPatience;
 
     // Establish the baseline SP of the starting configuration. This is the
     // best-yet the first task's backward pass measures against, and it doubles

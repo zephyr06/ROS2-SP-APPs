@@ -19,6 +19,13 @@ bool disable_time_limit_opt = false;
 bool use_wcet_execution_time = false;
 int ReoptimizationPeriod = loaded_doc["ReoptimizationPeriod"].as<int>();
 
+// Trial-and-error walk patience per path (incremental vs reopt). See
+// Parameters.h for the rationale on why the defaults differ by path.
+int IncrementalTimeLimitSearchPatience =
+    loaded_doc["IncrementalTimeLimitSearchPatience"].as<int>();
+int ReoptimizationTimeLimitSearchPatience =
+    loaded_doc["ReoptimizationTimeLimitSearchPatience"].as<int>();
+
 // simulation export controls
 int EXPORT_DETAIL_LEVEL = 3;               // default to FULL for backward compatibility
 int METRIC_SAMPLE_INTERVAL_SECONDS = 0;    // default to 0 (all intervals)
