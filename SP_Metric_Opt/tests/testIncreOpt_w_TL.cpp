@@ -1,5 +1,8 @@
 // #include <gtest/gtest.h>
 
+#include <map>
+#include <vector>
+
 #include "gmock/gmock.h"  // Brings in gMock.
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
@@ -48,22 +51,6 @@ class TaskSetForTest_robotics_v20 : public ::testing::Test {
     SP_Parameters sp_parameters;
     int N = dag_tasks.tasks.size();
 };
-
-TEST_F(TaskSetForTest_robotics_v20, RecordCloseTimeLimitOptions) {
-    std::vector<std::vector<double>> time_limit_options =
-        RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
-    // Closest to ET ~202 is 184.1 (index 0). Radius=2 => indices [0,2] => 3
-    // opts.
-    EXPECT_EQ(3, time_limit_options[0].size());
-    EXPECT_EQ(184.1, time_limit_options[0][0]);
-    EXPECT_EQ(397.5, time_limit_options[0][1]);
-    EXPECT_EQ(657.9, time_limit_options[0][2]);
-
-    EXPECT_EQ(-1, time_limit_options[1][0]);
-    EXPECT_EQ(-1, time_limit_options[2][0]);
-    EXPECT_EQ(-1, time_limit_options[3][0]);
-}
 
 class TaskSetForTest_robotics_v18 : public ::testing::Test {
    public:
@@ -252,22 +239,6 @@ class TestDDLMissLessTasks : public ::testing::Test {
     int N = dag_tasks.tasks.size();
 };
 
-TEST_F(TaskSetForTest_robotics_v19, RecordCloseTimeLimitOptions) {
-    std::vector<std::vector<double>> time_limit_options =
-        RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
-    EXPECT_EQ(4, time_limit_options.size());  // 4 tasks
-    // With IncrementalTimeLimitSearchRadius=2 the window around closest ET (1000) is
-    // indices [1,3] => [600, 800, 1000] (3 options).
-    EXPECT_EQ(3, time_limit_options[0].size());  // 3 options for TSP
-    EXPECT_EQ(600, time_limit_options[0][0]);
-    EXPECT_EQ(800, time_limit_options[0][1]);
-    EXPECT_EQ(1000, time_limit_options[0][2]);
-
-    EXPECT_EQ(-1, time_limit_options[1][0]);
-    EXPECT_EQ(-1, time_limit_options[2][0]);
-    EXPECT_EQ(-1, time_limit_options[3][0]);
-}
 TEST_F(TaskSetForTest_robotics_v19, ReOptimizePeriodic) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());
@@ -275,31 +246,38 @@ TEST_F(TaskSetForTest_robotics_v19, ReOptimizePeriodic) {
     EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
-    EXPECT_EQ(400,
-              res_opt.id2time_limit[0]);  // SLAM+TSP have high utilization;
-    //   All TL options are effectively unschedulable and produce near-identical
-    //   SP.  ApproxEqualSP treats them as equal, so the tie-breaker picks
-    //   the lowest (tightest) time limit.
+    // SLAM+TSP have high utilization; all TL options are effectively
+    // unschedulable and produce near-identical SP. ApproxEqualSP treats them as
+    // equal, so the tie-breaker picks the lowest (tightest) time limit. The
+    // walk steps over the FULL option set [400,600,800,1000] (no radius cap),
+    // so the downward tie-break reaches 400 — the global tightest option, not
+    // the old radius-capped floor of 600.
+    EXPECT_EQ(400, res_opt.id2time_limit[0]);
 }
 
 TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
                                          sp_parameters);  // high utilization
 
-    opt.ReOptimizePeriodic(2);  // high utilization → all TLs tied → tie-breaker
+    // Bootstrap with the 1-arg ReOptimizePeriodic. TSP's full option set is
+    // [400,600,800,1000]; at high utilization SP saturates so all options tie,
+    // and the smaller-TL tie-break walks all the way down to 400.
+    opt.ReOptimizePeriodic(2);
     ResourceOptResult res_opt = opt.CollectResults();
-    EXPECT_EQ(
-        400,
-        res_opt.id2time_limit[0]);  // picks lowest TL when SP is identical
+    EXPECT_EQ(400, res_opt.id2time_limit[0]);
 
     DAG_Model dag_tasks_updated =
         ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
                       "TaskData/test_robotics_v21.yaml");  // low utilization
+    // 2-arg OptimizeIncre_w_TL (warm-started incremental). v21's TSP ET~401 →
+    // closest TL is 400 (index 0); the walk steps over the FULL set
+    // [400,600,800,1000] (no radius cap). On low-utilization v21, SP strictly
+    // increases with TL (TSP's performance_records_perf 0.5/0.6/0.8/1.0
+    // dominates), so each forward step strictly improves → the walk climbs all
+    // the way to 1000.
     opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
     res_opt = opt.CollectResults();
-    // With radius=2 the incremental window for TSP (ET~401) is {400,600,800}.
-    // Low-utilization v21 allows the highest-performing feasible option: 800.
-    EXPECT_LE(800, res_opt.id2time_limit[0]);
+    EXPECT_EQ(1000, res_opt.id2time_limit[0]);
 
     auto start_time = CurrentTimeInProfiler;
     for (int i = 0; i < 10; i++) opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
@@ -313,9 +291,12 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
     printf(
         "\n-------- TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions "
         "...\n");
+    // RecordCloseTimeLimitOptions is now a standalone utility (no longer on the
+    // walk path, which uses the full option set), so its radius is passed
+    // explicitly here. radius=1 → window [2,3] => [800,1000] for TSP (closest
+    // TL 1000 at index 3).
     std::vector<std::vector<double>> time_limit_options =
-        RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
+        RecordCloseTimeLimitOptions(dag_tasks, /*radius=*/1);
 
     EXPECT_EQ(4, time_limit_options.size());  // 4 tasks
 
@@ -327,11 +308,10 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
         }
     }
 
-    // With IncrementalTimeLimitSearchRadius=2 the window is [1,3] => [600,800,1000].
-    EXPECT_EQ(3, time_limit_options[perfTask].size());  // 3 options for TSP
-    EXPECT_EQ(600, time_limit_options[perfTask][0]);
-    EXPECT_EQ(800, time_limit_options[perfTask][1]);
-    EXPECT_EQ(1000, time_limit_options[perfTask][2]);
+    // radius=1 → window [2,3] => [800,1000].
+    EXPECT_EQ(2, time_limit_options[perfTask].size());  // 2 options for TSP
+    EXPECT_EQ(800, time_limit_options[perfTask][0]);
+    EXPECT_EQ(1000, time_limit_options[perfTask][1]);
 
     for (uint i = 0; i < time_limit_options.size(); i++) {
         if (i == perfTask)
@@ -341,17 +321,17 @@ TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
 }
 
 TEST_F(TaskSetForTest_robotics_v19_2, ReOptimizePeriodic) {
-    // NOTE: this test failed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // compare with the testcase (TaskSetForTest_robotics_v19) before, the only
-    // difference is that this testcase added two tasks with very small
-    // cpu_utilization and big weight supposedly, ReOptimizePeriodic
-    // should also return 400 for task0
+    // Compare with TaskSetForTest_robotics_v19: the only difference is that
+    // this taskset adds two low-utilization DUMMY tasks. The perf-carrying
+    // task (TSP) is unchanged, so ReOptimizePeriodic must reach the SAME TL
+    // for it as the v19 case.
 
-    // try to get which task has performance_records_time
+    // Find which task carries timePerformancePairs (the perf task). The radius
+    // passed to RecordCloseTimeLimitOptions is irrelevant here — any radius
+    // surfaces the non-{-1} task; we just need its index.
     int perfTask = 0;
     std::vector<std::vector<double>> time_limit_options =
-        RecordCloseTimeLimitOptions(dag_tasks,
-                                    GlobalVariables::IncrementalTimeLimitSearchRadius);
+        RecordCloseTimeLimitOptions(dag_tasks, /*radius=*/1);
     for (int i = 0; i < static_cast<int>(time_limit_options.size()); i++) {
         if (time_limit_options[i][0] != -1) {
             perfTask = i;
@@ -365,21 +345,15 @@ TEST_F(TaskSetForTest_robotics_v19_2, ReOptimizePeriodic) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());
 
-    // int n = dag_tasks.tasks.size();
-    // for (int i=0;i<n;i++){
-    //     double exeT = dag_tasks.GetTask(i).getExecGaussian().mu;
-    //     const_cast<SP_OPT_PA::Task&>(dag_tasks.GetTask(i)).setExecutionTime(exeT);
-    //     printf("task%d:
-    //     exeT=%f\n",i,(double)(dag_tasks.GetTask(i).getExecutionTime()));
-    // }
     opt.ReOptimizePeriodic(2);
     EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
-    EXPECT_EQ(400,
-              res_opt.id2time_limit[perfTask]);  // Both 400 and 1000 are
-                                                 // unschedulable (same SP);
-    // the optimizer tie-breaks to the tighter time limit.
+    // Same landscape as v19: TSP's full option set is [400,600,800,1000] and at
+    // high utilization all options saturate to near-identical SP, so the
+    // smaller-TL tie-break walks all the way down to 400 for the perf task —
+    // identical to the v19 result now that the walk is not radius-capped.
+    EXPECT_EQ(400, res_opt.id2time_limit[perfTask]);
 }
 
 TEST_F(TestDDLMiss, test_ddl_miss) {
@@ -475,17 +449,15 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     opt_incre.OptimizeIncre_w_TL(dag_tasks_warm, 2);
     ResourceOptResult res_incre = opt_incre.CollectResults();
 
-    // The incremental search uses the narrow radius (IncrementalTimeLimitSearchRadius,
-    // from parameters.yaml). For TSP with ET pinned at 1000ms the closest TL is
-    // 1000 (index 3), so radius 2 gives the window [600, 800, 1000] — TL=400 is
-    // NOT searched and cannot be the result. Under ET=1000 the higher-TL
-    // candidates (800, 1000) are unschedulable (deadline miss → safety drop),
-    // so the schedulable TL=600 wins; the bootstrap incumbent (TL=400, computed
-    // under the old ET=700 DAG) is replaced because TL=600 strictly improves SP
-    // under the new DAG. The result is therefore the schedulable optimum within
-    // the narrow window, not the bootstrap TL.
-    EXPECT_GE(res_incre.id2time_limit[0], 600);
-    EXPECT_LE(res_incre.id2time_limit[0], 1000);
+    // The incremental walk steps over the FULL option set [400,600,800,1000]
+    // from the ET-closest baseline (1000) under the warm DAG. With TSP pinned
+    // at ET=1000ms every TL option ties on SP (the same floor behaviour as the
+    // scratch case above), and the tie-break selects the smallest TL → 400,
+    // matching the scratch result. (Under the old radius-capped walk the
+    // incremental leg could not reach 400 from a 1000 baseline within its narrow
+    // window, so this was pinned at 600; the full-set walk makes the two paths
+    // agree.)
+    EXPECT_EQ(400, res_incre.id2time_limit[0]);
 
     // Scratch explored the full option set so it should be at least as good.
     EXPECT_GE(res_scratch.sp_opt + 1e-6, res_incre.sp_opt);
@@ -498,10 +470,17 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
 // (higher TL → higher perf term), which makes the keep/adopt decision fully
 // deterministic and independent of probabilistic-RTA noise:
 //   TL=400 → SP 1.5, TL=600 → SP 1.6, TL=800 → SP 1.7, TL=1000 → SP 1.8.
-// T_perf's avg ET (~500.3 from the Gaussian dist) is closest to TL=600, so:
-//   radius 0 → window [600]        (best TL=600, SP 1.6)
-//   radius 1 → window [400,600,800] (best TL=800, SP 1.7)
-//   radius 2 → window [400,600,800,1000] (best TL=1000, SP 1.8)
+//
+// Under the trial-and-error walk the from-scratch search always scans the FULL
+// option set, so on this fixture it always reaches the global optimum TL=1000.
+// That means the ADOPT path (search strictly beats the incumbent) CANNOT be
+// exercised on this fixture — bootstrap already finds the global max, so no
+// later search can strictly beat it. The Adopt/Keep tests below therefore use a
+// SEPARATE pair of YAMLs (test_robotics_v30_lo / _hi) whose SLAM ET differs: the
+// DAG mutation between bootstrap and reopt shifts the optimum, which is the
+// real-world condition compare-and-keep exists for. This fixture is retained for
+// the helper unit tests (SmallestTimeLimitVec, SeedIncumbentBaseline, etc.) that
+// are profile-shape-independent.
 class CompareAndKeepSynthetic : public ::testing::Test {
    public:
     void SetUp() override {
@@ -528,53 +507,68 @@ class CompareAndKeepSynthetic : public ::testing::Test {
     SP_Parameters sp_parameters;
 };
 
-// Compare-and-keep ADOPT path: a wide from-scratch search that strictly beats
-// the incumbent must be adopted. Bootstrap the incumbent with radius 0 (forced
-// to the closest TL=600, SP 1.6), then re-optimize with radius 1 whose
-// from-scratch search finds TL=800 (SP 1.7 > 1.6). The from-scratch result wins
-// and becomes the new incumbent.
-TEST_F(CompareAndKeepSynthetic, ReOptimizePeriodic_AdoptsWhenWideSearchWins) {
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+// Compare-and-keep ADOPT path: when the DAG mutates between bootstrap and
+// reopt so that the incumbent (re-evaluated under the NEW DAG) is strictly worse
+// than the new from-scratch search result, the search result is ADOPTED.
+//
+// The v30 YAML pair differs ONLY in SLAM's execution time (everything else is
+// identical to test_robotics_v21.yaml):
+//  - v30_lo (SLAM ET ~285, light load): TSP's optimal TL is 1000.
+//  - v30_hi (SLAM ET ~2853, heavy load): TSP's optimal TL is 400 — the larger
+//    SLAM ET on the same processor pushes TL=1000 past a schedulability cliff,
+//    so the optimum shifts DOWN.
+// Bootstrap on v30_lo → incumbent {TL=1000}. Reopt on v30_hi: SeedIncumbentBaseline
+// re-evaluates {TL=1000} under v30_hi (strictly worse than v30_hi's optimum), the
+// fresh search finds TL=400, and UpdateRecords' strictly-greater-SP guard ADOPTS
+// 400. This is the genuine compare-and-keep adopt path — no synthetic radius.
+TEST_F(CompareAndKeepSynthetic,
+       ReOptimizePeriodic_AdoptsWhenDagMutationShiftsOptimum) {
+    DAG_Model dag_lo = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v30_lo.yaml", 5);
+    DAG_Model dag_hi = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v30_hi.yaml", 5);
+    SP_Parameters sp(dag_lo);
+    OptimizePA_Incre_with_TimeLimits opt(dag_lo, sp);
 
-    // Bootstrap the incumbent. First call has no incumbent to compare against,
-    // so the from-scratch result (radius 0 → TL=600) simply becomes it.
-    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/0);
+    // Bootstrap on the light-load DAG. The from-scratch walk reaches the global
+    // optimum TL=1000 for TSP; with no prior incumbent this simply becomes it.
+    opt.ReOptimizePeriodic(dag_lo, 2);
     ResourceOptResult after_bootstrap = opt.CollectResults();
-    EXPECT_EQ(600, after_bootstrap.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_DOUBLE_EQ(1.6, after_bootstrap.sp_opt);
+    EXPECT_EQ(1000, after_bootstrap.id2time_limit[dag_lo.tasks[0].id]);
 
-    // Re-optimize with a wider radius. The from-scratch search explores
-    // [400,600,800] and selects TL=800 (SP 1.7), strictly better than the
-    // incumbent's 1.6 → the from-scratch result is adopted.
-    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/1);
+    // Reopt on the heavy-load DAG. The incumbent {TL=1000} re-evaluated under
+    // dag_hi is strictly worse than dag_hi's optimum (TL=400), so the search
+    // result is ADOPTED — TSP's TL drops from 1000 to 400.
+    opt.ReOptimizePeriodic(dag_hi, 2);
     ResourceOptResult after_reopt = opt.CollectResults();
-    EXPECT_EQ(800, after_reopt.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_DOUBLE_EQ(1.7, after_reopt.sp_opt);
+    EXPECT_EQ(400, after_reopt.id2time_limit[dag_hi.tasks[0].id]);
 }
 
-// Compare-and-keep KEEP path: when the wide from-scratch search does NOT beat
-// the incumbent (re-evaluated under the new DAG), the incumbent is preserved.
-// Bootstrap with radius 2 (TL=1000, SP 1.8 — the global optimum), then
-// re-optimize with the NARROWER radius 1 whose from-scratch search can only
-// reach TL=800 (SP 1.7 < 1.8). The incumbent wins and is restored.
+// Compare-and-keep KEEP path: when the DAG is UNCHANGED between bootstrap and
+// reopt, the incumbent re-evaluated under the (same) new DAG ties the from-scratch
+// search result (both reach the same global optimum), so the incumbent is
+// PRESERVED — TL and SP unchanged. Under the full-set walk the search always
+// finds the optimum, so "keep" is necessarily a tie (the search can never be
+// strictly worse than the incumbent on the same DAG).
 TEST_F(CompareAndKeepSynthetic,
-       ReOptimizePeriodic_KeepsIncumbentWhenWideSearchLoses) {
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+       ReOptimizePeriodic_KeepsIncumbentWhenDagUnchanged) {
+    DAG_Model dag_lo = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v30_lo.yaml", 5);
+    SP_Parameters sp(dag_lo);
+    OptimizePA_Incre_with_TimeLimits opt(dag_lo, sp);
 
-    // Bootstrap with the wide radius so the incumbent is already the global
-    // optimum (TL=1000, SP 1.8).
-    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/2);
+    // Bootstrap on the light-load DAG → incumbent {TL=1000}.
+    opt.ReOptimizePeriodic(dag_lo, 2);
     ResourceOptResult after_bootstrap = opt.CollectResults();
-    EXPECT_EQ(1000, after_bootstrap.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_DOUBLE_EQ(1.8, after_bootstrap.sp_opt);
+    EXPECT_EQ(1000, after_bootstrap.id2time_limit[dag_lo.tasks[0].id]);
+    const double sp_after_bootstrap = after_bootstrap.sp_opt;
 
-    // Re-optimize with a narrower radius. The from-scratch search can only
-    // reach TL=800 (SP 1.7), which is strictly worse than the incumbent's 1.8
-    // under the same DAG → the incumbent is preserved (TL and SP unchanged).
-    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/1);
+    // Reopt on the SAME DAG. The incumbent re-eval ties the search result → the
+    // incumbent is preserved (TL and SP unchanged).
+    opt.ReOptimizePeriodic(dag_lo, 2);
     ResourceOptResult after_reopt = opt.CollectResults();
-    EXPECT_EQ(1000, after_reopt.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_DOUBLE_EQ(1.8, after_reopt.sp_opt);
+    EXPECT_EQ(1000, after_reopt.id2time_limit[dag_lo.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(sp_after_bootstrap, after_reopt.sp_opt);
 }
 
 // --- Direct unit tests for the compare-and-keep helpers ---
@@ -753,15 +747,40 @@ TEST_F(CompareAndKeepSynthetic,
 //
 // Synthetic 2-task DAG: T_perf (task 0) carries 10 evenly-spaced TL options
 // [0,10,...,90] with ET=45 (closest option = index 4, value 40). T_noise is a
-// small fixed-ET task. With IncrementalTimeLimitSearchRadius=2 the narrow window is
-// indices [2,6] → 5 options; with ReoptimizationTimeLimitSearchRadius=6 the
-// wide window is indices [0,9] → 10 options (clamped). The dispatcher re-runs
-// the wide-radius ReOptimizePeriodic every ReoptimizationPeriod-th call and the
-// narrow-radius OptimizeIncre_w_TL otherwise. Because the dispatcher overwrites
-// time_limit_option_for_each_task_ on each call, the recorded size reflects the
-// LAST call's radius — the distinguishing observable between the two branches.
+// small fixed-ET task. The dispatcher re-runs the wide-radius
+// ReOptimizePeriodic every ReoptimizationPeriod-th call and the narrow-radius
+// OptimizeIncre_w_TL otherwise. Under the trial-and-error walk BOTH branches
+// record the FULL per-task option set (no radius cap), so the recorded option
+// count is no longer a branch-distinguishing signal. Instead, the routing is
+// observed via the `from_scratch` flag the evaluator receives: the reopt branch
+// passes from_scratch=true, the incremental branch from_scratch=false. The
+// fixture's RecordingDispatcherOpt subclass records every flag value, so a test
+// can assert which branch each dispatch took.
+//
+// ReoptimizationPeriod is PINNED in SetUp (=10) so this fixture is independent
+// of the production default in parameters.yaml. These tests exercise dispatch
+// ROUTING, not the period value; pinning the period they were designed around
+// (count 0 → reopt, count 1..9 → incremental) keeps the routing signal crisp.
 class CounterDispatcherSynthetic : public ::testing::Test {
    public:
+    // Subclass that records the from_scratch flag of every
+    // EvaluateTimeLimitConfig_ScratchOrIncre call. This is the only call the
+    // coordinate-descent walk makes per candidate, so the recorded flags are
+    // exactly the routing decisions the dispatcher made.
+    class RecordingDispatcherOpt : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        std::vector<bool> from_scratch_flags;
+        using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
+        double EvaluateTimeLimitConfig_ScratchOrIncre(
+            int K, const std::vector<double>& time_limits,
+            bool from_scratch) override {
+            from_scratch_flags.push_back(from_scratch);
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                                       from_scratch);
+        }
+    };
+
     void SetUp() override {
         const double et_perf = 45.0;
         std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
@@ -797,7 +816,7 @@ class CounterDispatcherSynthetic : public ::testing::Test {
 // The counter advances by 1 after every dispatch and never resets. Three
 // consecutive calls → counter == 3 regardless of which branch each call took.
 TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
     EXPECT_EQ(0, opt.reoptimization_interval_count_);
 
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
@@ -808,13 +827,15 @@ TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
     EXPECT_EQ(3, opt.reoptimization_interval_count_);
 }
 
-// count == 0 → 0 % period == 0 → ReOptimizePeriodic (wide radius). On a fresh
+// count == 0 → 0 % period == 0 → ReOptimizePeriodic (from_scratch). On a fresh
 // opt this is the interval-0 bootstrap: SeedIncumbentBaseline synthesizes an
 // RM+min-TL incumbent, so the call succeeds (no CoutError) and leaves the opt
-// initialized. The wide radius is observable: 10 TL options recorded for T_perf.
+// initialized. The reopt branch is observable via the recorded flags: EVERY
+// flag this call pushed is true (the from-scratch descent evaluates all
+// candidates with from_scratch=true).
 TEST_F(CounterDispatcherSynthetic,
        TriggersReoptAtCountZero_BootstrapsIncumbent) {
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());
     EXPECT_EQ(0, opt.reoptimization_interval_count_);
 
@@ -822,29 +843,49 @@ TEST_F(CounterDispatcherSynthetic,
 
     EXPECT_TRUE(opt.IfInitialized());
     EXPECT_EQ(1, opt.reoptimization_interval_count_);
-    // Wide radius (ReoptimizationTimeLimitSearchRadius=6) covers all 10
-    // options for T_perf (ET=45, closest index 4, window [0,9] clamped).
-    EXPECT_EQ(10u, opt.time_limit_option_for_each_task_[0].size());
+    ASSERT_FALSE(opt.from_scratch_flags.empty());
+    // count == 0 routes to ReOptimizePeriodic → every candidate the descent
+    // evaluated was a from-scratch eval (from_scratch=true).
+    for (bool fs : opt.from_scratch_flags) {
+        EXPECT_TRUE(fs) << "count==0 must route every eval through the reopt "
+                        << "(from_scratch=true) branch; saw a false flag.";
+    }
 }
 
-// count == 0 routes to reopt (wide, 10 options); count == 1 is not modular
-// (1 % 10 != 0) so the second call routes to the incremental branch (narrow
-// radius, 5 options). The recorded size after the second call is 5, proving the
-// incremental branch — not reopt — ran. The incumbent established by the first
-// call lets the incremental path's warm-start contract hold (no CoutError).
+// count == 0 routes to reopt (from_scratch=true); count == 1 is not modular
+// (1 % 10 != 0) so the second call routes to the incremental branch
+// (from_scratch=false). The routing is observable via the recorded flags: the
+// second call pushes at least one false flag (the incremental branch evaluates
+// its candidates with from_scratch=false), proving the incremental branch —
+// not reopt — ran. The incumbent established by the first call lets the
+// incremental path's warm-start contract hold (no CoutError).
 TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
 
-    // count == 0 → reopt (wide). Establishes the incumbent.
+    // count == 0 → reopt. Establishes the incumbent.
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     ASSERT_EQ(1, opt.reoptimization_interval_count_);
-    ASSERT_EQ(10u, opt.time_limit_option_for_each_task_[0].size());
+    const size_t flags_after_reopt = opt.from_scratch_flags.size();
+    ASSERT_GT(flags_after_reopt, 0u);
+    for (bool fs : opt.from_scratch_flags) {
+        ASSERT_TRUE(fs);
+    }
 
-    // count == 1 → 1 % 10 != 0 → incremental (narrow).
+    // count == 1 → 1 % 10 != 0 → incremental.
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     EXPECT_EQ(2, opt.reoptimization_interval_count_);
-    // Narrow radius (IncrementalTimeLimitSearchRadius=2) → window [2,6] → 5 options.
-    EXPECT_EQ(5u, opt.time_limit_option_for_each_task_[0].size());
+    // The incremental branch pushed at least one false flag (from_scratch=false)
+    // — the routing signal that the second call took the incremental branch.
+    bool saw_incremental_flag = false;
+    for (size_t i = flags_after_reopt; i < opt.from_scratch_flags.size(); ++i) {
+        if (!opt.from_scratch_flags[i]) {
+            saw_incremental_flag = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(saw_incremental_flag)
+        << "count==1 must route through the incremental (from_scratch=false) "
+        << "branch; every flag was true (reopt ran instead).";
 }
 
 // INCR frozen-baseline regression: OptimizeIncre must advance the carried
@@ -853,13 +894,15 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
 // ndiff) instead of stale-reopt-DAG vs fresh-DAG (ndiff saturates at N every
 // interval → per-act ET grows with ReoptimizationPeriod).
 //
-// Mechanism under test: OptimizeIncre_w_TL → EvaluateTimeLimitConfig_ScratchOrIncre
-// (incremental branch) does `OptimizePA_Incre optimizer = prev_optimizer_;` then
-// `optimizer.OptimizeIncre(dag_tasks_cur);`. OptimizeIncre diffs optimizer.dag_tasks_
-// (copied from prev_optimizer_, i.e. the FROZEN reopt-interval DAG) against
-// dag_tasks_cur. UpdateRecords then writes `prev_optimizer_ = optimizer` — but
-// only if OptimizeIncre advanced optimizer.dag_tasks_ to dag_tasks_cur. Without
-// that advance, prev_optimizer_.dag_tasks_ stays frozen at the reopt DAG forever.
+// Mechanism under test: OptimizeIncre_w_TL →
+// EvaluateTimeLimitConfig_ScratchOrIncre (incremental branch) does
+// `OptimizePA_Incre optimizer = prev_optimizer_;` then
+// `optimizer.OptimizeIncre(dag_tasks_cur);`. OptimizeIncre diffs
+// optimizer.dag_tasks_ (copied from prev_optimizer_, i.e. the FROZEN
+// reopt-interval DAG) against dag_tasks_cur. UpdateRecords then writes
+// `prev_optimizer_ = optimizer` — but only if OptimizeIncre advanced
+// optimizer.dag_tasks_ to dag_tasks_cur. Without that advance,
+// prev_optimizer_.dag_tasks_ stays frozen at the reopt DAG forever.
 //
 // Observable: T_noise (task 1) has no time-performance pairs → its TL is always
 // -1 → UpdateExtDistBasedOnTimeLimit passes its execution_time_dist through
@@ -870,13 +913,14 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
 TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
-    // Bootstrap the incumbent. After ReOptimizePeriodic, prev_optimizer_.dag_tasks_
-    // holds the TL-applied bootstrap DAG; T_noise's TL is -1 so its ET there is
-    // the ORIGINAL fixture value (FiniteDist around 50.0).
-    opt.ReOptimizePeriodic(dag_tasks, 2, /*radius=*/2);
+    // Bootstrap the incumbent. After ReOptimizePeriodic,
+    // prev_optimizer_.dag_tasks_ holds the TL-applied bootstrap DAG; T_noise's
+    // TL is -1 so its ET there is the ORIGINAL fixture value (FiniteDist
+    // around 50.0).
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
-    const double original_noise_et =
-        opt.prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist.GetAvgValue();
+    const double original_noise_et = opt.prev_optimizer_.dag_tasks_.tasks[1]
+                                         .execution_time_dist.GetAvgValue();
     EXPECT_NEAR(original_noise_et, 50.0, 5.0);
 
     // Second interval: same DAG except T_noise's ET is mutated to a clearly
@@ -891,39 +935,41 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
 
     // FIX UNDER TEST: OptimizeIncre must advance prev_optimizer_.dag_tasks_ to
     // the current interval's DAG. T_noise's TL is -1 → its ET in the TL-applied
-    // dag_tasks_cur equals dag_v2's mutated ET → prev_optimizer_.dag_tasks_ must
-    // now carry the mutated ET. Before the fix, prev_optimizer_.dag_tasks_ stays
-    // frozen at the bootstrap DAG → T_noise's ET remains ~50.0 (the original),
-    // and this expectation FAILS.
-    const double carried_noise_et =
-        opt.prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist.GetAvgValue();
+    // dag_tasks_cur equals dag_v2's mutated ET → prev_optimizer_.dag_tasks_
+    // must now carry the mutated ET. Before the fix, prev_optimizer_.dag_tasks_
+    // stays frozen at the bootstrap DAG → T_noise's ET remains ~50.0 (the
+    // original), and this expectation FAILS.
+    const double carried_noise_et = opt.prev_optimizer_.dag_tasks_.tasks[1]
+                                        .execution_time_dist.GetAvgValue();
     EXPECT_NEAR(carried_noise_et, mutated_noise_et, 5.0)
         << "prev_optimizer_.dag_tasks_ was not advanced by OptimizeIncre; "
         << "the incremental diff baseline is frozen at the reopt DAG. "
         << "Expected ~" << mutated_noise_et << " (current interval), got "
-        << carried_noise_et << " (bootstrap value ~" << original_noise_et << ").";
+        << carried_noise_et << " (bootstrap value ~" << original_noise_et
+        << ").";
 }
 
 // Fix 2 (the {-1}-only skip + zero-work fallback in PerformCoordinateDescent).
 //
 // When EVERY task lacks timePerformancePairs, RecordCloseTimeLimitOptions gives
 // each task the option set {-1} (no TL freedom). The coordinate descent used to
-// evaluate one config per task anyway (N expensive OptimizeIncre sweeps) because
-// the existing inner `if (val == -1 && best_sp > -1) continue;` does NOT skip a
-// task whose ONLY option is -1 (best_sp starts at -2.0, so the guard is false on
-// the first iteration). Fix 2 adds an outer `opts == {-1}` skip so the descent
-// does zero evals — but zero evals means UpdateRecords never runs, so
-// prev_optimizer_ would not advance (re-introducing the frozen-baseline bug Fix
-// A fixed). The zero-work fallback runs one eval with the current (all -1)
+// evaluate one config per task anyway (N expensive OptimizeIncre sweeps)
+// because the existing inner `if (val == -1 && best_sp > -1) continue;` does
+// NOT skip a task whose ONLY option is -1 (best_sp starts at -2.0, so the guard
+// is false on the first iteration). Fix 2 adds an outer `opts == {-1}` skip so
+// the descent does zero evals — but zero evals means UpdateRecords never runs,
+// so prev_optimizer_ would not advance (re-introducing the frozen-baseline bug
+// Fix A fixed). The zero-work fallback runs one eval with the current (all -1)
 // time_limits so UpdateRecords advances prev_optimizer_.
 //
 // Observable: eval_count_ (public, debugMode-independent, incremented once per
 // EvaluateTimeLimitConfig_ScratchOrIncre call) drops from N to 1, AND
-// prev_optimizer_.dag_tasks_ still advances (T_noise's TL is -1 so its ET passes
-// through UpdateExtDistBasedOnTimeLimit unchanged → a direct window onto whether
-// prev_optimizer_ advanced).
-TEST_F(CompareAndKeepSynthetic,
-       PerformCoordinateDescent_AllMinusOneOnly_RunsOneEvalAndAdvancesPrevOptimizer) {
+// prev_optimizer_.dag_tasks_ still advances (T_noise's TL is -1 so its ET
+// passes through UpdateExtDistBasedOnTimeLimit unchanged → a direct window onto
+// whether prev_optimizer_ advanced).
+TEST_F(
+    CompareAndKeepSynthetic,
+    PerformCoordinateDescent_AllMinusOneOnly_RunsOneEvalAndAdvancesPrevOptimizer) {
     // Build a 2-task DAG where BOTH tasks lack timePerformancePairs → both get
     // opts == {-1} → the descent does zero evals without the fallback.
     const double et_perf = 500.0;
@@ -942,7 +988,7 @@ TEST_F(CompareAndKeepSynthetic,
     SP_Parameters sp(dag_no_tl);
 
     OptimizePA_Incre_with_TimeLimits opt(dag_no_tl, sp);
-    opt.ReOptimizePeriodic(dag_no_tl, 2, /*radius=*/2);
+    opt.ReOptimizePeriodic(dag_no_tl, 2);
     ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
     const int eval_count_after_bootstrap = opt.eval_count_;
 
@@ -965,8 +1011,8 @@ TEST_F(CompareAndKeepSynthetic,
     // ran). Without the fallback, the {-1}-only skip would starve UpdateRecords
     // and prev_optimizer_.dag_tasks_ would freeze at the bootstrap DAG → the
     // frozen-baseline bug Fix A fixed returns.
-    const double carried_noise_et =
-        opt.prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist.GetAvgValue();
+    const double carried_noise_et = opt.prev_optimizer_.dag_tasks_.tasks[1]
+                                        .execution_time_dist.GetAvgValue();
     EXPECT_NEAR(carried_noise_et, mutated_noise_et, 5.0)
         << "prev_optimizer_.dag_tasks_ was not advanced by the fallback eval; "
         << "the zero-work skip starved UpdateRecords. Expected ~"
@@ -974,32 +1020,50 @@ TEST_F(CompareAndKeepSynthetic,
         << " (bootstrap value ~50.0).";
 }
 
-// Fix 2 mixed case: when SOME tasks have real TL options and others are
+// Mixed-case skip guard: when SOME tasks carry real TL options and others are
 // {-1}-only, the {-1}-only task is skipped (no redundant incumbent re-eval) and
 // the zero-work fallback does NOT fire (the real-option task already produced
-// >0 evals). Uses the standard fixture (T_perf has 4 TL pairs; T_noise has
-// none → {-1}-only).
+// >0 evals). Uses the standard fixture (T_perf has 4 TL pairs; T_noise has none
+// → {-1}-only).
+//
+// Under the trial-and-error walk the incremental leg steps over T_perf's FULL
+// option set (no radius cap): from baseline TL=600 (closest to ET~500) it walks
+// backward to 400 (1 eval, non-improving → patience=0 breaks) then forward
+// through 800 and 1000 (each strictly better → adopted), plus the baseline eval.
+// On this monotonic strictly-increasing-in-TL SP landscape that is exactly
+// 4 evals = T_perf's full option-set size. T_noise ({-1}-only) is skipped → 0
+// evals, and no fallback eval is added on top.
 TEST_F(CompareAndKeepSynthetic,
        PerformCoordinateDescent_SkipsMinusOneOnlyTaskInMixedSet) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    const int radius = 2;
-    opt.ReOptimizePeriodic(dag_tasks, 2, radius);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     const int eval_count_after_bootstrap = opt.eval_count_;
 
-    // T_perf's option count under this radius — the descent should evaluate
-    // exactly that many configs (T_perf's options). T_noise ({-1}-only) is
-    // skipped, so it adds 0; the fallback does not fire (T_perf's evals > 0).
-    const size_t t_perf_option_count =
-        RecordCloseTimeLimitOptions(dag_tasks, radius)[0].size();
+    // T_perf's FULL option-set size — the walk evaluates exactly this many
+    // configs on this monotonic landscape (baseline + backward-to-boundary +
+    // forward-to-boundary reaches every option). T_noise ({-1}-only) is
+    // skipped → 0. Both branches record the full set under the trial-and-error
+    // walk, so the bootstrap's recorded size equals the incremental leg's.
+    const size_t t_perf_full_set =
+        opt.time_limit_option_for_each_task_[0].size();
+    ASSERT_EQ(4u, t_perf_full_set);  // [400,600,800,1000]
 
     opt.OptimizeIncre_w_TL(dag_tasks, 2);
 
-    EXPECT_EQ(t_perf_option_count,
-              static_cast<size_t>(opt.eval_count_ - eval_count_after_bootstrap))
+    const int incremental_evals = opt.eval_count_ - eval_count_after_bootstrap;
+    // The skip: T_noise added 0 evals, so the count equals T_perf's full
+    // option-set size (no +1 for T_noise's redundant incumbent re-eval). Before
+    // the skip this was t_perf_full_set + 1.
+    EXPECT_EQ(t_perf_full_set, static_cast<size_t>(incremental_evals))
         << "Mixed descent should evaluate only T_perf's "
-        << t_perf_option_count << " options (T_noise is {-1}-only → skipped). "
-        << "Before Fix 2 this is " << (t_perf_option_count + 1)
-        << " (T_noise's redundant eval not skipped).";
+        << t_perf_full_set
+        << " full-set options (T_noise is {-1}-only → skipped, fallback does "
+        << "not fire). Before the skip this is "
+        << (t_perf_full_set + 1) << " (T_noise's redundant eval).";
+    // The fallback does NOT fire on top of T_perf's real evals: the count is
+    // bounded above by the full-set size, with no +1 fallback eval.
+    EXPECT_LE(static_cast<size_t>(incremental_evals), t_perf_full_set);
+    EXPECT_GE(incremental_evals, 1);  // the baseline eval always runs
 }
 
 TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
@@ -1042,6 +1106,313 @@ TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
         EXPECT_DOUBLE_EQ(0.0, opts[0][0]);
         EXPECT_DOUBLE_EQ(90.0, opts[0][9]);
     }
+}
+
+// --- Trial-and-Error TL optimization: pure helper unit tests ---
+//
+// FindTimeLimitOptionIndex and IsBetterTimeLimitOption are the two pure helpers
+// extracted from the trial-and-error coordinate-descent rewrite. They take no
+// optimizer state, so they can be unit-tested in isolation without constructing
+// a DAG / SP_Parameters. Each helper's contract is checked independently below
+// before the higher-level OptimizeSingleTaskTimeLimit walk is exercised.
+
+// FindTimeLimitOptionIndex: linear scan for a value in the option vector.
+// Returns options.size() (the off-the-end sentinel) when the value is absent,
+// mirroring std::find / the radius-window contract that baseline_val is always
+// a member of opts (so an absent value means the caller's baseline is stale and
+// the walk must not run).
+TEST(FindTimeLimitOptionIndexTest, ReturnsIndexWhenValuePresent) {
+    std::vector<double> opts = {400.0, 600.0, 800.0, 1000.0};
+    EXPECT_EQ(0u, FindTimeLimitOptionIndex(opts, 400.0));
+    EXPECT_EQ(1u, FindTimeLimitOptionIndex(opts, 600.0));
+    EXPECT_EQ(3u, FindTimeLimitOptionIndex(opts, 1000.0));
+}
+
+TEST(FindTimeLimitOptionIndexTest, ReturnsSizeSentinelWhenValueAbsent) {
+    std::vector<double> opts = {400.0, 600.0, 800.0};
+    EXPECT_EQ(opts.size(), FindTimeLimitOptionIndex(opts, 700.0));
+    EXPECT_EQ(opts.size(), FindTimeLimitOptionIndex(opts, 1000.0));
+}
+
+TEST(FindTimeLimitOptionIndexTest, EmptyOptionsReturnsZeroSentinel) {
+    std::vector<double> opts;
+    EXPECT_EQ(0u, FindTimeLimitOptionIndex(opts, 600.0));
+}
+
+// IsBetterTimeLimitOption: the per-step adopt predicate for the unidirectional
+// walk. Three cases, derived from the existing exhaustive tie-break logic in
+// PerformCoordinateDescentForTaskConfigOpt (strictly-greater SP wins; on
+// ApproxEqualSP ties prefer the smaller TL — which means a tie is "better"
+// only when walking downward, step<0, since the next-down option is smaller).
+TEST(IsBetterTimeLimitOptionTest, StrictlyHigherSPIsBetter) {
+    // step direction is irrelevant when SP strictly improves.
+    EXPECT_TRUE(IsBetterTimeLimitOption(1.7, 1.6, /*step=*/1));
+    EXPECT_TRUE(IsBetterTimeLimitOption(1.7, 1.6, /*step=*/-1));
+}
+
+TEST(IsBetterTimeLimitOptionTest, StrictlyLowerSPIsNotBetter) {
+    EXPECT_FALSE(IsBetterTimeLimitOption(1.5, 1.6, /*step=*/1));
+    EXPECT_FALSE(IsBetterTimeLimitOption(1.5, 1.6, /*step=*/-1));
+}
+
+TEST(IsBetterTimeLimitOptionTest, ApproxEqualTieBetterOnlyWhenWalkingDown) {
+    // ApproxEqualSP(1.6, 1.6) → tie. On a downward walk (step<0) the next
+    // option is smaller, so the tie-break prefers it → "better". On an upward
+    // walk (step>0) the next option is larger, so the tie-break rejects it →
+    // not "better" (keeps the tighter TL already held).
+    EXPECT_TRUE(IsBetterTimeLimitOption(1.6, 1.6, /*step=*/-1));
+    EXPECT_FALSE(IsBetterTimeLimitOption(1.6, 1.6, /*step=*/1));
+}
+
+TEST(IsBetterTimeLimitOptionTest, NearEqualWithinToleranceIsTie) {
+    // 1.6 vs 1.6+1e-12 is within ApproxEqualSP's rel_tol=1e-9 → treated as a
+    // tie, so the same step-direction rule applies as for exact equality.
+    EXPECT_TRUE(IsBetterTimeLimitOption(1.6 + 1e-12, 1.6, /*step=*/-1));
+    EXPECT_FALSE(IsBetterTimeLimitOption(1.6 + 1e-12, 1.6, /*step=*/1));
+}
+
+// --- Trial-and-Error TL walk: OptimizeSingleTaskTimeLimit + rewritten
+// PerformCoordinateDescentForTaskConfigOpt ---
+//
+// The walk replaces the exhaustive per-task enumeration with a unidirectional
+// trial-and-error sweep: step outward from the baseline; adopt each improving
+// option; stop after `patience` consecutive non-improving steps (patience=0 =
+// strict break on first non-improvement; patience=1 = tolerate one dip). To
+// test the termination logic deterministically (independent of RTA numerics),
+// stub EvaluateTimeLimitConfig_ScratchOrIncre with a preprogrammed TL→SP map.
+
+class StubTLWalkOptimizer : public OptimizePA_Incre_with_TimeLimits {
+   public:
+    // TL value → SP value returned by the stubbed evaluator. Any TL not in the
+    // map returns -1.0 (worse than every real SP, so a walk never adopts it).
+    std::map<double, double> tl_to_sp;
+    // Every TL the stub was asked to evaluate, in call order. Used to assert on
+    // early-termination: the walk stops asking once patience is exhausted.
+    std::vector<double> evaluated_tls;
+
+    StubTLWalkOptimizer(const DAG_Model& dag_tasks,
+                        const SP_Parameters& sp_parameters,
+                        std::map<double, double> tl_to_sp)
+        : OptimizePA_Incre_with_TimeLimits(dag_tasks, sp_parameters),
+          tl_to_sp(std::move(tl_to_sp)) {}
+
+    double EvaluateTimeLimitConfig_ScratchOrIncre(
+        int K, const std::vector<double>& time_limits,
+        bool from_scratch) override {
+        double tl = time_limits[walked_task_idx_];
+        evaluated_tls.push_back(tl);
+        auto it = tl_to_sp.find(tl);
+        return it == tl_to_sp.end() ? -1.0 : it->second;
+    }
+
+    // The walk operates on one task at a time; the stub needs to know which
+    // position in time_limits to read. Set by the test before invoking the
+    // descent.
+    size_t walked_task_idx_ = 0;
+};
+
+// Fixture: a 2-task DAG where only T_perf (task 0) carries TL options
+// [400,600,800,1000]. T_noise is a tiny fixed-ET task. The fixture does NOT
+// pin an SP profile — each test injects its own tl_to_sp map into the stub to
+// shape the SP landscape along T_perf's TL axis.
+class TrialAndErrorTLWalkSynthetic : public ::testing::Test {
+   public:
+    void SetUp() override {
+        const double et_perf = 500.0;
+        std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
+        Task t_perf(0, dist_perf, 2000, 2000, 0, "T_perf");
+        t_perf.execution_time_dist = FiniteDist(GaussianDist(et_perf, 0.5), 5);
+        for (int i = 0; i < 4; ++i) {
+            t_perf.timePerformancePairs.push_back(
+                TimePerfPair(400 + i * 200, 0.5 + i * 0.1));
+        }
+
+        std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+        Task t_noise(1, dist_noise, 2000, 2000, 1, "T_noise");
+        t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+
+        TaskSet tasks = {t_perf, t_noise};
+        dag_tasks = DAG_Model(tasks, mapPrev, 0, 0);
+        sp_parameters = SP_Parameters(dag_tasks);
+    }
+
+    // Hand the stub a 5-option window around ET=500 (closest TL=600, the 2nd
+    // option) by overriding time_limit_option_for_each_task_ directly. With
+    // radius 2 the window is the full [400,600,800,1000].
+    StubTLWalkOptimizer MakeStub(std::map<double, double> tl_to_sp) {
+        StubTLWalkOptimizer opt(dag_tasks, sp_parameters, std::move(tl_to_sp));
+        opt.time_limit_option_for_each_task_ = {{400.0, 600.0, 800.0, 1000.0},
+                                                {-1.0}};
+        opt.walked_task_idx_ = 0;
+        return opt;
+    }
+
+    MAP_Prev mapPrev;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+// Strict patience (patience=0): walking upward from baseline 600 with a
+// strictly increasing SP profile, every step improves → the walk adopts each
+// and runs to the window's upper boundary (1000). No early termination fires
+// because no step is ever non-improving. Result = best option = 1000.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       StrictWalk_AdoptsMonotonicallyIncreasingToEnd) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.4;
+    sp[600.0] = 1.6;
+    sp[800.0] = 1.7;
+    sp[1000.0] = 1.8;
+    auto opt = MakeStub(sp);
+
+    std::vector<double> time_limits = {600.0, -1.0};
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        /*task_idx=*/0, /*K=*/2, time_limits,
+        /*current_sp=*/sp[600.0], /*baseline_val=*/600.0,
+        /*step=*/1, /*from_scratch=*/true, /*patience=*/0);
+
+    EXPECT_DOUBLE_EQ(1.8, final_sp);
+    EXPECT_DOUBLE_EQ(1000.0, time_limits[0]);
+    // Walked 600→800→1000 (baseline 600 is the start, not re-evaluated); 800
+    // and 1000 are the two trial evals. 400 (backward) is NOT visited because
+    // this call only walks the forward direction.
+    EXPECT_EQ(std::vector<double>({800.0, 1000.0}), opt.evaluated_tls);
+}
+
+// Strict patience (patience=0): walking upward, the first trial (800) is worse
+// than the baseline (600). Strict break → the walk stops immediately, does NOT
+// evaluate 1000, and keeps the baseline. Result = 600.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       StrictWalk_BreaksOnFirstNonImprovementAndKeepsBaseline) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.4;
+    sp[600.0] = 1.9;   // baseline — the local maximum
+    sp[800.0] = 1.7;   // worse
+    sp[1000.0] = 1.8;  // also worse than baseline; would be missed by strict
+    auto opt = MakeStub(sp);
+
+    std::vector<double> time_limits = {600.0, -1.0};
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        0, 2, time_limits, sp[600.0], 600.0, /*step=*/1, /*from_scratch=*/true,
+        /*patience=*/0);
+
+    EXPECT_DOUBLE_EQ(1.9, final_sp);
+    EXPECT_DOUBLE_EQ(600.0, time_limits[0]);
+    // Only 800 was evaluated; 1000 was never reached (strict break).
+    EXPECT_EQ(std::vector<double>({800.0}), opt.evaluated_tls);
+}
+
+// Patience=1 (reopt lookahead): walking upward, the first trial (800) is worse
+// than the best-yet (600) — that is one consecutive non-improvement, within
+// the patience budget, so the walk CONTINUES. The next trial (1000) is
+// strictly better than the best-yet (600) → adopted. The dip at 800 did NOT
+// terminate the search, and the better option at 1000 was found. This is the
+// case strict-terminate gets wrong.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       PatienceOne_ToleratesSingleDipAndFindsOptimumFurtherOut) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.4;
+    sp[600.0] = 1.6;   // baseline
+    sp[800.0] = 1.5;   // dip — worse than best-yet (1.6)
+    sp[1000.0] = 1.8;  // strictly better than best-yet → adopted
+    auto opt = MakeStub(sp);
+
+    std::vector<double> time_limits = {600.0, -1.0};
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        0, 2, time_limits, sp[600.0], 600.0, /*step=*/1, /*from_scratch=*/true,
+        /*patience=*/1);
+
+    EXPECT_DOUBLE_EQ(1.8, final_sp);
+    EXPECT_DOUBLE_EQ(1000.0, time_limits[0]);
+    // Both 800 and 1000 evaluated — the dip at 800 did not stop the walk.
+    EXPECT_EQ(std::vector<double>({800.0, 1000.0}), opt.evaluated_tls);
+}
+
+// Patience=1: TWO consecutive non-improvements exhaust the budget and stop the
+// walk. Best-yet (baseline 600) is preserved. Confirms patience=1 tolerates
+// exactly one dip, not two.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       PatienceOne_BreaksAfterTwoConsecutiveNonImprovements) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.4;
+    sp[600.0] = 1.9;   // baseline — global max in the window
+    sp[800.0] = 1.7;   // non-improvement #1 (within budget)
+    sp[1000.0] = 1.8;  // non-improvement #2 (exhausts budget → break)
+    auto opt = MakeStub(sp);
+
+    std::vector<double> time_limits = {600.0, -1.0};
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        0, 2, time_limits, sp[600.0], 600.0, /*step=*/1, /*from_scratch=*/true,
+        /*patience=*/1);
+
+    EXPECT_DOUBLE_EQ(1.9, final_sp);
+    EXPECT_DOUBLE_EQ(600.0, time_limits[0]);
+    // Both 800 and 1000 evaluated (patience=1 lets the walk survive the 800
+    // dip and try 1000), but neither beat 1.9 so the baseline is kept.
+    EXPECT_EQ(std::vector<double>({800.0, 1000.0}), opt.evaluated_tls);
+}
+
+// Backward walk (step=-1): tie-break toward smaller TL. When the SP profile is
+// flat (all approx-equal), every downward step is an improvement by the
+// tie-break rule → the walk runs to the lower boundary (400) and adopts it.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       BackwardWalk_TieBreakAdoptsSmallestTimeLimitOnFlatSP) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.6;
+    sp[600.0] = 1.6;  // baseline, approx-equal to 400 and 800
+    sp[800.0] = 1.6;
+    sp[1000.0] = 1.6;
+    auto opt = MakeStub(sp);
+
+    std::vector<double> time_limits = {600.0, -1.0};
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        0, 2, time_limits, sp[600.0], 600.0, /*step=*/-1, /*from_scratch=*/true,
+        /*patience=*/0);
+
+    EXPECT_DOUBLE_EQ(400.0, time_limits[0]);
+    // Walked 600→400 backward: 400 is the only trial eval (600 is baseline).
+    EXPECT_EQ(std::vector<double>({400.0}), opt.evaluated_tls);
+    // SP unchanged (flat profile) but TL tightened — the tie-break win.
+    EXPECT_NEAR(final_sp, 1.6, 1e-9);
+}
+
+// No TL freedom (the {-1}-only case): the helper returns the current SP
+// unchanged and evaluates nothing. This is the predicate the outer descent
+// relies on to skip {-1}-only tasks entirely.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       NoOptions_ReturnsCurrentSpAndEvaluatesNothing) {
+    auto opt = MakeStub({});
+    // Override T_perf's options to the {-1}-only sentinel.
+    opt.time_limit_option_for_each_task_[0] = {-1.0};
+
+    std::vector<double> time_limits = {-1.0, -1.0};
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        0, 2, time_limits, /*current_sp=*/1.5, /*baseline_val=*/-1.0,
+        /*step=*/1, /*from_scratch=*/true, /*patience=*/0);
+
+    EXPECT_DOUBLE_EQ(1.5, final_sp);
+    EXPECT_TRUE(opt.evaluated_tls.empty());
+}
+
+// Baseline TL not in the option window (stale baseline): the helper returns the
+// current SP unchanged and evaluates nothing — there is no valid index from
+// which to start the walk.
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       BaselineNotInOptions_ReturnsCurrentSpAndEvaluatesNothing) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.4;
+    sp[600.0] = 1.6;
+    sp[800.0] = 1.7;
+    sp[1000.0] = 1.8;
+    auto opt = MakeStub(sp);
+
+    std::vector<double> time_limits = {700.0, -1.0};  // 700 not in opts
+    double final_sp = opt.OptimizeSingleTaskTimeLimit(
+        0, 2, time_limits, /*current_sp=*/1.5, /*baseline_val=*/700.0,
+        /*step=*/1, /*from_scratch=*/true, /*patience=*/0);
+
+    EXPECT_DOUBLE_EQ(1.5, final_sp);
+    EXPECT_TRUE(opt.evaluated_tls.empty());
 }
 
 int main(int argc, char** argv) {

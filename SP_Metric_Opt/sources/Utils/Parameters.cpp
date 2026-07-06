@@ -17,11 +17,7 @@ int Layer_Node_During_Incremental_Optimization =
     loaded_doc["Layer_Node_During_Incremental_Optimization"].as<int>();
 bool disable_time_limit_opt = false;
 bool use_wcet_execution_time = false;
-int IncrementalTimeLimitSearchRadius =
-    loaded_doc["IncrementalTimeLimitSearchRadius"].as<int>();
 int ReoptimizationPeriod = loaded_doc["ReoptimizationPeriod"].as<int>();
-int ReoptimizationTimeLimitSearchRadius =
-    loaded_doc["ReoptimizationTimeLimitSearchRadius"].as<int>();
 
 // simulation export controls
 int EXPORT_DETAIL_LEVEL = 3;               // default to FULL for backward compatibility

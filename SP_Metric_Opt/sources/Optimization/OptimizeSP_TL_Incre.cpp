@@ -79,6 +79,29 @@ std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
     return time_limit_option_for_each_task;
 }
 
+size_t FindTimeLimitOptionIndex(const std::vector<double>& options,
+                                double current_val) {
+    auto it = std::find(options.begin(), options.end(), current_val);
+    if (it == options.end()) {
+        return options.size();
+    }
+    return static_cast<size_t>(std::distance(options.begin(), it));
+}
+
+bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step) {
+    if (new_sp > current_best_sp && !ApproxEqualSP(new_sp, current_best_sp)) {
+        return true;
+    }
+    // Ties (approx-equal SP) prefer the smaller time limit. Walking downward
+    // (step < 0) reaches a smaller TL next, so a downward tie is an
+    // improvement; walking upward (step > 0) reaches a larger TL, so an upward
+    // tie is rejected to keep the tighter TL already held.
+    if (ApproxEqualSP(new_sp, current_best_sp) && step < 0) {
+        return true;
+    }
+    return false;
+}
+
 void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = false;
@@ -176,6 +199,55 @@ OptimizePA_Incre_with_TimeLimits::InitializeTimeLimitsFromETConfig() {
     return time_limits;
 }
 
+double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit(
+    size_t task_idx, int K, std::vector<double>& time_limits,
+    double current_sp, double baseline_val, int step, bool from_scratch,
+    int patience) {
+    const std::vector<double>& opts = time_limit_option_for_each_task_[task_idx];
+    // No TL freedom (the {-1}-only sentinel from RecordTimeLimitOptions):
+    // nothing to walk. Return the carried SP unchanged.
+    if (opts.size() == 1 && opts[0] == -1.0) {
+        return current_sp;
+    }
+
+    size_t curr_opt_idx = FindTimeLimitOptionIndex(opts, baseline_val);
+    // Stale baseline (not a member of the option set): no valid start index, so
+    // the walk cannot run. Return the carried SP unchanged.
+    if (curr_opt_idx == opts.size()) {
+        return current_sp;
+    }
+
+    double best_sp = current_sp;
+    double best_option_val = time_limits[task_idx];
+    int consecutive_non_improving = 0;
+
+    // Walk sequentially in direction `step`, stopping at the option-set boundary.
+    for (int i = static_cast<int>(curr_opt_idx) + step;
+         i >= 0 && i < static_cast<int>(opts.size()); i += step) {
+        double val = opts[i];
+        if (val == -1.0)  // defensive: a {-1} slot inside a real window
+            continue;
+        time_limits[task_idx] = val;
+        double sp_val = EvaluateTimeLimitConfig_ScratchOrIncre(
+            K, time_limits, from_scratch);
+
+        if (IsBetterTimeLimitOption(sp_val, best_sp, step)) {
+            best_sp = sp_val;
+            best_option_val = val;
+            consecutive_non_improving = 0;  // improvement resets the budget
+        } else {
+            ++consecutive_non_improving;
+            if (consecutive_non_improving > patience) {
+                break;  // budget exhausted: stop the walk in this direction
+            }
+            // Else: within budget, keep stepping outward to look past the dip.
+        }
+    }
+
+    time_limits[task_idx] = best_option_val;
+    return best_sp;
+}
+
 void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     int K, std::vector<double>& time_limits, bool from_scratch) {
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
@@ -183,85 +255,95 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     std::sort(sorted_indices.begin(), sorted_indices.end(),
               TaskSortingHeuristic{dag_tasks_, sp_parameters_});
 
-    bool any_eval_ran = false;
+    // Patience governs how many consecutive non-improving steps the
+    // trial-and-error walk tolerates before stopping. The incremental path
+    // warm-starts the PA search from the incumbent, so SP-vs-TL is effectively
+    // unimodal and strict (patience=0) is safe and cheapest. The reopt path
+    // re-searches priorities from scratch per candidate, so SP-vs-TL can be
+    // non-unimodal at high utilization; patience=1 tolerates a single dip so a
+    // strictly-better option further out is not missed.
+    int patience = from_scratch ? 1 : 0;
+
+    // Establish the baseline SP of the starting configuration. This is the
+    // best-yet the first task's backward pass measures against, and it doubles
+    // as the compare-and-keep baseline already seeded by SeedIncumbentBaseline
+    // (UpdateRecords adopts only strictly-better candidates). Re-evaluating the
+    // starting config here is intentional: it gives the walk a concrete SP for
+    // the EXACT starting TL vector, which SeedIncumbentBaseline may have
+    // computed under a different {pa, tl} (the seeded incumbent's TL, not the
+    // descent's InitializeTimeLimitsFromETConfig starting point).
+    double current_config_sp =
+        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+    bool any_eval_ran = true;  // the baseline eval above counts
+
     for (size_t idx : sorted_indices) {
         // Skip a task whose only TL option is -1 (no timePerformancePairs →
-        // RecordCloseTimeLimitOptions recorded {-1}). There is no TL freedom
+        // RecordTimeLimitOptions recorded {-1}). There is no TL freedom
         // to search, and OptimizeIncre already does the PA search internally,
         // so re-evaluating here is a redundant incumbent re-eval. Skipping it
         // is the main cost win on the reused P25 tasksets (every task is
         // {-1}-only). opts.size()==1 && opts[0]==-1 is the exact no-pairs
-        // predicate: RecordCloseTimeLimitOptions only pushes -1 when a task
+        // predicate: RecordTimeLimitOptions only pushes -1 when a task
         // has zero pairs, so a task with real options is never skipped.
         const std::vector<double>& opts = time_limit_option_for_each_task_[idx];
         if (opts.size() == 1 && opts[0] == -1.0)
             continue;
 
-        double best_sp = -2.0;
-        double best_option_val = time_limits[idx];
-        for (double val : opts) {
-            if (val == -1)  // there are no options to evaluate
-                continue;
-            any_eval_ran = true;
-            time_limits[idx] = val;
-            double sp_val = EvaluateTimeLimitConfig_ScratchOrIncre(
-                K, time_limits, from_scratch);
-            if (sp_val > best_sp && !ApproxEqualSP(sp_val, best_sp)) {
-                best_sp = sp_val;
-                best_option_val = val;
-            } else if (ApproxEqualSP(sp_val, best_sp)) {
-                if (val < best_option_val) {
-                    best_option_val = val;
-                }
-            }
-        }
-        time_limits[idx] = best_option_val;
+        double baseline_val = time_limits[idx];
+        // 1. Backward pass: try decreasing the time limit (tie-break toward
+        //    smaller TL on SP ties — handled inside IsBetterTimeLimitOption
+        //    via step<0).
+        current_config_sp = OptimizeSingleTaskTimeLimit(
+            idx, K, time_limits, current_config_sp, baseline_val,
+            /*step=*/-1, from_scratch, patience);
+        // 2. Forward pass: try increasing the time limit. baseline_val is the
+        //    ORIGINAL starting TL (not the backward pass's result), so the
+        //    forward pass explores the upward side from the same origin.
+        current_config_sp = OptimizeSingleTaskTimeLimit(
+            idx, K, time_limits, current_config_sp, baseline_val,
+            /*step=*/1, from_scratch, patience);
+        // OptimizeSingleTaskTimeLimit always runs >=1 eval when the task has
+        // real options, so any_eval_ran stays true.
     }
 
     // Zero-work fallback. When EVERY task was {-1}-only the loop above ran zero
-    // evals, so UpdateRecords never fired and prev_optimizer_.dag_tasks_ would
-    // stay frozen at the last interval — exactly the frozen-baseline pathology
-    // Fix A addresses. Run a single eval with the incumbent time_limits so
-    // UpdateRecords (and Fix A's dag_tasks_ advance inside OptimizeIncre)
-    // propagate the current interval's DAG into prev_optimizer_. Guarded on
-    // non-empty so empty-DAG callers retain the prior "no evals, no crash"
-    // behavior. Skipped whenever the descent already produced >0 evals.
+    // walk-evals (the baseline eval above is the only one), so UpdateRecords
+    // fired exactly once (the baseline). That single fire is enough for
+    // UpdateRecords to advance prev_optimizer_ via the baseline eval — but only
+    // if the baseline eval actually ran OptimizeIncre (incremental path) or
+    // OptimizeFromScratch (reopt path), which it did. So the all-{-1} case is
+    // already covered by the baseline eval above; no extra fallback eval is
+    // needed. The guard below is retained as a defensive no-op: it only fires
+    // when the descent produced zero evals AND the DAG is non-empty, which
+    // cannot happen now (the baseline eval always runs first), but is kept to
+    // preserve the prior "no evals, no crash" contract for any future caller
+    // that bypasses the baseline eval.
     if (!any_eval_ran && !dag_tasks_.tasks.empty()) {
         EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
     }
 }
 
 // 1-arg overload — INCR_SCRATCH entry point. See header for why this is an
-// amnesiac wide-radius reopt (fresh optimizer each interval → prev_optimizer_
+// amnesiac reopt (fresh optimizer each interval → prev_optimizer_
 // uninitialized → RM+min-TL baseline every call), distinct from the persistent
 // optimizer used by Optimize_w_TL_ScratchOrIncre (INCR with period=1).
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
-    return ReOptimizePeriodic(
-        dag_tasks_, K, GlobalVariables::ReoptimizationTimeLimitSearchRadius);
-}
-
-PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
-    const DAG_Model& dag_tasks_update, int K) {
-    return OptimizeIncre_w_TL(
-        dag_tasks_update, K, GlobalVariables::IncrementalTimeLimitSearchRadius);
+    return ReOptimizePeriodic(dag_tasks_, K);
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     const DAG_Model& dag_tasks_update, int K) {
     // Modular reopt: every ReoptimizationPeriod-th call (count % period == 0)
-    // takes the wide-radius compare-and-keep path; otherwise the narrow-radius
+    // takes the from-scratch compare-and-keep path; otherwise the warm-started
     // incremental path. count == 0 routes to ReOptimizePeriodic, which
     // bootstraps the incumbent at interval 0 (the incremental path cannot run
     // without an incumbent). The counter advances every call and never resets.
     int period = GlobalVariables::ReoptimizationPeriod;
     bool trigger_reopt = (reoptimization_interval_count_ % period == 0);
     if (trigger_reopt) {
-        ReOptimizePeriodic(
-            dag_tasks_update, K,
-            GlobalVariables::ReoptimizationTimeLimitSearchRadius);
+        ReOptimizePeriodic(dag_tasks_update, K);
     } else {
-        OptimizeIncre_w_TL(dag_tasks_update, K,
-                           GlobalVariables::IncrementalTimeLimitSearchRadius);
+        OptimizeIncre_w_TL(dag_tasks_update, K);
     }
     reoptimization_interval_count_++;
     return opt_pa_;
@@ -275,12 +357,15 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
-    const DAG_Model& dag_tasks_update, int K, int radius) {
+    const DAG_Model& dag_tasks_update, int K) {
     opt_sp_ = -1.0;
     dag_tasks_ = dag_tasks_update;
     ApplyWCETAblationIfRequired(dag_tasks_);
-    time_limit_option_for_each_task_ =
-        RecordCloseTimeLimitOptions(dag_tasks_, radius);
+    // Full per-task option set (every timePerformancePairs entry). The walk
+    // steps over this set and stops on patience-bounded non-improvement — no
+    // radius cap, so a tie-break or strictly-better option beyond the old
+    // radius wall is reachable.
+    time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         return OptimizeWithTimeLimitOptDisabled(K, time_limits,
@@ -384,27 +469,28 @@ void OptimizePA_Incre_with_TimeLimits::SeedIncumbentBaseline() {
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
-    const DAG_Model& dag_tasks_update, int K, int radius) {
+    const DAG_Model& dag_tasks_update, int K) {
     // Compare-and-keep reoptimization. The incumbent is an optimizer status
     // {dag, sp, pa, tl} carried in prev_optimizer_. Seed the baseline (re-eval
     // under the new DAG, or RM+min-TL at interval 0) into state, then run a
-    // fresh wide-radius from-scratch coordinate descent. UpdateRecords' compare
-    // guard (strictly-greater SP wins, tie-break lower TL-sum) preserves the
-    // incumbent when the search finds nothing better — so compare-and-keep is
-    // just the guard, with no separate restore step.
+    // fresh from-scratch coordinate descent over the FULL per-task option set.
+    // UpdateRecords' compare guard (strictly-greater SP wins, tie-break lower
+    // TL-sum) preserves the incumbent when the search finds nothing better — so
+    // compare-and-keep is just the guard, with no separate restore step.
 
     dag_tasks_ = dag_tasks_update;
     ApplyWCETAblationIfRequired(dag_tasks_);
-    time_limit_option_for_each_task_ =
-        RecordCloseTimeLimitOptions(dag_tasks_, radius);
+    // Full per-task option set — see OptimizeIncre_w_TL for why the walk is no
+    // longer radius-capped.
+    time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
 
     // Establish the incumbent baseline in state (opt_sp_ holds it, NOT -1.0).
     SeedIncumbentBaseline();
 
-    // Fresh wide-radius from-scratch descent. Each candidate the search
-    // evaluates is compared against the seeded baseline inside UpdateRecords;
-    // the search result is adopted only if it strictly improves SP (or ties
-    // with lower TL-sum). Otherwise the baseline survives untouched.
+    // Fresh from-scratch descent. Each candidate the search evaluates is
+    // compared against the seeded baseline inside UpdateRecords; the search
+    // result is adopted only if it strictly improves SP (or ties with lower
+    // TL-sum). Otherwise the baseline survives untouched.
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);

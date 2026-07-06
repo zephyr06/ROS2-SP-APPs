@@ -6,6 +6,8 @@
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
 #include "sources/Utils/Parameters.h"
 
+#include <unistd.h>  // access/F_OK for the optional-data guard in the N=10 probe
+
 using ::testing::AtLeast;  // #1
 using ::testing::Return;
 using namespace std;
@@ -313,6 +315,46 @@ TEST(OptimizePA_Incre_with_TimeLimits_TDD, ComplexityLinear_3N) {
 
     EXPECT_LE(evaluated_count, 10);
     EXPECT_GT(evaluated_count, 0);
+}
+
+// Diagnostic for the §10-vs-§11 ndiff contradiction: §10's instrumented
+// OptimizeIncre reported ndiff≈8 at N=10, but a Python reproduction of
+// FiniteDist + Value_Proba::operator== over the same interval YAMLs flags only
+// 2 tasks (the two that genuinely drift: tasks 4 and 9). This test reads the
+// REAL interval YAMLs through the REAL ReadDAG_Tasks → FiniteDist path and
+// reports exactly which tasks FindTaskWithDifferentEt flags, so the C++ truth
+// settles it. Intentionally assertion-light in its first form: it PRINTS the
+// result so we can read the ground truth, then asserts only the size (which we
+// will pin after the first run). Skips gracefully if the taskset is absent
+// (e.g. CI without the sim-experiment data).
+TEST(FindTaskWithDifferentEt, N10IntervalYamlGroundTruth) {
+    std::string dir = GlobalVariables::PROJECT_PATH +
+                      "simulation_experiments/optimizer_comparison/"
+                      "tasks10_dur600_interval10_seed1000/taskset_0";
+    std::string p0 =
+        dir + "/taskset_characteristics_interval_0.yaml";
+    std::string p1 =
+        dir + "/taskset_characteristics_interval_1.yaml";
+    if (access(p0.c_str(), F_OK) != 0 || access(p1.c_str(), F_OK) != 0) {
+        GTEST_SKIP() << "N=10 interval YAMLs not present at " << dir
+                     << "; skipping C++ ground-truth probe.";
+    }
+    DAG_Model dag0 = ReadDAG_Tasks(p0);
+    DAG_Model dag1 = ReadDAG_Tasks(p1);
+    ASSERT_EQ(dag0.tasks.size(), dag1.tasks.size());
+    std::vector<DiffObj> diff = FindTaskWithDifferentEt(dag0, dag1);
+    std::cerr << "[N10-NDIFF-DBG] dag0->dag1: N=" << dag0.tasks.size()
+              << " ndiff=" << diff.size() << " tasks=[";
+    for (const DiffObj& d : diff)
+        std::cerr << d.task_id << (d.increase ? "+ " : "- ");
+    std::cerr << "]\n";
+    // Per the faithful Python repro, only tasks 4 and 9 genuinely drift between
+    // interval_0 and interval_1 (both static tasks, large mu/min/max changes).
+    // If C++ agrees, ndiff==2 and the §10 ndiff=8 must come from baseline lag,
+    // not from operator!= noise. If C++ reports >2, the FiniteDist construction
+    // path differs from the Python repro and §11c deserves re-examination.
+    EXPECT_EQ(diff.size(), 2u)
+        << "C++ ground-truth ndiff for dag0->dag1 disagrees with Python repro";
 }
 
 int main(int argc, char** argv) {

@@ -18,13 +18,11 @@ extern int Granularity;
 extern int Layer_Node_During_Incremental_Optimization;
 extern bool disable_time_limit_opt;
 extern bool use_wcet_execution_time;
-extern int IncrementalTimeLimitSearchRadius;
-// P24 periodic reoptimization: every ReoptimizationPeriod-th interval, the
-// incremental TL search re-runs with a wider window (ReoptimizationTimeLimitSearchRadius)
-// instead of IncrementalTimeLimitSearchRadius, bounding priority drift over a long sim.
+// P24 periodic reoptimization: every ReoptimizationPeriod-th interval, the TL
+// search re-runs from scratch (compare-and-keep) instead of warm-starting from
+// the incumbent, bounding priority drift over a long sim.
 // ReoptimizationPeriod == 0 disables it (today's pure cache+scratch baseline).
 extern int ReoptimizationPeriod;
-extern int ReoptimizationTimeLimitSearchRadius;
 
 // simulation export controls
 extern int EXPORT_DETAIL_LEVEL;               // 0=sp_metrics_only, 1=+miss_rate_per_task, 2=+task_aggregate, 3=+full_job_traces

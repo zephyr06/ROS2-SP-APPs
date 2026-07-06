@@ -1,0 +1,66 @@
+{
+    "_comment": "P25 Commit 7 runtime A/B — ReoptimizationPeriod sweep. Goal: measure how the reoptimization period (and the compare-and-keep it triggers every period-th interval) affects average SP and per-activation scheduler runtime, against BF (brute-force ceiling) and INCR_SCRATCH (always-reopt, amnesiac control). Schedulers: BF, INCR_P1, INCR_P10, INCR_P30, INCR_P60, INCR_SCRATCH. The INCR_P<n> arms are plain INCR with GlobalVariables::ReoptimizationPeriod overridden to n at binary startup (RunOrchestrator.cpp parses the suffix from the mode string); the orchestrator dispatches them identically to INCR. INCR_P1 = reopt every interval, wide radius, compare-and-keep against the running incumbent (the always-reopt-with-memory upper bound). INCR_SCRATCH = reopt every interval but amnesiac (fresh optimizer each interval → RM+min-TL baseline each call, no carried incumbent). P10/P30/P60 show priority drift vs. reopt frequency. The period-0 'off' baseline is NOT included — Commit 6 made ReoptimizationPeriod positive-only (min 1). Use: MODE=prod CONFIG_JSON=simulation_experiments/configs/p25_period_ab_config.json ./scripts/run_end_to_end.sh. Note: the release binary must be rebuilt after Commit 6 (the dispatcher Optimize_w_TL_ScratchOrIncre must be linked in, else ReoptimizationPeriod is dead config).",
+    "_comment_on_naming": "All keys use full descriptive names, mirroring experiment_config.json. Times are in seconds unless noted.",
+
+    "test_mode": {
+        "_comment": "Fast smoke: 1 taskset, 70s, N=6 only, all six arms. Validates that INCR_P<n> modes run end-to-end and produce interval_sp_metrics + scheduler_execution_time before launching the full A/B.",
+        "num_tasks_for_cross_task_comparison": [6],
+        "num_tasks_for_single_task_figures": 6,
+        "num_tasksets_to_generate": 10,
+        "simulation_duration_seconds": 300,
+        "scheduler_trigger_interval_seconds": 10,
+        "main_scheduler_list": [ "INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60", "INCR_SCRATCH"],
+        "ablation_scheduler_list": [],
+        "interval_sweep_seconds_list": [10],
+        "parallel_worker_processes": 8,
+        "enable_execution_time_profiling": true,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1
+    },
+    "prod_mode": {
+        "_comment": "Full A/B: 5 random tasksets per task count, N={4,6,8}, 300s @ interval 10s (~30 scheduling triggers per run). base_random_seed=1000 so tasksets are deterministic and comparable across arms. parallel_worker_processes=4 (one arm per worker within a taskset; arms are independent).",
+        "num_tasks_for_cross_task_comparison": [4, 6, 8],
+        "num_tasks_for_single_task_figures": 6,
+        "num_tasksets_to_generate": 5,
+        "simulation_duration_seconds": 300,
+        "scheduler_trigger_interval_seconds": 10,
+        "main_scheduler_list": ["BF", "INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60", "INCR_SCRATCH"],
+        "ablation_scheduler_list": [],
+        "interval_sweep_seconds_list": [10],
+        "parallel_worker_processes": 4,
+        "enable_execution_time_profiling": true,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1
+    },
+
+    "plotting": {
+        "_comment": "Publication-quality figure styling parameters (same defaults as experiment_config.json).",
+        "font_base_size_points": 14,
+        "font_axis_label_size_points": 16,
+        "font_title_size_points": 18,
+        "output_resolution_dpi": 300,
+        "color_palette_name": "colorblind",
+        "grid_line_alpha": 0.5,
+        "figure_width_inches_single": 8,
+        "figure_height_inches_single": 6,
+        "figure_width_inches_grouped": 12,
+        "figure_height_inches_grouped": 6,
+        "enable_statistical_annotation": false,
+        "output_format_list": ["png", "pdf"],
+        "run_name_prefix": "p25periodAB"
+    },
+
+    "analysis": {
+        "_comment": "Parameters controlling metric computation and data filtering (same defaults as experiment_config.json). enable_resume_from_existing_results=true so a partial A/B run can be resumed by re-invoking the same command.",
+        "important_task_top_percentage": 0.10,
+        "minimum_important_tasks_count": 1,
+        "discard_early_intervals_for_sp_computation": 0,
+        "enable_resume_from_existing_results": true,
+        "skip_generation_if_exists": true,
+        "on_taskset_config_change": "prompt",
+        "normalize_sp": true,
+        "sp_normalization_method": "upper_bound"
+    }
+}
