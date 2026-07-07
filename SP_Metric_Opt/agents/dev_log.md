@@ -1856,3 +1856,113 @@ Fix C task, not a Fix A/B regression.
 Full record: `agents/debug_runtime0704_incr.md`; procedure + before/after
 tables: `agents/finished_tasks/P24_task.md` § "DONE: A/B re-run"; memory
 [[p25-incr-et-grows-with-period]].
+
+---
+
+## 2026-07-05 — Trial-and-Error TL optimization (dynamic-radius walk) landed
+
+Closes the "NEW TASKS" item "Improve the algorithm of
+`PerformCoordinateDescentForTaskConfigOpt` … using a trial-and-error approach
+(dynamic radius search). Initial radius: incr uses 1, re-opt uses 2." Full
+spec/record: `agents/finished_tasks/trial_and_error_tl_opt_task.md`. **Committed
+in `88af2c54` (global patience params) + `fa0b857f` (remove radius, add patience,
+TL search → trial-and-error)** — P0.1 commit group (c).
+
+**What changed.** `PerformCoordinateDescentForTaskConfigOpt` no longer
+enumerates every TL option in the radius window. Each task now gets a
+unidirectional outward walk (`OptimizeSingleTaskTimeLimit`) from its baseline
+TL — backward pass `step=-1`, then forward pass `step=+1` — that adopts
+improving candidates and stops after `patience` consecutive non-improving SP
+evals. Three pure helpers extracted so the lookup and the adopt predicate are
+unit-testable in isolation (they take no optimizer state):
+
+- `FindTimeLimitOptionIndex(options, current_val)` — linear scan; returns
+  `options.size()` (the off-the-end sentinel, mirroring `std::find`) when the
+  value is absent. The walk treats the sentinel as "baseline not in window,
+  do not search."
+- `IsBetterTimeLimitOption(new_sp, current_best_sp, step)` — strict-SP-greater
+  wins, OR (approx-equal tie AND `step < 0`) so the tie-break prefers the
+  smaller TL on the backward pass. Mirrors the exhaustive descent's tie-break.
+- `OptimizeSingleTaskTimeLimit(task_idx, K, time_limits, current_sp,
+  baseline_val, step, from_scratch, patience)` — the walk. Returns the best SP
+  found and leaves `time_limits[task_idx]` at the best option tried.
+
+`patience` is decided inside the descent from `from_scratch` (not a new knob):
+**incremental path `patience=0`** (strict break — the radius=1 window has at
+most 3 options, no room for a dip to hide a better option further out; strict
+is safe and cheapest); **reopt path `patience=1`** (tolerate one non-monotonic
+dip — the radius=2 window can be non-unimodal at high utilization, so a single
+dip must not hide a strictly better option one step further). This is the one
+deviation from the original spec, which said "terminate immediately"; the
+patience budget is the generalization that makes the reopt path robust.
+
+**Radii (`sources/parameters.yaml`):** `ReoptimizationTimeLimitSearchRadius`
+6→2 (≤5 options), `IncrementalTimeLimitSearchRadius` 2→1 (≤3 options), with an
+inline comment describing the walk + patience semantics.
+
+**Tests (`tests/testIncreOpt_w_TL.cpp`, 26→43):**
+- `TrialAndErrorTLWalkSynthetic` fixture (7 tests): the walk is unit-tested
+  with a deterministic TL→SP stub (`StubTLWalkOptimizer`) overriding the
+  virtual `EvaluateTimeLimitConfig_ScratchOrIncre`, so the walk's control flow
+  is asserted independently of the RTA-backed evaluator. Covers:
+  strict-monotone-adopts-to-end, strict-break-on-first-non-improvement,
+  patience=1-tolerates-one-dip-and-finds-optimum-further-out,
+  patience=1-breaks-after-two-consecutive-non-improvements,
+  backward-tie-break-adopts-smallest-on-flat-SP, no-options-noop,
+  baseline-not-in-options-noop.
+- `FindTimeLimitOptionIndexTest` (3) + `IsBetterTimeLimitOptionTest` (4):
+  direct unit tests for the pure helpers (present/absent/empty; strict-higher,
+  strict-lower, approx-equal-tie-better-only-when-walking-down,
+  near-equal-within-tolerance-is-tie).
+
+**Three stale test-expectation updates (NOT source bugs).** These assertions
+were coupled to the old radius-6/radius-2 windows; the walk's behavior under
+the narrower windows was verified by instrumenting the SP landscape
+(`UpdateRecords` + `SeedIncumbentBaseline` printf diagnostics, since removed —
+source is clean):
+- `TaskSetForTest_robotics_v19::optimize_incremental` — bootstrap wide-radius
+  (2) window for TSP (closest TL=1000, idx 3) is `[600,800,1000]`; **400
+  excluded**. SP saturates at high util: 1000 strictly beats the RM baseline
+  (9.671 > 7.845), then 800 and 600 tie and the smaller-TL tie-break adopts
+  each → **600**. Was expecting 400. The incremental narrow-radius (1) window
+  on the low-util v21 DAG is `[400,600]` (800/1000 excluded); SP strictly
+  increases with TL there (12.529 > 12.429), so **600** is the within-window
+  optimum. Was expecting ≥800 (assumed radius-2 window).
+- `TaskSetForTest_robotics_v19_2::ReOptimizePeriodic` — same wide-radius
+  landscape as v19 (TSP gets 600 via tie-break). Was expecting 400.
+- `CompareAndKeepSynthetic::PerformCoordinateDescent_SkipsMinusOneOnlyTaskInMixedSet`
+  — the old test conflated the **wide bootstrap radius** (2 → 4 options for
+  `t_perf_option_count`) with the **narrow incremental radius** (1 → 3 options
+  actually evaluated). Rewritten to assert the eval count equals T_perf's
+  **narrow-window** size (3: baseline + backward-to-boundary + forward-to-
+  boundary), T_noise contributes 0 (skip works), and no fallback eval fires.
+
+**Key correction to the prior reasoning.** The earlier hypothesis was "all TLs
+produce near-identical SP → tie-break → smallest." The instrumented data showed
+TSP's `performance_records_perf` (0.5/0.6/0.8/1.0) actually makes SP **strictly
+increase** with TL at low utilization, and only **saturates** (tie) at high
+utilization where the deadline miss caps achievable SP. The 600 result is
+correct in both regimes — for the right reason in each.
+
+**Verification.** `testIncreOpt_w_TL` = **43/43 green**; full `ctest` =
+**16/16 green**. Source diff is the pre-existing trial-and-error rewrite; no
+diagnostic prints left behind (`grep -n "DIAG\|printf" sources/Optimization/
+OptimizeSP_TL_Incre.cpp` clean; `git diff` shows no printf/DIAG additions).
+
+**Open follow-ups (sibling "NEW TASKS", NOT this task):**
+- Apply the same trial-and-error idea to incremental **priority** assignment.
+- Runtime A/B: from-scratch vs incremental when both radii are equal, to verify
+  whether from-scratch is actually faster than incremental.
+
+---
+
+## 2026-07-06 — P0.1 (commit pending uncommitted work) closed
+
+All four commit groups landed (`4b44aabc`, `1ede254f`, `88af2c54`/`fa0b857f`,
+`9c921fc0`/`99eda512`/`66c96c14`/`dab92e36`); clean baseline established.
+"Done when" gate verified: `git status` clean, `ctest` 16/16, `pytest` 261
+passed. Folder archived to
+`agents/finished_tasks/2026-07-06_P0_1_commit_pending_work/`. Next: P0.2 (BF
+correctness audit).
+
+

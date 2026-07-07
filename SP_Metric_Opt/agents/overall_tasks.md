@@ -23,6 +23,7 @@ work + show advantages over baselines), not all analysis is necessary.
 |------|--------|----------|
 | **P0.2** Focused BF correctness audit | [`active_tasks/P0_2_bf_correctness_audit/`](active_tasks/P0_2_bf_correctness_audit/) | Verify on one small fixed taskset that `OptimizeSP_TL_BF` enumerates the global optimum and `INCR ≤ BF`. Closes the "is BF optimal?" reviewer question. |
 | **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_p25_et_vs_period`. Depends on P0.1. |
+| **P0.4** Project evaluation suite (north-star integration test) | [`active_tasks/P0_4_project_evaluation_suite/`](active_tasks/P0_4_project_evaluation_suite/) | Slow (~20 min) deterministic integration test on N=4/6/8 — measures avg SP + scheduler ET vs the `project_evaluation_northstar.md` red-flag lines. The single tuning target for any code/algorithm change. Filed only; not started. |
 
 ### P1 — active investigation
 
