@@ -21,7 +21,6 @@ work + show advantages over baselines), not all analysis is necessary.
 
 | Task | Folder | One-line |
 |------|--------|----------|
-| **P0.1** Commit pending uncommitted work | [`active_tasks/P0_1_commit_pending_work/`](active_tasks/P0_1_commit_pending_work/) | Modular commits (INCR_P<n> override + p25 config; env-ratio follow-ups; trial-and-error/patience rewrite; agent docs). Establishes the clean baseline. |
 | **P0.2** Focused BF correctness audit | [`active_tasks/P0_2_bf_correctness_audit/`](active_tasks/P0_2_bf_correctness_audit/) | Verify on one small fixed taskset that `OptimizeSP_TL_BF` enumerates the global optimum and `INCR ≤ BF`. Closes the "is BF optimal?" reviewer question. |
 | **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_p25_et_vs_period`. Depends on P0.1. |
 
