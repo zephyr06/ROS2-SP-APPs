@@ -29,9 +29,16 @@ Making plans:
 
 Code readabiliy is important
 - Don't use very short names or names with only a few letters such as "K" or "tl", long names are okay.
+- Use short functions. If a function has to be very long, try to extract sub-functions for logic that hold together.
 
 Tests
 - If you modified any C++ code, run `make check.SP_OPT -j5` in build folder for testing.
 
 Variable names (during coding and chat)
 - Use informative names, especially during chat. Variable names must be clear even without context, bad examples include `ndiff` or `nvar`, good examples could be `num_tasks_with_diff_et`
+
+Tasks and planning:
+- Assign priority level to tasks, from P0 P1 P2 P3
+
+Start new tasks:
+- follow examples in `agents/active_tasks` folder to create new task
