@@ -7,6 +7,16 @@
 
 ---
 
+## P0.1 — Commit pending uncommitted work — DONE 2026-07-06
+
+- **All four commit groups landed.** (a) INCR_P<n> mode override → `1ede254f`;
+  (b) env-ratio refactor → `4b44aabc`; (c) trial-and-error/patience TL rewrite
+  → `88af2c54` + `fa0b857f`; (d) agent docs + reorg → `9c921fc0` + `99eda512`
+  + `66c96c14` + `dab92e36`. Establishes the clean baseline.
+- **"Done when" gate verified:** `git status` clean; `ctest` 16/16 green
+  (incl. `testIncreOpt_w_TL` 43/43); `pytest tests/python` 261 passed.
+- *Detail: [`2026-07-06_P0_1_commit_pending_work/`](2026-07-06_P0_1_commit_pending_work/).*
+
 ## Pre-2026-07-01
 
 - **`opt_sp_` init fix** — 0 → -1. *Detail: `agents/dev_log.md`.*
@@ -60,6 +70,5 @@
   `testIncreOpt_w_TL` 43/43 green (incl. 7 walk tests + helper suites); 3 stale
   test expectations updated. 16/16 ctest green.
   *Detail: `trial_and_error_tl_opt_task.md`.*
-- **⚠️ Status: implemented + TDD-green but UNCOMMITTED.** Pending commit in
-  P0.1 (commit group c). Flip this note to "committed @ `<sha>`" once P0.1
-  lands.
+- **Status: committed @ `88af2c54` + `fa0b857f`** (P0.1 commit group c).
+  `testIncreOpt_w_TL` 43/43 + `ctest` 16/16 green.
