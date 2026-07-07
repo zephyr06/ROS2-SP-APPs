@@ -5,9 +5,9 @@
     "test_mode": {
         "_comment": "Fast smoke: 1 taskset, 70s, N=6 only, all six arms. Validates that INCR_P<n> modes run end-to-end and produce interval_sp_metrics + scheduler_execution_time before launching the full A/B.",
         "num_tasks_for_cross_task_comparison": [6],
-        "num_tasks_for_single_task_figures": 6,
-        "num_tasksets_to_generate": 10,
-        "simulation_duration_seconds": 300,
+        "num_tasks_for_single_task_figures": 4,
+        "num_tasksets_to_generate": 20,
+        "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
         "main_scheduler_list": [ "INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60", "INCR_SCRATCH"],
         "ablation_scheduler_list": [],

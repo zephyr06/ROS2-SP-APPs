@@ -3,8 +3,40 @@
 #include <iostream>
 #include <fstream>
 #include <numeric>
+#include <string>
 
 using namespace SP_OPT_PA;
+
+// Parse an INCR_P<n> mode string (e.g. INCR_P1, INCR_P10, INCR_P60) and, when
+// matched, override GlobalVariables::ReoptimizationPeriod with n. ReoptimizationPeriod
+// is otherwise loaded from sources/parameters.yaml at startup (Parameters.cpp) and the
+// orchestrator dispatches INCR_P<n> identically to INCR (see SimulationOrchestrator.cpp
+// IsINCRPeriodVariant). Encoding the period in the mode string lets the A/B config sweep
+// the period across arms through the existing scheduler-name plumbing (compare_optimizers.py
+// passes each scheduler name straight to this binary and uses it as the output subdir),
+// with no YAML mutation (which would race against compare_optimizers.py's parallel workers).
+// Returns true if mode is an INCR_P<n> variant (regardless of whether the override
+// succeeded); false otherwise.
+static bool MaybeOverrideReoptPeriod(const std::string& mode) {
+    const std::string prefix = "INCR_P";
+    if (mode.rfind(prefix, 0) != 0 || mode.size() <= prefix.size()) {
+        return false;
+    }
+    const std::string digits = mode.substr(prefix.size());
+    try {
+        int period = std::stoi(digits);
+        if (period < 1) {
+            std::cerr << "Error: INCR_P<n> period must be >= 1, got " << period
+                      << " (mode=" << mode << ")\n";
+            return true;
+        }
+        GlobalVariables::ReoptimizationPeriod = period;
+    } catch (const std::exception& e) {
+        std::cerr << "Error: invalid INCR_P<n> suffix '" << digits
+                  << "' in mode '" << mode << "': " << e.what() << "\n";
+    }
+    return true;
+}
 
 int main(int argc, char** argv) {
     if (argc < 5) {
@@ -13,6 +45,8 @@ int main(int argc, char** argv) {
                   << " [export_level] [sample_interval_sec]\n";
         std::cerr << "Modes: RM, BF, INCR, INCR_NO_TL, INCR_WCET, INCR_SCRATCH, "
                   << "RM_FAST, RM_SLOW\n";
+        std::cerr << "  INCR_P<n>: INCR with ReoptimizationPeriod overridden to n "
+                  << "(e.g. INCR_P1, INCR_P10, INCR_P30, INCR_P60)\n";
         std::cerr << "  export_level: 0=sp only, 1=+task miss rate, "
                   << "2=+task aggregate, 3=full traces (def="
                   << GlobalVariables::EXPORT_DETAIL_LEVEL << ")\n";
@@ -33,6 +67,10 @@ int main(int argc, char** argv) {
     if (argc >= 7) {
         GlobalVariables::METRIC_SAMPLE_INTERVAL_SECONDS = std::stoi(argv[6]);
     }
+
+    // INCR_P<n> period override. Done after the optional CLI overrides so the
+    // period is set exactly once and deterministically from the mode string.
+    MaybeOverrideReoptPeriod(mode);
 
     std::cout << "Running Orchestrator: Input=" << input_folder
               << ", Output=" << output_folder
