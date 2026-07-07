@@ -48,8 +48,8 @@ correctness* — acceptable under "fewer features okay."
 | Task | Source | Why let go |
 |------|--------|------------|
 | Trial-and-error for **incremental priority** assignment | (was NEW TASK #1 in old tasks.md) | Algorithm feature; TL trial-and-error already shipped. Not needed to prove correctness or advantages. |
-| `PriorityPartialPath` → pointers | `improve_efficiency.md` §A | Pure perf; runtime figures adequate without it. Revisit only if P1.1 finds ET is a paper blocker. |
-| Incremental HP-task convolution O(N²)→O(N) | `improve_efficiency.md` §2A | Already ON HOLD for correctness verification; perf, not correctness. |
+| `PriorityPartialPath` → pointers | [`P3_1_efficiency_optimizations/`](active_tasks/P3_1_efficiency_optimizations/) §A | Pure perf; runtime figures adequate without it. Revisit only if P1.1 finds ET is a paper blocker. |
+| Incremental HP-task convolution O(N²)→O(N) | [`P3_1_efficiency_optimizations/`](active_tasks/P3_1_efficiency_optimizations/) §2A | Already ON HOLD for correctness verification; perf, not correctness. |
 | Issue #3 — ignored `SP_THRESHOLD_RANGE` | `issues.md` #3 | Config flexibility; default `SP_THRESHOLDS_SET` works for paper. |
 | Issue #6 — per-task-type config separation | `issues.md` #6 | Config flexibility; not needed for the paper's taskset family. |
 | Debug figures 1B/1D/1E/3b | `plan_publication_figures.md` | Already classified Debug-only; not core. Keep code, don't polish for paper. |
