@@ -454,3 +454,31 @@ independent of the parameter name).
 **Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
 Staged with `git add` (`OptimizeSP_TL_Incre.h` + `OptimizeSP_TL_Incre.cpp` +
 `tasks.md` + `dev_log.md`). **NOT committed** per standing constraint.
+
+---
+
+## 2026-07-09 — Phase 5 issue (4): removed dead `any_eval_ran` + zero-work fallback
+
+**User:** "(4) any_eval_ran is always true in
+PerformCoordinateDescentForTaskConfigOpt(), so it's not useful. This zero-work
+fallback is never triggered [...]"
+
+**What:** the `if (!any_eval_ran && !dag_tasks_.tasks.empty())` block at the end
+of `PerformCoordinateDescentForTaskConfigOpt` was unreachable. `any_eval_ran`
+was a local declared `= true` (the baseline eval above always runs first) and
+never set to false anywhere, so the guard's predicate was always false. Pure
+dead code.
+
+**Done:** deleted (1) the fallback `if`-block and (2) the `any_eval_ran` local
+(both the declaration `:264` and the always-true assignment). Verified with a
+grep across `sources/` + `tests/` + `*.yaml` that `any_eval_ran` had no other
+references — only the 2 lines inside this function.
+
+**Behavior:** no change — the deleted branch never executed. The all-`{-1}` case
+(every task lacks timePerformancePairs) is already covered by the baseline eval
+at the top of the function, which runs `OptimizeIncre`/`OptimizeFromScratch` and
+commits via `UpdateRecords` → `CommitIncumbent` exactly once.
+
+**Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
+Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `tasks.md` + `dev_log.md`).
+**NOT committed** per standing constraint.

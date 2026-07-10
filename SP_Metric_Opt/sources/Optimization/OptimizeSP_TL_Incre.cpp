@@ -261,7 +261,6 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     double current_config_sp =
         EvaluateTimeLimitConfig_ScratchOrIncre(K, starting_time_limits,
                                                from_scratch);
-    bool any_eval_ran = true;  // the baseline eval above counts
 
     for (size_t idx : sorted_indices) {
         // Skip {-1}-only tasks (no timePerformancePairs → no TL freedom).
@@ -280,13 +279,6 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
         current_config_sp = OptimizeSingleTaskTimeLimit(
             idx, K, starting_time_limits, current_config_sp, baseline_val,
             /*step=*/1, from_scratch, patience);
-    }
-
-    // Defensive zero-work fallback (unreachable: the baseline eval above always
-    // runs first). Retained for the prior "no evals, no crash" contract.
-    if (!any_eval_ran && !dag_tasks_.tasks.empty()) {
-        EvaluateTimeLimitConfig_ScratchOrIncre(K, starting_time_limits,
-                                               from_scratch);
     }
 }
 

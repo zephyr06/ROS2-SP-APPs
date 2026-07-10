@@ -184,11 +184,16 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       unchanged (pass by position; their local var name is independent). **46
       `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG build). Staged (git add
       only, no commit).**
-- [ ] **5f. (4) Remove the dead zero-work fallback in
-      `PerformCoordinateDescentForTaskConfigOpt` (`:335-337`).** `any_eval_ran`
-      is always true (the baseline eval above always runs first), so the
-      `if (!any_eval_ran && !dag_tasks_.tasks.empty())` branch is unreachable.
-      Drop the guard and the `any_eval_ran` variable.
+- [x] **5f. (4) Remove the dead zero-work fallback in
+      `PerformCoordinateDescentForTaskConfigOpt`.** `any_eval_ran` is always
+      true (the baseline eval above always runs first), so the
+      `if (!any_eval_ran && !dag_tasks_.tasks.empty())` branch was unreachable.
+      **DONE (2026-07-09): deleted the fallback `if`-block + the
+      `any_eval_ran` local (decl + the always-true assignment). Verified
+      `any_eval_ran` had no other references (grep across sources/tests/yaml:
+      only the 2 lines in this function). Pure dead-code removal — no behavior
+      change. 46 `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG build). Staged
+      (git add only, no commit).**
 - [ ] **5g. (6) Simplify `OptimizeSingleTaskTimeLimit` patience logic.** Drop
       the separate `consecutive_non_improving` counter; decrement `patience`
       directly on non-improvement and stop when patience is exhausted. **Open
