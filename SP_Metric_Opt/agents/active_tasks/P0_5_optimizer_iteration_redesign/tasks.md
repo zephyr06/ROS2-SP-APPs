@@ -91,6 +91,88 @@
       YAML persistence / P0.1 required. Recorded in `dev_log.md`.
 - [x] Milestone appended to top-level `agents/dev_log.md`.
 
+## Phase 5 — User review fixes (2026-07-09)
+
+Post-commit review of `61ebf42f` surfaced 8 issues. Worked one-by-one with a
+review-and-approve gate after each. **(5) and (8) first**, per user direction.
+
+- [x] **5a. (5) Reset `res_opt_` before each new-interval optimization.** The
+      baseline eval `current_config_sp = EvaluateTimeLimitConfig_ScratchOrIncre(...)`
+      at the top of `PerformCoordinateDescentForTaskConfigOpt` must ALWAYS
+      overwrite `res_opt_` for the current interval, else the descent's
+      compare-and-keep is measured against a stale previous-interval incumbent.
+      **TDD tests PASS** (2: `OptimizeIncre_w_TL_BaselineOverwritesResOptForNewInterval`
+      + `ReOptimizePeriodic_BaselineOverwritesResOptForNewInterval`).
+      **DONE (2026-07-09): unified the reset into one explicit function.** The
+      user chose option (b)-flavored: replace the split implicit mechanisms with
+      a single explicit `ResetIncumbentBaseline(bool from_scratch)`, called at
+      the top of `PerformCoordinateDescentForTaskConfigOpt` (before the baseline
+      eval) AND at the top of `OptimizeWithTimeLimitOptDisabled` (covers the
+      disable-path bypass). Branched dispatch (behavior byte-for-byte preserved
+      per path):
+      - `from_scratch=true` (reopt): today's `SeedIncumbentBaseline` body,
+        unchanged — `if (has_incumbent_)` re-eval carried {pa, tl} under the new
+        DAG + `SeedStateFromIncumbent` (→ `opt_sp_ = sp_prev_new`, the
+        compare-and-keep baseline); `else` interval-0 RM + min-TL synthesis +
+        `SeedStateFromIncumbent`. `SeedIncumbentBaseline()` call removed from
+        `ReOptimizePeriodic:569` (now runs inside the descent).
+      - `from_scratch=false` (incremental): `opt_sp_ = -1.0;` one-liner, moved
+        here from `OptimizeIncre_w_TL:375`. Does NOT touch `res_opt_` (ordering
+        invariant: the challenger is built from the carried prior in `res_opt_`,
+        re-evaluated, then `UpdateRecords` force-commits → overwrites `res_opt_`).
+        `opt_sp_ = -1.0` line removed from `OptimizeIncre_w_TL`.
+      `SeedIncumbentBaseline` removed from the header; the 2 `SeedIncumbentBaseline_*`
+      tests rewritten to call `ResetIncumbentBaseline(true)` (bodies/assertions
+      unchanged — reopt branch is byte-identical). Comment trims per user
+      directive ("if i see that kind of long code comments, i'll just skip it"):
+      the patience / baseline / skip / fallback comments in the descent, the
+      carried-adopted-TL + edge-case-guard comments in `OptimizeIncre_w_TL`, and
+      the helper-block comments in `EvaluateTimeLimitConfig_ScratchOrIncre` /
+      `UpdateRecords` / `SeedStateFromIncumbent` / `CommitIncumbent` /
+      `BuildChallengerFromIncumbent` all cut to ~1-3 lines. Stale
+      `SeedIncumbentBaseline` / `prev_optimizer_` references in `OptimizeSP_TL_Incre.h`
+      and `SimulationOrchestrator.cpp:300` comments updated to
+      `ResetIncumbentBaseline` / `has_incumbent_`. **46 `testIncreOpt_w_TL` + 16/16
+      ctest green (DEBUG build). Staged (git add only, no commit).**
+- [ ] **5b. (8) Reuse the challenger incrementally instead of rebuilding from
+      `res_opt_` each interval.** `BuildChallengerFromIncumbent` currently
+      constructs a FRESH `OptimizePA_Incre` from `res_opt_` (the "champion")
+      every interval, discarding the challenger's internal PA-search state. The
+      user's design: keep a PERSISTENT challenger optimizer and MODIFY it
+      incrementally each interval (true incremental optimization — reuse the PA
+      search state, not just the adopted TL). Trade-off: better efficiency,
+      potential SP-performance loss. Compare both designs in experiments, then
+      decide which to keep.
+- [ ] **5c. (1) Remove the stale-TL edge-case guard in `OptimizeIncre_w_TL`
+      (`:399-421`).** The guard intersects each carried TL against the current
+      option set (forces -1 when a task lost its perf pair). Clear for code
+      simplicity. Latent today — `CommitIncumbent` only ever writes
+      current-option TLs.
+- [ ] **5d. (2) Reconsider `has_incumbent_`.** The bool gate may be unnecessary
+      (`res_opt_` emptiness / `opt_pa_.emptiness` could gate). Evaluate removal.
+- [ ] **5e. (3) Rename the `time_limits` parameter in
+      `PerformCoordinateDescentForTaskConfigOpt`** to convey its origin (carried
+      adopted TL for the incremental path; Gaussian-mean-closest for the reopt
+      path). Name should reflect "the TL vector the descent starts from".
+- [ ] **5f. (4) Remove the dead zero-work fallback in
+      `PerformCoordinateDescentForTaskConfigOpt` (`:335-337`).** `any_eval_ran`
+      is always true (the baseline eval above always runs first), so the
+      `if (!any_eval_ran && !dag_tasks_.tasks.empty())` branch is unreachable.
+      Drop the guard and the `any_eval_ran` variable.
+- [ ] **5g. (6) Simplify `OptimizeSingleTaskTimeLimit` patience logic.** Drop
+      the separate `consecutive_non_improving` counter; decrement `patience`
+      directly on non-improvement and stop when patience is exhausted. **Open
+      question to confirm with user**: the current code resets the counter on
+      improvement (a CONSECUTIVE non-improvement budget). The user's proposal
+      ("just use `patience--` if failed... stop if `patience<0` or `patience==0`")
+      is a TOTAL non-improvement budget (no reset) — which changes patience=1
+      semantics (consecutive: tolerates 1 dip; total-with-`<0`-stop: tolerates 1
+      dip; total-with-`<=0`-stop: tolerates 0 dips). Confirm before implementing.
+- [ ] **5h. (7) Reuse a single optimizer instance across
+      `EvaluateTimeLimitConfig_ScratchOrIncre` calls** instead of rebuilding per
+      candidate. Efficiency. **DEFERRED** (user: "we can optimize this efficiency
+      issue later"). Entangled with (8).
+
 ## Hand-off between sub-sessions
 
 Each phase is one review-and-commit cycle per `agent_coding_rules.md`. The

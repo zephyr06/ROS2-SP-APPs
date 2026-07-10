@@ -126,10 +126,8 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
 
     if (should_update) {
         // CommitIncumbent owns res_opt_ + the opt_pa_/opt_sp_ mirrors +
-        // has_incumbent_. The challenger (the `optimizer` arg) is a throwaway
-        // local; committing its adopted {pa, sp, tl} here is what survives
-        // across intervals — the DAG it mutated dies with the local, and the
-        // carried TL is reconstructed from res_opt_ next interval.
+        // has_incumbent_. The challenger (the `optimizer` arg) is a throwaway;
+        // only its adopted {pa, sp, tl} survives across intervals.
         CommitIncumbent(optimizer.opt_pa_, optimizer.opt_sp_, time_limits);
 
         if (GlobalVariables::debugMode) {
@@ -149,40 +147,24 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
 
     double current_sp = -1.0;
     if (from_scratch) {
-        // Reoptimization path: ignore any warm state and re-search from
-        // scratch. This escapes PA drift by exploring the full beam for the
-        // current TL.
+        // Reopt: ignore warm state, re-search the full beam for the current TL.
         OptimizePA_Incre optimizer(dag_tasks_cur, sp_parameters_);
         optimizer.OptimizeFromScratch(K);
         current_sp = optimizer.opt_sp_;
         UpdateRecords(optimizer, time_limits);
     } else if (has_incumbent_) {
-        // Incremental path: warm-start from the incumbent and diff-search. The
-        // challenger is a THROWAWAY rebuilt from res_opt_ via
-        // BuildChallengerFromIncumbent — its dag_tasks_ is the carried
-        // adopted-TL DAG (the diff baseline), its opt_pa_/opt_sp_ mirror the
-        // carried incumbent. The challenger is transient and UpdateRecords
-        // commits only the adopted {pa, sp, tl} into res_opt_. Both sides of
-        // FindTaskWithDifferentEt's diff now carry the adopted TL by
-        // construction (baseline = challenger.dag_tasks_ reconstructed from
-        // res_opt_; update = dag_tasks_cur built from the descent's starting TL
-        // vector, which OptimizeIncre_w_TL seeds from
-        // ReconstructTimeLimitVecFromResOpt) → the P1.1 per-site override
-        // becomes the structural norm.
+        // Incremental: warm-start from a throwaway challenger rebuilt from
+        // res_opt_ (its dag_tasks_ carries the adopted TL → both diff sides
+        // carry it; the P1.1 per-site override is now structural). Only the
+        // adopted {pa, sp, tl} is committed; the challenger dies with the local.
         OptimizePA_Incre optimizer = BuildChallengerFromIncumbent();
         optimizer.OptimizeIncre(dag_tasks_cur);
         current_sp = optimizer.opt_sp_;
         UpdateRecords(optimizer, time_limits);
     } else {
-        // Contract violation: the incremental path (from_scratch=false) needs
-        // an incumbent to warm-start from, but has_incumbent_ is false (no
-        // CommitIncumbent has run yet). Under the incremental-scheduler
-        // contract the from-scratch bootstrap is scheduler-driven —
-        // from_scratch is called at interval 0 (and, in future, periodically to
-        // escape drift) — so OptimizeIncre_w_TL is never the bootstrap.
-        // Reaching here means a caller invoked the incremental path before any
-        // from_scratch call established an incumbent. Bootstrap with a
-        // from_scratch call (e.g. ReOptimizePeriodic) first.
+        // Contract violation: the incremental path needs an incumbent to
+        // warm-start from, but none exists yet. Bootstrap with a from_scratch
+        // call (e.g. ReOptimizePeriodic) first.
         CoutError(
             "EvaluateTimeLimitConfig_ScratchOrIncre: incremental path "
             "(from_scratch=false) requested but has_incumbent_ is false. "
@@ -265,73 +247,42 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     std::sort(sorted_indices.begin(), sorted_indices.end(),
               TaskSortingHeuristic{dag_tasks_, sp_parameters_});
 
-    // Patience governs how many consecutive non-improving steps the
-    // trial-and-error walk tolerates before stopping, sourced from the
-    // YAML-loaded globals so it is tunable per-experiment without recompiling.
-    // The incremental path warm-starts the PA search from the incumbent, so
-    // SP-vs-TL is effectively unimodal and strict (patience=0) is safe and
-    // cheapest. The reopt path re-searches priorities from scratch per
-    // candidate, so SP-vs-TL can be non-unimodal at high utilization;
-    // patience=1 tolerates a single dip so a strictly-better option further
-    // out is not missed. See sources/parameters.yaml for tuning guidance.
+    // Patience: consecutive non-improving steps the walk tolerates. Incremental
+    // (warm-started, SP-vs-TL ~unimodal) uses 0; reopt (full re-search, can be
+    // non-unimodal) uses 1. Sourced from YAML globals; see parameters.yaml.
     int patience = from_scratch
                         ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
                         : GlobalVariables::IncrementalTimeLimitSearchPatience;
 
-    // Establish the baseline SP of the starting configuration. This is the
-    // best-yet the first task's backward pass measures against, and it doubles
-    // as the compare-and-keep baseline already seeded by SeedIncumbentBaseline
-    // (UpdateRecords adopts only strictly-better candidates). Re-evaluating the
-    // starting config here is intentional: it gives the walk a concrete SP for
-    // the EXACT starting TL vector, which SeedIncumbentBaseline may have
-    // computed under a different {pa, tl} (the seeded incumbent's TL, not the
-    // descent's InitializeTimeLimitsFromETConfig starting point).
+    // Reset the incumbent baseline for this interval (reopt: re-eval+commit;
+    // incremental: opt_sp_=-1.0 gate) so the baseline eval below measures and
+    // commits against the correct current-interval baseline, not a stale prior.
+    ResetIncumbentBaseline(from_scratch);
     double current_config_sp =
         EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
     bool any_eval_ran = true;  // the baseline eval above counts
 
     for (size_t idx : sorted_indices) {
-        // Skip a task whose only TL option is -1 (no timePerformancePairs →
-        // RecordTimeLimitOptions recorded {-1}). There is no TL freedom
-        // to search, and OptimizeIncre already does the PA search internally,
-        // so re-evaluating here is a redundant incumbent re-eval. Skipping it
-        // is the main cost win on the reused P25 tasksets (every task is
-        // {-1}-only). opts.size()==1 && opts[0]==-1 is the exact no-pairs
-        // predicate: RecordTimeLimitOptions only pushes -1 when a task
-        // has zero pairs, so a task with real options is never skipped.
+        // Skip {-1}-only tasks (no timePerformancePairs → no TL freedom).
         const std::vector<double>& opts = time_limit_option_for_each_task_[idx];
         if (opts.size() == 1 && opts[0] == -1.0)
             continue;
 
         double baseline_val = time_limits[idx];
-        // 1. Backward pass: try decreasing the time limit (tie-break toward
-        //    smaller TL on SP ties — handled inside IsBetterTimeLimitOption
-        //    via step<0).
+        // 1. Backward pass: try decreasing the TL (tie-break toward smaller TL
+        //    on SP ties — handled inside IsBetterTimeLimitOption via step<0).
         current_config_sp = OptimizeSingleTaskTimeLimit(
             idx, K, time_limits, current_config_sp, baseline_val,
             /*step=*/-1, from_scratch, patience);
-        // 2. Forward pass: try increasing the time limit. baseline_val is the
-        //    ORIGINAL starting TL (not the backward pass's result), so the
-        //    forward pass explores the upward side from the same origin.
+        // 2. Forward pass from the ORIGINAL starting TL (not the backward
+        //    result), exploring the upward side from the same origin.
         current_config_sp = OptimizeSingleTaskTimeLimit(
             idx, K, time_limits, current_config_sp, baseline_val,
             /*step=*/1, from_scratch, patience);
-        // OptimizeSingleTaskTimeLimit always runs >=1 eval when the task has
-        // real options, so any_eval_ran stays true.
     }
 
-    // Zero-work fallback. When EVERY task was {-1}-only the loop above ran zero
-    // walk-evals (the baseline eval above is the only one), so UpdateRecords
-    // fired exactly once (the baseline). That single fire is enough for
-    // UpdateRecords to commit the incumbent via CommitIncumbent — but only if
-    // the baseline eval actually ran OptimizeIncre (incremental path) or
-    // OptimizeFromScratch (reopt path), which it did. So the all-{-1} case is
-    // already covered by the baseline eval above; no extra fallback eval is
-    // needed. The guard below is retained as a defensive no-op: it only fires
-    // when the descent produced zero evals AND the DAG is non-empty, which
-    // cannot happen now (the baseline eval always runs first), but is kept to
-    // preserve the prior "no evals, no crash" contract for any future caller
-    // that bypasses the baseline eval.
+    // Defensive zero-work fallback (unreachable: the baseline eval above always
+    // runs first). Retained for the prior "no evals, no crash" contract.
     if (!any_eval_ran && !dag_tasks_.tasks.empty()) {
         EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
     }
@@ -365,6 +316,9 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(
     int K, std::vector<double>& time_limits, bool from_scratch) {
+    // This path bypasses the descent, so the interval reset the descent would
+    // have done must run here too, else res_opt_ stays stale for this interval.
+    ResetIncumbentBaseline(from_scratch);
     InitializeTimeLimitsToSmallest(time_limits);
     EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
     return opt_pa_;
@@ -372,7 +326,6 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     const DAG_Model& dag_tasks_update, int K) {
-    opt_sp_ = -1.0;
     dag_tasks_ = dag_tasks_update;
     ApplyWCETAblationIfRequired(dag_tasks_);
     // Full per-task option set (every timePerformancePairs entry). The walk
@@ -380,34 +333,14 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     // radius cap, so a tie-break or strictly-better option beyond the old
     // radius wall is reachable.
     time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
-    // Start the incremental descent from the CARRIED ADOPTED TL (the interval-
-    // (N-1) optimization result in res_opt_.id2time_limit), NOT from
-    // InitializeTimeLimitsFromETConfig() (the TL closest to the YAML Gaussian
-    // mean). This matters because EvaluateTimeLimitConfig_ScratchOrIncre builds
-    // dag_tasks_cur = UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits)
-    // and passes it to OptimizeIncre, whose FindTaskWithDifferentEt diffs the
-    // challenger's dag_tasks_ (the carried ADOPTED-TL DAG, rebuilt from
-    // res_opt_ via BuildChallengerFromIncumbent) against dag_tasks_cur. The
-    // baseline side carries the adopted TL; if the update side cold-starts at
-    // the Gaussian-mean TL, the diff flags every perf-pair task whose adopted
-    // TL != Gaussian-mean TL — a TL-drift FALSE POSITIVE, independent of any
-    // real ET change (the P1.1 residual). Starting both sides at the adopted
-    // TL makes the diff flag a perf-pair task iff its ET actually changed (its
-    // adopted TL moved), matching the corrected ground truth. See
-    // agents/active_tasks/P1_1_p25_residual_investigation/dev_log.md.
+    // Start the descent from the CARRIED ADOPTED TL in res_opt_, NOT the
+    // Gaussian-mean TL: both sides of FindTaskWithDifferentEt's diff must carry
+    // the adopted TL, else unchanged perf-pair tasks are flagged as changed
+    // (the P1.1 residual). The opt_sp_=-1.0 reset the baseline force-commits
+    // against now lives in ResetIncumbentBaseline(false) inside the descent.
     std::vector<double> time_limits = ReconstructTimeLimitVecFromResOpt();
-    // Edge-case guard: a carried TL is only meaningful if the task STILL has
-    // that option this interval. ReconstructTimeLimitVecFromResOpt returns the
-    // N-1 adopted TL for any task it has a record for, but a task that had a
-    // perf pair in N-1 and LOST it in N (became gaussian-only) would get a stale
-    // TL applied as a point dist by UpdateExtDistBasedOnTimeLimit (which does
-    // not consult time_limit_option_for_each_task_). Intersect each carried TL
-    // against the current option set; force -1 when the task has no pairs now
-    // or the carried TL is no longer an option. When res_opt_ is empty
-    // (interval-0 cold start, or the first call after construction) every task
-    // is -1 and this loop is a no-op — the descent's first baseline eval then
-    // falls through to the Gaussian-mean closest option via the walk, exactly
-    // as InitializeTimeLimitsFromETConfig() would have done.
+    // Edge-case guard: force -1 for a task whose carried TL is no longer a valid
+    // option this interval (a perf pair lost since N-1, or a cold res_opt_).
     for (size_t i = 0; i < time_limits.size(); i++) {
         const std::vector<double>& opts = time_limit_option_for_each_task_[i];
         bool valid = false;
@@ -459,31 +392,20 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::RateMonotonicPriorityVec() {
     return sorted;
 }
 
-// Seed the full incumbent 4-tuple {dag, sp, pa, tl} into state. This is the
-// baseline that UpdateRecords' compare guard measures the from-scratch search
-// against, so opt_sp_ must hold it (NOT -1.0) when the search runs.
+// Seed the incumbent 4-tuple {dag, sp, pa, tl} so opt_sp_ holds the baseline
+// UpdateRecords' compare guard measures the search against.
 void OptimizePA_Incre_with_TimeLimits::SeedStateFromIncumbent(
     const DAG_Model& dag_with_tl, const PriorityVec& pa, double sp,
     const std::vector<double>& tl) {
-    // CommitIncumbent is the single writer for the durable incumbent store
-    // (res_opt_ + the opt_pa_/opt_sp_ mirrors + has_incumbent_). The carried
-    // adopted TL lives in res_opt_.id2time_limit; BuildChallengerFromIncumbent
-    // reconstructs the TL-applied DAG from it next interval, so dag_with_tl
-    // itself is not stored (the challenger is a throwaway rebuilt each call).
+    // CommitIncumbent is the single writer for the durable incumbent store.
+    // dag_with_tl itself is not stored — the challenger is rebuilt from
+    // res_opt_.id2time_limit next interval.
     CommitIncumbent(pa, sp, tl);
 }
 
-// Commit the incumbent 4-tuple {PA, SP, TL} into the single durable store
-// (res_opt_) plus the thin opt_pa_/opt_sp_ mirrors the public surface reads,
-// and flip has_incumbent_. This is the ONE writer for the incumbent state —
-// replacing the 8 scattered sync assignments previously split across
-// SeedStateFromIncumbent and UpdateRecords, so the sp_parameters_ / DAG desync
-// class of bug (one copy falling behind another) is structurally impossible.
-// The carried adopted TL lives in res_opt_.id2time_limit; the carried PA in
-// res_opt_.priority_vec / id2priority; the carried SP in res_opt_.sp_opt.
-// res_opt_ is the single durable store — there is no parallel prev_optimizer_
-// cache to fall behind. The challenger (BuildChallengerFromIncumbent) is a
-// throwaway local that reads res_opt_; it never writes the incumbent back.
+// The ONE writer for the incumbent state: res_opt_ (durable) + the thin
+// opt_pa_/opt_sp_ mirrors + has_incumbent_. Centralizing the writes here makes
+// the sp_parameters_ / DAG desync class of bug structurally impossible.
 void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     const PriorityVec& pa, double sp, const std::vector<double>& tl) {
     opt_sp_ = sp;
@@ -494,18 +416,12 @@ void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     has_incumbent_ = true;
 }
 
-// Build a throwaway OptimizePA_Incre (the "challenger") reconstructed from the
-// durable incumbent in res_opt_. The challenger's dag_tasks_ is the current raw
-// dag_tasks_ with the CARRIED ADOPTED TL applied
-// (UpdateExtDistBasedOnTimeLimit(dag_tasks_, ReconstructTimeLimitVecFromResOpt())),
-// so FindTaskWithDifferentEt's diff baseline carries the adopted TL by
-// construction — both sides of the diff inherit it, the P1.1 per-site
-// ReconstructTimeLimitVecFromResOpt() override becomes the structural norm. The
-// challenger's opt_pa_/opt_sp_ mirror res_opt_ so OptimizeIncre warm-starts from
-// the carried PA and the compare-and-keep guard measures against the carried SP.
-// Genuinely transient: whatever OptimizeIncre does to its own dag_tasks_ dies
-// with this local; only the adopted TL CommitIncumbent persists into res_opt_
-// (via UpdateRecords) survives across intervals.
+// Build a throwaway challenger from res_opt_: its dag_tasks_ is the current raw
+// DAG with the carried adopted TL applied, so FindTaskWithDifferentEt's diff
+// baseline carries the adopted TL by construction (both sides inherit it). Its
+// opt_pa_/opt_sp_ mirror res_opt_ so OptimizeIncre warm-starts from the carried
+// PA. Transient — whatever it mutates dies with the local; only the committed
+// {pa, sp, tl} survives.
 OptimizePA_Incre OptimizePA_Incre_with_TimeLimits::BuildChallengerFromIncumbent() {
     std::vector<double> tl_prev = ReconstructTimeLimitVecFromResOpt();
     DAG_Model dag_with_tl_prev =
@@ -516,48 +432,53 @@ OptimizePA_Incre OptimizePA_Incre_with_TimeLimits::BuildChallengerFromIncumbent(
     return challenger;
 }
 
-// Establish the incumbent baseline BEFORE the from-scratch search. An optimizer
-// status is the 4-tuple {dag, sp, pa, tl}; the incumbent is owned once in
-// res_opt_ (has_incumbent_ gates its presence). Two cases:
-//  - Have incumbent: re-eval its {pa, tl} under the NEW DAG (its carried SP was
-//    computed under an older DAG) → that re-evaluated tuple is the baseline.
-//  - Interval 0 (no incumbent): synthesize one from RM priorities + min TL, and
-//    evaluate it. This guarantees a valid baseline to compare against.
-// The baseline is seeded into state via SeedStateFromIncumbent (→ CommitIncumbent)
-// so that UpdateRecords' "adopt only if strictly greater SP (tie-break lower
-// TL-sum)" guard, invoked during the search, IS the compare-and-keep — no
-// separate restore step needed.
-void OptimizePA_Incre_with_TimeLimits::SeedIncumbentBaseline() {
-    if (has_incumbent_) {
-        std::vector<double> tl_prev = ReconstructTimeLimitVecFromResOpt();
-        PriorityVec pa_prev = opt_pa_;
-        DAG_Model dag_new_with_tl_prev =
-            UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_prev);
-        double sp_prev_new = EvaluateSPWithPriorityVec(dag_new_with_tl_prev,
-                                                       sp_parameters_, pa_prev);
-        SeedStateFromIncumbent(dag_new_with_tl_prev, pa_prev, sp_prev_new,
-                               tl_prev);
+// Reset the incumbent baseline for the current interval, run BEFORE the
+// descent's baseline eval. Branched on from_scratch:
+//  - true  (reopt): the carried {pa, tl} is re-evaluated under the NEW DAG and
+//    committed, so opt_sp_ holds the baseline the search compare-and-keeps
+//    against (NOT -1.0). At interval 0 (no incumbent) a synthetic RM+min-TL
+//    baseline is built and committed instead.
+//  - false (incremental): only the opt_sp_=-1.0 gate is set. The baseline eval
+//    then rebuilds the challenger from res_opt_, re-evals it, and
+//    UpdateRecords force-commits (optimizer.opt_sp_ > -1.0 always) so res_opt_
+//    is overwritten for the current interval. res_opt_ itself is NOT touched
+//    here — the challenger is built from the carried prior, re-evaluated, then
+//    committed (read prior → re-eval → commit).
+void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
+    bool from_scratch) {
+    if (from_scratch) {
+        if (has_incumbent_) {
+            std::vector<double> tl_prev = ReconstructTimeLimitVecFromResOpt();
+            PriorityVec pa_prev = opt_pa_;
+            DAG_Model dag_new_with_tl_prev =
+                UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_prev);
+            double sp_prev_new = EvaluateSPWithPriorityVec(dag_new_with_tl_prev,
+                                                           sp_parameters_,
+                                                           pa_prev);
+            SeedStateFromIncumbent(dag_new_with_tl_prev, pa_prev, sp_prev_new,
+                                   tl_prev);
+        } else {
+            // Interval 0: RM priorities + every task at its smallest TL option.
+            std::vector<double> tl_min = SmallestTimeLimitVec();
+            PriorityVec pa_rm = RateMonotonicPriorityVec();
+            DAG_Model dag_with_tl_min =
+                UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_min);
+            double sp_rm =
+                EvaluateSPWithPriorityVec(dag_with_tl_min, sp_parameters_,
+                                          pa_rm);
+            SeedStateFromIncumbent(dag_with_tl_min, pa_rm, sp_rm, tl_min);
+        }
     } else {
-        // Interval 0: RM priorities + every task at its smallest TL option.
-        std::vector<double> tl_min = SmallestTimeLimitVec();
-        PriorityVec pa_rm = RateMonotonicPriorityVec();
-        DAG_Model dag_with_tl_min =
-            UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_min);
-        double sp_rm =
-            EvaluateSPWithPriorityVec(dag_with_tl_min, sp_parameters_, pa_rm);
-        SeedStateFromIncumbent(dag_with_tl_min, pa_rm, sp_rm, tl_min);
+        opt_sp_ = -1.0;
     }
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     const DAG_Model& dag_tasks_update, int K) {
-    // Compare-and-keep reoptimization. The incumbent is an optimizer status
-    // {dag, sp, pa, tl} carried in res_opt_. Seed the baseline (re-eval under
-    // the new DAG, or RM+min-TL at interval 0) into state, then run a fresh
-    // from-scratch coordinate descent over the FULL per-task option set.
-    // UpdateRecords' compare guard (strictly-greater SP wins, tie-break lower
-    // TL-sum) preserves the incumbent when the search finds nothing better — so
-    // compare-and-keep is just the guard, with no separate restore step.
+    // Compare-and-keep reopt: the incumbent in res_opt_ is re-evaluated under
+    // the new DAG and seeded as the baseline, then a fresh from-scratch descent
+    // runs. UpdateRecords' strictly-greater-SP guard (tie-break lower TL-sum)
+    // preserves the incumbent when the search finds nothing better.
 
     dag_tasks_ = dag_tasks_update;
     ApplyWCETAblationIfRequired(dag_tasks_);
@@ -565,13 +486,9 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     // longer radius-capped.
     time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
 
-    // Establish the incumbent baseline in state (opt_sp_ holds it, NOT -1.0).
-    SeedIncumbentBaseline();
-
-    // Fresh from-scratch descent. Each candidate the search evaluates is
-    // compared against the seeded baseline inside UpdateRecords; the search
-    // result is adopted only if it strictly improves SP (or ties with lower
-    // TL-sum). Otherwise the baseline survives untouched.
+    // The baseline reset (re-eval carried {pa, tl} under the new DAG, or
+    // RM+min-TL at interval 0) now runs inside the descent via
+    // ResetIncumbentBaseline(true), before the baseline eval.
     std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);

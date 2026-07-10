@@ -70,8 +70,8 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // 1-arg overload: entry point for the INCR_SCRATCH ablation. Delegates to
     // the 2-arg ReOptimizePeriodic(dag, K). INCR_SCRATCH constructs a FRESH
     // optimizer each interval (see SimulationOrchestrator INCR_SCRATCH branch),
-    // so has_incumbent_ is always false here → SeedIncumbentBaseline takes its
-    // interval-0 branch (RM + min-TL) every call. This makes INCR_SCRATCH an
+    // so has_incumbent_ is always false here → ResetIncumbentBaseline takes
+    // its interval-0 branch (RM + min-TL) every call. This makes INCR_SCRATCH an
     // AMNESIAC reopt: the compare-and-keep guard measures the search against a
     // synthetic RM baseline, NOT against the previous interval's adopted
     // solution. Contrast with Optimize_w_TL_ScratchOrIncre (INCR with
@@ -95,7 +95,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // the full beam (reopt) — and the patience budget the walk tolerates
     // (incremental: patience=0 strict; reopt: patience=1, see
     // PerformCoordinateDescentForTaskConfigOpt). count == 0 routes to
-    // ReOptimizePeriodic, whose SeedIncumbentBaseline interval-0 branch
+    // ReOptimizePeriodic, whose ResetIncumbentBaseline(true) interval-0 branch
     // synthesizes an RM+min-TL incumbent — so the dispatcher also serves as the
     // interval-0 bootstrap for the INCR paths. The counter advances by 1 after
     // every call and never resets (modular arithmetic alone decides reopt vs
@@ -164,24 +164,24 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     PriorityVec OptimizeWithTimeLimitOptDisabled(
         int K, std::vector<double>& time_limits, bool from_scratch);
 
-    // Compare-and-keep reoptimization helpers (see ReOptimizePeriodic 3-arg).
-    // SeedIncumbentBaseline establishes the incumbent 4-tuple {dag, sp, pa, tl}
-    // in state so UpdateRecords' compare guard acts as compare-and-keep.
+    // Compare-and-keep helpers (see ReOptimizePeriodic 3-arg).
     std::vector<double> ReconstructTimeLimitVecFromResOpt();
     PriorityVec RateMonotonicPriorityVec();
     void SeedStateFromIncumbent(const DAG_Model& dag_with_tl,
                                 const PriorityVec& pa, double sp,
                                 const std::vector<double>& tl);
-    void SeedIncumbentBaseline();
+    // Reset the incumbent baseline before a new interval's search.
+    // from_scratch=true (reopt): re-eval the carried {pa, tl} under the new DAG
+    // (or RM+min-TL at interval 0) and commit it, so opt_sp_ holds the baseline
+    // and UpdateRecords' guard acts as compare-and-keep. from_scratch=false
+    // (incremental): set opt_sp_=-1.0 so the first UpdateRecords force-commits
+    // and res_opt_ is overwritten for the current interval.
+    void ResetIncumbentBaseline(bool from_scratch);
 
-    // Incumbent-state helpers (P0.5 redesign). The incumbent 4-tuple
-    // {dag-with-adopted-TL, SP, PA, TL-config} is owned ONCE in res_opt_ (no
-    // parallel prev_optimizer_ cache). CommitIncumbent is the single writer that
-    // populates res_opt_ + the thin opt_pa_/opt_sp_ mirrors and flips
-    // has_incumbent_; BuildChallengerFromIncumbent reconstructs a throwaway
-    // OptimizePA_Incre from res_opt_ each incremental interval so the diff
-    // baseline (FindTaskWithDifferentEt) carries the adopted TL by construction.
-    // See agents/active_tasks/P0_5_optimizer_iteration_redesign/design.md.
+    // Incumbent-state helpers (P0.5). res_opt_ is the single durable store;
+    // CommitIncumbent is its only writer, BuildChallengerFromIncumbent rebuilds a
+    // throwaway challenger from it each incremental interval so the diff baseline
+    // carries the adopted TL by construction.
     void CommitIncumbent(const PriorityVec& pa, double sp,
                          const std::vector<double>& tl);
     OptimizePA_Incre BuildChallengerFromIncumbent();

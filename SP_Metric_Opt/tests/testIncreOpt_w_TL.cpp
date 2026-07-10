@@ -479,8 +479,8 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
 // SEPARATE pair of YAMLs (test_robotics_v30_lo / _hi) whose SLAM ET differs: the
 // DAG mutation between bootstrap and reopt shifts the optimum, which is the
 // real-world condition compare-and-keep exists for. This fixture is retained for
-// the helper unit tests (SmallestTimeLimitVec, SeedIncumbentBaseline, etc.) that
-// are profile-shape-independent.
+// the helper unit tests (SmallestTimeLimitVec, ResetIncumbentBaseline, etc.)
+// that are profile-shape-independent.
 class CompareAndKeepSynthetic : public ::testing::Test {
    public:
     void SetUp() override {
@@ -517,10 +517,11 @@ class CompareAndKeepSynthetic : public ::testing::Test {
 //  - v30_hi (SLAM ET ~2853, heavy load): TSP's optimal TL is 400 — the larger
 //    SLAM ET on the same processor pushes TL=1000 past a schedulability cliff,
 //    so the optimum shifts DOWN.
-// Bootstrap on v30_lo → incumbent {TL=1000}. Reopt on v30_hi: SeedIncumbentBaseline
-// re-evaluates {TL=1000} under v30_hi (strictly worse than v30_hi's optimum), the
-// fresh search finds TL=400, and UpdateRecords' strictly-greater-SP guard ADOPTS
-// 400. This is the genuine compare-and-keep adopt path — no synthetic radius.
+// Bootstrap on v30_lo → incumbent {TL=1000}. Reopt on v30_hi:
+// ResetIncumbentBaseline(true) re-evaluates {TL=1000} under v30_hi (strictly
+// worse than v30_hi's optimum), the fresh search finds TL=400, and
+// UpdateRecords' strictly-greater-SP guard ADOPTS 400. This is the genuine
+// compare-and-keep adopt path — no synthetic radius.
 TEST_F(CompareAndKeepSynthetic,
        ReOptimizePeriodic_AdoptsWhenDagMutationShiftsOptimum) {
     DAG_Model dag_lo = ReadDAG_Tasks(
@@ -772,7 +773,7 @@ TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
     double expected_sp =
         EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_rm);
 
-    opt.SeedIncumbentBaseline();
+    opt.ResetIncumbentBaseline(true);
 
     EXPECT_TRUE(opt.has_incumbent_);
     EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
@@ -812,7 +813,7 @@ TEST_F(CompareAndKeepSynthetic,
         EvaluateSPWithPriorityVec(dag_new_with_tl, sp_parameters, pa);
     ASSERT_NE(sp_incumbent, expected_sp);  // sanity: the DAG really did change
 
-    opt.SeedIncumbentBaseline();
+    opt.ResetIncumbentBaseline(true);
 
     // With-incumbent branch: TL stays 800 (NOT reset to min 400) and SP is the
     // re-evaluated value under the new DAG (not the stale sp_incumbent).
@@ -820,6 +821,77 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
     EXPECT_EQ(pa, opt.opt_pa_);
+}
+
+// Issue (5) — baseline-overwrites-res_opt_ invariant. The baseline eval at the
+// top of PerformCoordinateDescentForTaskConfigOpt
+//   current_config_sp = EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+// must ALWAYS overwrite res_opt_ for the current interval. Otherwise, when the
+// new interval's best achievable SP is LOWER than the previous interval's
+// incumbent SP (e.g. the DAG grew heavier), UpdateRecords' strictly-greater-SP
+// guard would reject the baseline and res_opt_ would retain a STALE
+// previous-interval incumbent — the descent's compare-and-keep would then be
+// measured against the wrong baseline.
+//
+// Scenario: bootstrap on the light fixture DAG (adopts TL=1000, high SP). Then
+// run the incremental path on a HEAVY DAG (T_noise ET -> 1900, past the 2000
+// deadline -> deadline miss -> SP drops). After the incremental call,
+// res_opt_.sp_opt must reflect the current (heavy) interval: strictly lower
+// than the light-DAG SP. If the baseline did not overwrite res_opt_, the stale
+// high SP would survive.
+//
+// The invariant holds because ResetIncumbentBaseline(false) (called at the top
+// of the descent) sets opt_sp_=-1.0 before the baseline eval, forcing the first
+// UpdateRecords to commit. This test pins that invariant so a future edit that
+// drops the -1.0 reset regresses loudly.
+TEST_F(CompareAndKeepSynthetic,
+       OptimizeIncre_w_TL_BaselineOverwritesResOptForNewInterval) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    // Bootstrap on the light DAG. Monotonic strictly-increasing-in-TL landscape
+    // -> adopts TL=1000 (the optimum).
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+    ASSERT_TRUE(opt.has_incumbent_);
+    const double sp_light = opt.res_opt_.sp_opt;
+    ASSERT_GT(sp_light, 0.0);
+
+    // Heavy DAG: T_noise ET -> 1900 (deadline 2000). T_noise has no perf pair
+    // (TL=-1), so UpdateExtDistBasedOnTimeLimit passes its ET through unchanged.
+    // Under RM (T_perf TL=1000 -> ET~1000) T_noise's response time ~2900 > 2000
+    // -> deadline miss -> SP drops below the light-DAG value.
+    DAG_Model dag_heavy = dag_tasks;
+    dag_heavy.tasks[1].execution_time_dist =
+        FiniteDist(GaussianDist(1900.0, 0.5), 5);
+
+    opt.OptimizeIncre_w_TL(dag_heavy, 2);
+
+    // The baseline overwrote res_opt_: the carried SP is the heavy-DAG value
+    // (strictly lower than sp_light), NOT the stale light SP.
+    EXPECT_LT(opt.res_opt_.sp_opt, sp_light)
+        << "res_opt_.sp_opt was not overwritten for the current interval; the "
+        << "stale previous-interval SP (" << sp_light << ") survived.";
+}
+
+// Same invariant for the reopt path. ResetIncumbentBaseline(true) re-evaluates
+// the carried incumbent {pa, tl} under the NEW (heavy) DAG and commits that, so
+// res_opt_.sp_opt becomes the re-evaluated (heavy) value before the descent
+// runs — the baseline cannot be rejected against a stale high SP.
+TEST_F(CompareAndKeepSynthetic,
+       ReOptimizePeriodic_BaselineOverwritesResOptForNewInterval) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+    ASSERT_TRUE(opt.has_incumbent_);
+    const double sp_light = opt.res_opt_.sp_opt;
+    ASSERT_GT(sp_light, 0.0);
+
+    DAG_Model dag_heavy = dag_tasks;
+    dag_heavy.tasks[1].execution_time_dist =
+        FiniteDist(GaussianDist(1900.0, 0.5), 5);
+
+    opt.ReOptimizePeriodic(dag_heavy, 2);
+
+    EXPECT_LT(opt.res_opt_.sp_opt, sp_light)
+        << "res_opt_.sp_opt was not overwritten for the current interval; the "
+        << "stale previous-interval SP (" << sp_light << ") survived.";
 }
 
 // --- Counter-driven dispatcher (Optimize_w_TL_ScratchOrIncre) ---
@@ -907,8 +979,8 @@ TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
 }
 
 // count == 0 → 0 % period == 0 → ReOptimizePeriodic (from_scratch). On a fresh
-// opt this is the interval-0 bootstrap: SeedIncumbentBaseline synthesizes an
-// RM+min-TL incumbent, so the call succeeds (no CoutError) and leaves the opt
+// opt this is the interval-0 bootstrap: ResetIncumbentBaseline(true) synthesizes
+// an RM+min-TL incumbent, so the call succeeds (no CoutError) and leaves the opt
 // initialized. The reopt branch is observable via the recorded flags: EVERY
 // flag this call pushed is true (the from-scratch descent evaluates all
 // candidates with from_scratch=true).

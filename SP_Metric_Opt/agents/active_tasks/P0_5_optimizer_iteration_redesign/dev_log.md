@@ -327,3 +327,67 @@
   own focused commit (stage only the P0.5 + the matched debug-instrumentation
   removal) and leave the config/experiment churn + other task dirs for their own
   commits, OR commit the lot. Awaiting user guidance; nothing committed yet.
+
+---
+
+## 2026-07-09 — Phase 5 issue (5): unified `ResetIncumbentBaseline`
+
+**User review fix (5) of 8.** The "reset `res_opt_` for each new interval"
+invariant held, but via two **different implicit mechanisms** split across two
+paths — the "code organization not good / repeated code" the user flagged:
+- Incremental: `opt_sp_ = -1.0` sentinel at `OptimizeIncre_w_TL:375` → baseline
+  eval's `UpdateRecords` force-commits → `res_opt_` overwritten.
+- Reopt: `SeedIncumbentBaseline()` at `ReOptimizePeriodic:569` re-evals carried
+  {pa, tl} under the new DAG + commits → `opt_sp_` = re-evaluated value.
+
+**Decision (user, 2026-07-09):** keep both paths' behavior EXACTLY (the reopt
+PA-search-at-default-TL that Issue A protected stays), but consolidate the reset
+into **one explicit function** — `ResetIncumbentBaseline(bool from_scratch)` —
+branched on `from_scratch`:
+- `true`  → reopt reset = today's `SeedIncumbentBaseline` body (byte-identical).
+- `false` → incremental reset = `opt_sp_ = -1.0` (moved from `OptimizeIncre_w_TL:375`).
+
+**Placement:** called at the top of `PerformCoordinateDescentForTaskConfigOpt`
+(before the baseline eval) AND at the top of `OptimizeWithTimeLimitOptDisabled`
+(covers the disable-path bypass — that path skips the descent, so without its
+own reset `res_opt_` would stay stale for the interval). `SeedIncumbentBaseline()`
+call removed from `ReOptimizePeriodic:569`; `opt_sp_ = -1.0` removed from
+`OptimizeIncre_w_TL:375`; `SeedIncumbentBaseline` declaration removed from the
+header.
+
+**Critical ordering invariant (preserved):** `BuildChallengerFromIncumbent`
+(called inside the baseline eval) reads `res_opt_` to build the challenger. On
+the incremental path `ResetIncumbentBaseline(false)` sets ONLY `opt_sp_ = -1.0`
+(the gate); it must NOT touch `res_opt_`. Order: read prior from `res_opt_` →
+re-eval under new DAG → `UpdateRecords` force-commits (overwrites `res_opt_`).
+Matches today exactly.
+
+**Comment trims (user directive: "if i see that kind of long code comments,
+i'll just skip it"):** cut the patience / baseline / {-1}-skip / zero-work-
+fallback comments in the descent, the carried-adopted-TL + edge-case-guard
+comments in `OptimizeIncre_w_TL`, and the helper-block comments in
+`EvaluateTimeLimitConfig_ScratchOrIncre` / `UpdateRecords` /
+`SeedStateFromIncumbent` / `CommitIncumbent` / `BuildChallengerFromIncumbent` to
+~1-3 lines each. Stale `SeedIncumbentBaseline` / `prev_optimizer_` comment
+references in `OptimizeSP_TL_Incre.h` and `SimulationOrchestrator.cpp:300`
+updated to `ResetIncumbentBaseline` / `has_incumbent_`.
+
+**Tests:** the 2 `SeedIncumbentBaseline_*` tests rewritten to call
+`ResetIncumbentBaseline(true)` (bodies/assertions unchanged — reopt branch is
+byte-identical, so `ReOptimizePeriodic_AdoptsWhenDagMutationShiftsOptimum` /
+`_KeepsIncumbentWhenDagUnchanged` compare-and-keep contracts are preserved).
+The 2 `*_BaselineOverwritesResOptForNewInterval` test comments updated to
+attribute the invariant to `ResetIncumbentBaseline` instead of the inline
+sentinel.
+
+**Out of scope (separate follow-ups, one-by-one per user):** (1) remove the
+stale-TL guard `:411-421` — here only its comment was trimmed; (2) evaluate
+removing `has_incumbent_`; (3) rename `time_limits` param; (4) remove dead
+`any_eval_ran` / `:335-337` fallback (kept + comment trimmed here); (6) patience
+consecutive-vs-total semantics; (8) persistent challenger.
+
+**Verify:** DEBUG build (`cmake -DCMAKE_BUILD_TYPE=DEBUG ..` +
+`cmake --build . --target check.SP_OPT -j5`) → **46 `testIncreOpt_w_TL` + 16/16
+ctest green**. Staged with `git add` (4 files: `OptimizeSP_TL_Incre.{h,cpp}`,
+`SimulationOrchestrator.cpp`, `testIncreOpt_w_TL.cpp`). **NOT committed** per
+standing constraint.
