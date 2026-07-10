@@ -211,9 +211,10 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit(
 
     double best_sp = current_sp;
     double best_option_val = time_limits[task_idx];
-    int consecutive_non_improving = 0;
 
     // Walk sequentially in direction `step`, stopping at the option-set boundary.
+    // `patience` is a total non-improvement budget: each non-improving step spends
+    // one unit (no reset on improvement); when it hits 0 the walk stops.
     for (int i = static_cast<int>(curr_opt_idx) + step;
          i >= 0 && i < static_cast<int>(opts.size()); i += step) {
         double val = opts[i];
@@ -226,13 +227,10 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit(
         if (IsBetterTimeLimitOption(sp_val, best_sp, step)) {
             best_sp = sp_val;
             best_option_val = val;
-            consecutive_non_improving = 0;  // improvement resets the budget
+        } else if (patience == 0) {
+            break;  // budget exhausted: stop the walk in this direction
         } else {
-            ++consecutive_non_improving;
-            if (consecutive_non_improving > patience) {
-                break;  // budget exhausted: stop the walk in this direction
-            }
-            // Else: within budget, keep stepping outward to look past the dip.
+            --patience;  // spend one unit, keep stepping outward past the dip
         }
     }
 

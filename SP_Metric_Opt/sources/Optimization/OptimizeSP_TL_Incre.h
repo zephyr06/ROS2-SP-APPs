@@ -139,23 +139,17 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     // Unidirectional trial-and-error walk for ONE task's time limit. Steps
     // outward from `baseline_val` in direction `step` (+1 up, -1 down) through
-    // the task's FULL recorded option set (time_limit_option_for_each_task_,
-    // which holds every timePerformancePairs entry, not a radius-bounded
-    // window), evaluating each candidate via
+    // the task's FULL recorded option set, evaluating each candidate via
     // EvaluateTimeLimitConfig_ScratchOrIncre. Adopts a candidate when
     // IsBetterTimeLimitOption returns true; otherwise spends one unit of
-    // `patience` (consecutive-non-improvement budget). Stops when patience runs
-    // out or the option-set boundary is reached. Returns the best SP found and
-    // leaves `time_limits[task_idx]` at the best option tried.
+    // `patience` (a total non-improvement budget, NOT reset on improvement).
+    // Stops when patience hits 0 or the option-set boundary is reached.
     //
-    // `patience`: 0 = strict break on the first non-improving step (used by the
-    // incremental path, whose warm-started PA search makes SP-vs-TL effectively
-    // unimodal so a dip never hides a better option); 1 = tolerate one dip
-    // before breaking (used by the from-scratch reopt path, where SP-vs-TL can
-    // be non-unimodal at high utilization, so a single dip must not hide a
-    // strictly better option further out). `current_sp` is the best SP so far
-    // across the whole coordinate descent (carries across tasks and across the
-    // backward/forward passes). `baseline_val` is the TL the walk steps from —
+    // `patience`: 0 = strict break on the first non-improving step (incremental
+    // path, warm-started PA search makes SP-vs-TL ~unimodal); 1 = tolerate one
+    // non-improving step total before breaking (reopt path, where SP-vs-TL can
+    // be non-unimodal at high utilization). `current_sp` is the best SP so far
+    // across the whole descent. `baseline_val` is the TL the walk steps from —
     // it MUST be a member of the option set, else the walk is a no-op.
     double OptimizeSingleTaskTimeLimit(size_t task_idx, int K,
                                        std::vector<double>& time_limits,

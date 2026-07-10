@@ -482,3 +482,45 @@ commits via `UpdateRecords` → `CommitIncumbent` exactly once.
 **Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
 Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `tasks.md` + `dev_log.md`).
 **NOT committed** per standing constraint.
+
+## 2026-07-09 — Phase 5 issue (6): simplify OptimizeSingleTaskTimeLimit patience
+
+**What:** `OptimizeSingleTaskTimeLimit` carried a separate
+`consecutive_non_improving` counter that reset on each improvement — a
+CONSECUTIVE non-improvement budget, breaking when `counter > patience`.
+
+**User's design:** drop the counter; decrement `patience` directly on failure;
+no reset on improvement (a TOTAL non-improvement budget). User's literal stop
+formula: "patience-- if failed, stop if patience<0 or patience==0".
+
+**Form chosen = check-then-decrement**, not the literal formula. The literal
+"decrement then stop if `<=0`" collapses patience=1 → 0 → stop on the first
+non-improvement, i.e. patience=1 behaves like patience=0 and the reopt/
+incremental distinction (two YAML values) is erased. Check-then-decrement
+(`else if (patience == 0) break; else --patience;`) preserves `patience=N`
+meaning "tolerate N non-improving steps": patience=0 breaks on first
+non-improvement (identical to before), patience=1 tolerates one.
+
+**Semantics shift — reopt path only.** For incremental (patience=0) every
+formulation agrees (break on first non-improvement) → byte-identical. For reopt
+(patience=1) the budget changed from CONSECUTIVE to TOTAL: a noisy-but-trending-
+up region (IMP,NIP,IMP,NIP,…) that previously reset on each IMP and walked far
+now stops at the 2nd NIP. Effect: shorter reopt walks (efficiency win on the
+expensive `OptimizeFromScratch` evals) at bounded SP risk (each task still gets
+backward+forward passes from baseline). The user accepted this tradeoff
+("efficiency with potential performance loss on SP").
+
+**Done:** rewrote the walk body (`OptimizeSP_TL_Incre.cpp:212-237`) — dropped
+the counter, the reset, and the `> patience` check; replaced with
+check-then-decrement. Header doc (`OptimizeSP_TL_Incre.h:140-153`) rewritten:
+"total non-improvement budget, NOT reset on improvement", patience values
+described as N tolerates N non-improving steps.
+
+**Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
+Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `.h` + `tasks.md` +
+`dev_log.md`). **NOT committed** per standing constraint.
+
+**Open (not blocking):** the unit suite cannot surface the reopt SP delta
+(positive or negative) from the consecutive→total shift — that needs an A/B
+experiment on the P1.1 taskset if quantifying it matters. Deferred unless the
+user wants it.

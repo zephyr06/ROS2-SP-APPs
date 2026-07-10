@@ -194,15 +194,25 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       only the 2 lines in this function). Pure dead-code removal — no behavior
       change. 46 `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG build). Staged
       (git add only, no commit).**
-- [ ] **5g. (6) Simplify `OptimizeSingleTaskTimeLimit` patience logic.** Drop
-      the separate `consecutive_non_improving` counter; decrement `patience`
-      directly on non-improvement and stop when patience is exhausted. **Open
-      question to confirm with user**: the current code resets the counter on
-      improvement (a CONSECUTIVE non-improvement budget). The user's proposal
-      ("just use `patience--` if failed... stop if `patience<0` or `patience==0`")
-      is a TOTAL non-improvement budget (no reset) — which changes patience=1
-      semantics (consecutive: tolerates 1 dip; total-with-`<0`-stop: tolerates 1
-      dip; total-with-`<=0`-stop: tolerates 0 dips). Confirm before implementing.
+- [x] **5g. (6) Simplify `OptimizeSingleTaskTimeLimit` patience logic.** Dropped
+      the separate `consecutive_non_improving` counter; `patience` is now
+      decremented directly on non-improvement. **DONE (2026-07-09)** per user's
+      design: total non-improvement budget, no reset on improvement. Form chosen
+      = **check-then-decrement** (`else if (patience == 0) break; else --patience;`)
+      rather than the user's literal "patience-- then stop if `patience<0` or
+      `patience==0`" — the literal form collapses patience=1 to patience=0
+      (tolerates 0 dips), erasing the reopt/incremental distinction; check-then-
+      decrement keeps `patience=N` meaning "tolerate N non-improving steps", so
+      incremental (patience=0) is byte-identical to before and reopt (patience=1)
+      tolerates one dip. Semantics shift for reopt only: budget is now TOTAL not
+      CONSECUTIVE — a noisy-but-trending-up region (IMP,NIP,IMP,NIP) now stops at
+      the 2nd NIP instead of resetting on each IMP and walking far. Effect:
+      shorter reopt walks (efficiency win on the expensive `OptimizeFromScratch`
+      evals) at bounded SP risk (each task still gets backward+forward passes).
+      Unit suite cannot surface the SP delta — needs an A/B experiment if
+      quantifying the reopt SP effect matters. 46 `testIncreOpt_w_TL` + 16/16
+      ctest green (DEBUG build). Header doc updated to "total non-improvement
+      budget, NOT reset on improvement". Staged (git add only, no commit).
 - [ ] **5h. (7) Reuse a single optimizer instance across
       `EvaluateTimeLimitConfig_ScratchOrIncre` calls** instead of rebuilding per
       candidate. Efficiency. **DEFERRED** (user: "we can optimize this efficiency
