@@ -336,22 +336,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     // Start the descent from the CARRIED ADOPTED TL in res_opt_, NOT the
     // Gaussian-mean TL: both sides of FindTaskWithDifferentEt's diff must carry
     // the adopted TL, else unchanged perf-pair tasks are flagged as changed
-    // (the P1.1 residual). The opt_sp_=-1.0 reset the baseline force-commits
-    // against now lives in ResetIncumbentBaseline(false) inside the descent.
+    // (the P1.1 residual).
     std::vector<double> time_limits = ReconstructTimeLimitVecFromResOpt();
-    // Edge-case guard: force -1 for a task whose carried TL is no longer a valid
-    // option this interval (a perf pair lost since N-1, or a cold res_opt_).
-    for (size_t i = 0; i < time_limits.size(); i++) {
-        const std::vector<double>& opts = time_limit_option_for_each_task_[i];
-        bool valid = false;
-        for (double v : opts) {
-            if (v == time_limits[i]) {
-                valid = true;
-                break;
-            }
-        }
-        if (!valid) time_limits[i] = -1.0;
-    }
     if (GlobalVariables::disable_time_limit_opt) {
         return OptimizeWithTimeLimitOptDisabled(K, time_limits,
                                                 /*from_scratch=*/false);

@@ -143,11 +143,24 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       search state, not just the adopted TL). Trade-off: better efficiency,
       potential SP-performance loss. Compare both designs in experiments, then
       decide which to keep.
-- [ ] **5c. (1) Remove the stale-TL edge-case guard in `OptimizeIncre_w_TL`
-      (`:399-421`).** The guard intersects each carried TL against the current
-      option set (forces -1 when a task lost its perf pair). Clear for code
-      simplicity. Latent today — `CommitIncumbent` only ever writes
-      current-option TLs.
+- [x] **5c. (1) Remove the stale-TL edge-case guard in `OptimizeIncre_w_TL`.**
+      The guard intersected each carried TL against the current option set
+      (forced -1 when a task lost its perf pair since N-1, or on a cold
+      `res_opt_`). **REMOVED for code simplicity** per user direction. The
+      guard was NOT fully latent: each interval loads a fresh DAG
+      (`taskset_..._interval_N.yaml`), so a task CAN lose its perf pair across
+      intervals, and `UpdateExtDistBasedOnTimeLimit` (which does NOT consult
+      `time_limit_option_for_each_task_`) would apply a stale carried TL as a
+      point dist via `GetUnitExecutionTimeDist`. Removed anyway — the user
+      judged the simplicity win worth the edge-case exposure (no experiment in
+      the current suite mutates a task's `timePerformancePairs` across
+      intervals, and `OptimizeSingleTaskTimeLimit:208-210`'s
+      `FindTimeLimitOptionIndex`-sentinel still skips the WALK on a stale
+      baseline; only the baseline eval itself was guarded). **DONE
+      (2026-07-09): deleted the `:342-354` loop + trimmed the carried-adopted-TL
+      comment above it (dropped the now-stale "opt_sp_=-1.0 reset ... lives in
+      ResetIncumbentBaseline" sentence). 46 `testIncreOpt_w_TL` + 16/16 ctest
+      green (DEBUG build). Staged (git add only, no commit).**
 - [ ] **5d. (2) Reconsider `has_incumbent_`.** The bool gate may be unnecessary
       (`res_opt_` emptiness / `opt_pa_.emptiness` could gate). Evaluate removal.
 - [ ] **5e. (3) Rename the `time_limits` parameter in

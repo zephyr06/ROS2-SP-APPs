@@ -391,3 +391,36 @@ consecutive-vs-total semantics; (8) persistent challenger.
 ctest green**. Staged with `git add` (4 files: `OptimizeSP_TL_Incre.{h,cpp}`,
 `SimulationOrchestrator.cpp`, `testIncreOpt_w_TL.cpp`). **NOT committed** per
 standing constraint.
+
+---
+
+## 2026-07-09 — Phase 5 issue (1): removed the stale-TL edge-case guard
+
+**Issue.** `OptimizeIncre_w_TL` carried an edge-case guard (`:342-354`) that
+intersected each carried TL from `ReconstructTimeLimitVecFromResOpt()` against
+the current interval's `time_limit_option_for_each_task_`, forcing `-1` for any
+task whose carried TL was no longer a valid option this interval (a perf pair
+lost since N-1, or a cold `res_opt_`).
+
+**User decision: remove for code simplicity.** The guard was NOT fully latent —
+each interval loads a fresh DAG (`taskset_..._interval_N.yaml`), so a task CAN
+lose its `timePerformancePairs` across intervals, and
+`UpdateExtDistBasedOnTimeLimit` (which does NOT consult
+`time_limit_option_for_each_task_`) would apply a stale carried TL as a point
+dist via `GetUnitExecutionTimeDist`. The user judged the simplicity win worth
+that edge-case exposure. The walk itself is still protected:
+`OptimizeSingleTaskTimeLimit:208-210`'s `FindTimeLimitOptionIndex`-sentinel
+skips any task whose baseline_val is not a member of the current option set —
+so a stale carried TL only affects the BASELINE eval (one eval per interval),
+not the search. No experiment in the current suite mutates a task's
+`timePerformancePairs` across intervals, so the change is behavior-preserving
+for every run/test in the repo.
+
+**Change.** Deleted the 13-line `for` loop + `valid` scan at `:342-354` of
+`OptimizeSP_TL_Incre.cpp`. Trimmed the carried-adopted-TL comment above it
+(dropped the now-stale "opt_sp_=-1.0 reset ... lives in ResetIncumbentBaseline"
+sentence — that reset detail belongs to issue (5), not this region).
+
+**Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
+Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `tasks.md` + `dev_log.md`).
+**NOT committed** per standing constraint.
