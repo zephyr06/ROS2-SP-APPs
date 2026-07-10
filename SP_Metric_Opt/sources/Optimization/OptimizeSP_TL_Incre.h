@@ -129,8 +129,13 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // time-performance pairs). Return-by-value variant;
     // InitializeTimeLimitsToSmallest delegates here.
     std::vector<double> SmallestTimeLimitVec() const;
+    // `starting_time_limits`: the per-task TL vector the descent walks from.
+    // Origin is path-dependent — incremental: carried adopted TL from res_opt_
+    // (ReconstructTimeLimitVecFromResOpt); reopt: Gaussian-mean-closest TL for
+    // the current DAG (InitializeTimeLimitsFromETConfig).
     void PerformCoordinateDescentForTaskConfigOpt(
-        int K, std::vector<double>& time_limits, bool from_scratch = false);
+        int K, std::vector<double>& starting_time_limits,
+        bool from_scratch = false);
 
     // Unidirectional trial-and-error walk for ONE task's time limit. Steps
     // outward from `baseline_val` in direction `step` (+1 up, -1 down) through

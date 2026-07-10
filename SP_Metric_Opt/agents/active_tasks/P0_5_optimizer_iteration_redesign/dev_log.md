@@ -424,3 +424,33 @@ sentence — that reset detail belongs to issue (5), not this region).
 **Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
 Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `tasks.md` + `dev_log.md`).
 **NOT committed** per standing constraint.
+
+## 2026-07-09 — Phase 5 issue (3): renamed `time_limits` → `starting_time_limits`
+
+User: *"i want a more meaningful name, for example, is it the time_limits from
+last interval optimization?"*
+
+**Verified the origin (re-derived, not assumed) — it is path-dependent:**
+- **Incremental** call site (`OptimizeIncre_w_TL:340`) passes
+  `ReconstructTimeLimitVecFromResOpt()` = the **carried adopted TL from
+  `res_opt_`** (last interval's result). User's "from last interval
+  optimization" hypothesis is **correct on this path**.
+- **Reopt** call site (`ReOptimizePeriodic:478`) passes
+  `InitializeTimeLimitsFromETConfig()` = **Gaussian-mean-closest TL for the
+  current DAG** (`Find_Close_ExecutionTime` against
+  `execution_time_dist.GetAvgValue()`). A fresh start, NOT last interval.
+
+So no name can honestly say "last interval's" — the origin differs by path.
+Chose the origin-neutral **`starting_time_limits`** ("the TL vector the descent
+walks from") and documented both provenances in a 4-line header comment.
+
+**Scope decision:** renamed only THIS function's parameter. The callees it flows
+into (`EvaluateTimeLimitConfig_ScratchOrIncre`, `OptimizeSingleTaskTimeLimit`,
+`UpdateRecords`) receive a *candidate-being-evaluated/mutated* — a different
+semantic role — so their `time_limits` params were intentionally left as-is.
+Call sites unchanged (positional args; their local var name `time_limits` is
+independent of the parameter name).
+
+**Verify:** DEBUG build → **46 `testIncreOpt_w_TL` + 16/16 ctest green**.
+Staged with `git add` (`OptimizeSP_TL_Incre.h` + `OptimizeSP_TL_Incre.cpp` +
+`tasks.md` + `dev_log.md`). **NOT committed** per standing constraint.

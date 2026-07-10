@@ -241,7 +241,7 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit(
 }
 
 void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
-    int K, std::vector<double>& time_limits, bool from_scratch) {
+    int K, std::vector<double>& starting_time_limits, bool from_scratch) {
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
     std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
     std::sort(sorted_indices.begin(), sorted_indices.end(),
@@ -259,7 +259,8 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     // commits against the correct current-interval baseline, not a stale prior.
     ResetIncumbentBaseline(from_scratch);
     double current_config_sp =
-        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+        EvaluateTimeLimitConfig_ScratchOrIncre(K, starting_time_limits,
+                                               from_scratch);
     bool any_eval_ran = true;  // the baseline eval above counts
 
     for (size_t idx : sorted_indices) {
@@ -268,23 +269,24 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
         if (opts.size() == 1 && opts[0] == -1.0)
             continue;
 
-        double baseline_val = time_limits[idx];
+        double baseline_val = starting_time_limits[idx];
         // 1. Backward pass: try decreasing the TL (tie-break toward smaller TL
         //    on SP ties — handled inside IsBetterTimeLimitOption via step<0).
         current_config_sp = OptimizeSingleTaskTimeLimit(
-            idx, K, time_limits, current_config_sp, baseline_val,
+            idx, K, starting_time_limits, current_config_sp, baseline_val,
             /*step=*/-1, from_scratch, patience);
         // 2. Forward pass from the ORIGINAL starting TL (not the backward
         //    result), exploring the upward side from the same origin.
         current_config_sp = OptimizeSingleTaskTimeLimit(
-            idx, K, time_limits, current_config_sp, baseline_val,
+            idx, K, starting_time_limits, current_config_sp, baseline_val,
             /*step=*/1, from_scratch, patience);
     }
 
     // Defensive zero-work fallback (unreachable: the baseline eval above always
     // runs first). Retained for the prior "no evals, no crash" contract.
     if (!any_eval_ran && !dag_tasks_.tasks.empty()) {
-        EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+        EvaluateTimeLimitConfig_ScratchOrIncre(K, starting_time_limits,
+                                               from_scratch);
     }
 }
 

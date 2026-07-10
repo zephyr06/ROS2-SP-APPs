@@ -163,10 +163,27 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       green (DEBUG build). Staged (git add only, no commit).**
 - [ ] **5d. (2) Reconsider `has_incumbent_`.** The bool gate may be unnecessary
       (`res_opt_` emptiness / `opt_pa_.emptiness` could gate). Evaluate removal.
-- [ ] **5e. (3) Rename the `time_limits` parameter in
-      `PerformCoordinateDescentForTaskConfigOpt`** to convey its origin (carried
-      adopted TL for the incremental path; Gaussian-mean-closest for the reopt
-      path). Name should reflect "the TL vector the descent starts from".
+- [x] **5e. (3) Rename the `time_limits` parameter in
+      `PerformCoordinateDescentForTaskConfigOpt`** to convey its origin.
+      **DONE (2026-07-09):** renamed to `starting_time_limits` (header decl
+      `:132` + definition `:243` + all 5 body usages). Origin is
+      **path-dependent** (verified, not assumed): incremental call site
+      (`OptimizeIncre_w_TL:340`) passes `ReconstructTimeLimitVecFromResOpt()` —
+      the **carried adopted TL from `res_opt_`** (last interval's result, so the
+      user's "from last interval optimization" hypothesis IS correct here);
+      reopt call site (`ReOptimizePeriodic:478`) passes
+      `InitializeTimeLimitsFromETConfig()` — **Gaussian-mean-closest TL for the
+      current DAG** (a fresh start, NOT last interval). Since the origin differs
+      by path, no name can honestly say "last interval's"; chose the
+      origin-neutral `starting_time_limits` ("the TL vector the descent walks
+      from") + a 4-line origin comment on the header decl documenting both
+      provenances. Scope: only THIS function's parameter — the callees it flows
+      into (`EvaluateTimeLimitConfig_ScratchOrIncre`, `OptimizeSingleTaskTimeLimit`,
+      `UpdateRecords`) receive a *candidate-being-mutated*, a different role, so
+      their `time_limits` params were intentionally NOT renamed. Call sites
+      unchanged (pass by position; their local var name is independent). **46
+      `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG build). Staged (git add
+      only, no commit).**
 - [ ] **5f. (4) Remove the dead zero-work fallback in
       `PerformCoordinateDescentForTaskConfigOpt` (`:335-337`).** `any_eval_ran`
       is always true (the baseline eval above always runs first), so the
