@@ -1966,3 +1966,148 @@ passed. Folder archived to
 correctness audit).
 
 
+## 2026-07-07 — P1.1 gate RESOLVED: 2-vs-8 (3-vs-5) changed-task discrepancy
+
+Rebuilt `release` RunOrchestrator with the `debugMode:1` probes already in the
+working tree (`SeedStateFromIncumbent` dump + `FirstIncreDump`), ran INCR_P10
+on the N=8 taskset_0. **Gate reconciled.** Ground truth = 3 tasks change
+Gaussian params interval 0→1 (ids 5,6,7); runtime `ndiff=5` (ids 0,1,2,6,7).
+
+**Root cause:** `FindTaskWithDifferentEt` (`OptimizeSP_Incre.cpp:140-155`)
+compares `execution_time_dist` via `FiniteDist::operator!=`, but **both sides
+are TL-applied point dists, not the underlying YAML Gaussians.** The baseline
+(`prev_optimizer_.dag_tasks_`) carries the interval-0 REOPT's *adopted* TL
+(`SeedIncumbentBaseline` seeds min-TL, then the from-scratch descent +
+`UpdateRecords` adopts a strictly-better TL); the update passed to
+`OptimizeIncre` is `dag_tasks_cur = UpdateExtDistBasedOnTimeLimit(dag_tasks_,
+time_limits)` from `EvaluateTimeLimitConfig_ScratchOrIncre:148-149` — the
+interval-1 descent's current TL. So a perf-pair task is flagged iff
+adopted-TL ≠ descent-TL, independent of whether the YAML Gaussian moved:
+tasks 0,1,2 = false positives (YAML identical, TL drifted); task 5 = false
+negative (YAML mu changed, masked because adopted-TL == descent-TL); only
+gaussian-only tasks (3,6,7; TL=-1 → `UpdateExtDistBasedOnTimeLimit` no-op)
+compare the raw Gaussian and flag correctly.
+
+**Implication for the residual:** the per-activation ET residual is
+"TL-drift false positives in the diff" (perf-pair tasks swept against point
+dists that don't reflect a real interval-to-interval ET change), NOT
+"per-variation scoring asymmetry." The lever is *what gets diffed*, not *how
+variations are scored*. **Fix D inert-ness also confirmed:** `FiniteDist::approx_equal`
+(`Probability.cpp:345-357`) has zero production callers; the live comparison
+`operator!=` hardcodes tolerance=1e-1 and does not delegate to it. Full record:
+`agents/active_tasks/P1_1_p25_residual_investigation/dev_log.md`. Remaining:
+equal-radii A/B (step 2) + the re-frame/Fix-C decision (step 4).
+
+## 2026-07-07 (later) — P1.1 YARDSTICK CORRECTION (user): YAML ≠ ground truth for TL-optimizable tasks
+
+User correction to the gate writeup above: for tasks whose TL can be optimized
+(has `timePerformancePairs`), the YAML Gaussian / `performance_records_*` are
+NOT ground truth — they were generated without optimization results. A
+TL-optimizable task's effective ET during interval N−1 IS the TL the optimizer
+adopted that interval; at interval N, before re-optimizing, the correct
+assumption is ET = last adopted TL. The YAML Gaussian is only a cold-start
+reference, never the "previous ET."
+
+Under the corrected yardstick, a perf-pair task's ET changes between intervals
+iff its adopted TL changes (an optimization outcome), NOT when the YAML mu
+moves. (For non-perf-pair tasks TL=-1, `UpdateExtDistBasedOnTimeLimit` is a
+no-op, so ET = raw Gaussian and changes iff the Gaussian changed.)
+
+**Re-derived discrepancy** (INCR_P10, N=8 taskset_0, interval 0→1): ground
+truth = **2** changed (tasks 6,7 — the gaussian-only tasks). `ndiff=5` = **3
+false positives (0,1,2 — update side used the Gaussian-mean TL, not the
+carried adopted TL) + 0 false negatives.** Task 5 is a **true negative**
+(adopted TL 23.467 unchanged → ET unchanged; its YAML mu move is irrelevant for
+a perf-pair task). The earlier "false negative on task 5" was an artifact of
+using YAML as the yardstick.
+
+**Precise lever:** `OptimizeIncre_w_TL` (`OptimizeSP_TL_Incre.cpp:373`) starts
+the incremental descent from `InitializeTimeLimitsFromETConfig()` (closest-to-
+Gaussian-mean TL), so the update side of `OptimizeIncre`'s diff is point dists
+at the **Gaussian-mean** TL, not the carried adopted TL. The baseline side
+correctly carries the interval-(N−1) adopted-TL point dists. Fix = start the
+incremental descent from `ReconstructTimeLimitVecFromResOpt()` (carried adopted
+TL; already exists `OptimizeSP_TL_Incre.cpp:385-394`, already used by
+`SeedIncumbentBaseline` for the reopt-path baseline re-eval at line 464). Edge
+case for the eventual fix: a task with a perf pair in N−1 but none in N would
+get a stale adopted TL applied as a point dist — intersect carried TL against
+the current option set (or use -1) before applying.
+
+**This OVERTURNS the earlier "diff the underlying Gaussians" suggestion** —
+diffing Gaussians would be WRONG (the Gaussian is explicitly not the ET for
+TL-optimizable tasks). Fix D (GetAvgValue band) and Fix C (per-variation
+scoring) are both the wrong lever; the lever is the descent start TL. Still
+investigation-only (2026-07-06 hold on implementing Fix C stands). Full record:
+`agents/active_tasks/P1_1_p25_residual_investigation/dev_log.md` (YARDSTICK
+CORRECTION section).
+
+
+
+## 2026-07-07 (later still) — P1.1 DECISION: implement descent-start-TL fix (user-approved)
+
+User approved the fix identified by the yardstick correction ("i agree, that
+needs to be fixed ... we need to initialize time limit in that way"). This
+lifts the 2026-07-06 implement-only hold **for the descent-start-TL lever
+only**. `OptimizeIncre_w_TL` (`OptimizeSP_TL_Incre.cpp:373`) will start the
+incremental descent from `ReconstructTimeLimitVecFromResOpt()` (carried adopted
+TL) instead of `InitializeTimeLimitsFromETConfig()` (Gaussian-mean TL), with an
+edge-case guard forcing -1 for a task whose carried TL is no longer in the
+current option set (e.g. lost its perf pair). This makes the update side of
+`FindTaskWithDifferentEt`'s diff point dists at the carried adopted TL =
+baseline for unchanged perf-pair tasks → eliminates the 3 false positives
+(tasks 0,1,2), `ndiff` 5 → ~2 (only gaussian-only tasks 6,7 flag). Fix C and
+Fix D remain NOT in scope (wrong levers); equal-radii A/B dropped (radii don't
+touch the descent start TL). TDD: failing test → one-line change + guard →
+suite + ctest → re-run INCR_P10 N=8 taskset_0 probe. Full record:
+`agents/active_tasks/P1_1_p25_residual_investigation/dev_log.md`.
+
+## 2026-07-08 — P0.5 incumbent-state redesign LANDED (working tree); P1.1 probe PASS
+
+**P0.5 — Redesign the optimizer iteration process (incumbent-state refactor).**
+The decided design (incumbent owned **once** in `res_opt_`; `has_incumbent_`
+gate; `CommitIncumbent`/`BuildChallengerFromIncumbent` helpers; transient
+challenger rebuilt from `res_opt_` each incremental interval) is fully applied
+in the working tree — Phases 1–4 complete. The `prev_optimizer_` member is
+**gone** (only comment references remain); `SeedStateFromIncumbent` and
+`UpdateRecords` route through the single writer `CommitIncumbent`;
+`SeedIncumbentBaseline` gates on `has_incumbent_`; the incremental branch of
+`EvaluateTimeLimitConfig_ScratchOrIncre` builds the challenger via
+`BuildChallengerFromIncumbent()` (the `else` no-incumbent branch is now a hard
+`CoutError` contract violation, was the `OptimizeFromScratch` fallback). The 6
+formerly-`prev_optimizer_`-reading tests are migrated to read `res_opt_` /
+`has_incumbent_` / `BuildChallengerFromIncumbent()`; the 3 frozen-baseline
+DAG-ET assertions rewrite to observe the carried TL/current DAG via
+`BuildChallengerFromIncumbent().dag_tasks_` + `res_opt_.id2time_limit`.
+`OptimizeSP_Incre.cpp:288-297` comment rewritten to the throwaway-challenger
+model.
+
+**Verified green.** `cmake --build . --target check.SP_OPT -j5` (DEBUG): 16/16
+ctest; `testIncreOpt_w_TL` = **44 tests**.
+
+**Phase 3d re-derivation (two defaults overturned).** (1) The reopt cold-start
+at `ReOptimizePeriodic:575` (`InitializeTimeLimitsFromETConfig()`) is **NOT a
+bug** — the reopt path uses `OptimizeFromScratch` (not `OptimizeIncre`), so the
+diff never runs on it; no invariant to preserve. This overturns `design.md` §1
+symptom 3's "same class of bug on the other path" claim. (2) The incremental
+start at `OptimizeIncre_w_TL:398` (`ReconstructTimeLimitVecFromResOpt()` +
+stale-TL guard `:411-421`) is **KEPT, NOT folded** into
+`BuildChallengerFromIncumbent` — the call site's guard-applied update-side
+vector and the helper's raw baseline-reconstruction vector serve different
+purposes. This overturns `design.md` §6 Q3's "fold" default.
+
+**P1.1 probe — PASS, stronger than predicted.** Rebuilt `release/` (was stale)
+and re-ran INCR_P10 N=8 taskset_0:
+`release/tests/RunOrchestrator <ts> <out> INCR_P10 10000 1` (4th arg = per-
+interval horizon 10000 ms, per `runorchestrator-duration-arg-semantics`). Pre-
+redesign `call=0 ndiff=5` (3 false positives on perf-pair tasks 0,1,2); post-
+redesign **`call=0 ndiff=0`**, and across all 302 incremental calls `ndiff` is
+only ever 0 or 1. Stronger than the investigation's "5 → ~2" prediction: under
+the redesign the gaussian-only baseline is rebuilt from the *current* `dag_tasks_`
+each interval, so inter-interval Gaussian drift is no longer in the diff either
+→ only a real adopted-TL move within the current descent flags. P0.5 alone
+collapses the `ndiff` false-positive class — no YAML persistence (P0.1)
+required; P0.1's remaining value is inspectability-only, as
+`p05-subsumes-tl-init-bug` predicted. Trace:
+`simulation_experiments/optimizer_comparison/et_repro/p05_probe_ts0_P10/`.
+Full record: `agents/active_tasks/P0_5_optimizer_iteration_redesign/`. Not yet
+committed (working tree).

@@ -1,0 +1,329 @@
+# P0.5 — Redesign the Optimizer Iteration Process — Dev Log
+
+> Detailed working log for this task. Append chronological entries below.
+> On task completion, append a one-line milestone to the **top-level**
+> `agents/dev_log.md` (the canonical narrative).
+
+## 2026-07-08
+
+- Task created per user (2026-07-08): redesign the optimizer iteration process
+  is the #2 priority, after the TL bug (P0.1). User chose the **full scope**
+  (flow + state), so this task absorbs the former P0.1b data-member refactor.
+  P0.1 is now bug-fix-only (P0.1a); its `tasks.md` P0.1b section was moved here.
+- Predecessor: ~~P0.1 (adopted-TL YAML fix) should land first so the redesign
+  works against a file that is a faithful prior.~~ **REVERSED 2026-07-08** — see
+  the re-scoping entry below: P0.5 subsumes the functional TL-init bug by
+  construction; P0.1 is demoted to inspectability-only and is no longer a
+  predecessor.
+- **Design decided by user (2026-07-08).** User rejected the open-ended
+  "propose the target shape" plan and chose the **incumbent-state** approach:
+  - `res_opt_` becomes the single durable incumbent store (no parallel cache).
+  - `has_incumbent_` bool replaces `prev_optimizer_.IfInitialized()` as the
+    interval-0 gate (the old gate only checked `!opt_pa_.empty()`, which was the
+    root of the `sp_parameters_` desync).
+  - `CommitIncumbent(pa, sp, tl)` — one helper replacing the 8 scattered sync
+    assignments across `UpdateRecords` (`:128-134`) and `SeedStateFromIncumbent`
+    (`:457-476`); one writer → the desync class of bug is structurally
+    impossible.
+  - `BuildChallengerFromIncumbent()` — builds a throwaway `OptimizePA_Incre`
+    from `res_opt_` (reconstructed adopted-TL DAG + carried PA + `sp_parameters_`)
+    each incremental interval. The challenger is transient; the incumbent is
+    durable.
+  - The DAG-advance side-effect of `OptimizeIncre` (`OptimizeSP_Incre.cpp:296`)
+    becomes harmless (throwaway local); the adopted TL it persists into
+    `res_opt_.id2time_limit` is the real invariant, reconstructed next interval.
+    The frozen-baseline propagation path simply ceases to exist.
+  - Zero public-API change; blast radius = `OptimizeSP_TL_Incre.{h,cpp}` +
+    `testIncreOpt_w_TL.cpp` + a comment-only touch in `OptimizeSP_Incre.cpp`.
+- The full spec (problem, design, the diff-baseline invariant that must survive
+  the reconstruction, the 4-phase migration, scope boundaries, open
+  re-derivation questions) is recorded in **`design.md`**. `goal.md` and
+  `tasks.md` were rewritten to reflect the decided design (the earlier "propose,
+  do not decide" framing is superseded). `tasks.md` now carries the per-step
+  checklist including the per-test rewrite spec for the 3 frozen-baseline DAG-ET
+  assertions (Phase 3a) — they rewrite to observe the carried TL via `res_opt_`,
+  proving the diff invariant survives the reconstruction.
+- Confirmed against the current code (read `OptimizeSP_TL_Incre.{h,cpp}`,
+  `OptimizeSP_Incre.{h,cpp}`, `OptimizeSP_Base.h`, the frozen-baseline test
+  block `testIncreOpt_w_TL.cpp:880-1113`, and the dispatcher-routing tests):
+  - The DAG-advance side-effect is `dag_tasks_ = dag_tasks_update` at
+    `OptimizeSP_Incre.cpp:296`; it only propagates to the incumbent via
+    `UpdateRecords`'s `prev_optimizer_ = optimizer` copy at `:134` — the fragile
+    path the redesign removes.
+  - 15 `prev_optimizer_.*` reads across 6 tests (`:678-720`, `:913-950`,
+    `:1010-1042`, `:1062-1113`) migrate to `res_opt_`/`has_incumbent_`; the 3
+    DAG-ET assertions (`:922`, `:942`, `:1106`) are the rewritten ones.
+  - `eval_count_` (`:1085`, `:1098`, `:1140`, `:1151`) and `from_scratch_flags`
+    (`:770+`) stay as documented test seams.
+- **Scope narrowed vs the v1 goal:** the *flow-shape* re-derivation
+  (INCR/REOPT/scratch dispatch, compare-and-keep, cold-start bootstrap) is
+  a Phase-3d re-derivation, NOT a precondition of this design. The user's
+  decision is specifically the **state** refactor. `ResourceOptResult` overlap
+  collapse and `PriorityPartialPath` per-path copies are explicitly out of scope.
+- **Re-scoping (2026-07-08, user).** User observed the incumbent-state design
+  can also solve the TL-initialization bug, so P0.5 should be worked **first**.
+  Verified against the code: the TL-init bug has two faces. (1) *Optimizer-
+  internal* — `OptimizeIncre_w_TL` cold-started from the Gaussian-mean TL so the
+  update side of `FindTaskWithDifferentEt`'s diff was a point dist at the
+  Gaussian-mean TL while the baseline carried the adopted TL → false-flagged
+  perf-pair tasks (the P1.1 `ndiff` residual). P0.5 fixes this **by
+  construction**: `BuildChallengerFromIncumbent` reconstructs the adopted-TL DAG
+  from `res_opt_`, so both diff sides carry the adopted TL — no YAML write
+  needed. (2) *External/inspectability* — the on-disk YAML still shows the
+  Gaussian; the orchestrator's `setExecutionTime(GetAvgValue())` at
+  `SimulationOrchestrator.cpp:395/684` reads it. BUT at `:461-463` each job's
+  `execution_time` is clamped to `res.id2time_limit` (the adopted TL) whenever a
+  TL exists, so a perf-pair task's runtime ET is already governed by the adopted
+  TL, not the Gaussian — the external read only matters for gaussian-only
+  (TL=−1) tasks or absent traces. So the external face is debuggability, not
+  runtime correctness. **Conclusion:** P0.5 subsumes the functional TL-init bug;
+  P0.1 (YAML persistence) is demoted to inspectability-only and is no longer a
+  predecessor. The P1.1 `ndiff` 5→~2 probe should pass from P0.5 alone. Recorded
+  in memory `p05-subsumes-tl-init-bug`; `goal.md`/`design.md`/`overall_tasks.md`
+  updated to reverse the P0.1→P0.5 edge.
+- Not yet started. Next step is Phase 1 (additively introduce `has_incumbent_`
+  + the two helpers, no call-site change), to be executed in staged
+  sub-sessions per the `tasks.md` checklist.
+
+## 2026-07-08 (implementation)
+
+- **Phase 1a DONE.** Added `has_incumbent_` (bool, default false) + declarations
+  for `CommitIncumbent(pa, sp, tl)` and `BuildChallengerFromIncumbent()` to
+  `OptimizeSP_TL_Incre.h`; documented `time_limit_option_for_each_task_` as
+  transient (per-call, not incumbent). No call-site change. Build clean.
+- **Phase 1b DONE.** Implemented both helper bodies in `OptimizeSP_TL_Incre.cpp`
+  (inserted after `SeedStateFromIncumbent`):
+  - `CommitIncumbent` = the `SeedStateFromIncumbent` write-block
+    (`opt_sp_`/`opt_pa_`/`res_opt_.SaveTimeLimits`/`UpdatePriorityVec`/`sp_opt`)
+    **minus** the `prev_optimizer_` lines, plus `has_incumbent_ = true`. Does
+    NOT touch `prev_optimizer_` (caller owns the legacy dual-write).
+  - `BuildChallengerFromIncumbent` returns a fresh `OptimizePA_Incre` built from
+    `UpdateExtDistBasedOnTimeLimit(dag_tasks_, ReconstructTimeLimitVecFromResOpt())`
+    + `sp_parameters_`, with `opt_pa_`=`res_opt_.priority_vec` and
+    `opt_sp_`=`res_opt_.sp_opt`. Throwaway by construction.
+  No call-site change. Build clean.
+- **BUILD-SYSTEM DISCOVERY (critical for all future test runs).** The first
+  `ctest` runs after 1b reported "green" but were running a **stale Jul-7 test
+  binary** — my Phase 1c test additions hit `undefined reference to
+  CommitIncumbent/BuildChallengerFromIncumbent` at link, proving the binary
+  predates the 1b source. Root cause: `tests/CMakeLists.txt:1` gates test
+  registration on `if(CMAKE_BUILD_TYPE STREQUAL "DEBUG")` — **uppercase DEBUG**.
+  The cache had `CMAKE_BUILD_TYPE=Debug` (capitalized), which does NOT match, so
+  `gtsamAddTestsGlob` was silently skipped on reconfigure and `ctest` kept
+  launching the old binary whose object files predated the source edits. Fix:
+  reconfigure with `cmake -DCMAKE_BUILD_TYPE=DEBUG ..` (which produces
+  `libSP_OPTDebug.so` — the lib the tests link), then build+run via
+  `cmake --build . --target check.SP_OPT -j5`. Recorded in memory
+  `sp-opt-test-build-debug-config`. Going forward: ALWAYS use `check.SP_OPT`
+  under `DEBUG`; `make SP_OPT` alone builds the lib but not the test exes, and
+  plain `ctest` under `Debug` runs stale binaries.
+- **Phase 1c DONE (verified for real under DEBUG).** Added two focused unit
+  tests to `testIncreOpt_w_TL.cpp` (after `SeedStateFromIncumbent_WritesFullFourTuple`):
+  - `CommitIncumbent_WritesFourTupleAndSetsGate` — populates `res_opt_`
+    (id2time_limit/sp_opt), `opt_pa_`/`opt_sp_`, sets `has_incumbent_`; asserts
+    `prev_optimizer_` stays uninitialized (caller-owned dual-write contract).
+  - `BuildChallengerFromIncumbent_ReconstructsAdoptedTlDag` — challenger's
+    `dag_tasks_` per-task ET dist equals
+    `UpdateExtDistBasedOnTimeLimit(dag_tasks, ReconstructTimeLimitVecFromResOpt())`
+    (the diff baseline, made structural); `opt_pa_`/`opt_sp_` mirror `res_opt_`;
+    incumbent store unchanged by the build.
+  Confirmed `[ OK ]` for both via `ctest -R testIncreOpt_w_TL -V`: **44 tests**
+  (was 42; +2 new). 16/16 `check.SP_OPT` green.
+- Next: Phase 2 (dual-write). 2a `SeedStateFromIncumbent` calls `CommitIncumbent`
+  + legacy `prev_optimizer_` writes; 2b `UpdateRecords` calls `CommitIncumbent`
+  + `prev_optimizer_ = optimizer`; 2c the load-bearing flip —
+  `EvaluateTimeLimitConfig_ScratchOrIncre` incremental branch replaces
+  `OptimizePA_Incre optimizer = prev_optimizer_` with
+  `BuildChallengerFromIncumbent()`.
+
+## 2026-07-08 (Phase 2 — dual-write)
+
+- **Phase 2a/2b/2c DONE** (present in working tree; verified green this session).
+  The three dual-write edits landed in `OptimizeSP_TL_Incre.cpp`:
+  - **2a** `SeedStateFromIncumbent` (`:465-488`): now calls `CommitIncumbent(pa,
+    sp, tl)` first, then performs the legacy `prev_optimizer_` writes
+    (`UpdateDAG`, `opt_pa_`, `opt_sp_`, `sp_parameters_`). `has_incumbent_` and
+    `prev_optimizer_.IfInitialized()` agree after this call.
+  - **2b** `UpdateRecords` `should_update` block (`:127-134`): now calls
+    `CommitIncumbent(optimizer.opt_pa_, optimizer.opt_sp_, time_limits)`, then
+    `prev_optimizer_ = optimizer` (full copy). Single-writer for `res_opt_`/
+    `opt_*`/`has_incumbent_`; `prev_optimizer_` is the legacy mirror kept until
+    Phase 3b.
+  - **2c** the load-bearing flip — `EvaluateTimeLimitConfig_ScratchOrIncre`
+    incremental branch (`:159-176`): `OptimizePA_Incre optimizer =
+    prev_optimizer_;` → `OptimizePA_Incre optimizer =
+    BuildChallengerFromIncumbent();`. The challenger is now transient; the diff
+    baseline is reconstructed from `res_opt_` each interval. The `else` branch
+    (no incumbent) became an explicit `CoutError` contract-violation (was
+    previously the `OptimizeFromScratch` fallback) — the incremental path now
+    requires a prior `CommitIncumbent`, which `SeedIncumbentBaseline` always
+    establishes first.
+- **Verified green under DEBUG.** `cmake --build . --target check.SP_OPT -j5` in
+  `build/` (the `CMAKE_BUILD_TYPE=DEBUG` dir per memory
+  `sp-opt-test-build-debug-config`): 16/16 ctest pass; `testIncreOpt_w_TL` =
+  **44 tests** green. The 6 `prev_optimizer_.*`-reading tests still pass because
+  2a/2b dual-write keeps `prev_optimizer_` populated.
+- Next: Phase 3a — migrate the 6 `prev_optimizer_.*`-reading tests
+  (`:678-720`, `:913-950`, `:1010-1042`, `:1062-1113`) to read `res_opt_` /
+  `has_incumbent_` / `BuildChallengerFromIncumbent()`, with the 3 DAG-ET
+  assertions rewritten to observe the carried TL via `res_opt_`. They must pass
+  against the dual-write code (Phase 2) BEFORE the field is removed in 3b.
+
+## 2026-07-08 (Phase 3a/3b/3c — applied in working tree, logged retroactively)
+
+- **Phase 3a/3b/3c were found APPLIED in the working tree** during the
+  2026-07-08 pickup, beyond where the log above stops (Phase 2). Confirmed by
+  source inspection + a clean DEBUG build:
+  - `OptimizeSP_TL_Incre.h` has **no `prev_optimizer_` member** (only comment
+    references at `:179`/`:198`); `has_incumbent_` is the gate.
+  - `SeedStateFromIncumbent` (`:465-474`) routes through `CommitIncumbent` only
+    — **no** legacy dual-write of `prev_optimizer_` (2a's dual-write dropped).
+  - `UpdateRecords` (`:127-141`) routes through `CommitIncumbent` only — **no**
+    `prev_optimizer_ = optimizer` (2b's dual-write dropped).
+  - `SeedIncumbentBaseline` (`:531`) gates on `has_incumbent_`, not
+    `prev_optimizer_.IfInitialized()`.
+  - `OptimizeSP_Incre.cpp:288-297` comment rewritten to the
+    throwaway-challenger / `res_opt_`-carries-the-adopted-TL model (3c).
+  - `testIncreOpt_w_TL.cpp`: all 4 remaining `prev_optimizer_` mentions are
+    **comment-only** (no code reads the field). The 6 formerly-`prev_optimizer_`-
+    reading tests now read `res_opt_` / `has_incumbent_` /
+    `BuildChallengerFromIncumbent()`; the 3 DAG-ET assertions observe the
+    carried TL/current DAG via `BuildChallengerFromIncumbent().dag_tasks_` +
+    `res_opt_.id2time_limit` (e.g. `OptimizeIncre_AdvancesPrevOptimizerDagTasks`
+    at `:992`, `PerformCoordinateDescent_AllMinusOneOnly_...` at `:1151`).
+- **Verified green under DEBUG.** `cmake --build . --target check.SP_OPT -j5`
+  in `build/` (`CMAKE_BUILD_TYPE=DEBUG` per memory
+  `sp-opt-test-build-debug-config`): 16/16 ctest pass; `testIncreOpt_w_TL` =
+  **44 tests** green. (The test names `..._AdvancesPrevOptimizerDagTasks` /
+  `..._AdvancesPrevOptimizer` are kept as legacy labels; their bodies are
+  migrated.)
+
+## 2026-07-08 (Phase 3d — re-derivation)
+
+- **Phase 3d re-derived, not assumed.** Two call sites were re-evaluated; both
+  decisions **overturn** a default recorded in `design.md`.
+  - **(1) Reopt cold-start (`ReOptimizePeriodic:575`,
+    `InitializeTimeLimitsFromETConfig()`) — NOT a bug; KEEP as-is.**
+    `design.md` §1 symptom 3 had claimed the reopt cold-start was "the same
+    class of bug on the other path" as the incremental descent-start-TL bug.
+    Re-derivation shows this is **wrong**: the reopt path uses
+    `from_scratch=true` → `EvaluateTimeLimitConfig_ScratchOrIncre` builds a
+    *fresh* `OptimizePA_Incre` and calls `OptimizeFromScratch` (NOT
+    `OptimizeIncre`), so `FindTaskWithDifferentEt`'s diff **never runs** on the
+    reopt path. The starting `time_limits` is just the from-scratch search's
+    initial TL vector (the walk explores the full option set from there); there
+    is no baseline/update diff invariant to preserve. So the reopt cold-start
+    does not need to start at the carried adopted TL. Symptom 3 is
+    **incremental-path only**. `design.md` §1 corrected in-place.
+  - **(2) Incremental start (`OptimizeIncre_w_TL:398`,
+    `ReconstructTimeLimitVecFromResOpt()` + stale-TL guard `:411-421`) — KEEP
+    as-is, do NOT fold into `BuildChallengerFromIncumbent`.** `design.md` §6 Q3's
+    default was "fold — the helper owns the reconstruction; the call site should
+    not re-name the primitive." Re-derivation shows the call site's
+    `time_limits` and the helper's internal `tl_prev` are **not the same vector**
+    and serve different purposes:
+    - The helper (`BuildChallengerFromIncumbent:510`) uses
+      `tl_prev = ReconstructTimeLimitVecFromResOpt()` **raw** (no guard) to build
+      the *baseline* DAG.
+    - The call site (`OptimizeIncre_w_TL:398-421`) uses
+      `ReconstructTimeLimitVecFromResOpt()` **then applies the stale-TL guard**
+      (`:411-421`, forces −1 when the carried TL is no longer a member of the
+      current option set) to produce the *update-side* descent start vector.
+    Folding would either drop the guard from the update side (re-introducing the
+    stale-TL-applied-as-point-dist hazard the guard exists to prevent) or push
+    the guard into the helper (making the baseline diverge from the raw
+    reconstruction). They are correctly separate. `design.md` §6 Q3 corrected
+    in-place. (The guard is latent today — `CommitIncumbent` only ever writes a
+    current-option TL — but the baseline-reconstruction vs. descent-start-vector
+    separation is intentional, not a fold candidate.)
+
+## 2026-07-08 (Phase 4 — verify + close)
+
+- **Suite green (re-confirmed this session).** `cmake --build . --target
+  check.SP_OPT -j5` in `build/` (DEBUG): 16/16 ctest pass;
+  `testIncreOpt_w_TL` = **44 tests** green.
+- **P1.1 runtime probe re-run — PASS, and stronger than predicted.** Rebuilt
+  `release/tests/RunOrchestrator` (was stale Jul-7 vs the redesigned Jul-8
+  source) and re-ran the INCR_P10 N=8 taskset_0 probe:
+  `release/tests/RunOrchestrator <ts_dir> <out> INCR_P10 10000 1`
+  (4th arg = per-interval horizon 10000 ms, per memory
+  `runorchestrator-duration-arg-semantics`; NOT n_sec*1000). Trace:
+  `simulation_experiments/optimizer_comparison/et_repro/p05_probe_ts0_P10/`.
+  - **Pre-redesign** (`dbg_trace_ts0_new/P10`, `[INCR-ET-DBG]`):
+    `call=0 ndiff=5` — tasks 0,1,2,6,7 flagged; 3 false positives (0,1,2:
+    adopted TL ≠ Gaussian-mean TL).
+  - **Post-redesign** (`p05_probe_ts0_P10`, `[INCR-NDIFF-PROBE]`):
+    `call=0 ndiff=0` — **nothing flagged**. The 3 perf-pair false positives
+    (0,1,2) vanished because both diff sides now carry the adopted TL by
+    construction. Across all 302 incremental calls `ndiff` is only ever 0 or 1,
+    never the spurious 5. No `CoutError`/contract-violation in the trace (the
+    new hard-error `else` branch at `:176-191` is never hit — `SeedIncumbentBaseline`
+    always establishes the incumbent first).
+  - **Reconciliation with the corrected ground truth.** The P1.1 investigation
+    summary (`investigation_summary.md` §4) predicted `ndiff` 5 → ~2 ("only
+    gaussian-only tasks flag"). The actual result is `ndiff=0` at call=0 —
+    **stronger** than predicted. The summary's "ground truth = 2 (tasks 6,7
+    gaussian-only)" was itself based on diffing *raw Gaussians between
+    intervals*. Under the redesign `BuildChallengerFromIncumbent` rebuilds the
+    baseline from the **current** `dag_tasks_` each interval, so for a
+    gaussian-only task (TL=−1, no point-dist applied) both diff sides are the
+    *current* interval's raw Gaussian → identical → not flagged. The
+    inter-interval Gaussian drift is no longer in the diff either. Only a task
+    whose **adopted TL actually moved within the current descent** flags (task 5
+    at call=1: 23.467→20.35). This is the more-correct semantic for the
+    incremental diff: `FindTaskWithDifferentEt` flags a task iff its ET differs
+    between the carried incumbent's applied DAG and the current descent's
+    applied DAG — and since both are built from the current `dag_tasks_` + the
+    respective TL vectors, only a real adopted-TL move flags.
+  - **Conclusion:** P0.5 alone (no YAML persistence / P0.1) collapses the
+    `ndiff` false-positive class. P0.1's remaining value is inspectability-only
+    (the on-disk YAML still shows the Gaussian), as `p05-subsumes-tl-init-bug`
+    predicted.
+- Next: append the top-level milestone to `agents/dev_log.md`. (DONE — the
+  milestone is in `agents/dev_log.md` under the "P0.5 incumbent-state redesign
+  LANDED" heading.)
+
+## 2026-07-08 (re-verification on resume)
+
+- Resumed the task; re-verified the working-tree state end-to-end against the
+  records (not just trusting the checkboxes):
+  - `OptimizeSP_TL_Incre.h`: no `prev_optimizer_` member (only comment refs at
+    `:179`/`:198`); `has_incumbent_` (`:204`) + `CommitIncumbent` (`:185`) +
+    `BuildChallengerFromIncumbent` (`:187`) declarations present.
+  - `OptimizeSP_TL_Incre.cpp`: single-writer routing confirmed —
+    `CommitIncumbent(...)` at `:133` (UpdateRecords `should_update`) and `:473`
+    (SeedStateFromIncumbent); challenger flip at `:172`
+    (`BuildChallengerFromIncumbent()`); `has_incumbent_` gate at `:531`
+    (SeedIncumbentBaseline). The `else` no-incumbent branch is the `CoutError`
+    contract violation at `:188`.
+  - Every `prev_optimizer_` mention in `tests/testIncreOpt_w_TL.cpp` and the two
+    source files is **comment-only** (grep confirmed: 4 test refs + 2 source
+    refs, all in prose).
+  - **Build + tests green (ran this session):** `cmake --build . --target
+    check.SP_OPT -j5` in `build/` (`CMAKE_BUILD_TYPE=DEBUG` per
+    `sp-opt-test-build-debug-config`) → 16/16 ctest pass;
+    `testIncreOpt_w_TL` = **44 tests** green.
+  - **P1.1 probe trace verified on disk:**
+    `simulation_experiments/optimizer_comparison/et_repro/p05_probe_ts0_P10/`
+    contains `INCR_P10`/`stdout.txt`/`stderr.txt`; `ndiff=` distribution across
+    the run is **27× `ndiff=0` + 275× `ndiff=1`** (302 calls total), never the
+    pre-redesign `ndiff=5`. No `CoutError`/contract string in the trace.
+- **Status correction:** `goal.md` line 4 said "implementation not started"
+  (stale from the design phase) — fixed to "LANDED in working tree … Not yet
+  committed." `tasks.md` checkboxes and `overall_tasks.md` were already correct.
+- **Commit scope — OPEN ITEM (the only thing left).** The working tree is
+  tangled: it bundles (a) P0.5 proper
+  (`OptimizeSP_TL_Incre.{h,cpp}`, `OptimizeSP_Incre.cpp`, `testIncreOpt_w_TL.cpp`,
+  the `agents/active_tasks/P0_5_*` dir, the `agents/dev_log.md` +
+  `overall_tasks.md` milestone), (b) **leftover debug instrumentation removal**
+  from P1.1 that overlaps P0.5's blast radius — the `[INCR-ET-DBG]` block was
+  stripped from `SimulationOrchestrator.cpp:288-316` and `g_incr_et_debug_sp_dag_calls`
+  was removed from `SP_Metric.{h,cpp}`, BUT the `[INCR-NDIFF-PROBE]` `cerr`
+  block at `OptimizeSP_Incre.cpp:251-260` is **still in the tree** (inconsistent
+  with the removal), and (c) **unrelated config/experiment churn** —
+  `parameters.yaml` `debugMode: 0→1`, `p25_period_ab_config.json` test/prod mode
+  edits (N lists, durations, worker counts), `.gitignore` `+build_test/`, plus
+  the `P1_1_*`/`P2_3_*`/`P0_1_*` task dirs. Decision needed: commit P0.5 as its
+  own focused commit (stage only the P0.5 + the matched debug-instrumentation
+  removal) and leave the config/experiment churn + other task dirs for their own
+  commits, OR commit the lot. Awaiting user guidance; nothing committed yet.

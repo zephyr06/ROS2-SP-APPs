@@ -673,16 +673,95 @@ TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {
     EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
 
-    // prev_optimizer_ now carries the same {sp, pa} tuple (plus the TL-applied
-    // DAG).
-    EXPECT_TRUE(opt.prev_optimizer_.IfInitialized());
-    EXPECT_DOUBLE_EQ(sp, opt.prev_optimizer_.opt_sp_);
-    EXPECT_EQ(pa, opt.prev_optimizer_.opt_pa_);
+    // The incumbent gate is set and the thin opt_pa_/opt_sp_ mirrors (populated
+    // by CommitIncumbent, which SeedStateFromIncumbent calls) carry the same
+    // {sp, pa} tuple. Under the redesign res_opt_ is the durable store; the
+    // mirrors are what the public surface reads.
+    EXPECT_TRUE(opt.has_incumbent_);
+    EXPECT_DOUBLE_EQ(sp, opt.opt_sp_);
+    EXPECT_EQ(pa, opt.opt_pa_);
+    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
 }
+
+// --- Incumbent-state helpers (P0.5 redesign) ---
+// CommitIncumbent is the single writer for the durable incumbent store
+// (res_opt_ + the opt_pa_/opt_sp_ mirrors) and the only thing that flips
+// has_incumbent_. Tested in isolation: it must populate the four-tuple verbatim
+// and set has_incumbent_, without relying on SeedStateFromIncumbent or
+// UpdateRecords. Under dual-write (Phase 2) prev_optimizer_ stays untouched by
+// CommitIncumbent itself — the caller writes it — so this also pins that
+// contract (the field is left in whatever state it was before the call).
+TEST_F(CompareAndKeepSynthetic, CommitIncumbent_WritesFourTupleAndSetsGate) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    EXPECT_FALSE(opt.has_incumbent_);
+
+    PriorityVec pa = {0, 1};
+    std::vector<double> tl = {800.0, -1.0};
+    const double sp = 1.234;  // arbitrary sentinel — must be stored verbatim
+
+    opt.CommitIncumbent(pa, sp, tl);
+
+    // res_opt_ holds the carried TL (id-keyed) and SP verbatim.
+    EXPECT_TRUE(opt.has_incumbent_);
+    EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
+    EXPECT_DOUBLE_EQ(sp, opt.res_opt_.sp_opt);
+    // Thin mirrors the public surface reads.
+    EXPECT_DOUBLE_EQ(sp, opt.opt_sp_);
+    EXPECT_EQ(pa, opt.opt_pa_);
+    // Carried PA round-trips through res_opt_.priority_vec.
+    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
+
+    // CommitIncumbent is the single writer that flips has_incumbent_. A fresh
+    // opt starts false; after the commit it is true. (Under the dual-write
+    // migration the legacy prev_optimizer_ field is caller-owned; after Phase 3
+    // it is gone — so the gate, not the legacy field, is the contract here.)
+    EXPECT_TRUE(opt.has_incumbent_);
+}
+
+// BuildChallengerFromIncumbent reconstructs a throwaway OptimizePA_Incre from
+// res_opt_: its dag_tasks_ is the current raw DAG with the CARRIED adopted TL
+// applied, and its opt_pa_/opt_sp_ mirror res_opt_. This is the diff-baseline
+// invariant made structural — the challenger's dag_tasks_ IS the baseline side
+// of FindTaskWithDifferentEt. Verified by building the expected DAG with the
+// same primitive the helper uses and comparing per-task ET distributions.
+TEST_F(CompareAndKeepSynthetic, BuildChallengerFromIncumbent_ReconstructsAdoptedTlDag) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Establish an incumbent: adopt T_perf=800, T_noise=-1, an arbitrary PA/SP.
+    PriorityVec pa = {1, 0};
+    std::vector<double> tl = {800.0, -1.0};
+    const double sp = 2.5;
+    opt.CommitIncumbent(pa, sp, tl);
+    ASSERT_TRUE(opt.has_incumbent_);
+
+    OptimizePA_Incre challenger = opt.BuildChallengerFromIncumbent();
+
+    // The challenger's dag_tasks_ must equal the raw DAG with the carried TL
+    // applied — the exact baseline FindTaskWithDifferentEt will diff against.
+    std::vector<double> tl_prev = opt.ReconstructTimeLimitVecFromResOpt();
+    DAG_Model expected_dag = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_prev);
+    ASSERT_EQ(expected_dag.tasks.size(), challenger.dag_tasks_.tasks.size());
+    for (size_t i = 0; i < expected_dag.tasks.size(); ++i) {
+        EXPECT_EQ(expected_dag.tasks[i].execution_time_dist,
+                  challenger.dag_tasks_.tasks[i].execution_time_dist)
+            << "task " << i << " ET dist differs from the reconstructed baseline";
+    }
+    // opt_pa_/opt_sp_ mirror res_opt_ so OptimizeIncre warm-starts from the
+    // carried PA and the compare-and-keep guard measures against the carried SP.
+    EXPECT_EQ(pa, challenger.opt_pa_);
+    EXPECT_DOUBLE_EQ(sp, challenger.opt_sp_);
+    // The challenger is a throwaway local — building it must not mutate the
+    // incumbent store (res_opt_ unchanged, has_incumbent_ still true).
+    EXPECT_TRUE(opt.has_incumbent_);
+    EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(sp, opt.res_opt_.sp_opt);
+}
+
 
 TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    EXPECT_FALSE(opt.prev_optimizer_.IfInitialized());
+    EXPECT_FALSE(opt.has_incumbent_);
 
     // Compute the expected interval-0 baseline — RM priorities + smallest TL —
     // with the same primitives the helper uses internally, then verify the
@@ -695,7 +774,7 @@ TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
 
     opt.SeedIncumbentBaseline();
 
-    EXPECT_TRUE(opt.prev_optimizer_.IfInitialized());
+    EXPECT_TRUE(opt.has_incumbent_);
     EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
     EXPECT_EQ(pa_rm, opt.opt_pa_);
     // Min-TL baseline: T_perf=400, T_noise=-1.
@@ -717,7 +796,7 @@ TEST_F(CompareAndKeepSynthetic,
     double sp_incumbent =
         EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters, pa);
     opt.SeedStateFromIncumbent(dag_with_tl, pa, sp_incumbent, tl_incumbent);
-    ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
+    ASSERT_TRUE(opt.has_incumbent_);
 
     // Mutate T_noise's ET to a value that breaks schedulability for the
     // incumbent's {pa, tl} (response time ≈ T_perf's 800 + T_noise's 1900 ≫
@@ -888,39 +967,39 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
         << "branch; every flag was true (reopt ran instead).";
 }
 
-// INCR frozen-baseline regression: OptimizeIncre must advance the carried
-// baseline DAG (prev_optimizer_.dag_tasks_) to the current interval's DAG, so
-// that consecutive incremental calls diff consecutive-interval DAGs (small
-// ndiff) instead of stale-reopt-DAG vs fresh-DAG (ndiff saturates at N every
-// interval → per-act ET grows with ReoptimizationPeriod).
-//
-// Mechanism under test: OptimizeIncre_w_TL →
-// EvaluateTimeLimitConfig_ScratchOrIncre (incremental branch) does
-// `OptimizePA_Incre optimizer = prev_optimizer_;` then
-// `optimizer.OptimizeIncre(dag_tasks_cur);`. OptimizeIncre diffs
-// optimizer.dag_tasks_ (copied from prev_optimizer_, i.e. the FROZEN
-// reopt-interval DAG) against dag_tasks_cur. UpdateRecords then writes
-// `prev_optimizer_ = optimizer` — but only if OptimizeIncre advanced
-// optimizer.dag_tasks_ to dag_tasks_cur. Without that advance,
-// prev_optimizer_.dag_tasks_ stays frozen at the reopt DAG forever.
+// INCR diff-baseline invariant (P0.5 redesign). The whole point of carrying an
+// incumbent is the diff in FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update):
+// the baseline side is the carried adopted-TL DAG, the update side is the current
+// interval's DAG. Under the redesign the challenger is a THROWAWAY rebuilt from
+// res_opt_ each interval via BuildChallengerFromIncumbent — its dag_tasks_ IS
+// the baseline side, reconstructed as
+// UpdateExtDistBasedOnTimeLimit(dag_tasks_, ReconstructTimeLimitVecFromResOpt()).
+// So the invariant this test guards is: after an incremental call on a NEW DAG,
+// the challenger reconstructed from res_opt_ carries the CURRENT interval's DAG
+// (not the frozen bootstrap DAG). If the baseline were frozen at the reopt DAG,
+// consecutive incremental calls would diff stale-DAG vs fresh-DAG and ndiff would
+// saturate at N every interval → per-act ET grows with ReoptimizationPeriod (the
+// original frozen-baseline bug).
 //
 // Observable: T_noise (task 1) has no time-performance pairs → its TL is always
 // -1 → UpdateExtDistBasedOnTimeLimit passes its execution_time_dist through
-// unchanged. So prev_optimizer_.dag_tasks_.tasks[1].execution_time_dist is a
-// direct, debugMode-independent window onto whether the baseline DAG advanced.
-// Bootstrap establishes the original ET there; a second interval with a MUTATED
-// T_noise ET must propagate that mutation into prev_optimizer_.dag_tasks_.
+// unchanged. So challenger.dag_tasks_.tasks[1].execution_time_dist is a direct,
+// debugMode-independent window onto whether the reconstructed baseline DAG
+// reflects the current interval. Bootstrap establishes the original ET there; a
+// second interval with a MUTATED T_noise ET must propagate that mutation into the
+// challenger rebuilt after the incremental call. (The carried TL on T_perf lives
+// in res_opt_.id2time_limit — also asserted, as the other half of the 4-tuple.)
 TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
-    // Bootstrap the incumbent. After ReOptimizePeriodic,
-    // prev_optimizer_.dag_tasks_ holds the TL-applied bootstrap DAG; T_noise's
-    // TL is -1 so its ET there is the ORIGINAL fixture value (FiniteDist
-    // around 50.0).
+    // Bootstrap the incumbent. After ReOptimizePeriodic, res_opt_ holds the
+    // adopted TL; T_noise's TL is -1 so the challenger rebuilt now carries the
+    // ORIGINAL fixture ET (FiniteDist around 50.0) on T_noise.
     opt.ReOptimizePeriodic(dag_tasks, 2);
-    ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
-    const double original_noise_et = opt.prev_optimizer_.dag_tasks_.tasks[1]
-                                         .execution_time_dist.GetAvgValue();
+    ASSERT_TRUE(opt.has_incumbent_);
+    const double original_noise_et =
+        opt.BuildChallengerFromIncumbent().dag_tasks_.tasks[1]
+            .execution_time_dist.GetAvgValue();
     EXPECT_NEAR(original_noise_et, 50.0, 5.0);
 
     // Second interval: same DAG except T_noise's ET is mutated to a clearly
@@ -933,20 +1012,120 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
 
     opt.OptimizeIncre_w_TL(dag_v2, 2);
 
-    // FIX UNDER TEST: OptimizeIncre must advance prev_optimizer_.dag_tasks_ to
-    // the current interval's DAG. T_noise's TL is -1 → its ET in the TL-applied
-    // dag_tasks_cur equals dag_v2's mutated ET → prev_optimizer_.dag_tasks_
-    // must now carry the mutated ET. Before the fix, prev_optimizer_.dag_tasks_
-    // stays frozen at the bootstrap DAG → T_noise's ET remains ~50.0 (the
-    // original), and this expectation FAILS.
-    const double carried_noise_et = opt.prev_optimizer_.dag_tasks_.tasks[1]
-                                        .execution_time_dist.GetAvgValue();
+    // INVARIANT UNDER TEST: the challenger rebuilt from res_opt_ after the
+    // incremental call carries the CURRENT interval's DAG. T_noise's TL is -1
+    // → its ET in the TL-applied baseline equals dag_v2's mutated ET → the
+    // rebuilt challenger's dag_tasks_ must carry the mutated ET. Under the old
+    // prev_optimizer_ design this required OptimizeIncre to advance a stored
+    // copy; under the redesign there is no stored DAG to advance — the baseline
+    // is reconstructed from the current dag_tasks_ every interval, so it carries
+    // the current interval's DAG by construction.
+    const double carried_noise_et =
+        opt.BuildChallengerFromIncumbent().dag_tasks_.tasks[1]
+            .execution_time_dist.GetAvgValue();
     EXPECT_NEAR(carried_noise_et, mutated_noise_et, 5.0)
-        << "prev_optimizer_.dag_tasks_ was not advanced by OptimizeIncre; "
-        << "the incremental diff baseline is frozen at the reopt DAG. "
-        << "Expected ~" << mutated_noise_et << " (current interval), got "
-        << carried_noise_et << " (bootstrap value ~" << original_noise_et
-        << ").";
+        << "The challenger rebuilt from res_opt_ does not carry the current "
+        << "interval's DAG; the diff baseline is stale. Expected ~"
+        << mutated_noise_et << " (current interval), got " << carried_noise_et
+        << " (bootstrap value ~" << original_noise_et << ").";
+
+    // The other half of the incumbent 4-tuple: the carried adopted TL on T_perf
+    // survives in res_opt_ (CommitIncumbent wrote it). T_noise's TL is -1.
+    EXPECT_NE(-1.0, opt.res_opt_.id2time_limit[dag_v2.tasks[0].id])
+        << "Adopted TL for T_perf must survive the incremental call in res_opt_.";
+    EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[dag_v2.tasks[1].id]);
+}
+
+// P1.1 descent-start-TL fix. The incremental descent's STARTING time-limit
+// vector determines what `UpdateExtDistBasedOnTimeLimit` applies as point dists
+// on the update side of `FindTaskWithDifferentEt`'s diff (see
+// EvaluateTimeLimitConfig_ScratchOrIncre: dag_tasks_cur =
+// UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits), then OptimizeIncre
+// diffs the challenger's dag_tasks_ — the carried ADOPTED-TL DAG rebuilt from
+// res_opt_ via BuildChallengerFromIncumbent — against dag_tasks_cur).
+//
+// The baseline side carries the interval-(N-1) adopted TL (SeedStateFromIncumbent
+// applies ReconstructTimeLimitVecFromResOpt()). The update side MUST start from
+// that same carried adopted TL, so an UNCHANGED perf-pair task (same adopted TL
+// on both sides) is NOT flagged. Before the fix, OptimizeIncre_w_TL started the
+// descent from InitializeTimeLimitsFromETConfig() — the TL closest to the YAML
+// GAUSSIAN MEAN — so the update side was a point dist at the Gaussian-mean TL,
+// and the diff flagged every perf-pair task whose adopted TL != Gaussian-mean TL
+// (a TL-drift false positive, independent of any real ET change).
+//
+// Observable: the FIRST time_limits the descent evaluates is its start vector
+// (the baseline eval at the top of PerformCoordinateDescentForTaskConfigOpt).
+// A stub overriding EvaluateTimeLimitConfig_ScratchOrIncre records that first
+// vector without altering the SP (the real RTA still drives adoption via
+// OptimizeFromScratch / OptimizeIncre, which ignore the override's return value
+// for the SP they adopt — the override only intercepts the time_limits arg).
+//
+// The fixture's T_perf has options {400,600,800,1000} and ET~500, so the
+// Gaussian-mean-closest TL is 600. The bootstrap (ReOptimizePeriodic, real RTA)
+// adopts whatever TL maximizes SP on this fixture; call it T_adopt. The
+// false-positive condition is T_adopt != 600. The fix makes the second
+// interval's descent start at T_adopt (the carried adopted TL), not 600.
+TEST_F(CompareAndKeepSynthetic,
+       OptimizeIncre_w_TL_StartsDescentFromCarriedAdoptedTL) {
+    // Stub: records the first time_limits the descent evaluates (its start
+    // vector). Does NOT alter SP — the real RTA drives adoption.
+    class StartTLStub : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        std::vector<double> first_eval_tl;
+        bool capture = false;  // set true to record the next descent's first eval
+        explicit StartTLStub(const DAG_Model& dag, const SP_Parameters& sp)
+            : OptimizePA_Incre_with_TimeLimits(dag, sp) {}
+
+        double EvaluateTimeLimitConfig_ScratchOrIncre(
+            int K, const std::vector<double>& time_limits,
+            bool from_scratch) override {
+            if (capture && first_eval_tl.empty()) {
+                first_eval_tl = time_limits;
+            }
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                                       from_scratch);
+        }
+    };
+
+    StartTLStub opt(dag_tasks, sp_parameters);
+
+    // Bootstrap: ReOptimizePeriodic runs a from-scratch descent (real RTA) that
+    // adopts some TL T_adopt for T_perf. After this, res_opt_ carries T_adopt
+    // (and has_incumbent_ is true).
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+    ASSERT_TRUE(opt.has_incumbent_);
+    const double adopted_tl =
+        opt.res_opt_.id2time_limit.at(dag_tasks.tasks[0].id);
+    // The Gaussian-mean-closest TL for T_perf (ET~500, options 400/600/800/1000)
+    // is 600. The false-positive condition requires the adopted TL to differ
+    // from it; if the metric happened to adopt 600 here, this fixture would not
+    // exercise the bug and the test would be vacuous.
+    const double gaussian_mean_tl = 600.0;
+    ASSERT_NE(adopted_tl, gaussian_mean_tl)
+        << "Fixture no longer exercises the false-positive condition: the "
+        << "adopted TL equals the Gaussian-mean TL (600), so starting from "
+        << "either is indistinguishable. Adjust the fixture so the metric "
+        << "adopts a TL != 600.";
+
+    // Second interval: IDENTICAL DAG (no ET change at all — neither the YAML
+    // Gaussian nor the adopted TL moved). The diff should flag NOTHING. The
+    // fix's observable: the descent STARTS at the carried adopted TL, not at
+    // the Gaussian-mean TL (600).
+    opt.capture = true;
+    opt.OptimizeIncre_w_TL(dag_tasks, 2);
+
+    ASSERT_EQ(2u, opt.first_eval_tl.size())
+        << "Descent did not evaluate any config; cannot observe the start TL.";
+    EXPECT_DOUBLE_EQ(adopted_tl, opt.first_eval_tl[0])
+        << "Incremental descent must start from the carried ADOPTED TL ("
+        << adopted_tl << "), not the Gaussian-mean-closest TL ("
+        << gaussian_mean_tl << "). Starting from the Gaussian-mean TL makes "
+        << "the update side of FindTaskWithDifferentEt's diff a point dist at "
+        << "the wrong TL, flagging unchanged perf-pair tasks (the P1.1 "
+        << "false-positive mechanism).";
+    EXPECT_NE(opt.first_eval_tl[0], gaussian_mean_tl)
+        << "Sanity: the start TL must not be the Gaussian-mean TL here.";
 }
 
 // Fix 2 (the {-1}-only skip + zero-work fallback in PerformCoordinateDescent).
@@ -958,15 +1137,17 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
 // NOT skip a task whose ONLY option is -1 (best_sp starts at -2.0, so the guard
 // is false on the first iteration). Fix 2 adds an outer `opts == {-1}` skip so
 // the descent does zero evals — but zero evals means UpdateRecords never runs,
-// so prev_optimizer_ would not advance (re-introducing the frozen-baseline bug
-// Fix A fixed). The zero-work fallback runs one eval with the current (all -1)
-// time_limits so UpdateRecords advances prev_optimizer_.
+// so no CommitIncumbent fires (the incumbent would stay at the bootstrap
+// {pa, tl}, re-introducing the frozen-baseline bug Fix A fixed). The zero-work
+// fallback runs one eval with the current (all -1) time_limits so UpdateRecords
+// commits the current interval's {pa, tl} via CommitIncumbent.
 //
 // Observable: eval_count_ (public, debugMode-independent, incremented once per
-// EvaluateTimeLimitConfig_ScratchOrIncre call) drops from N to 1, AND
-// prev_optimizer_.dag_tasks_ still advances (T_noise's TL is -1 so its ET
-// passes through UpdateExtDistBasedOnTimeLimit unchanged → a direct window onto
-// whether prev_optimizer_ advanced).
+// EvaluateTimeLimitConfig_ScratchOrIncre call) drops from N to 1, AND the
+// challenger rebuilt from res_opt_ after the call carries the current
+// interval's DAG (T_noise's TL is -1 so its ET passes through
+// UpdateExtDistBasedOnTimeLimit unchanged → a direct window onto whether the
+// baseline reconstructed from res_opt_ reflects the current interval).
 TEST_F(
     CompareAndKeepSynthetic,
     PerformCoordinateDescent_AllMinusOneOnly_RunsOneEvalAndAdvancesPrevOptimizer) {
@@ -989,12 +1170,13 @@ TEST_F(
 
     OptimizePA_Incre_with_TimeLimits opt(dag_no_tl, sp);
     opt.ReOptimizePeriodic(dag_no_tl, 2);
-    ASSERT_TRUE(opt.prev_optimizer_.IfInitialized());
+    ASSERT_TRUE(opt.has_incumbent_);
     const int eval_count_after_bootstrap = opt.eval_count_;
 
     // Second interval: mutate T_noise's ET. T_noise's TL is -1 → its ET passes
     // through UpdateExtDistBasedOnTimeLimit unchanged → if the fallback ran
-    // UpdateRecords, prev_optimizer_.dag_tasks_ carries the mutated ET.
+    // UpdateRecords (CommitIncumbent), the challenger rebuilt from res_opt_
+    // carries the mutated ET.
     const double mutated_noise_et = 1234.0;
     DAG_Model dag_v2 = dag_no_tl;
     dag_v2.tasks[1].execution_time_dist =
@@ -1007,16 +1189,20 @@ TEST_F(
         << "All-{-1}-only descent should run exactly one eval (the zero-work "
         << "fallback), not one per task. Before Fix 2 this is 2.";
 
-    // The trap guard: prev_optimizer_ still advanced (fallback's UpdateRecords
-    // ran). Without the fallback, the {-1}-only skip would starve UpdateRecords
-    // and prev_optimizer_.dag_tasks_ would freeze at the bootstrap DAG → the
-    // frozen-baseline bug Fix A fixed returns.
-    const double carried_noise_et = opt.prev_optimizer_.dag_tasks_.tasks[1]
-                                        .execution_time_dist.GetAvgValue();
+    // The trap guard: the fallback's UpdateRecords ran (CommitIncumbent fired),
+    // so the challenger rebuilt from res_opt_ reflects the current interval's
+    // DAG. Without the fallback, the {-1}-only skip would starve UpdateRecords
+    // → no CommitIncumbent → res_opt_ would hold the bootstrap DAG and the
+    // rebuilt challenger would freeze at the bootstrap ET (the frozen-baseline
+    // bug Fix A fixed returns).
+    const double carried_noise_et =
+        opt.BuildChallengerFromIncumbent().dag_tasks_.tasks[1]
+            .execution_time_dist.GetAvgValue();
     EXPECT_NEAR(carried_noise_et, mutated_noise_et, 5.0)
-        << "prev_optimizer_.dag_tasks_ was not advanced by the fallback eval; "
-        << "the zero-work skip starved UpdateRecords. Expected ~"
-        << mutated_noise_et << " (current interval), got " << carried_noise_et
+        << "The challenger rebuilt from res_opt_ does not carry the current "
+        << "interval's DAG; the zero-work skip starved UpdateRecords "
+        << "(CommitIncumbent did not fire). Expected ~" << mutated_noise_et
+        << " (current interval), got " << carried_noise_et
         << " (bootstrap value ~50.0).";
 }
 
@@ -1026,24 +1212,30 @@ TEST_F(
 // >0 evals). Uses the standard fixture (T_perf has 4 TL pairs; T_noise has none
 // → {-1}-only).
 //
-// Under the trial-and-error walk the incremental leg steps over T_perf's FULL
-// option set (no radius cap): from baseline TL=600 (closest to ET~500) it walks
-// backward to 400 (1 eval, non-improving → patience=0 breaks) then forward
-// through 800 and 1000 (each strictly better → adopted), plus the baseline eval.
-// On this monotonic strictly-increasing-in-TL SP landscape that is exactly
-// 4 evals = T_perf's full option-set size. T_noise ({-1}-only) is skipped → 0
-// evals, and no fallback eval is added on top.
+// The incremental descent starts from the CARRIED ADOPTED TL (see
+// OptimizeIncre_w_TL_StartsDescentFromCarriedAdoptedTL). On this monotonic
+// strictly-increasing-in-TL SP landscape the bootstrap adopts TL=1000 (the
+// optimum, also the upper boundary of [400,600,800,1000]). Starting the walk at
+// 1000: backward to 800 (non-improving → patience=0 breaks, 1 eval), forward
+// pass empty (already at the upper boundary, 0 evals), plus the baseline eval =
+// 2 evals. (Before the descent-start-TL fix the start was the Gaussian-mean-
+// closest TL=600, giving 4 evals — that count was start-TL-specific, not a
+// structural invariant, so it is not asserted here.)
+//
+// The structural invariants this test guards are: (a) T_noise ({-1}-only)
+// contributes 0 evals — the count is bounded above by T_perf's full-set size
+// with NO +1 for a redundant T_noise re-eval; (b) the zero-work fallback does
+// not fire on top of T_perf's real evals (same upper bound); (c) the baseline
+// eval always runs (≥1).
 TEST_F(CompareAndKeepSynthetic,
        PerformCoordinateDescent_SkipsMinusOneOnlyTaskInMixedSet) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     opt.ReOptimizePeriodic(dag_tasks, 2);
     const int eval_count_after_bootstrap = opt.eval_count_;
 
-    // T_perf's FULL option-set size — the walk evaluates exactly this many
-    // configs on this monotonic landscape (baseline + backward-to-boundary +
-    // forward-to-boundary reaches every option). T_noise ({-1}-only) is
-    // skipped → 0. Both branches record the full set under the trial-and-error
-    // walk, so the bootstrap's recorded size equals the incremental leg's.
+    // T_perf's FULL option-set size — the upper bound on T_perf's walk evals
+    // (the walk visits each option at most once: baseline + one outward pass
+    // per direction, patience-bounded). T_noise ({-1}-only) is skipped → 0.
     const size_t t_perf_full_set =
         opt.time_limit_option_for_each_task_[0].size();
     ASSERT_EQ(4u, t_perf_full_set);  // [400,600,800,1000]
@@ -1051,19 +1243,16 @@ TEST_F(CompareAndKeepSynthetic,
     opt.OptimizeIncre_w_TL(dag_tasks, 2);
 
     const int incremental_evals = opt.eval_count_ - eval_count_after_bootstrap;
-    // The skip: T_noise added 0 evals, so the count equals T_perf's full
-    // option-set size (no +1 for T_noise's redundant incumbent re-eval). Before
-    // the skip this was t_perf_full_set + 1.
-    EXPECT_EQ(t_perf_full_set, static_cast<size_t>(incremental_evals))
-        << "Mixed descent should evaluate only T_perf's "
-        << t_perf_full_set
-        << " full-set options (T_noise is {-1}-only → skipped, fallback does "
-        << "not fire). Before the skip this is "
-        << (t_perf_full_set + 1) << " (T_noise's redundant eval).";
-    // The fallback does NOT fire on top of T_perf's real evals: the count is
-    // bounded above by the full-set size, with no +1 fallback eval.
-    EXPECT_LE(static_cast<size_t>(incremental_evals), t_perf_full_set);
-    EXPECT_GE(incremental_evals, 1);  // the baseline eval always runs
+    // (a)+(b): T_noise added 0 evals AND the fallback did not fire, so the
+    // count is bounded above by T_perf's full-set size (no +1 for T_noise's
+    // redundant eval, no +1 fallback eval). Before the {-1}-skip this was
+    // t_perf_full_set + 1.
+    EXPECT_LE(static_cast<size_t>(incremental_evals), t_perf_full_set)
+        << "Mixed descent must not add a redundant eval for T_noise ({-1}-only "
+        << "→ skipped) nor fire the zero-work fallback on top of T_perf's real "
+        << "evals. Got " << incremental_evals << " > T_perf full-set size "
+        << t_perf_full_set << ".";
+    EXPECT_GE(incremental_evals, 1);  // (c) the baseline eval always runs
 }
 
 TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {

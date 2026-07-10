@@ -63,10 +63,6 @@ double ObtainSP_TaskSet_And_TimeLimits(
 double ObtainSP_DAG(const DAG_Model& dag_tasks,
                     const SP_Parameters& sp_parameters);
 
-// INCR-ET-debug: total ObtainSP_DAG calls since last reset (see SP_Metric.cpp).
-// Only incremented when GlobalVariables::debugMode == 1.
-extern int g_incr_et_debug_sp_dag_calls;
-
 // Apply time limits to task execution_time_dist (unit distribution at time limit),
 // then compute DAG-level SP. time_limit[i] == -1 means no limit for that task.
 double ObtainSP_DAG(const DAG_Model& dag_tasks,

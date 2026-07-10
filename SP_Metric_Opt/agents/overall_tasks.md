@@ -21,9 +21,11 @@ work + show advantages over baselines), not all analysis is necessary.
 
 | Task | Folder | One-line |
 |------|--------|----------|
+| **P0.1** Persist adopted TL to YAML | [`active_tasks/P0_1_adopted_tl_to_yaml/`](active_tasks/P0_1_adopted_tl_to_yaml/) | ~~ROOT-CAUSE fix~~ — **demoted to inspectability-only (2026-07-08).** The functional TL-init bug is subsumed by P0.5 (the redesign makes the diff carry the adopted TL by construction). What remains: overwrite the taskset YAML with the adopted TL (+ implied ET) after each interval's commit so the on-disk file is a faithful prior for inspection/reload. The orchestrator already clamps job ET to `res.id2time_limit` (`SimulationOrchestrator.cpp:461-463`), so this is debuggability, not runtime correctness. No longer a predecessor of P0.5; a smaller follow-up or an optional write site in P0.5 Phase 3d. |
 | **P0.2** Focused BF correctness audit | [`active_tasks/P0_2_bf_correctness_audit/`](active_tasks/P0_2_bf_correctness_audit/) | Verify on one small fixed taskset that `OptimizeSP_TL_BF` enumerates the global optimum and `INCR ≤ BF`. Closes the "is BF optimal?" reviewer question. |
-| **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_p25_et_vs_period`. Depends on P0.1. |
+| **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_p25_et_vs_period`. Depends on P0.5 (trustworthy incumbent) rather than P0.1. |
 | **P0.4** Project evaluation suite (north-star integration test) | [`active_tasks/P0_4_project_evaluation_suite/`](active_tasks/P0_4_project_evaluation_suite/) | Slow (~20 min) deterministic integration test on N=4/6/8 — measures avg SP + scheduler ET vs the `project_evaluation_northstar.md` red-flag lines. The single tuning target for any code/algorithm change. Filed only; not started. |
+| **P0.5** Redesign optimizer iteration process (incumbent state) | [`active_tasks/P0_5_optimizer_iteration_redesign/`](active_tasks/P0_5_optimizer_iteration_redesign/) | **LANDED (working tree, 2026-07-08).** Architectural redesign of the incumbent STATE — owned once in `res_opt_` (no parallel `prev_optimizer_` cache), `has_incumbent_` gate, `CommitIncumbent`/`BuildChallengerFromIncumbent` helpers, transient challenger. `prev_optimizer_` member removed; Phases 1–4 complete (44 `testIncreOpt_w_TL` + 16/16 ctest green). **Subsumes the functional TL-init bug by construction** — confirmed at runtime: the P1.1 INCR_P10 probe went `ndiff` 5 → 0 at call=0 (only ever 0 or 1 across all 302 calls), no YAML write needed. Phase 3d re-derivation overturned two design-doc defaults (reopt cold-start is NOT a bug; incremental start NOT folded into the helper). Not yet committed. |
 
 ### P1 — active investigation
 
@@ -35,8 +37,9 @@ work + show advantages over baselines), not all analysis is necessary.
 
 | Task | Folder | One-line |
 |------|--------|----------|
-| **P2.1** Confirm Fig 2 sweep runs in prod | [`active_tasks/P2_1_fig2_sweep_confirmation/`](active_tasks/P2_1_fig2_sweep_confirmation/) | Stale-flags bug resolved in code but never confirmed on a full prod run. Can run during P0.3. |
+| **P2.1** Confirm Fig 2 sweep runs in prod | [`active_tasks/P2_1_fig2_sweep_confirmation/`](active_tasks/P2_1_fig2_sweep_confirmation/) | Stale-flags bug resolved in code (verified 2026-07-08: `compare_optimizers.py` accepts both `--on_taskset_config_change` and `--run_root`) but never confirmed on a full prod run. Can run during P0.3. |
 | **P2.2** Doc & memory hygiene | [`active_tasks/P2_2_doc_memory_hygiene/`](active_tasks/P2_2_doc_memory_hygiene/) | Mark memory `interval-sweep-stale-flags-bug` RESOLVED; apply `investigation/` §5 corrections; `issues.md` #9 SUPERSEDED, #3/#6 let-go. Parallel anytime. |
+| **P2.3** `FiniteDist::approx_equal` dead-code cleanup | [`active_tasks/P2_3_finite_dist_dead_code/`](active_tasks/P2_3_finite_dist_dead_code/) | `FiniteDist::approx_equal` (`Probability.cpp:345`) has zero production callers; `operator!=` hardcodes tolerance=1e-1 inline and doesn't delegate. Delete (default) or wire up. Cleanup left behind by the P1.1 "Fix D inert" finding. Parallel anytime. |
 
 ---
 
@@ -65,7 +68,10 @@ pass); trial-and-error TL rewrite done + TDD-green (pending commit in P0.1).
 
 ## Suggested execution order
 
-P0.1 (commit clean baseline) → P0.2 (BF audit) → P0.3 (prod figures) →
-P2.1 (fig2 confirm, during P0.3) → P1.1 (P25 investigation, the open research
-question) → P2.2 (doc hygiene, parallel anytime). Each P0/P1 task is one
-review-and-commit cycle per `agent_coding_rules.md`.
+P0.5 (incumbent-state redesign — subsumes the functional TL-init bug; design
+decided, worked FIRST) → P0.2 (BF audit) → P0.3 (prod figures; depends on P0.5's
+trustworthy incumbent) → P2.1 (fig2 confirm, during P0.3) → P1.1 (P25
+investigation, the open research question) → P0.1 (YAML persistence —
+inspectability-only follow-up, or fold into P0.5 Phase 3d) → P2.2 (doc hygiene,
+parallel anytime) → P2.3 (`approx_equal` dead-code cleanup, parallel anytime).
+Each P0/P1 task is one review-and-commit cycle per `agent_coding_rules.md`.

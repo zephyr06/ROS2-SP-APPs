@@ -70,17 +70,17 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // 1-arg overload: entry point for the INCR_SCRATCH ablation. Delegates to
     // the 2-arg ReOptimizePeriodic(dag, K). INCR_SCRATCH constructs a FRESH
     // optimizer each interval (see SimulationOrchestrator INCR_SCRATCH branch),
-    // so prev_optimizer_ is always uninitialized here → SeedIncumbentBaseline
-    // takes its interval-0 branch (RM + min-TL) every call. This makes
-    // INCR_SCRATCH an AMNESIAC reopt: the compare-and-keep guard measures the
-    // search against a synthetic RM baseline, NOT against the previous
-    // interval's adopted solution. Contrast with
-    // Optimize_w_TL_ScratchOrIncre (INCR with ReoptimizationPeriod=1), which
-    // reuses a persistent optimizer so prev_optimizer_ carries the prior
-    // interval's incumbent — its compare-and-keep is measured against that
-    // running best. INCR(period=1) therefore weakly dominates INCR_SCRATCH in
-    // SP (never worse, sometimes strictly better); INCR_SCRATCH is kept only as
-    // the ablation that isolates the value of carrying the incumbent forward.
+    // so has_incumbent_ is always false here → SeedIncumbentBaseline takes its
+    // interval-0 branch (RM + min-TL) every call. This makes INCR_SCRATCH an
+    // AMNESIAC reopt: the compare-and-keep guard measures the search against a
+    // synthetic RM baseline, NOT against the previous interval's adopted
+    // solution. Contrast with Optimize_w_TL_ScratchOrIncre (INCR with
+    // ReoptimizationPeriod=1), which reuses a persistent optimizer so res_opt_
+    // carries the prior interval's incumbent — its compare-and-keep is measured
+    // against that running best. INCR(period=1) therefore weakly dominates
+    // INCR_SCRATCH in SP (never worse, sometimes strictly better); INCR_SCRATCH
+    // is kept only as the ablation that isolates the value of carrying the
+    // incumbent forward.
     PriorityVec ReOptimizePeriodic(int K);
 
     PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update, int K);
@@ -110,9 +110,10 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     // Evaluates one TL vector. When `from_scratch` is true a fresh
     // OptimizePA_Incre is built and OptimizeFromScratch(K) is run, ignoring any
-    // warm state. When false, the evaluator warm-starts from `prev_optimizer_`
-    // (the incumbent) via OptimizeIncre, falling back to OptimizeFromScratch(K)
-    // only when no incumbent exists yet.
+    // warm state. When false, the evaluator warm-starts from a throwaway
+    // challenger rebuilt from the incumbent (res_opt_) via
+    // BuildChallengerFromIncumbent, then runs OptimizeIncre. Requires an
+    // incumbent (has_incumbent_); the from-scratch path is the bootstrap.
     //
     // Virtual so the unidirectional trial-and-error walk
     // (OptimizeSingleTaskTimeLimit) can be unit-tested with a deterministic
@@ -173,15 +174,34 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
                                 const std::vector<double>& tl);
     void SeedIncumbentBaseline();
 
+    // Incumbent-state helpers (P0.5 redesign). The incumbent 4-tuple
+    // {dag-with-adopted-TL, SP, PA, TL-config} is owned ONCE in res_opt_ (no
+    // parallel prev_optimizer_ cache). CommitIncumbent is the single writer that
+    // populates res_opt_ + the thin opt_pa_/opt_sp_ mirrors and flips
+    // has_incumbent_; BuildChallengerFromIncumbent reconstructs a throwaway
+    // OptimizePA_Incre from res_opt_ each incremental interval so the diff
+    // baseline (FindTaskWithDifferentEt) carries the adopted TL by construction.
+    // See agents/active_tasks/P0_5_optimizer_iteration_redesign/design.md.
+    void CommitIncumbent(const PriorityVec& pa, double sp,
+                         const std::vector<double>& tl);
+    OptimizePA_Incre BuildChallengerFromIncumbent();
+
     inline ResourceOptResult CollectResults() const { return res_opt_; }
 
     // data members
     ResourceOptResult res_opt_;
+    // Transient per-call: the per-task TL search window recorded fresh at the
+    // top of each OptimizeIncre_w_TL / ReOptimizePeriodic call. NOT part of the
+    // incumbent (the carried TL lives in res_opt_.id2time_limit).
     std::vector<std::vector<double>> time_limit_option_for_each_task_;
-    // Old implementation is based on timelimit2optimizer_: For each task id, it
-    // maps time limit to the optimizer
-    // We want to try a simpler approach
-    OptimizePA_Incre prev_optimizer_;
+    // True once CommitIncumbent has established an incumbent in res_opt_.
+    // Replaces the old prev_optimizer_.IfInitialized() gate: that check only
+    // looked at !opt_pa_.empty(), which could be true while sp_parameters_ was
+    // still empty (the desync root). An explicit bool set only by
+    // CommitIncumbent cannot lie about its own state. One-way false->true for
+    // the object's lifetime (the orchestrator builds a fresh optimizer per
+    // INCR_SCRATCH interval; reset is never needed).
+    bool has_incumbent_ = false;
     int eval_count_ = 0;
     int reoptimization_interval_count_ = 0;
 };

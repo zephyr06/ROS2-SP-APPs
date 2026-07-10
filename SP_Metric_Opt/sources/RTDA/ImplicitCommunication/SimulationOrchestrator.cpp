@@ -288,32 +288,9 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     ResourceOptResult res;
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_)) {
-        // INCR-ET-debug: per-interval cost breakdown. Marks whether THIS call
-        // took the wide-radius reopt path or the narrow-radius incremental path
-        // (decided by reoptimization_interval_count_ % period == 0, BEFORE the
-        // counter advances inside Optimize_w_TL_ScratchOrIncre), plus the total
-        // ObtainSP_DAG evaluations consumed and the wall time of the call. This
-        // isolates whether the per-activation ET growth with period comes from
-        // the reopt step, the incremental step, or the SP-eval count.
-        int dbg_cnt_before = incr_optimizer_.reoptimization_interval_count_;
-        int dbg_period = GlobalVariables::ReoptimizationPeriod;
-        bool dbg_is_reopt = (dbg_cnt_before % dbg_period == 0);
-        int dbg_sp_calls_before = g_incr_et_debug_sp_dag_calls;
-        auto dbg_t0 = std::chrono::high_resolution_clock::now();
         incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
-        auto dbg_t1 = std::chrono::high_resolution_clock::now();
-        double dbg_ms = std::chrono::duration<double, std::milli>(
-                            dbg_t1 - dbg_t0).count();
-        if (GlobalVariables::debugMode == 1) {
-            std::cerr << "[INCR-ET-DBG] interval=" << dbg_cnt_before
-                      << " mode=" << scheduler_mode_
-                      << " path=" << (dbg_is_reopt ? "REOPT" : "INCRE")
-                      << " sp_dag_calls="
-                      << (g_incr_et_debug_sp_dag_calls - dbg_sp_calls_before)
-                      << " opt_ms=" << dbg_ms << "\n";
-        }
         res = incr_optimizer_.CollectResults();
     } else if (scheduler_mode_ == "BF") {
         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);

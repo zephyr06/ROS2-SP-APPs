@@ -242,10 +242,30 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
     std::vector<DiffObj> tasks_with_diff_et =
         FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
 
-    // INCR-ET-debug: how many tasks changed ET vs the carried (frozen) baseline
-    // DAG, and how many full ObtainSP_DAG evals the variation sweep costs.
-    int dbg_sp_calls_before = g_incr_et_debug_sp_dag_calls;
-    int dbg_n_variations = 0;
+    // Debug seam (debugMode==1, inert in production): emit the changed-task
+    // count (ndiff) for this incremental call. Originally added for the P1.1
+    // INCR_P10 probe that confirmed the descent-start-TL fix collapses the
+    // perf-pair false positives (ndiff 5 -> 0). Kept as a reusable invariant
+    // check — re-run the probe if the FindTaskWithDifferentEt baseline logic
+    // is touched.
+    if (GlobalVariables::debugMode == 1) {
+        static int probe_call_idx = 0;
+        std::cerr << "[INCR-NDIFF-PROBE] call=" << probe_call_idx
+                  << " ndiff=" << tasks_with_diff_et.size() << "\n";
+        if (probe_call_idx < 2) {
+            for (int i = 0; i < dag_tasks_.tasks.size(); i++) {
+                bool flagged = (dag_tasks_.tasks[i].execution_time_dist !=
+                                dag_tasks_update.tasks[i].execution_time_dist);
+                std::cerr << "[INCR-NDIFF-PROBE]   task " << i << " base_avg="
+                          << dag_tasks_.tasks[i].execution_time_dist.GetAvgValue()
+                          << " upd_avg="
+                          << dag_tasks_update.tasks[i].execution_time_dist.GetAvgValue()
+                          << (flagged ? " FLAGGED" : "") << "\n";
+            }
+        }
+        probe_call_idx++;
+    }
+
     for (DiffObj task_diff_obj : tasks_with_diff_et) {
         int task_id = task_diff_obj.task_id;
         bool et_increased = task_diff_obj.increase;
@@ -256,7 +276,6 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
                 AnalyzePriorityChangeStatus(sp_parameters_, task_id,
                                             et_increased));
         for (const PriorityVec& priority_assignment : pa_vec_variations) {
-            dbg_n_variations++;
             double sp_eval = EvaluateSPWithPriorityVec(
                 dag_tasks_update, sp_parameters_, priority_assignment);
             PrintPA_IfDebugMode(priority_assignment, sp_eval);
@@ -266,24 +285,18 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
             }
         }
     }
-    if (GlobalVariables::debugMode == 1) {
-        std::cerr << "[INCR-ET-DBG] OptimizeIncre: ndiff="
-                  << tasks_with_diff_et.size()
-                  << " nvar=" << dbg_n_variations
-                  << " sp_dag_calls=" << (g_incr_et_debug_sp_dag_calls -
-                                          dbg_sp_calls_before)
-                  << "\n";
-    }
     // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
     //           << "\n";
-    // Advance the carried baseline DAG to the current interval's DAG so the
-    // NEXT incremental call diffs consecutive-interval DAGs (small ndiff)
-    // instead of stale-reopt-DAG vs fresh-DAG (ndiff saturates at N every
-    // interval → per-act ET grows with ReoptimizationPeriod). FindTaskWithDifferentEt
-    // above already captured the diff against the OLD dag_tasks_, so this
-    // assignment only affects future calls. UpdateRecords (in the TL-with-incremental
-    // path) copies this optimizer into prev_optimizer_, so the advanced DAG
-    // propagates across intervals.
+    // Advance this optimizer's dag_tasks_ to the current interval's DAG. Under
+    // the P0.5 redesign this optimizer is a THROWAWAY CHALLENGER (rebuilt from
+    // res_opt_ via BuildChallengerFromIncumbent each incremental interval), so
+    // this assignment only affects future calls WITHIN this descent — whatever
+    // it does to dag_tasks_ dies with the local. The cross-interval invariant
+    // is the adopted TL in res_opt_.id2time_limit (written by CommitIncumbent
+    // via UpdateRecords); the next interval's challenger is rebuilt from that,
+    // not from a stored DAG. FindTaskWithDifferentEt above already captured the
+    // diff against the OLD dag_tasks_, so this assignment only matters for
+    // subsequent diffs inside this call.
     dag_tasks_ = dag_tasks_update;
     return opt_pa_;
 }
