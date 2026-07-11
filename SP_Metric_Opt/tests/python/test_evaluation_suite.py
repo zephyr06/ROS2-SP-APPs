@@ -433,6 +433,71 @@ class TestGateE2(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Gate E3: INCR_P<n> period-monotonicity (ET non-increasing as period grows)
+# ---------------------------------------------------------------------------
+
+class TestGateE3(unittest.TestCase):
+    """E3: ET(INCR_P1) >= ET(INCR_P10) >= ET(INCR_P30) >= ET(INCR_P60) per N."""
+
+    ARMS = ["INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"]
+
+    def test_pass_monotonic_all_n(self):
+        lookup = {
+            (4, "INCR_P1"): {"mean_sched_time": 0.10},
+            (4, "INCR_P10"): {"mean_sched_time": 0.09},
+            (4, "INCR_P30"): {"mean_sched_time": 0.08},
+            (4, "INCR_P60"): {"mean_sched_time": 0.07},
+            (8, "INCR_P1"): {"mean_sched_time": 0.20},
+            (8, "INCR_P10"): {"mean_sched_time": 0.18},
+            (8, "INCR_P30"): {"mean_sched_time": 0.16},
+            (8, "INCR_P60"): {"mean_sched_time": 0.14},
+        }
+        verdict = ev.evaluate_e3(lookup, ns=[4, 8])
+        self.assertEqual(verdict["status"], "PASS")
+
+    def test_fail_inversion(self):
+        """P10 rising above P1 (beyond tolerance) FAILs and names the pair."""
+        lookup = {
+            (4, "INCR_P1"): {"mean_sched_time": 0.04},
+            (4, "INCR_P10"): {"mean_sched_time": 0.10},   # rises 150%
+            (4, "INCR_P30"): {"mean_sched_time": 0.09},
+            (4, "INCR_P60"): {"mean_sched_time": 0.08},
+            (8, "INCR_P1"): {"mean_sched_time": 0.20},
+            (8, "INCR_P10"): {"mean_sched_time": 0.18},
+            (8, "INCR_P30"): {"mean_sched_time": 0.16},
+            (8, "INCR_P60"): {"mean_sched_time": 0.14},
+        }
+        verdict = ev.evaluate_e3(lookup, ns=[4, 8])
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertIn("RISES", verdict["detail"])
+        self.assertIn("INCR_P1->INCR_P10", verdict["detail"])
+
+    def test_missing_arm_fails_not_crashes(self):
+        """A missing period arm FAILs with a clear reason, not a KeyError."""
+        lookup = {
+            (4, "INCR_P1"): {"mean_sched_time": 0.10},
+            (4, "INCR_P10"): {"mean_sched_time": 0.09},
+            # INCR_P30 absent
+            (4, "INCR_P60"): {"mean_sched_time": 0.07},
+        }
+        verdict = ev.evaluate_e3(lookup, ns=[4])
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertIn("missing", verdict["detail"].lower())
+        self.assertIn("INCR_P30", verdict["detail"])
+
+    def test_tolerance_allows_small_increase(self):
+        """A 1% rise passes at the 2% tolerance (no flap on ET noise)."""
+        lookup = {
+            (4, "INCR_P1"): {"mean_sched_time": 0.100},
+            (4, "INCR_P10"): {"mean_sched_time": 0.101},  # +1%, within tol
+            (4, "INCR_P30"): {"mean_sched_time": 0.101},
+            (4, "INCR_P60"): {"mean_sched_time": 0.100},
+        }
+        verdict = ev.evaluate_e3(lookup, ns=[4])
+        self.assertEqual(verdict["status"], "PASS")
+
+
+# ---------------------------------------------------------------------------
 # End-to-end: full verdict + report writer
 # ---------------------------------------------------------------------------
 
@@ -444,9 +509,17 @@ class TestEvaluateAllGates(unittest.TestCase):
             (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20},
             (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05},
             (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.06},
+            (4, "INCR_P1"): {"mean_sched_time": 0.05},
+            (4, "INCR_P10"): {"mean_sched_time": 0.045},
+            (4, "INCR_P30"): {"mean_sched_time": 0.040},
+            (4, "INCR_P60"): {"mean_sched_time": 0.035},
             (8, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
             (8, "INCR"): {"mean_sp_norm": 0.60, "mean_sched_time": 0.08},
             (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.58, "mean_sched_time": 0.10},
+            (8, "INCR_P1"): {"mean_sched_time": 0.08},
+            (8, "INCR_P10"): {"mean_sched_time": 0.075},
+            (8, "INCR_P30"): {"mean_sched_time": 0.070},
+            (8, "INCR_P60"): {"mean_sched_time": 0.065},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
@@ -455,12 +528,17 @@ class TestEvaluateAllGates(unittest.TestCase):
                            "mean_sched_time": 0.20},
             (10, "INCR_SCRATCH"): {"mean_sp_norm": 0.54, "overhead": 0.03,
                                    "mean_sched_time": 0.30},
+            (10, "INCR_P1"): {"mean_sched_time": 0.20},
+            (10, "INCR_P10"): {"mean_sched_time": 0.19},
+            (10, "INCR_P30"): {"mean_sched_time": 0.18},
+            (10, "INCR_P60"): {"mean_sched_time": 0.17},
         }
         verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4, 8],
                                          large_n=8, overhead_n=10)
         statuses = {v["gate"]: v["status"] for v in verdicts}
         self.assertEqual(statuses, {"Q1": "PASS", "Q2": "PASS",
-                                    "Q3": "PASS", "E1": "PASS", "E2": "PASS"})
+                                    "Q3": "PASS", "E1": "PASS", "E2": "PASS",
+                                    "E3": "PASS"})
 
     def test_any_fail_makes_overall_fail(self):
         lookup = {
@@ -471,8 +549,10 @@ class TestEvaluateAllGates(unittest.TestCase):
             (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.06,
                                   "overhead": 0.006},
         }
+        # period_arms=[] short-circuits E3 to PASS so the overall FAIL is
+        # attributable to Q1 alone (the gate under test), not a missing-arm E3.
         verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4], large_n=4,
-                                         overhead_n=4)
+                                         overhead_n=4, period_arms=[])
         overall = ev.overall_status(verdicts)
         self.assertEqual(overall, "FAIL")
 
@@ -494,6 +574,10 @@ class TestWriteReport(unittest.TestCase):
                 (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78,
                                       "mean_sched_time": 0.06,
                                       "overhead": 0.006},
+                (4, "INCR_P1"): {"mean_sched_time": 0.05},
+                (4, "INCR_P10"): {"mean_sched_time": 0.045},
+                (4, "INCR_P30"): {"mean_sched_time": 0.040},
+                (4, "INCR_P60"): {"mean_sched_time": 0.035},
             }
             verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4],
                                              large_n=4, overhead_n=4)
@@ -502,7 +586,7 @@ class TestWriteReport(unittest.TestCase):
             with open(report_path) as f:
                 report = json.load(f)
             self.assertIn("gates", report)
-            self.assertEqual(len(report["gates"]), 5)
+            self.assertEqual(len(report["gates"]), 6)
             self.assertIn("overall", report)
             self.assertIn("run_id", report)
             self.assertIn("metrics", report)
@@ -525,6 +609,12 @@ class TestEndToEndMain(unittest.TestCase):
                 "CFS": {4: 0.45, 8: 0.40, 10: 0.35},
                 "INCR_NO_TL": {4: 0.40, 8: 0.40, 10: 0.35},
                 "INCR_WCET": {4: 0.45, 8: 0.45, 10: 0.40},
+                # E3 period arms -- SP is irrelevant to E3, but must be present
+                # so _build_synthetic_run writes a CSV row for each arm.
+                "INCR_P1": {4: 0.80, 8: 0.60, 10: 0.55},
+                "INCR_P10": {4: 0.80, 8: 0.60, 10: 0.55},
+                "INCR_P30": {4: 0.80, 8: 0.60, 10: 0.55},
+                "INCR_P60": {4: 0.80, 8: 0.60, 10: 0.55},
             }
             et = {
                 "INCR": {4: 0.05, 8: 0.08, 10: 0.20},
@@ -534,6 +624,12 @@ class TestEndToEndMain(unittest.TestCase):
                 "CFS": {4: 0.0, 8: 0.0, 10: 0.0},
                 "INCR_NO_TL": {4: 0.04, 8: 0.07, 10: 0.18},
                 "INCR_WCET": {4: 0.04, 8: 0.07, 10: 0.18},
+                # E3: ET non-increasing as the reopt period grows (P1 >= P10
+                # >= P30 >= P60) so the gate passes and main() exits 0.
+                "INCR_P1": {4: 0.060, 8: 0.090, 10: 0.220},
+                "INCR_P10": {4: 0.055, 8: 0.085, 10: 0.210},
+                "INCR_P30": {4: 0.050, 8: 0.080, 10: 0.200},
+                "INCR_P60": {4: 0.045, 8: 0.075, 10: 0.190},
             }
             _build_synthetic_run(temp_base, cfg, sp, et)
 

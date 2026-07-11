@@ -18,6 +18,10 @@ North-star gates
 - **Q3** INCR & SCRATCH >= every baseline                      (N = largest quality N)
 - **E1** overhead <= 5% (ideal <= 1%) at the overhead probe N  (N = overhead N, >= 10)
 - **E2** INCR scheduler ET <= SCRATCH ET at every N
+- **E3** INCR_P<n> period-monotonicity: per-activation ET      (every N)
+  non-increasing as the reopt period grows, i.e.
+  ET(INCR_P1) >= ET(INCR_P10) >= ET(INCR_P30) >= ET(INCR_P60).
+  Investigation gate for the P1.1 residual; currently FAILs by design.
 
 Normalized SP = ``raw_SP / ideal_SP`` (the P12 fix; ``ideal_SP`` from
 :func:`aggregate_across_tasks.compute_sp_upper_bound`), so the ratio is in
@@ -68,10 +72,16 @@ BF = "BF"
 # INCR/SCRATCH themselves, plus the two non-optimizer schedulers).
 Q3_BASELINES = ["RM", "CFS", "INCR_NO_TL", "INCR_WCET"]
 
+# Default ordered period arms for gate E3 (the P1.1 A/B set). Bare ``INCR`` is
+# NOT a member -- its default period isn't a sweep point. The config may
+# override this via the eval-only key ``eval_period_arms``.
+DEFAULT_PERIOD_ARMS = ["INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"]
+
 # North-star thresholds (from agents/project_evaluation_northstar.md).
 Q1_MAX_GAP = 0.30      # small-N BF-vs-INCR/SCRATCH gap red-flag line
 E1_RED_LINE = 0.05     # overhead red-flag line
 E1_IDEAL = 0.01        # overhead ideal
+E3_TOLERANCE = 0.02    # E3: relative slack on each period step (ET next <= prev*(1+t))
 
 
 # ---------------------------------------------------------------------------
@@ -296,12 +306,64 @@ def evaluate_e2(lookup, ns=None):
                     "INCR_ET <= SCRATCH_ET", "; ".join(details))
 
 
+def evaluate_e3(lookup, ns=None, period_arms=None):
+    """E3: INCR_P<n> period-monotonicity -- per-activation ET non-increasing.
+
+    For each N, the ordered period arms' ``mean_sched_time`` must be
+    non-increasing (each step within the relative tolerance): the cheapest arm
+    is the largest period. This is the P1.1 investigation gate; it currently
+    FAILs (P1 is still the cheapest) and tracks that residual rather than
+    being a clean regression gate. Bare ``INCR`` is not a member.
+    """
+    if period_arms is None:
+        period_arms = DEFAULT_PERIOD_ARMS
+    if ns is None:
+        ns = sorted({n for (n, s) in lookup.keys()})
+    if len(period_arms) < 2:
+        return _verdict("E3", "PASS", "no pair to compare",
+                        f"non-increasing over {period_arms}",
+                        "fewer than 2 period arms configured")
+    details = []
+    overall_pass = True
+    for n in ns:
+        ets = []
+        missing = []
+        for arm in period_arms:
+            rec = lookup.get((n, arm))
+            et = rec.get("mean_sched_time") if rec else None
+            if et is None:
+                missing.append(arm)
+            ets.append((arm, et))
+        if missing:
+            details.append(f"N={n}: missing {missing} -- cannot verify")
+            overall_pass = False
+            continue
+        pairs = []
+        n_ok = True
+        for (arm_prev, et_prev), (arm_next, et_next) in zip(ets, ets[1:]):
+            # non-increasing within tolerance: next <= prev * (1 + tol)
+            limit = et_prev * (1.0 + E3_TOLERANCE)
+            ok = et_next <= limit
+            if not ok:
+                n_ok = False
+                overall_pass = False
+            pairs.append(f"{arm_prev}->{arm_next}: "
+                         f"{et_prev:.4f}->{et_next:.4f} "
+                         f"({'ok' if ok else 'RISES'})")
+        details.append(f"N={n}: " + "; ".join(pairs) + (" ok" if n_ok else ""))
+    status = "PASS" if overall_pass else "FAIL"
+    arms_str = " >= ".join(period_arms)
+    return _verdict("E3", status, f"period-monotonicity per N",
+                    f"{arms_str} (tol +/-{E3_TOLERANCE:.0%})", "; ".join(details))
+
+
 # ---------------------------------------------------------------------------
 # Top-level: run all gates, summarize, write report.
 # ---------------------------------------------------------------------------
 
-def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None):
-    """Run all 5 north-star gates against the lookup.
+def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None,
+                       period_arms=None):
+    """Run all 6 north-star gates against the lookup.
 
     Parameters
     ----------
@@ -314,6 +376,8 @@ def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None):
         Override the N for Q2/Q3 (defaults to max of quality_ns).
     overhead_n : int | None
         N for E1 (defaults to the max N in the lookup, the overhead probe).
+    period_arms : list[str] | None
+        Ordered INCR_P<n> arms for E3 (defaults to :data:`DEFAULT_PERIOD_ARMS`).
     """
     if quality_ns:
         ns_present = quality_ns
@@ -333,6 +397,7 @@ def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None):
         evaluate_q3(lookup, large_n=large_n),
         evaluate_e1(lookup, overhead_n=overhead_n),
         evaluate_e2(lookup, ns=e2_ns),
+        evaluate_e3(lookup, ns=e2_ns, period_arms=period_arms),
     ]
 
 
@@ -397,6 +462,7 @@ def write_report(run_root, cfg, lookup, verdicts):
             "Q1_max_gap": Q1_MAX_GAP,
             "E1_red_line": E1_RED_LINE,
             "E1_ideal": E1_IDEAL,
+            "E3_tolerance": E3_TOLERANCE,
         },
     }
     report_path = os.path.join(run_root, "evaluation_report.json")
@@ -468,8 +534,13 @@ def main(argv=None):
     if args.overhead_n is not None:
         overhead_n = args.overhead_n
 
+    # Period arms for E3 come from the eval-only config key; fall back to the
+    # module default so a standard (non-eval) config still evaluates E3.
+    period_arms = cfg.get("eval_period_arms") or DEFAULT_PERIOD_ARMS
+
     verdicts = evaluate_all_gates(lookup, quality_ns=quality_ns,
-                                  overhead_n=overhead_n)
+                                  overhead_n=overhead_n,
+                                  period_arms=period_arms)
     overall = overall_status(verdicts)
 
     print()
