@@ -1,4 +1,10 @@
-# P0.5 — Tasks (working checklist)
+# P0.5 — Tasks (working checklist) — RESOLVED 2026-07-10 (all phases complete, committed)
+
+> **RESOLVED 2026-07-10.** Phases 1–5 all checked; code committed
+> (`a8dba07f`→`7fa2e9d2`); 46 `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG
+> build, re-verified at closeout). 5h moved to P3.1 (perf, not correctness). See
+> `goal.md` banner + `agents/finished_tasks/summary.md`. The checklist below is
+> the execution record, kept as-is.
 
 > See [`goal.md`](goal.md) for scope and [`design.md`](design.md) for the full
 > spec. TDD per `agent_coding_rules.md`: minimal, testable, modular steps; all

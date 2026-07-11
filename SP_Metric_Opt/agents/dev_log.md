@@ -2129,3 +2129,19 @@ optimizers, we can discard it"): the orchestrator clamps job ET to
 decision honors the stale Gaussian once optimization has run. No code was ever
 written for P0.1; the task folder is deleted. Recorded in
 `finished_tasks/summary.md`.
+
+**P0.5 — RESOLVED 2026-07-10 (closeout).** All five phases of the
+incumbent-state redesign are complete and committed (`a8dba07f`→`7fa2e9d2`;
+Phase-5 fixes in `8bbb0f5a`, `ae62e5e5`, `cde70138`, `7fa2e9d2`, `df3502a1`).
+Re-verified green at closeout: 46 `testIncreOpt_w_TL` + 16/16 ctest (DEBUG
+build). `res_opt_` is the single durable incumbent store; `CommitIncumbent` is
+the single writer of `res_opt_` + `opt_pa_`; `BuildChallengerFromIncumbent`
+builds the transient challenger; `IfInitialized()` (`!opt_pa_.empty()`) is the
+gate (the `has_incumbent_` bool was removed as provably redundant). Phase-5
+review issues all resolved one-by-one per user review: 5a `ResetIncumbentBaseline`
+unified reset, 5b kept rebuild-from-champion, 5c dropped stale-TL guard, 5d
+removed `has_incumbent_`, 5e renamed `starting_time_limits`, 5f removed dead
+`any_eval_ran` fallback, 5g total-budget patience, 5h moved to P3.1 (perf). The
+folder is moved to `finished_tasks/P0_5_optimizer_iteration_redesign/`;
+resolution recorded in `finished_tasks/summary.md`; rationale in memory
+`p05-subsumes-tl-init-bug.md`.

@@ -25,7 +25,7 @@ work + show advantages over baselines), not all analysis is necessary.
 | **P0.2** Focused BF correctness audit | [`active_tasks/P0_2_bf_correctness_audit/`](active_tasks/P0_2_bf_correctness_audit/) | Verify on one small fixed taskset that `OptimizeSP_TL_BF` enumerates the global optimum and `INCR ≤ BF`. Closes the "is BF optimal?" reviewer question. |
 | **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_p25_et_vs_period`. Depends on P0.5 (trustworthy incumbent) rather than P0.1. |
 | **P0.4** Project evaluation suite (north-star integration test) | [`active_tasks/P0_4_project_evaluation_suite/`](active_tasks/P0_4_project_evaluation_suite/) | Slow (~20 min) deterministic integration test on N=4/6/8 — measures avg SP + scheduler ET vs the `project_evaluation_northstar.md` red-flag lines. The single tuning target for any code/algorithm change. Filed only; not started. |
-| **P0.5** Redesign optimizer iteration process (incumbent state) | [`active_tasks/P0_5_optimizer_iteration_redesign/`](active_tasks/P0_5_optimizer_iteration_redesign/) | **LANDED (working tree, 2026-07-08; Phase 5 done 2026-07-10).** Architectural redesign of the incumbent STATE — owned once in `res_opt_` (no parallel `prev_optimizer_` cache), `CommitIncumbent`/`BuildChallengerFromIncumbent` helpers, transient challenger gated by `IfInitialized()` (the `has_incumbent_` bool was removed in Phase-5 issue 5d as provably redundant — `CommitIncumbent` is the single writer of `opt_pa_`). `prev_optimizer_` member removed; Phases 1–5 complete (46 `testIncreOpt_w_TL` + 16/16 ctest green). Phase-5 review issues: 5a unified `ResetIncumbentBaseline`, 5c dropped the stale-TL guard, 5e renamed `starting_time_limits`, 5f removed dead `any_eval_ran` fallback, 5g total-budget patience; 5b kept rebuild-from-champion; 5h (efficiency) moved to P3.1. **Subsumes the functional TL-init bug by construction** — confirmed at runtime: the P1.1 INCR_P10 probe went `ndiff` 5 → 0 at call=0 (only ever 0 or 1 across all 302 calls), no YAML write needed. Not yet committed. |
+| ~~**P0.5** Redesign optimizer iteration process (incumbent state)~~ | [`finished_tasks/P0_5_optimizer_iteration_redesign/`](finished_tasks/P0_5_optimizer_iteration_redesign/) | **RESOLVED 2026-07-10** (committed `a8dba07f`→`7fa2e9d2`; 46 `testIncreOpt_w_TL` + 16/16 ctest green, DEBUG re-verified at closeout). Architectural redesign of the incumbent STATE — owned once in `res_opt_` (no parallel `prev_optimizer_` cache), `CommitIncumbent`/`BuildChallengerFromIncumbent` helpers, transient challenger gated by `IfInitialized()` (the `has_incumbent_` bool was removed in Phase-5 issue 5d as provably redundant — `CommitIncumbent` is the single writer of `opt_pa_`). `prev_optimizer_` member removed; Phases 1–5 complete. Phase-5 review issues: 5a unified `ResetIncumbentBaseline`, 5c dropped the stale-TL guard, 5e renamed `starting_time_limits`, 5f removed dead `any_eval_ran` fallback, 5g total-budget patience; 5b kept rebuild-from-champion; 5h (efficiency) moved to P3.1. **Subsumes the functional TL-init bug by construction** — confirmed at runtime: the P1.1 INCR_P10 probe went `ndiff` 5 → 0 at call=0 (only ever 0 or 1 across all 302 calls). See `finished_tasks/summary.md`. |
 
 ### P1 — active investigation
 
@@ -69,11 +69,12 @@ pass); trial-and-error TL rewrite done + TDD-green (pending commit in P0.1).
 
 ## Suggested execution order
 
-P0.5 (incumbent-state redesign — subsumes the functional TL-init bug; design
-decided, worked FIRST) → P0.2 (BF audit) → P0.3 (prod figures; depends on P0.5's
-trustworthy incumbent) → P2.1 (fig2 confirm, during P0.3) → P1.1 (P25
-investigation, the open research question) → P2.2 (doc hygiene,
-parallel anytime) → P2.3 (`approx_equal` dead-code cleanup, parallel anytime).
+~~P0.5~~ RESOLVED 2026-07-10 (committed `a8dba07f`→`7fa2e9d2`; subsumes the
+functional TL-init bug by construction — see `finished_tasks/summary.md`) →
+P0.2 (BF audit) → P0.3 (prod figures; depends on P0.5's trustworthy incumbent) →
+P2.1 (fig2 confirm, during P0.3) → P1.1 (P25 investigation, the open research
+question) → P2.2 (doc hygiene, parallel anytime) → P2.3 (`approx_equal`
+dead-code cleanup, parallel anytime).
 ~~P0.1~~ RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded —
 see `finished_tasks/summary.md`). Each P0/P1 task is one review-and-commit cycle
 per `agent_coding_rules.md`.

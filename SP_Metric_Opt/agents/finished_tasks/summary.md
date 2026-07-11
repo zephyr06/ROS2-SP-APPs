@@ -7,6 +7,40 @@
 
 ---
 
+## P0.5 — Redesign the Optimizer Iteration Process (incumbent state) — RESOLVED 2026-07-10
+
+- **Origin:** the optimizer carried its running "best-so-far" (incumbent)
+  solution across multiple parallel members (`prev_optimizer_`,
+  `res_opt_`, `opt_pa_`, `opt_sp_`) — duplicated state, divergent cold-start
+  paths, the "code organization not good / repeated code" the user flagged.
+- **What landed.** Architectural redesign of the incumbent STATE, owned once in
+  `res_opt_` (`ResourceOptResult`) with no parallel `prev_optimizer_` cache:
+  `CommitIncumbent(pa, sp, tl)` is the single writer of `res_opt_` AND
+  `opt_pa_`; `BuildChallengerFromIncumbent()` builds a throwaway
+  `OptimizePA_Incre` from `res_opt_` each incremental candidate; the
+  `has_incumbent_` bool gate was removed in Phase-5 issue 5d as provably
+  redundant — `IfInitialized()` (`!opt_pa_.empty()`) is the gate. `prev_optimizer_`
+  member removed.
+- **Phase-5 user-review fixes (one-by-one).** 5a unified the two reset paths into
+  `ResetIncumbentBaseline(bool from_scratch)`; 5b kept rebuild-from-champion (over
+  a persistent challenger — drift risk to the diff baseline); 5c dropped the
+  stale-TL edge-case guard; 5d removed `has_incumbent_`; 5e renamed the
+  `time_limits` param to `starting_time_limits`; 5f removed the dead
+  `any_eval_ran`/zero-work fallback; 5g simplified `OptimizeSingleTaskTimeLimit`
+  patience to a total non-improvement budget (not reset on improvement); 5h
+  (reuse-one-optimizer efficiency) moved to P3.1.
+- **Verified.** 46 `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG build,
+  re-verified at closeout 2026-07-10). P1.1 INCR_P10 probe `ndiff` 5→0 at
+  call=0 (only ever 0 or 1 across all 302 incremental calls).
+- **Commits:** `a8dba07f`→`7fa2e9d2` (the redesign series); Phase-5 fixes in
+  `8bbb0f5a`, `ae62e5e5`, `cde70138`, `7fa2e9d2`, `df3502a1`.
+- **Subsumes the functional TL-init bug (former P0.1) by construction** — see
+  the P0.1 entry below.
+- *Detail: top-level `agents/dev_log.md` (2026-07-08 entry + 2026-07-10 Phase-5
+  closeout); design spec in
+  [`P0_5_optimizer_iteration_redesign/design.md`](P0_5_optimizer_iteration_redesign/design.md);
+  rationale in memory `p05-subsumes-tl-init-bug.md`.*
+
 ## P0.1 — Persist adopted TL to YAML — RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded)
 
 - **Origin:** scaffolded 2026-07-08 as the *root-cause fix* for the P1.1 residual

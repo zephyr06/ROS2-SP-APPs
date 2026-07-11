@@ -1,5 +1,12 @@
 # P0.5 — Redesign the Optimizer Iteration Process — Dev Log
 
+> **RESOLVED 2026-07-10.** All five phases complete; code committed
+> (`a8dba07f`→`7fa2e9d2`); 46 `testIncreOpt_w_TL` + 16/16 ctest green. Functional
+> TL-init bug (former P0.1) subsumed by construction. Resolution recorded in
+> `agents/finished_tasks/summary.md`; rationale in memory
+> `p05-subsumes-tl-init-bug.md`. Entries below are the original working log, kept
+> for the record.
+
 > Detailed working log for this task. Append chronological entries below.
 > On task completion, append a one-line milestone to the **top-level**
 > `agents/dev_log.md` (the canonical narrative).

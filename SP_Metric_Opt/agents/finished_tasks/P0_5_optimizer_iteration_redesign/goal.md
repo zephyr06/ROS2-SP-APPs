@@ -1,9 +1,22 @@
-# P0.5 — Redesign the Optimizer Iteration Process (incumbent state)
+# P0.5 — Redesign the Optimizer Iteration Process (incumbent state) — RESOLVED 2026-07-10
+
+> **RESOLVED 2026-07-10.** All five phases complete; code committed (commits
+> `a8dba07f`→`7fa2e9d2`); 46 `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG
+> build, re-verified at closeout). The functional TL-init bug (formerly P0.1) is
+> subsumed by construction — `BuildChallengerFromIncumbent` rebuilds the
+> adopted-TL DAG from `res_opt_` so both diff sides of `FindTaskWithDifferentEt`
+> carry the adopted TL; runtime-confirmed `ndiff` 5→0. Phase-5 review issues:
+> 5a unified `ResetIncumbentBaseline`, 5c dropped the stale-TL guard, 5d removed
+> `has_incumbent_` (provably redundant — `IfInitialized()` gate), 5e renamed
+> `starting_time_limits`, 5f removed dead `any_eval_ran` fallback, 5g total-budget
+> patience; 5b kept rebuild-from-champion; 5h (efficiency) moved to P3.1.
+> **Authoritative record:** `agents/finished_tasks/summary.md`; rationale in
+> memory `p05-subsumes-tl-init-bug.md`. Scope/design text below is the original,
+> kept for the rationale trail.
 
 **Priority:** P0 (algorithm-correctness + structural; user's #2 priority)
-**Status:** LANDED in working tree (2026-07-08); Phases 1–4 complete & verified
-green (44 `testIncreOpt_w_TL` + 16/16 ctest; P1.1 probe `ndiff` 5→0). **Not yet
-committed** — see "Commit scope" note below.
+**Status:** RESOLVED 2026-07-10 — all phases complete & committed
+(`a8dba07f`→`7fa2e9d2`); 46 `testIncreOpt_w_TL` + 16/16 ctest green.
 **Predecessor:** ~~P0.1~~ — **reversed (2026-07-08).** The incumbent-state redesign
 subsumes the *functional* TL-initialization bug by construction
 (`BuildChallengerFromIncumbent` reconstructs the adopted-TL DAG from `res_opt_`,
