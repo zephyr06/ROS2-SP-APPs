@@ -273,6 +273,23 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
         return;
     }
 
+    // Construct the persistent optimizer once, before the loop. This is state
+    // setup, NOT a solve — the first solve runs at interval 0 inside the loop,
+    // where Optimize_w_TL_ScratchOrIncre routes count==0 to ReOptimizePeriodic,
+    // the from-scratch bootstrap that writes the first incumbent into res_opt_.
+    //
+    // Why construction must precede the loop: incr_optimizer_ is the member that
+    // carries the res_opt_ incumbent across intervals, so every interval past 0
+    // warm-starts from the prior interval's adopted solution (the P1.4
+    // algorithmic seed, ReconstructTimeLimitVecFromResOpt). The loop body calls
+    // incr_optimizer_.Optimize_w_TL_ScratchOrIncre(...) each interval, so the
+    // object must already exist; seeding it from dag_tasks_vecs_[0] gives the
+    // bootstrap a valid baseline taskset + the time_limit_option cache. The
+    // per-interval calls rebind dag_tasks_ and rebuild that cache, but res_opt_
+    // — the reason the optimizer is persistent — survives those rebinds.
+    // (INCR_SCRATCH is listed too, but its DeterminePrioritiesAndBudgets branch
+    // builds a fresh scratch_opt per interval and never reads incr_optimizer_;
+    // it is the amnesiac control that carries no incumbent.)
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_) ||
         scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET" ||
         scheduler_mode_ == "INCR_SCRATCH") {
