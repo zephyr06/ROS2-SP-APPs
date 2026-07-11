@@ -131,8 +131,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     std::vector<double> SmallestTimeLimitVec() const;
     // `starting_time_limits`: the per-task TL vector the descent walks from.
     // Origin is path-dependent — incremental: carried adopted TL from res_opt_
-    // (ReconstructTimeLimitVecFromResOpt); reopt: Gaussian-mean-closest TL for
-    // the current DAG (InitializeTimeLimitsFromETConfig).
+    // (ReconstructTimeLimitVecFromResOpt); reopt: Gaussian-mean TL
+    // (InitializeTimeLimitsFromETConfig), or carried adopted TL when
+    // ReoptStartFromAdoptedTL is on and an incumbent exists.
     void PerformCoordinateDescentForTaskConfigOpt(
         int K, std::vector<double>& starting_time_limits,
         bool from_scratch = false);

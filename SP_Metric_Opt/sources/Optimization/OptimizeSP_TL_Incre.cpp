@@ -466,7 +466,14 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     // The baseline reset (re-eval carried {pa, tl} under the new DAG, or
     // RM+min-TL at interval 0) now runs inside the descent via
     // ResetIncumbentBaseline(true), before the baseline eval.
-    std::vector<double> time_limits = InitializeTimeLimitsFromETConfig();
+    // Descent start: carried adopted TL when the flag is on AND an incumbent
+    // exists (the P0.5 symmetric fix); else Gaussian-mean TL. The
+    // IfInitialized() gate auto-falls-back at interval 0 / INCR_SCRATCH (no
+    // incumbent → ReconstructTimeLimitVecFromResOpt would be all -1 = no-op).
+    std::vector<double> time_limits =
+        (GlobalVariables::ReoptStartFromAdoptedTL && IfInitialized())
+            ? ReconstructTimeLimitVecFromResOpt()
+            : InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);
     } else {

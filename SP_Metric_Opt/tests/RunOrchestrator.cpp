@@ -1,4 +1,5 @@
 #include "sources/RTDA/ImplicitCommunication/SimulationOrchestrator.h"
+#include <cctype>
 #include <chrono>
 #include <iostream>
 #include <fstream>
@@ -7,33 +8,49 @@
 
 using namespace SP_OPT_PA;
 
-// Parse an INCR_P<n> mode string (e.g. INCR_P1, INCR_P10, INCR_P60) and, when
-// matched, override GlobalVariables::ReoptimizationPeriod with n. ReoptimizationPeriod
-// is otherwise loaded from sources/parameters.yaml at startup (Parameters.cpp) and the
-// orchestrator dispatches INCR_P<n> identically to INCR (see SimulationOrchestrator.cpp
-// IsINCRPeriodVariant). Encoding the period in the mode string lets the A/B config sweep
-// the period across arms through the existing scheduler-name plumbing (compare_optimizers.py
-// passes each scheduler name straight to this binary and uses it as the output subdir),
-// with no YAML mutation (which would race against compare_optimizers.py's parallel workers).
-// Returns true if mode is an INCR_P<n> variant (regardless of whether the override
-// succeeded); false otherwise.
+// Parse an INCR_P<n> or INCR_P<n>_ADOPTED mode string. Overrides
+// ReoptimizationPeriod with n; for the _ADOPTED variant also sets
+// ReoptStartFromAdoptedTL=true (reopt descent starts from the carried adopted
+// TL instead of the Gaussian-mean TL). Period is otherwise loaded from
+// parameters.yaml; the orchestrator dispatches both variants as INCR
+// (IsINCRPeriodVariant). Encoding the period + flag in the mode string lets the
+// A/B config sweep through the existing scheduler-name plumbing with no YAML
+// mutation (which would race compare_optimizers.py's parallel workers).
+// Returns true if mode is an INCR_P<n>(..._ADOPTED) variant (regardless of
+// whether the override succeeded); false otherwise.
 static bool MaybeOverrideReoptPeriod(const std::string& mode) {
     const std::string prefix = "INCR_P";
+    const std::string adopted_suffix = "_ADOPTED";
     if (mode.rfind(prefix, 0) != 0 || mode.size() <= prefix.size()) {
-        return false;
+        return false;  // not an INCR_P* variant (or bare "INCR_P")
     }
-    const std::string digits = mode.substr(prefix.size());
+    // Digit run ends at the first non-digit (the '_' of _ADOPTED, or end).
+    size_t i = prefix.size();
+    while (i < mode.size() && std::isdigit(static_cast<unsigned char>(mode[i]))) {
+        i++;
+    }
+    if (i == prefix.size()) {
+        return true;  // INCR_P with no digits (e.g. INCR_P_ADOPTED) — reject silently
+    }
+    const std::string digits = mode.substr(prefix.size(), i - prefix.size());
+    int period = 0;
     try {
-        int period = std::stoi(digits);
-        if (period < 1) {
-            std::cerr << "Error: INCR_P<n> period must be >= 1, got " << period
-                      << " (mode=" << mode << ")\n";
-            return true;
-        }
-        GlobalVariables::ReoptimizationPeriod = period;
+        period = std::stoi(digits);
     } catch (const std::exception& e) {
         std::cerr << "Error: invalid INCR_P<n> suffix '" << digits
                   << "' in mode '" << mode << "': " << e.what() << "\n";
+        return true;
+    }
+    if (period < 1) {
+        std::cerr << "Error: INCR_P<n> period must be >= 1, got " << period
+                  << " (mode=" << mode << ")\n";
+        return true;
+    }
+    GlobalVariables::ReoptimizationPeriod = period;
+    // Optional _ADOPTED suffix (and nothing else after the digits).
+    if (mode.compare(i, adopted_suffix.size(), adopted_suffix) == 0 &&
+        mode.size() == i + adopted_suffix.size()) {
+        GlobalVariables::ReoptStartFromAdoptedTL = true;
     }
     return true;
 }
@@ -47,6 +64,8 @@ int main(int argc, char** argv) {
                   << "RM_FAST, RM_SLOW\n";
         std::cerr << "  INCR_P<n>: INCR with ReoptimizationPeriod overridden to n "
                   << "(e.g. INCR_P1, INCR_P10, INCR_P30, INCR_P60)\n";
+        std::cerr << "  INCR_P<n>_ADOPTED: as INCR_P<n> but the reopt descent "
+                  << "starts from the carried adopted TL (ReoptStartFromAdoptedTL)\n";
         std::cerr << "  export_level: 0=sp only, 1=+task miss rate, "
                   << "2=+task aggregate, 3=full traces (def="
                   << GlobalVariables::EXPORT_DETAIL_LEVEL << ")\n";

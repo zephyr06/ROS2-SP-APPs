@@ -1,6 +1,7 @@
 #include "sources/RTDA/ImplicitCommunication/SimulationOrchestrator.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
@@ -15,24 +16,29 @@ namespace SP_OPT_PA {
 
 namespace {
 // True for the INCR_P<n> period-override modes (e.g. INCR_P1, INCR_P10,
-// INCR_P60). These are INCR dispatches whose ReoptimizationPeriod is
-// overridden at binary startup: RunOrchestrator.cpp parses the <n> suffix
-// from the mode string and assigns GlobalVariables::ReoptimizationPeriod
-// before the orchestrator is constructed. The orchestrator treats any
-// INCR_P* exactly as INCR (same incr_optimizer_, same
-// Optimize_w_TL_ScratchOrIncre dispatch); only the period differs. Keeping
-// the INCR_P<n> string end-to-end (rather than normalizing to "INCR") means
-// the output subdir is named INCR_P<n> consistently across ExportResults and
-// RunOrchestrator's exec-time write, so the Python analysis finds both
-// artifacts under taskset_dir/INCR_P<n>/INCR_P<n>/.
+// INCR_P60) and their INCR_P<n>_ADOPTED twins (which additionally set
+// ReoptStartFromAdoptedTL). ReoptimizationPeriod is overridden at binary
+// startup by RunOrchestrator.cpp's MaybeOverrideReoptPeriod, which parses the
+// <n> suffix. The orchestrator treats any INCR_P* exactly as INCR (same
+// incr_optimizer_, same Optimize_w_TL_ScratchOrIncre dispatch); only the
+// period (and, for _ADOPTED, the TL-init flag) differs. Keeping the mode
+// string end-to-end (rather than normalizing to "INCR") means the output
+// subdir is named INCR_P<n>[_ADOPTED] consistently across ExportResults and
+// RunOrchestrator's exec-time write.
 bool IsINCRPeriodVariant(const std::string& mode) {
     const std::string prefix = "INCR_P";
+    const std::string adopted_suffix = "_ADOPTED";
     if (mode.rfind(prefix, 0) != 0) return false;
     if (mode.size() == prefix.size()) return false;  // bare "INCR_P" — no digits
-    for (size_t i = prefix.size(); i < mode.size(); i++) {
-        if (mode[i] < '0' || mode[i] > '9') return false;
+    size_t i = prefix.size();
+    while (i < mode.size() && std::isdigit(static_cast<unsigned char>(mode[i]))) {
+        i++;
     }
-    return true;
+    if (i == prefix.size()) return false;  // no digits after INCR_P
+    // Either end-of-string (INCR_P<n>) or exactly the _ADOPTED suffix.
+    if (i == mode.size()) return true;
+    return mode.compare(i, adopted_suffix.size(), adopted_suffix) == 0 &&
+           mode.size() == i + adopted_suffix.size();
 }
 }  // namespace
 BaseSimulationOrchestrator::BaseSimulationOrchestrator(

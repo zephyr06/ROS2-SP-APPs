@@ -1196,6 +1196,140 @@ TEST_F(CompareAndKeepSynthetic,
         << "Sanity: the start TL must not be the Gaussian-mean TL here.";
 }
 
+// Reopt TL-init A/B (INCR_P<n>_ADOPTED). ReOptimizePeriodic's descent start is
+// controlled by GlobalVariables::ReoptStartFromAdoptedTL: false (default) =
+// Gaussian-mean TL (InitializeTimeLimitsFromETConfig); true = carried adopted
+// TL (ReconstructTimeLimitVecFromResOpt) when an incumbent exists. Same
+// StartTLStub observable as the incremental test above (records the first-eval
+// TL vector without altering SP). Fixture: T_perf options {400,600,800,1000},
+// ET~500 → Gaussian-mean-closest TL is 600; the bootstrap adopts T_adopt != 600.
+TEST_F(CompareAndKeepSynthetic,
+       ReOptimizePeriodic_StartsFromGaussianMeanByDefault) {
+    class StartTLStub : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        std::vector<double> first_eval_tl;
+        bool capture = false;
+        explicit StartTLStub(const DAG_Model& dag, const SP_Parameters& sp)
+            : OptimizePA_Incre_with_TimeLimits(dag, sp) {}
+        double EvaluateTimeLimitConfig_ScratchOrIncre(
+            int K, const std::vector<double>& time_limits,
+            bool from_scratch) override {
+            if (capture && first_eval_tl.empty()) {
+                first_eval_tl = time_limits;
+            }
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                                       from_scratch);
+        }
+    };
+
+    StartTLStub opt(dag_tasks, sp_parameters);
+    GlobalVariables::ReoptStartFromAdoptedTL = false;  // default
+    opt.ReOptimizePeriodic(dag_tasks, 2);               // bootstrap
+    ASSERT_TRUE(opt.IfInitialized());
+    const double adopted_tl =
+        opt.res_opt_.id2time_limit.at(dag_tasks.tasks[0].id);
+    const double gaussian_mean_tl = 600.0;
+    ASSERT_NE(adopted_tl, gaussian_mean_tl)
+        << "Fixture no longer exercises the condition: adopted TL == 600.";
+
+    // Second interval, identical DAG. With the flag off, the reopt descent
+    // starts at the Gaussian-mean TL (600), NOT the carried adopted TL.
+    opt.capture = true;
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+
+    ASSERT_EQ(2u, opt.first_eval_tl.size())
+        << "Reopt descent did not evaluate any config.";
+    EXPECT_DOUBLE_EQ(gaussian_mean_tl, opt.first_eval_tl[0])
+        << "Default reopt starts from the Gaussian-mean TL (600).";
+    EXPECT_NE(opt.first_eval_tl[0], adopted_tl)
+        << "Sanity: default start != carried adopted TL.";
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ReOptimizePeriodic_StartsFromAdoptedTLWhenFlagSet) {
+    class StartTLStub : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        std::vector<double> first_eval_tl;
+        bool capture = false;
+        explicit StartTLStub(const DAG_Model& dag, const SP_Parameters& sp)
+            : OptimizePA_Incre_with_TimeLimits(dag, sp) {}
+        double EvaluateTimeLimitConfig_ScratchOrIncre(
+            int K, const std::vector<double>& time_limits,
+            bool from_scratch) override {
+            if (capture && first_eval_tl.empty()) {
+                first_eval_tl = time_limits;
+            }
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                                       from_scratch);
+        }
+    };
+
+    StartTLStub opt(dag_tasks, sp_parameters);
+    GlobalVariables::ReoptStartFromAdoptedTL = true;  // the A/B variant
+    opt.ReOptimizePeriodic(dag_tasks, 2);              // bootstrap
+    ASSERT_TRUE(opt.IfInitialized());
+    const double adopted_tl =
+        opt.res_opt_.id2time_limit.at(dag_tasks.tasks[0].id);
+    const double gaussian_mean_tl = 600.0;
+    ASSERT_NE(adopted_tl, gaussian_mean_tl)
+        << "Fixture no longer exercises the condition: adopted TL == 600.";
+
+    // Second interval, identical DAG. With the flag on, the reopt descent
+    // starts at the carried adopted TL (T_adopt), NOT the Gaussian-mean (600).
+    opt.capture = true;
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+
+    ASSERT_EQ(2u, opt.first_eval_tl.size())
+        << "Reopt descent did not evaluate any config.";
+    EXPECT_DOUBLE_EQ(adopted_tl, opt.first_eval_tl[0])
+        << "Flag-on reopt must start from the carried ADOPTED TL ("
+        << adopted_tl << "), not the Gaussian-mean TL (" << gaussian_mean_tl
+        << ").";
+    EXPECT_NE(opt.first_eval_tl[0], gaussian_mean_tl)
+        << "Sanity: flag-on start != Gaussian-mean TL.";
+    GlobalVariables::ReoptStartFromAdoptedTL = false;  // restore default
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ReOptimizePeriodic_Interval0FallsBackToGaussianMean) {
+    class StartTLStub : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        std::vector<double> first_eval_tl;
+        bool capture = true;  // record the very first eval (interval 0)
+        explicit StartTLStub(const DAG_Model& dag, const SP_Parameters& sp)
+            : OptimizePA_Incre_with_TimeLimits(dag, sp) {}
+        double EvaluateTimeLimitConfig_ScratchOrIncre(
+            int K, const std::vector<double>& time_limits,
+            bool from_scratch) override {
+            if (capture && first_eval_tl.empty()) {
+                first_eval_tl = time_limits;
+            }
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
+                                                       from_scratch);
+        }
+    };
+
+    // Fresh optimizer, flag on but NO incumbent (IfInitialized() == false).
+    // ReconstructTimeLimitVecFromResOpt() would return all -1 (no-op walk), so
+    // the guard must fall back to the Gaussian-mean TL. This is the interval-0
+    // / INCR_SCRATCH bootstrap path — the _ADOPTED arm must not no-op here.
+    StartTLStub opt(dag_tasks, sp_parameters);
+    GlobalVariables::ReoptStartFromAdoptedTL = true;
+    ASSERT_FALSE(opt.IfInitialized());
+
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+
+    ASSERT_EQ(2u, opt.first_eval_tl.size())
+        << "Interval-0 reopt descent did not evaluate any config.";
+    EXPECT_DOUBLE_EQ(600.0, opt.first_eval_tl[0])
+        << "Flag-on interval-0 must fall back to the Gaussian-mean TL (600), "
+        << "not the all -1 sentinel from an empty res_opt_.";
+    GlobalVariables::ReoptStartFromAdoptedTL = false;  // restore default
+}
+
 // Fix 2 (the {-1}-only skip + zero-work fallback in PerformCoordinateDescent).
 //
 // When EVERY task lacks timePerformancePairs, RecordCloseTimeLimitOptions gives

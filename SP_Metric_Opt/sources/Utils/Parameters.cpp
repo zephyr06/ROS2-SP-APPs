@@ -17,6 +17,7 @@ int Layer_Node_During_Incremental_Optimization =
     loaded_doc["Layer_Node_During_Incremental_Optimization"].as<int>();
 bool disable_time_limit_opt = false;
 bool use_wcet_execution_time = false;
+bool ReoptStartFromAdoptedTL = false;
 int ReoptimizationPeriod = loaded_doc["ReoptimizationPeriod"].as<int>();
 
 // Trial-and-error walk patience per path (incremental vs reopt). See
