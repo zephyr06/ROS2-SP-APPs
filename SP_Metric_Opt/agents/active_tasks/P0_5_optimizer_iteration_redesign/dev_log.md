@@ -658,3 +658,24 @@ standing constraint.
 **5h (issue 7, efficiency) NOT touched here** — user's earlier "move efficiency
 optimization into a different task" directive is handled separately (5h stays
 deferred in P0.5 pending its own task move).
+
+## 2026-07-10 — Phase 5 issue (7): 5h MOVED to P3.1 (efficiency bucket)
+
+Per user directive ("next move the last task0.5 into efficiency optimization,
+as it seems to be an efficiency optimization task"), moved 5h (issue 7, "Reuse
+a single optimizer instance across `EvaluateTimeLimitConfig_ScratchOrIncre`
+calls instead of rebuilding per candidate") out of P0.5 and into the deferred
+efficiency bucket `active_tasks/P3_1_efficiency_optimizations/`.
+
+It's a pure perf, not correctness, item, so it belongs in P3.1, not the P0.5
+redesign. Added as a third deferred item in P3.1's `goal.md` + `tasks.md`,
+with the trade-off recorded: the current rebuild-from-champion design (decided
+in 5b on 2026-07-10) was chosen OVER the persistent challenger because the
+champion tracks the working TL so the diff flags only the one task being
+walked; a persistent challenger would drift the diff baseline to non-adopted
+candidates and flag extras → potentially more RTA evals, not fewer. The "5h
+entangled with (8)" note is therefore stale — (8)/5b's resolution IS the
+trade-off for 5h. 5h marked `[~]` MOVED in P0.5's `tasks.md`.
+
+**P0.5 Phase 5 is now complete:** 5a–5g done, 5h moved. All Phase-5 items
+resolved. No code changed in this move (docs only).

@@ -43,6 +43,41 @@
 
 ---
 
+## Reuse one challenger across `EvaluateTimeLimitConfig_ScratchOrIncre` calls — DEFERRED
+
+* **Location:** `sources/Optimization/OptimizeSP_TL_Incre.cpp`
+  (`EvaluateTimeLimitConfig_ScratchOrIncre`, `:142`; the incremental branch
+  `:160` calls `BuildChallengerFromIncumbent()`, defined at `:402`).
+* **Bottleneck:** Each incremental candidate constructs a FRESH
+  `OptimizePA_Incre` challenger from `res_opt_` (the champion) via
+  `BuildChallengerFromIncumbent` — discarding the previous challenger's PA
+  search state. The TL coordinate-descent walk
+  (`PerformCoordinateDescentForTaskConfigOpt` → `OptimizeSingleTaskTimeLimit`)
+  evaluates one candidate per TL step, so a long walk rebuilds the challenger
+  many times within one interval.
+* **Optimization:** Keep a persistent challenger optimizer and modify it in
+  place each candidate (true incremental PA search — reuse the search state,
+  not just the adopted TL), instead of rebuilding from `res_opt_` every call.
+* **Trade-off / why deferred:** Could save PA-search work, BUT a persistent
+  challenger would advance `dag_tasks_` to the last-evaluated (possibly
+  non-adopted) candidate each call, drifting the diff baseline off the adopted
+  working TL and flagging EXTRA tasks (the explored-but-not-adopted previous
+  task) → potentially MORE RTA evals, not fewer. The current rebuild-from-
+  champion design was chosen over the persistent challenger (P0.5 Phase-5
+  issue 5b, decided 2026-07-10) precisely because the champion tracks the
+  working TL so the diff flags only the one task being walked — the perfect
+  case for incremental optimization. Net: rebuild weakly dominates within-
+  interval; the persistent challenger's only potential edge (cross-interval PA
+  re-search of DAG-mutated tasks) is a separable mechanism that could be
+  added to the rebuild design if measurement ever shows it helps.
+* **State:** deferred. Originally P0.5 Phase-5 issue 5h ("Reuse a single
+  optimizer instance across `EvaluateTimeLimitConfig_ScratchOrIncre` calls
+  instead of rebuilding per candidate. Efficiency."), moved here 2026-07-10
+  as a perf, not correctness, item. Pick up only if profiling shows the
+  challenger rebuild is a runtime blocker.
+
+---
+
 ## Reference: implemented optimizations (historical)
 
 These are **already landed**; recorded here for "why is the code this shape"

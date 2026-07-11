@@ -253,10 +253,19 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       quantifying the reopt SP effect matters. 46 `testIncreOpt_w_TL` + 16/16
       ctest green (DEBUG build). Header doc updated to "total non-improvement
       budget, NOT reset on improvement". Staged (git add only, no commit).
-- [ ] **5h. (7) Reuse a single optimizer instance across
+- [~] **5h. (7) Reuse a single optimizer instance across
       `EvaluateTimeLimitConfig_ScratchOrIncre` calls** instead of rebuilding per
-      candidate. Efficiency. **DEFERRED** (user: "we can optimize this efficiency
-      issue later"). Entangled with (8).
+      candidate. Efficiency. **MOVED (2026-07-10)** to the deferred efficiency
+      bucket `active_tasks/P3_1_efficiency_optimizations/` (new item in its
+      `goal.md` + `tasks.md`) — it's a pure perf, not correctness, item so it
+      belongs in P3.1, not the P0.5 redesign. The "Entangled with (8)" note is
+      stale: (8)/5b was resolved 2026-07-10 (keep rebuild-from-champion), and
+      that decision IS the trade-off recorded for this moved item — the
+      rebuild-from-champion design was chosen OVER the persistent challenger
+      precisely because the champion tracks the working TL so the diff flags
+      only the one task being walked (a persistent challenger would drift the
+      diff baseline to non-adopted candidates and flag extras). P0.5 Phase 5
+      is now complete: 5a–5g done, 5h moved.
 
 ## Hand-off between sub-sessions
 
