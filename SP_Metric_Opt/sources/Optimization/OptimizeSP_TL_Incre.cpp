@@ -125,9 +125,9 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     }
 
     if (should_update) {
-        // CommitIncumbent owns res_opt_ + the opt_pa_/opt_sp_ mirrors +
-        // has_incumbent_. The challenger (the `optimizer` arg) is a throwaway;
-        // only its adopted {pa, sp, tl} survives across intervals.
+        // CommitIncumbent owns res_opt_ + the opt_pa_/opt_sp_ mirrors. The
+        // challenger (the `optimizer` arg) is a throwaway; only its adopted
+        // {pa, sp, tl} survives across intervals.
         CommitIncumbent(optimizer.opt_pa_, optimizer.opt_sp_, time_limits);
 
         if (GlobalVariables::debugMode) {
@@ -152,7 +152,7 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
         optimizer.OptimizeFromScratch(K);
         current_sp = optimizer.opt_sp_;
         UpdateRecords(optimizer, time_limits);
-    } else if (has_incumbent_) {
+    } else if (IfInitialized()) {
         // Incremental: rebuild a throwaway challenger from res_opt_ (the champion)
         // each candidate, then OptimizeIncre. See BuildChallengerFromIncumbent —
         // this guarantees only the walked task's ET differs, the perfect case for
@@ -167,7 +167,7 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
         // call (e.g. ReOptimizePeriodic) first.
         CoutError(
             "EvaluateTimeLimitConfig_ScratchOrIncre: incremental path "
-            "(from_scratch=false) requested but has_incumbent_ is false. "
+            "(from_scratch=false) requested but no incumbent is initialized. "
             "Bootstrap with a from_scratch call first "
             "(e.g. ReOptimizePeriodic).");
     }
@@ -281,7 +281,7 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
 }
 
 // 1-arg overload — INCR_SCRATCH entry point. See header for why this is an
-// amnesiac reopt (fresh optimizer each interval → has_incumbent_ false →
+// amnesiac reopt (fresh optimizer each interval → no incumbent carried →
 // RM+min-TL baseline every call), distinct from the persistent optimizer used
 // by Optimize_w_TL_ScratchOrIncre (INCR with period=1).
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
@@ -382,8 +382,8 @@ void OptimizePA_Incre_with_TimeLimits::SeedStateFromIncumbent(
 }
 
 // The ONE writer for the incumbent state: res_opt_ (durable) + the thin
-// opt_pa_/opt_sp_ mirrors + has_incumbent_. Centralizing the writes here makes
-// the sp_parameters_ / DAG desync class of bug structurally impossible.
+// opt_pa_/opt_sp_ mirrors. Centralizing the writes here makes the
+// sp_parameters_ / DAG desync class of bug structurally impossible.
 void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     const PriorityVec& pa, double sp, const std::vector<double>& tl) {
     opt_sp_ = sp;
@@ -391,7 +391,6 @@ void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     res_opt_.SaveTimeLimits(dag_tasks_.tasks, tl);
     res_opt_.UpdatePriorityVec(opt_pa_);
     res_opt_.sp_opt = opt_sp_;
-    has_incumbent_ = true;
 }
 
 // Throwaway challenger rebuilt from res_opt_ (the champion) each candidate, not a
@@ -425,7 +424,7 @@ OptimizePA_Incre OptimizePA_Incre_with_TimeLimits::BuildChallengerFromIncumbent(
 void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
     bool from_scratch) {
     if (from_scratch) {
-        if (has_incumbent_) {
+        if (IfInitialized()) {
             std::vector<double> tl_prev = ReconstructTimeLimitVecFromResOpt();
             PriorityVec pa_prev = opt_pa_;
             DAG_Model dag_new_with_tl_prev =

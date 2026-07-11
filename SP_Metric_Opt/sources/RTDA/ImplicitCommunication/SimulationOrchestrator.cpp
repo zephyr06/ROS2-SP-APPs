@@ -296,7 +296,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
     } else if (scheduler_mode_ == "INCR_SCRATCH") {
         // ABLATION: amnesiac wide-radius reopt. `scratch_opt` is constructed
-        // fresh each interval and discarded, so has_incumbent_ is always false
+        // fresh each interval and discarded, so no incumbent is carried
         // → ResetIncumbentBaseline takes the interval-0 branch (RM + min-TL)
         // every call. The compare-and-keep guard therefore measures the wide
         // search against a synthetic RM baseline, NOT against the previous

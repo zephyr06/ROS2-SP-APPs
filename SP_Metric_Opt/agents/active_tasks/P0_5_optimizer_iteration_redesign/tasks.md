@@ -180,8 +180,29 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       comment above it (dropped the now-stale "opt_sp_=-1.0 reset ... lives in
       ResetIncumbentBaseline" sentence). 46 `testIncreOpt_w_TL` + 16/16 ctest
       green (DEBUG build). Staged (git add only, no commit).**
-- [ ] **5d. (2) Reconsider `has_incumbent_`.** The bool gate may be unnecessary
+- [x] **5d. (2) Reconsider `has_incumbent_`.** The bool gate may be unnecessary
       (`res_opt_` emptiness / `opt_pa_.emptiness` could gate). Evaluate removal.
+      **RESOLVED (2026-07-10): REMOVED `has_incumbent_`; gate on
+      `IfInitialized()` (base class = `!opt_pa_.empty()`).** Re-derived, not
+      assumed: after P0.5, `CommitIncumbent` is the SINGLE writer of `this->opt_pa_`
+      — `OptimizeFromScratch`/`OptimizeIncre` run only on throwaway local challengers
+      (`EvaluateTimeLimitConfig_ScratchOrIncre:152/161`), never on `this`. So the
+      bool and `!opt_pa_.empty()` flip together, always; the bool added no
+      information. Its original reason — the `prev_optimizer_.IfInitialized()` desync
+      (opt_pa_ non-empty while sp_parameters_ empty) — is structurally impossible
+      with `prev_optimizer_` gone and `CommitIncumbent` the single writer. Changes:
+      `else if (has_incumbent_)` → `else if (IfInitialized())` at `:155`;
+      `ResetIncumbentBaseline`'s `if (has_incumbent_)` → `if (IfInitialized())` at
+      `:428`; dropped `has_incumbent_ = true;` from `CommitIncumbent` (`:394`);
+      dropped the `bool has_incumbent_` member (`OptimizeSP_TL_Incre.h:206`); 16 test
+      assertions `opt.has_incumbent_` → `opt.IfInitialized()` + the stale "flips
+      has_incumbent_" comment phrasings rewritten. Reworded the CoutError message at
+      `:170` ("has_incumbent_ is false" → "no incumbent is initialized"). Trade-off
+      accepted: loses mild defense-in-depth (a future opt_pa_ write outside
+      CommitIncumbent would no longer trip the CoutError) for simpler state; user
+      judged the bool "doesn't really [hurt] readability" → wash, so simpler wins.
+      **46 `testIncreOpt_w_TL` + 16/16 ctest green (DEBUG build). Staged (git add
+      only, no commit).**
 - [x] **5e. (3) Rename the `time_limits` parameter in
       `PerformCoordinateDescentForTaskConfigOpt`** to convey its origin.
       **DONE (2026-07-09):** renamed to `starting_time_limits` (header decl

@@ -600,3 +600,61 @@ the user chose to skip it.
 `build/`) → **46 `testIncreOpt_w_TL` + 16/16 ctest green** (no behavior change;
 comment-only). Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `.h` +
 `tasks.md` + `dev_log.md`). **NOT committed** per standing constraint.
+
+## 2026-07-10 — Phase 5 issue (2): `has_incumbent_` EVALUATED → REMOVED
+
+User: "i want to remove that task, possibly removing has_incumbent_, as it
+doesn't really [hurt] code readability." Confirmed via structured Q&A: drop the
+5d bullet AND remove the field (gate on `IfInitialized()` instead).
+
+**Re-derivation (not assumed).** After P0.5, who writes `this->opt_pa_` on the
+persistent optimizer? Traced every call site:
+- `CommitIncumbent` (`OptimizeSP_TL_Incre.cpp:390`) — `opt_pa_ = pa`. ✓ single writer.
+- `OptimizeFromScratch` (`OptimizeSP_Incre.cpp:127`) — sets `opt_pa_`, BUT only
+  called on throwaway local challengers (`EvaluateTimeLimitConfig_ScratchOrIncre:152`),
+  never on `this`.
+- `OptimizeIncre` (`OptimizeSP_Incre.cpp:284`) — sets `opt_pa_`, BUT only on
+  throwaway local challengers (`:161`), never on `this`.
+- `BuildChallengerFromIncumbent` (`:408`) — writes `challenger.opt_pa_` (a
+  different object), not `this->opt_pa_`.
+
+So `has_incumbent_` (set only by `CommitIncumbent`) and `!opt_pa_.empty()` (set
+only by `CommitIncumbent` on `this`) flip together, always. The bool carried zero
+information beyond what `IfInitialized()` already reports. Its original reason —
+the `prev_optimizer_.IfInitialized()` desync where `opt_pa_` could be non-empty
+while `sp_parameters_` was still empty — is structurally impossible now that
+`prev_optimizer_` is gone and `CommitIncumbent` (which writes `opt_pa_` from a
+fully-constructed challenger's `opt_pa_`) is the single writer.
+
+**Changes:**
+- `EvaluateTimeLimitConfig_ScratchOrIncre:155` — `else if (has_incumbent_)` →
+  `else if (IfInitialized())`.
+- `ResetIncumbentBaseline:428` — `if (has_incumbent_)` → `if (IfInitialized())`.
+- `CommitIncumbent:394` — dropped `has_incumbent_ = true;`.
+- `OptimizeSP_TL_Incre.h:206` — dropped the `bool has_incumbent_ = false;` member;
+  replaced its comment with a 2-liner noting the gate is `IfInitialized()` and
+  why no separate bool is needed.
+- `:170` CoutError message reworded ("has_incumbent_ is false" → "no incumbent
+  is initialized").
+- `testIncreOpt_w_TL.cpp` — 16 `opt.has_incumbent_` → `opt.IfInitialized()`;
+  the stale "flips has_incumbent_" / "has_incumbent_ is true" comment phrasings
+  rewritten to "establishes an incumbent" / "the incumbent is initialized".
+- Comment-only refresh in 3 spots still referencing the bool by name
+  (`OptimizeSP_TL_Incre.h:73`, `OptimizeSP_TL_Incre.cpp:284` and `:128`,
+  `SimulationOrchestrator.cpp:299`) — "has_incumbent_ false" → "no incumbent
+  carried".
+
+**Trade-off accepted.** The bool gave mild defense-in-depth: if a future edit
+set `opt_pa_` outside `CommitIncumbent`, the `CoutError` at `:168` would fire
+under the bool gate but silently proceed under `!opt_pa_.empty()`. Hypothetical,
+not a current bug; user judged readability a wash → simpler state wins.
+
+**Verify:** DEBUG build (`cmake --build build --target check.SP_OPT -j5`) →
+**46 `testIncreOpt_w_TL` + 16/16 ctest green**. Staged with `git add`
+(`OptimizeSP_TL_Incre.{h,cpp}`, `SimulationOrchestrator.cpp`,
+`testIncreOpt_w_TL.cpp`, `tasks.md`, `dev_log.md`). **NOT committed** per
+standing constraint.
+
+**5h (issue 7, efficiency) NOT touched here** — user's earlier "move efficiency
+optimization into a different task" directive is handled separately (5h stays
+deferred in P0.5 pending its own task move).

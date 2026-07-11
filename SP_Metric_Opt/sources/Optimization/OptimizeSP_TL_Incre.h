@@ -70,8 +70,8 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // 1-arg overload: entry point for the INCR_SCRATCH ablation. Delegates to
     // the 2-arg ReOptimizePeriodic(dag, K). INCR_SCRATCH constructs a FRESH
     // optimizer each interval (see SimulationOrchestrator INCR_SCRATCH branch),
-    // so has_incumbent_ is always false here → ResetIncumbentBaseline takes
-    // its interval-0 branch (RM + min-TL) every call. This makes INCR_SCRATCH an
+    // so no incumbent is ever carried → ResetIncumbentBaseline takes its
+    // interval-0 branch (RM + min-TL) every call. This makes INCR_SCRATCH an
     // AMNESIAC reopt: the compare-and-keep guard measures the search against a
     // synthetic RM baseline, NOT against the previous interval's adopted
     // solution. Contrast with Optimize_w_TL_ScratchOrIncre (INCR with
@@ -113,7 +113,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // warm state. When false, the evaluator warm-starts from a throwaway
     // challenger rebuilt from the incumbent (res_opt_) via
     // BuildChallengerFromIncumbent, then runs OptimizeIncre. Requires an
-    // incumbent (has_incumbent_); the from-scratch path is the bootstrap.
+    // incumbent (IfInitialized()); the from-scratch path is the bootstrap.
     //
     // Virtual so the unidirectional trial-and-error walk
     // (OptimizeSingleTaskTimeLimit) can be unit-tested with a deterministic
@@ -196,14 +196,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // top of each OptimizeIncre_w_TL / ReOptimizePeriodic call. NOT part of the
     // incumbent (the carried TL lives in res_opt_.id2time_limit).
     std::vector<std::vector<double>> time_limit_option_for_each_task_;
-    // True once CommitIncumbent has established an incumbent in res_opt_.
-    // Replaces the old prev_optimizer_.IfInitialized() gate: that check only
-    // looked at !opt_pa_.empty(), which could be true while sp_parameters_ was
-    // still empty (the desync root). An explicit bool set only by
-    // CommitIncumbent cannot lie about its own state. One-way false->true for
-    // the object's lifetime (the orchestrator builds a fresh optimizer per
-    // INCR_SCRATCH interval; reset is never needed).
-    bool has_incumbent_ = false;
+    // The incumbent is gated by IfInitialized() (base class: !opt_pa_.empty()).
+    // CommitIncumbent is the single writer of opt_pa_, so it is the only thing
+    // that establishes an incumbent — no separate bool is needed.
     int eval_count_ = 0;
     int reoptimization_interval_count_ = 0;
 };

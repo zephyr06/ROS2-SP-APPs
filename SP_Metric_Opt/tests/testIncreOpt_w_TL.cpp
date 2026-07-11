@@ -678,7 +678,7 @@ TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {
     // by CommitIncumbent, which SeedStateFromIncumbent calls) carry the same
     // {sp, pa} tuple. Under the redesign res_opt_ is the durable store; the
     // mirrors are what the public surface reads.
-    EXPECT_TRUE(opt.has_incumbent_);
+    EXPECT_TRUE(opt.IfInitialized());
     EXPECT_DOUBLE_EQ(sp, opt.opt_sp_);
     EXPECT_EQ(pa, opt.opt_pa_);
     EXPECT_EQ(pa, opt.res_opt_.priority_vec);
@@ -686,15 +686,13 @@ TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {
 
 // --- Incumbent-state helpers (P0.5 redesign) ---
 // CommitIncumbent is the single writer for the durable incumbent store
-// (res_opt_ + the opt_pa_/opt_sp_ mirrors) and the only thing that flips
-// has_incumbent_. Tested in isolation: it must populate the four-tuple verbatim
-// and set has_incumbent_, without relying on SeedStateFromIncumbent or
-// UpdateRecords. Under dual-write (Phase 2) prev_optimizer_ stays untouched by
-// CommitIncumbent itself — the caller writes it — so this also pins that
-// contract (the field is left in whatever state it was before the call).
+// (res_opt_ + the opt_pa_/opt_sp_ mirrors) and the only thing that establishes
+// an incumbent (so IfInitialized() flips true). Tested in isolation: it must
+// populate the four-tuple verbatim, without relying on SeedStateFromIncumbent
+// or UpdateRecords.
 TEST_F(CompareAndKeepSynthetic, CommitIncumbent_WritesFourTupleAndSetsGate) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    EXPECT_FALSE(opt.has_incumbent_);
+    EXPECT_FALSE(opt.IfInitialized());
 
     PriorityVec pa = {0, 1};
     std::vector<double> tl = {800.0, -1.0};
@@ -703,7 +701,7 @@ TEST_F(CompareAndKeepSynthetic, CommitIncumbent_WritesFourTupleAndSetsGate) {
     opt.CommitIncumbent(pa, sp, tl);
 
     // res_opt_ holds the carried TL (id-keyed) and SP verbatim.
-    EXPECT_TRUE(opt.has_incumbent_);
+    EXPECT_TRUE(opt.IfInitialized());
     EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
     EXPECT_DOUBLE_EQ(sp, opt.res_opt_.sp_opt);
@@ -713,11 +711,9 @@ TEST_F(CompareAndKeepSynthetic, CommitIncumbent_WritesFourTupleAndSetsGate) {
     // Carried PA round-trips through res_opt_.priority_vec.
     EXPECT_EQ(pa, opt.res_opt_.priority_vec);
 
-    // CommitIncumbent is the single writer that flips has_incumbent_. A fresh
-    // opt starts false; after the commit it is true. (Under the dual-write
-    // migration the legacy prev_optimizer_ field is caller-owned; after Phase 3
-    // it is gone — so the gate, not the legacy field, is the contract here.)
-    EXPECT_TRUE(opt.has_incumbent_);
+    // CommitIncumbent is the single writer that establishes an incumbent. A
+    // fresh opt starts uninitialized; after the commit IfInitialized() is true.
+    EXPECT_TRUE(opt.IfInitialized());
 }
 
 // BuildChallengerFromIncumbent reconstructs a throwaway OptimizePA_Incre from
@@ -734,7 +730,7 @@ TEST_F(CompareAndKeepSynthetic, BuildChallengerFromIncumbent_ReconstructsAdopted
     std::vector<double> tl = {800.0, -1.0};
     const double sp = 2.5;
     opt.CommitIncumbent(pa, sp, tl);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
 
     OptimizePA_Incre challenger = opt.BuildChallengerFromIncumbent();
 
@@ -753,8 +749,8 @@ TEST_F(CompareAndKeepSynthetic, BuildChallengerFromIncumbent_ReconstructsAdopted
     EXPECT_EQ(pa, challenger.opt_pa_);
     EXPECT_DOUBLE_EQ(sp, challenger.opt_sp_);
     // The challenger is a throwaway local — building it must not mutate the
-    // incumbent store (res_opt_ unchanged, has_incumbent_ still true).
-    EXPECT_TRUE(opt.has_incumbent_);
+    // incumbent store (res_opt_ unchanged, still initialized).
+    EXPECT_TRUE(opt.IfInitialized());
     EXPECT_DOUBLE_EQ(800.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(sp, opt.res_opt_.sp_opt);
 }
@@ -762,7 +758,7 @@ TEST_F(CompareAndKeepSynthetic, BuildChallengerFromIncumbent_ReconstructsAdopted
 
 TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    EXPECT_FALSE(opt.has_incumbent_);
+    EXPECT_FALSE(opt.IfInitialized());
 
     // Compute the expected interval-0 baseline — RM priorities + smallest TL —
     // with the same primitives the helper uses internally, then verify the
@@ -775,7 +771,7 @@ TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
 
     opt.ResetIncumbentBaseline(true);
 
-    EXPECT_TRUE(opt.has_incumbent_);
+    EXPECT_TRUE(opt.IfInitialized());
     EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
     EXPECT_EQ(pa_rm, opt.opt_pa_);
     // Min-TL baseline: T_perf=400, T_noise=-1.
@@ -797,7 +793,7 @@ TEST_F(CompareAndKeepSynthetic,
     double sp_incumbent =
         EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters, pa);
     opt.SeedStateFromIncumbent(dag_with_tl, pa, sp_incumbent, tl_incumbent);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
 
     // Mutate T_noise's ET to a value that breaks schedulability for the
     // incumbent's {pa, tl} (response time ≈ T_perf's 800 + T_noise's 1900 ≫
@@ -850,7 +846,7 @@ TEST_F(CompareAndKeepSynthetic,
     // Bootstrap on the light DAG. Monotonic strictly-increasing-in-TL landscape
     // -> adopts TL=1000 (the optimum).
     opt.ReOptimizePeriodic(dag_tasks, 2);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
     const double sp_light = opt.res_opt_.sp_opt;
     ASSERT_GT(sp_light, 0.0);
 
@@ -879,7 +875,7 @@ TEST_F(CompareAndKeepSynthetic,
        ReOptimizePeriodic_BaselineOverwritesResOptForNewInterval) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     opt.ReOptimizePeriodic(dag_tasks, 2);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
     const double sp_light = opt.res_opt_.sp_opt;
     ASSERT_GT(sp_light, 0.0);
 
@@ -1068,7 +1064,7 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
     // adopted TL; T_noise's TL is -1 so the challenger rebuilt now carries the
     // ORIGINAL fixture ET (FiniteDist around 50.0) on T_noise.
     opt.ReOptimizePeriodic(dag_tasks, 2);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
     const double original_noise_et =
         opt.BuildChallengerFromIncumbent().dag_tasks_.tasks[1]
             .execution_time_dist.GetAvgValue();
@@ -1164,9 +1160,9 @@ TEST_F(CompareAndKeepSynthetic,
 
     // Bootstrap: ReOptimizePeriodic runs a from-scratch descent (real RTA) that
     // adopts some TL T_adopt for T_perf. After this, res_opt_ carries T_adopt
-    // (and has_incumbent_ is true).
+    // (and the incumbent is initialized).
     opt.ReOptimizePeriodic(dag_tasks, 2);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
     const double adopted_tl =
         opt.res_opt_.id2time_limit.at(dag_tasks.tasks[0].id);
     // The Gaussian-mean-closest TL for T_perf (ET~500, options 400/600/800/1000)
@@ -1242,7 +1238,7 @@ TEST_F(
 
     OptimizePA_Incre_with_TimeLimits opt(dag_no_tl, sp);
     opt.ReOptimizePeriodic(dag_no_tl, 2);
-    ASSERT_TRUE(opt.has_incumbent_);
+    ASSERT_TRUE(opt.IfInitialized());
     const int eval_count_after_bootstrap = opt.eval_count_;
 
     // Second interval: mutate T_noise's ET. T_noise's TL is -1 → its ET passes
