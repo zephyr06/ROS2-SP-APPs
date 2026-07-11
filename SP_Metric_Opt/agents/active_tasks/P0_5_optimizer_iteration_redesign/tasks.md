@@ -134,7 +134,7 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       and `SimulationOrchestrator.cpp:300` comments updated to
       `ResetIncumbentBaseline` / `has_incumbent_`. **46 `testIncreOpt_w_TL` + 16/16
       ctest green (DEBUG build). Staged (git add only, no commit).**
-- [ ] **5b. (8) Reuse the challenger incrementally instead of rebuilding from
+- [x] **5b. (8) Reuse the challenger incrementally instead of rebuilding from
       `res_opt_` each interval.** `BuildChallengerFromIncumbent` currently
       constructs a FRESH `OptimizePA_Incre` from `res_opt_` (the "champion")
       every interval, discarding the challenger's internal PA-search state. The
@@ -142,7 +142,26 @@ review-and-approve gate after each. **(5) and (8) first**, per user direction.
       incrementally each interval (true incremental optimization — reuse the PA
       search state, not just the adopted TL). Trade-off: better efficiency,
       potential SP-performance loss. Compare both designs in experiments, then
-      decide which to keep.
+      decide which to keep. **RESOLVED (2026-07-10): keep the current
+      rebuild-from-champion design (decision option (1)); do NOT adopt the
+      persistent challenger.** On full trade-off re-analysis the user (re)decided
+      the current design is preferable: the champion TL tracks the working TL
+      (`UpdateRecords` commits every adoption — strict SP gain or tie-with-
+      tighter-TL; `OptimizeSingleTaskTimeLimit` resets to the adopted best on
+      no-improvement), so while one task is walked the `FindTaskWithDifferentEt`
+      diff flags ONLY that task → `OptimizeIncre` re-searches just its 1D
+      priority variations — the perfect case for incremental optimization. A
+      persistent challenger would advance `dag_tasks_` to the last-evaluated
+      (possibly non-adopted) candidate each call, drifting the diff baseline off
+      the adopted working TL and flagging EXTRA tasks (the explored-but-not-
+      adopted previous task) → MORE RTA evals, not fewer. Net: rebuild-from-
+      champion weakly dominates within-interval (minimal diff, clean PA warm-
+      start); the persistent challenger's only potential edge — cross-interval
+      PA re-search of DAG-mutated tasks — is a separable mechanism that could be
+      added to the rebuild design directly if measurement ever shows it helps.
+      Comment added at `BuildChallengerFromIncumbent` + its call site +
+      header decl stating the guarantee. 46 `testIncreOpt_w_TL` + 16/16 ctest
+      green (DEBUG build). Staged (git add only, no commit).
 - [x] **5c. (1) Remove the stale-TL edge-case guard in `OptimizeIncre_w_TL`.**
       The guard intersected each carried TL against the current option set
       (forced -1 when a task lost its perf pair since N-1, or on a cold

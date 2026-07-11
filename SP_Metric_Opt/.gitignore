@@ -11,6 +11,7 @@ Gen_Taskset/tests/test_output/
 # CMake / C++ build outputs
 build/
 release/
+build_test/
 bin/
 /lib/
 obj/

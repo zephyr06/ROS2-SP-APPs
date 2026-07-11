@@ -178,9 +178,12 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     void ResetIncumbentBaseline(bool from_scratch);
 
     // Incumbent-state helpers (P0.5). res_opt_ is the single durable store;
-    // CommitIncumbent is its only writer, BuildChallengerFromIncumbent rebuilds a
-    // throwaway challenger from it each incremental interval so the diff baseline
-    // carries the adopted TL by construction.
+    // CommitIncumbent is its only writer. BuildChallengerFromIncumbent rebuilds a
+    // throwaway challenger from res_opt_ (the champion) each incremental candidate
+    // — NOT a persistent challenger. The champion tracks the working TL, so the
+    // diff flags only the task currently being walked → OptimizeIncre re-searches
+    // just that task. Perfect for incremental opt; chosen over a persistent
+    // challenger, which would drift to non-adopted candidates and flag extras.
     void CommitIncumbent(const PriorityVec& pa, double sp,
                          const std::vector<double>& tl);
     OptimizePA_Incre BuildChallengerFromIncumbent();

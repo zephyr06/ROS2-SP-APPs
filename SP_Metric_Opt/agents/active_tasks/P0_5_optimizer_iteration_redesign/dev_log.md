@@ -524,3 +524,79 @@ Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `.h` + `tasks.md` +
 (positive or negative) from the consecutive→total shift — that needs an A/B
 experiment on the P1.1 taskset if quantifying it matters. Deferred unless the
 user wants it.
+
+## 2026-07-10 — Phase 5 issue (8): persistent challenger EVALUATED → REJECTED
+
+**The user's original (8):** "implementation of `BuildChallengerFromIncumbent`
+is wrong — you create a new optimizer from the champion each time; what I asked
+is to modify from the challenger each time, to fully utilize incremental
+optimization... compare performance/efficiency in experiments and decide which
+to keep. I think my design is better in efficiency, with potential SP loss."
+
+**Discussion-first (no edits for several rounds).** The user asked for a fuller
+trade-off enumeration before deciding. Mid-discussion the user independently
+reconsidered their own efficiency premise and arrived at the opposite
+conclusion: rebuilding from the champion gives the MINIMUM tasks-with-different-
+TL when moving between tasks, whereas a persistent challenger could flag MORE.
+
+**Code re-derivation confirms the user's revised reasoning.** Read
+`UpdateRecords` (`OptimizeSP_TL_Incre.cpp:105-140`) + `OptimizeSingleTaskTimeLimit`
+(`:194-239`) + `EvaluateTimeLimitConfig_ScratchOrIncre` (`:142-175`):
+- `UpdateRecords` commits `res_opt_` (the champion) on EVERY adoption — strict
+  SP gain OR tie-with-smaller-TL-sum. So the champion TL tracks the adopted
+  working TL, not some stale earlier value.
+- `OptimizeSingleTaskTimeLimit` resets `time_limits[task_idx] = best_option_val`
+  (`:237`) after each pass — `best_option_val` starts as the current value and
+  only updates on `IsBetterTimeLimitOption`. So on no-improvement the working TL
+  for that task is unchanged → stays in sync with the champion.
+- Invariant: `res_opt_` TL == working `starting_time_limits` EXCEPT for the one
+  task currently being walked. Therefore `BuildChallengerFromIncumbent`'s
+  baseline DAG (built from `res_opt_`) vs the candidate DAG (built from the
+  working TL) differ in exactly one task → `FindTaskWithDifferentEt` flags ≤ 1
+  task → `OptimizeIncre` re-searches just that task's 1D priority variations.
+  This is the ideal input for incremental optimization.
+
+**Why the persistent challenger (P) is weakly dominated within-interval.** P
+keeps one `OptimizePA_Incre` member; `OptimizeIncre` advances
+`challenger.dag_tasks_ = dag_tasks_update` at the end of EVERY call
+(`OptimizeSP_Incre.cpp:301`) — unconditionally, adopted or not. So
+`challenger.dag_tasks_` = the last-EVALUATED candidate's DAG, while the working
+TL = the ADOPTED best. They diverge whenever the last exploration wasn't
+adopted. Moving from task A to task B: if A's last explored option wasn't
+adopted, the challenger still has A at the unadopted value, the working TL has
+A at the adopted value → B's first eval flags BOTH A and B. So within-interval
+`ndiff_P ≥ ndiff_U` always. P can be MORE expensive (more RTA evals), not less.
+
+**The two SP mechanisms in P cut opposite ways (ambiguous sign):** (a) P
+re-searches DAG-mutated tasks' PA cross-interval (U skips this until reopt) →
+potential SP GAIN if mutations shift the optimal PA; (b) P's PA warm-start
+drifts off the champion → 1D variations from a worse starting PA → potential SP
+LOSS. Net SP delta is empirical, not signed.
+
+**Decision (user, 2026-07-10): option (1) — keep the current rebuild-from-
+champion design; do NOT adopt P.** Rationale: U weakly dominates within-interval
+(a clean, provable invariant — minimal diff, clean PA warm-start); P's only
+potential edge (cross-interval PA re-search of mutated tasks) is a separable
+mechanism that can be added to U directly (e.g. flag mutated tasks at the
+baseline eval) if measurement ever shows it helps — without taking on P's drift
+and extra within-interval evals. The "fully utilize incremental optimization"
+intent is real but cuts two ways; U is incremental along the within-interval
+axis (the one that matters for the per-candidate diff), P along the cross-
+interval axis. No A/B experiment run — the analysis is conclusive enough that
+the user chose to skip it.
+
+**Code change: comments only (no behavior change).** Added/strengthened the
+"only one task's ET changes" guarantee at three sites:
+- `BuildChallengerFromIncumbent` definition (`OptimizeSP_TL_Incre.cpp:397-402`):
+  states the champion-tracks-working-TL invariant and that the diff flags only
+  the walked task → perfect for `OptimizeIncre`'s diff-driven 1D re-search; a
+  persistent challenger would drift to non-adopted candidates and flag extras.
+- `EvaluateTimeLimitConfig_ScratchOrIncre` incremental branch call site
+  (`:156-159`): tight pointer to the helper + the guarantee.
+- `OptimizeSP_TL_Incre.h` incumbent-state-helpers block (`:180-187`): the
+  rebuild-vs-persistent rationale at the declaration.
+
+**Verify:** DEBUG build (`cmake --build . --target check.SP_OPT -j5` in
+`build/`) → **46 `testIncreOpt_w_TL` + 16/16 ctest green** (no behavior change;
+comment-only). Staged with `git add` (`OptimizeSP_TL_Incre.cpp` + `.h` +
+`tasks.md` + `dev_log.md`). **NOT committed** per standing constraint.

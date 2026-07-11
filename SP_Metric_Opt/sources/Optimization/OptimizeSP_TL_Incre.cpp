@@ -153,10 +153,10 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
         current_sp = optimizer.opt_sp_;
         UpdateRecords(optimizer, time_limits);
     } else if (has_incumbent_) {
-        // Incremental: warm-start from a throwaway challenger rebuilt from
-        // res_opt_ (its dag_tasks_ carries the adopted TL → both diff sides
-        // carry it; the P1.1 per-site override is now structural). Only the
-        // adopted {pa, sp, tl} is committed; the challenger dies with the local.
+        // Incremental: rebuild a throwaway challenger from res_opt_ (the champion)
+        // each candidate, then OptimizeIncre. See BuildChallengerFromIncumbent —
+        // this guarantees only the walked task's ET differs, the perfect case for
+        // OptimizeIncre's diff-driven 1D re-search.
         OptimizePA_Incre optimizer = BuildChallengerFromIncumbent();
         optimizer.OptimizeIncre(dag_tasks_cur);
         current_sp = optimizer.opt_sp_;
@@ -394,12 +394,12 @@ void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     has_incumbent_ = true;
 }
 
-// Build a throwaway challenger from res_opt_: its dag_tasks_ is the current raw
-// DAG with the carried adopted TL applied, so FindTaskWithDifferentEt's diff
-// baseline carries the adopted TL by construction (both sides inherit it). Its
-// opt_pa_/opt_sp_ mirror res_opt_ so OptimizeIncre warm-starts from the carried
-// PA. Transient — whatever it mutates dies with the local; only the committed
-// {pa, sp, tl} survives.
+// Throwaway challenger rebuilt from res_opt_ (the champion) each candidate, not a
+// persistent one. The champion TL tracks the working TL (UpdateRecords commits
+// every adoption; the walk resets to the adopted best on no-improvement), so
+// while one task is walked the diff flags ONLY that task → OptimizeIncre
+// re-searches just its 1D priority variations. Perfect for incremental opt; a
+// persistent challenger would drift to non-adopted candidates and flag extras.
 OptimizePA_Incre OptimizePA_Incre_with_TimeLimits::BuildChallengerFromIncumbent() {
     std::vector<double> tl_prev = ReconstructTimeLimitVecFromResOpt();
     DAG_Model dag_with_tl_prev =
