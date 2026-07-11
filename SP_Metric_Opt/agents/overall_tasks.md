@@ -50,6 +50,7 @@ correctness* — acceptable under "fewer features okay."
 
 | Task | Source | Why let go |
 |------|--------|------------|
+| **P1.2** Reopt incumbent degradation (structural corruption) | [`active_tasks/P1_2_reopt_incumbent_degradation/`](active_tasks/P1_2_reopt_incumbent_degradation/) | Spawned by the Gemini/Kimi debate. Out of scope in current stage of development. The possibility of committing an opportunistic but structurally worse/fragile priority assignment is kept as a known theoretical hazard. |
 | Trial-and-error for **incremental priority** assignment | (was NEW TASK #1 in old tasks.md) | Algorithm feature; TL trial-and-error already shipped. Not needed to prove correctness or advantages. |
 | `PriorityPartialPath` → pointers | [`P3_1_efficiency_optimizations/`](active_tasks/P3_1_efficiency_optimizations/) §A | Pure perf; runtime figures adequate without it. Revisit only if P1.1 finds ET is a paper blocker. |
 | Incremental HP-task convolution O(N²)→O(N) | [`P3_1_efficiency_optimizations/`](active_tasks/P3_1_efficiency_optimizations/) §2A | Already ON HOLD for correctness verification; perf, not correctness. |
@@ -72,9 +73,11 @@ pass); trial-and-error TL rewrite done + TDD-green (pending commit in P0.1).
 ~~P0.5~~ RESOLVED 2026-07-10 (committed `a8dba07f`→`7fa2e9d2`; subsumes the
 functional TL-init bug by construction — see `finished_tasks/summary.md`) →
 P0.2 (BF audit) → P0.3 (prod figures; depends on P0.5's trustworthy incumbent) →
-P2.1 (fig2 confirm, during P0.3) → P1.1 (P25 investigation, the open research
-question) → P2.2 (doc hygiene, parallel anytime) → P2.3 (`approx_equal`
-dead-code cleanup, parallel anytime).
+P2.1 (fig2 confirm, during P0.3) → P1.1 (P25 ET investigation, open research
+question) → P1.2 (reopt incumbent-degradation investigation; reads the same P25
+A/B data as P1.1 but asks a different question — structural corruption, not ET
+growth; parallel anytime until it needs a code change) → P2.2 (doc hygiene,
+parallel anytime) → P2.3 (`approx_equal` dead-code cleanup, parallel anytime).
 ~~P0.1~~ RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded —
 see `finished_tasks/summary.md`). Each P0/P1 task is one review-and-commit cycle
 per `agent_coding_rules.md`.
