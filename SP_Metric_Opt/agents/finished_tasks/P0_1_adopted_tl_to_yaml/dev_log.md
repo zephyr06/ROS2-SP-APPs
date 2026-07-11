@@ -1,8 +1,11 @@
 # P0.1 — Persist adopted TL to YAML — Dev Log
 
-> Detailed working log for this task. Append chronological entries below.
-> On task completion, append a one-line milestone to the **top-level**
-> `agents/dev_log.md` (the canonical narrative).
+> **RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded).**
+> No code was ever written for this task. The functional bug is gone by P0.5
+> construction; the inspectability YAML write was discarded by user decision.
+> Milestone recorded in top-level `agents/dev_log.md`; resolution in
+> `finished_tasks/summary.md`. Entries below are the original scaffold, kept
+> for the record only.
 
 ## 2026-07-08
 

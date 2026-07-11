@@ -21,7 +21,7 @@ work + show advantages over baselines), not all analysis is necessary.
 
 | Task | Folder | One-line |
 |------|--------|----------|
-| **P0.1** Persist adopted TL to YAML | [`active_tasks/P0_1_adopted_tl_to_yaml/`](active_tasks/P0_1_adopted_tl_to_yaml/) | ~~ROOT-CAUSE fix~~ — **demoted to inspectability-only (2026-07-08).** The functional TL-init bug is subsumed by P0.5 (the redesign makes the diff carry the adopted TL by construction). What remains: overwrite the taskset YAML with the adopted TL (+ implied ET) after each interval's commit so the on-disk file is a faithful prior for inspection/reload. The orchestrator already clamps job ET to `res.id2time_limit` (`SimulationOrchestrator.cpp:461-463`), so this is debuggability, not runtime correctness. No longer a predecessor of P0.5; a smaller follow-up or an optional write site in P0.5 Phase 3d. |
+| ~~**P0.1** Persist adopted TL to YAML~~ | — | **RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded).** Functional TL-init bug fixed by P0.5 by construction (`CommitIncumbent` single-writes `res_opt_`; `BuildChallengerFromIncumbent` rebuilds the adopted-TL DAG → both diff sides carry the adopted TL → the P1.1 false-positive class structurally impossible; runtime-confirmed `ndiff` 5→0). The demoted inspectability remainder (overwrite the taskset YAML with the adopted TL after each commit, for post-run debuggability) was never implemented and is **discarded** — the orchestrator clamps job ET to `res.id2time_limit` (`SimulationOrchestrator.cpp:461-463`), so no scheduler decision honors the stale Gaussian once optimization has run. No code was ever written for P0.1. See `finished_tasks/summary.md`. |
 | **P0.2** Focused BF correctness audit | [`active_tasks/P0_2_bf_correctness_audit/`](active_tasks/P0_2_bf_correctness_audit/) | Verify on one small fixed taskset that `OptimizeSP_TL_BF` enumerates the global optimum and `INCR ≤ BF`. Closes the "is BF optimal?" reviewer question. |
 | **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_p25_et_vs_period`. Depends on P0.5 (trustworthy incumbent) rather than P0.1. |
 | **P0.4** Project evaluation suite (north-star integration test) | [`active_tasks/P0_4_project_evaluation_suite/`](active_tasks/P0_4_project_evaluation_suite/) | Slow (~20 min) deterministic integration test on N=4/6/8 — measures avg SP + scheduler ET vs the `project_evaluation_northstar.md` red-flag lines. The single tuning target for any code/algorithm change. Filed only; not started. |
@@ -72,7 +72,8 @@ pass); trial-and-error TL rewrite done + TDD-green (pending commit in P0.1).
 P0.5 (incumbent-state redesign — subsumes the functional TL-init bug; design
 decided, worked FIRST) → P0.2 (BF audit) → P0.3 (prod figures; depends on P0.5's
 trustworthy incumbent) → P2.1 (fig2 confirm, during P0.3) → P1.1 (P25
-investigation, the open research question) → P0.1 (YAML persistence —
-inspectability-only follow-up, or fold into P0.5 Phase 3d) → P2.2 (doc hygiene,
+investigation, the open research question) → P2.2 (doc hygiene,
 parallel anytime) → P2.3 (`approx_equal` dead-code cleanup, parallel anytime).
-Each P0/P1 task is one review-and-commit cycle per `agent_coding_rules.md`.
+~~P0.1~~ RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded —
+see `finished_tasks/summary.md`). Each P0/P1 task is one review-and-commit cycle
+per `agent_coding_rules.md`.

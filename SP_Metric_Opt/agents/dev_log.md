@@ -2111,3 +2111,21 @@ required; P0.1's remaining value is inspectability-only, as
 `simulation_experiments/optimizer_comparison/et_repro/p05_probe_ts0_P10/`.
 Full record: `agents/active_tasks/P0_5_optimizer_iteration_redesign/`. Not yet
 committed (working tree).
+
+**P0.1 — RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded).**
+P0.1 ("persist adopted TL to YAML") was scaffolded 2026-07-08 as the root-cause
+fix for the P1.1 residual, then demoted that same day to inspectability-only
+once P0.5 was worked first. The functional bug it targeted is **fixed by P0.5 by
+construction**: `CommitIncumbent` single-writes `res_opt_.id2time_limit`, and
+`BuildChallengerFromIncumbent` rebuilds the DAG from that carried adopted TL →
+both diff sides carry the adopted TL → the P1.1 `FindTaskWithDifferentEt`
+false-positive class is structurally impossible (runtime-confirmed: P1.1 probe
+`ndiff` 5→0). The demoted inspectability remainder — overwrite the taskset YAML
+with the adopted TL (+ implied ET) after each commit, for post-run
+debuggability — was **never implemented** and is **discarded** by user decision
+("if it's about writing down to yaml file about the found time limits from
+optimizers, we can discard it"): the orchestrator clamps job ET to
+`res.id2time_limit` (`SimulationOrchestrator.cpp:461-463`), so no scheduler
+decision honors the stale Gaussian once optimization has run. No code was ever
+written for P0.1; the task folder is deleted. Recorded in
+`finished_tasks/summary.md`.

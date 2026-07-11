@@ -7,6 +7,31 @@
 
 ---
 
+## P0.1 — Persist adopted TL to YAML — RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded)
+
+- **Origin:** scaffolded 2026-07-08 as the *root-cause fix* for the P1.1 residual
+  ("runtime treats the YAML Gaussian as the prior ET, but a TL-optimizable task's
+  prior ET is its adopted TL"). Demoted the same day to **inspectability-only**
+  once P0.5 was worked first — P0.5's incumbent-state redesign makes the diff
+  carry the adopted TL by construction.
+- **Functional bug — RESOLVED BY P0.5, by construction.** `CommitIncumbent`
+  (`OptimizeSP_TL_Incre.cpp:387`) is the single writer of
+  `res_opt_.id2time_limit`; `BuildChallengerFromIncumbent` rebuilds the DAG from
+  that carried adopted TL → both diff sides carry the adopted TL → the P1.1
+  `FindTaskWithDifferentEt` false-positive class is structurally impossible.
+  Confirmed at runtime: P1.1 probe INCR_P10 N=8 taskset_0 went `ndiff` 5→0 at
+  call=0 (only ever 0 or 1 across all 302 incremental calls).
+- **Inspectability YAML write — DISCARDED by user decision (2026-07-10).** The
+  demoted remainder (overwrite the taskset YAML with the adopted TL + implied ET
+  after each commit, for post-run debuggability) was never implemented and the
+  runtime doesn't need it: the orchestrator clamps job ET to
+  `res.id2time_limit` (`SimulationOrchestrator.cpp:461-463`), so no scheduler
+  decision ever honors the stale Gaussian once optimization has run. User: "if
+  it's about writing down to yaml file about the found time limits from
+  optimizers, we can discard it." No code was ever written for P0.1.
+- *Detail: top-level `agents/dev_log.md` (2026-07-10 entry); resolution rationale
+  in memory `p05-subsumes-tl-init-bug.md`.*
+
 ## P0.1 — Commit pending uncommitted work — DONE 2026-07-06
 
 - **All four commit groups landed.** (a) INCR_P<n> mode override → `1ede254f`;
