@@ -2145,3 +2145,112 @@ removed `has_incumbent_`, 5e renamed `starting_time_limits`, 5f removed dead
 folder is moved to `finished_tasks/P0_5_optimizer_iteration_redesign/`;
 resolution recorded in `finished_tasks/summary.md`; rationale in memory
 `p05-subsumes-tl-init-bug.md`.
+
+**P1.2 — task created 2026-07-11** (reopt incumbent degradation / structural
+corruption). Spawned by the Gemini/Kimi multi-round debate
+(`agents/agent_communication/gemini.md` R1–R5, `kimi.md` R1–R4). The debate
+converged on: the SP-value compare-and-keep guard (`UpdateRecords`,
+`OptimizeSP_TL_Incre.cpp:105-139`) is sound but structurally blind — it protects
+SP monotonicity, not permutation structural quality, so a reopt bootstrap
+(`OptimizeFromScratch`, `OptimizeSP_Incre.cpp:74`, memoryless at the shared
+`K=2` from `parameters.yaml:7`) could commit a structurally-worse permutation
+that squeaks past the SP guard and that the incremental `OptimizeIncre` (1D
+variations) then cannot restructure. The agreed synthesis if the hazard fires =
+Option B (seed the bootstrap beam with π_incumbent) + Option C (chain the TL
+walk via `OptimizeIncre`, from_scratch=false after the bootstrap; collapses the
+per-TL-step `OptimizeFromScratch` to once-per-reopt). **Sequencing: empirical
+check FIRST** — mine the existing P25 A/B per-interval SP traces
+(`runs/p25periodAB_run_test_dur600_interval10_seed1000_tasks4x6/sim/.../interval_sp_metrics.txt`)
+for the post-reopt non-recovering-dip signature; no code change until the
+hazard is shown to fire. Folder `agents/active_tasks/P1_2_reopt_incumbent_degradation/`.
+Reads the same P25 A/B data as P1.1 but asks a different question (structural
+corruption, not ET growth).
+
+**P1.3 — `ReoptStartFromAdoptedTL` A/B regression; root cause FOUND 2026-07-11
+(stale binary, not a code bug).** The first A/B with the `INCR_P<n>_ADOPTED`
+arms (commit `8cbbbc12`, 2026-07-11 10:47) collapsed them far below their plain
+twins. Diagnosis: the run used `release/libSP_OPT.so` + `release/tests/RunOrchestrator`
+built 2026-07-08 20:27 — **stale, predates the commit**. `run_end_to_end.sh:37`
+defaults `BIN_DIR=release` with no rebuild step, so the e2e run picked up the
+old binary. Under the pre-commit code, `INCR_P<n>_ADOPTED` is an unrecognized
+mode: `IsINCRPeriodVariant` rejects the `_` (non-digit), `MaybeOverrideReoptPeriod`
+sets the period via `stoi("1_ADOPTED")==1` but the flag field doesn't exist, and
+the dispatch falls through every branch → empty `ResourceOptResult` (no
+priorities, no TLs) → a fixed period-independent degenerate schedule. **Decisive
+fingerprint:** all four `_ADOPTED` arms (P1/P10/P30/P60) produce byte-identical
+`interval_sp_metrics.txt` traces (`diff` empty) — impossible if the flag were
+genuinely active (P1 reopts every interval, P60 once). Code verified sound: the
+post-commit parser + dispatch + reopt branch are correct by inspection AND by
+49 `testIncreOpt_w_TL` + 16/16 ctest green on the DEBUG build (`build/libSP_OPTDebug.so`,
+2026-07-11 10:40, which DOES contain the code). Fix = rebuild `release/`
+(verify `strings release/libSP_OPT.so | grep -ci adopted` > 0) + re-run the A/B
+(user-run); no source change unless the collapse persists after a confirmed-fresh
+rebuild. Folder `agents/active_tasks/P1_3_adopted_tl_regression/`.
+
+**P1.3 — Step 2 DONE 2026-07-11 (cont.): `release/` rebuilt & verified fresh;
+stale fingerprint GONE.** The user rebuilt `release/` between sessions — binary
+mtimes now 2026-07-11 11:26:24 (`libSP_OPT.so`) / 11:26:39 (`RunOrchestrator`),
+both after commit `8cbbbc12` (10:47); `CMAKE_BUILD_TYPE=Release`. Freshness
+verified: `strings release/libSP_OPT.so | grep -ci adopted` = 3 (was 0), the
+`_ADOPTED` Usage line is present, and the mangled symbol
+`_ZN15GlobalVariables23ReoptStartFromAdoptedTLE` is linked into both binaries.
+Functional probe (3-way `INCR_P1` / `INCR_P1_ADOPTED` / `INCR_P60_ADOPTED` + 2
+controls `INCR_P60` / `INCR_SCRATCH`, on an 8-interval trimmed tasks4 taskset_0,
+horizon 10000 ms): stale `INCR_P1_ADOPTED` mean SP **0.322** → fresh **0.729**;
+the stale fall-through fingerprint (all 4 `_ADOPTED` arms byte-identical,
+`diff -q` empty) is **absent** on the fresh binary. The 5 fresh probes are
+mutually byte-identical, but that is a trivial-taskset artifact (0% miss, SP
+ceiling — even `INCR_SCRATCH` matches), not a flag problem; the real
+`_ADOPTED`-vs-plain signal needs the loaded full A/B. **Remaining gate =
+Step 3** (user's full prod A/B re-run on the fresh binary). If the loaded A/B
+shows the `_ADOPTED` arms competitive with (not collapsed below) their plain
+twins, P1.3 closes as a stale-binary artifact with no source change.
+
+**P1.3 — Step 3 DONE + CLOSED 2026-07-11.** User re-ran the A/B on the fresh
+`release/` binary
+(`p25periodAB_run_test_dur600_interval10_seed1000_tasks4x6x8/.../comparison_summary.csv`,
+tasks4). The `_ADOPTED` arms are now distinct per-period (no longer
+byte-identical) and within 0.3–0.8 SP pts of their plain twins: P1 0.579318 →
+0.571043, P10 0.559728 → 0.552747, P30 0.552093 → 0.549053, P60 0.545583 →
+0.545583 (byte-identical, as expected — reopt once → no divergence to
+accumulate). Gap shrinks monotonically with the reopt period. Verdict: the
+collapse was a stale-binary artifact; the code is sound. The incumbent
+(`_ADOPTED`) seed is slightly worse than the YAML-derived (plain) seed at high
+reopt frequency — which seeded P1.4.
+
+**P1.4 — Reopt seed TL = carried incumbent, made permanent 2026-07-11
+(working tree, staged, NOT committed).** User constraint: the reopt descent's
+seed TL must be **algorithm-derived** (the optimizer's own prior result), not
+read from the YAML taskset or the generator's drawn distribution. Analysis:
+`InitializeTimeLimitsFromETConfig` (the old "off" default) is YAML-derived —
+`et_dist_.GetAvgValue()` resolves through the `FiniteDist` built from YAML
+`mu/sigma/min/max` (`RegularTasks.cpp:61-106`), and the generator writes `mu`
+independent of the `performance_records_time` option grid
+(`taskset_generator.py:244-245` / `orchestrator.py:309`). The closest
+algorithmic option = `ReconstructTimeLimitVecFromResOpt` (the carried incumbent
+in `res_opt_`, the optimizer's own `CommitIncumbent` write from P0.5).
+**Implemented choice (a)**: flipped `GlobalVariables::ReoptStartFromAdoptedTL`
+default `false`→`true` (`sources/Utils/Parameters.cpp:20`); the `IfInitialized()`
+gate at `OptimizeSP_TL_Incre.cpp:474` still auto-falls-back to
+`InitializeTimeLimitsFromETConfig` at interval 0 / INCR_SCRATCH (no incumbent
+→ no prior to seed from; irreducible for any policy). Kept the flag as an
+ablation opt-out and kept the `INCR_P<n>_ADOPTED` arms as no-op aliases (both
+set a flag that now ships true) so historical run dirs stay comparable. TDD:
+rewrote the 3 `ReOptimizePeriodic_*` tests at `tests/testIncreOpt_w_TL.cpp:1206+`
+for the new default (`StartsFromAdoptedTLByDefault` asserts the shipped
+default; `OptOutStartsFromGaussianMeanTL` covers the false ablation;
+`Interval0FallsBackToGaussianMean` unchanged) — red (ASSERT_TRUE on the default
+fires) → flip → green; 49/49 `testIncreOpt_w_TL` + 16/16 ctest green on the
+DEBUG build. Docs updated: `Parameters.h/.cpp`, `parameters.yaml`,
+`OptimizeSP_TL_Incre.cpp:469` + `.h:132`, `RunOrchestrator.cpp` (header
+comment + flag-set site + `--help` Usage line), `SimulationOrchestrator.cpp:18`,
+`p25_period_ab_config.json` `_comment`, memory `reopt-tl-init-adopted-arms.md`.
+Accepted tradeoff: ~0.3–0.8 SP pts worse than the YAML seed at high reopt
+frequency (→0 at P60), in exchange for the algorithmic-seed guarantee. Full
+record: `agents/active_tasks/P1_4_reopt_seed_from_incumbent/`. **No
+`release/` rebuild done by me** — the user rebuilds + re-runs the A/B to
+confirm the flip on the loaded tasksets.
+
+**P1.5 — Add INCR_Px_INIT Baselines (Default Initial Solution Seed) 2026-07-11 (planning phase).** User requested a new baseline variant `INCR_P<n>_INIT` (supporting periods P1, P10, P30) that uses the default/generator initial solution (`InitializeTimeLimitsFromETConfig`) to start coordinate descent re-optimizations, then uses warm-started incremental optimization for intermediate intervals. This allows comparing performance against the default incumbent-seeded `INCR_P<n>` variants. Created task files under `agents/active_tasks/P1_5_new_baseline_default_seed/` and updated `agents/overall_tasks.md`.
+
+**P1.4 — Choice (b): incumbent seed made the unconditional, ONLY reopt seed; flag + `_ADOPTED` arms REMOVED 2026-07-11 (working tree, staged, NOT committed).** User redirect: "always use reopt-start-from-adopted-tl, remove the flag, clean related choice code and unused code." The initially-implemented choice (a) (keep the knob default-true as an ablation opt-out, keep `_ADOPTED` arms as no-op aliases) was replaced by (b) — the design rules ("don't make things optional if not needed" / "ruthlessly prune unused features") favor (b), and the A/B data is no longer needed since the policy is permanent. **Source:** removed `GlobalVariables::ReoptStartFromAdoptedTL` from `Parameters.h/.cpp` + the `parameters.yaml` note block; `OptimizeSP_TL_Incre.cpp:478` flag ternary → unconditional `IfInitialized() ? ReconstructTimeLimitsFromResOpt() : InitializeTimeLimitsFromETConfig()` (the `IfInitialized()` gate still auto-falls-back at interval 0 / INCR_SCRATCH — irreducible). `RunOrchestrator.cpp` `MaybeOverrideReoptPeriod`: dropped `_ADOPTED` suffix handling; a trailing suffix after the digits is now a **hard error** (loud stderr, no silent fall-through — the P1.3 trap). `SimulationOrchestrator.cpp` `IsINCRPeriodVariant`: simplified to plain `INCR_P<n>` (no trailing suffix). `p25_period_ab_config.json`: removed the 4 `_ADOPTED` arms from both modes (10→6 arms each); rewrote `_comment` + both mode `_comment`s. **Tests:** renamed `StartsFromAdoptedTLByDefault` → `StartsFromAdoptedTL` (dropped the `ASSERT_TRUE(flag)`); **deleted** `OptOutStartsFromGaussianMeanTL` (the false path is gone); stripped the flag mention from `Interval0FallsBackToGaussianMean` (logic unchanged). Net 49 → 48 tests. **Verified:** `cmake --build build --target check.SP_OPT -j5` (DEBUG) → 16/16 ctest green, `testIncreOpt_w_TL` 48/48 green. **P1.5 RETIRED 2026-07-11** (invalidated by (b)): its premise (`INCR_P<n>_INIT` sets `ReoptStartFromAdoptedTL=false` for the seed A/B) needs the removed flag; the incumbent-vs-YAML-seed A/B is no longer runnable as a config arm, and P1.3's measured tradeoff (~0.3–0.8 SP pts, →0 at P60) stands as the final record. Folder `active_tasks/P1_5_new_baseline_default_seed/` deleted. Full record: `agents/active_tasks/P1_4_reopt_seed_from_incumbent/`. **No `release/` rebuild done by me** — the user rebuilds + re-runs the 6-arm A/B to confirm on the loaded tasksets.

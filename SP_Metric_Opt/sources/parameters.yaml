@@ -29,10 +29,6 @@ Layer_Node_During_Incremental_Optimization: 2
 ReoptimizationPeriod: 10
 IncrementalTimeLimitSearchPatience: 0
 ReoptimizationTimeLimitSearchPatience: 1
-# ReoptStartFromAdoptedTL (bool, default false): mode-string-driven only
-# (INCR_P<n>_ADOPTED arms set it in RunOrchestrator.cpp); NOT loaded from YAML
-# (would race compare_optimizers.py's parallel workers). true = reopt descent
-# starts from the carried adopted TL; false = Gaussian-mean TL.
 
 # simulation export granularity controls:
 # 0: interval SP metrics only (smallest disk usage)

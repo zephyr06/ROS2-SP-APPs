@@ -32,6 +32,9 @@ work + show advantages over baselines), not all analysis is necessary.
 | Task | Folder | One-line |
 |------|--------|----------|
 | **P1.1** P25 residual investigation | [`active_tasks/P1_1_p25_residual_investigation/`](active_tasks/P1_1_p25_residual_investigation/) | 3× ET growth eliminated but literal flip not met. Investigate first (reconcile 2-vs-8 changed-task-count; equal-radii A/B; confirm Fix D inert) — do NOT re-frame or implement Fix C yet. Reference: [`investigation/`](investigation/). |
+| **P1.3** `ReoptStartFromAdoptedTL` A/B regression | [`active_tasks/P1_3_adopted_tl_regression/`](active_tasks/P1_3_adopted_tl_regression/) | First A/B with `INCR_P<n>_ADOPTED` arms (commit `8cbbbc12`) collapsed far below plain twins. **Root cause FOUND: stale `release/` binary** (built 2026-07-08, predates the 2026-07-11 commit; `run_end_to_end.sh` defaults `BIN_DIR=release` with no rebuild). Under the pre-commit code `_ADOPTED` is an unrecognized mode → dispatch fall-through → empty `ResourceOptResult` → period-independent degenerate schedule. Fingerprint: all four `_ADOPTED` arms produce byte-identical SP traces across P1/P10/P30/P60. Code itself verified sound (49 + 16/16 ctest green on the DEBUG build). **Step 2 DONE 2026-07-11**: `release/` rebuilt (mtime 11:26, after the commit) & verified fresh (`adopted` strings 0→3, mangled symbol linked); functional probe confirms the stale fingerprint is GONE — `INCR_P1_ADOPTED` SP 0.322→0.729, no longer byte-identical across periods at the collapsed SP. **Step 3 DONE 2026-07-11**: user re-ran the A/B on the fresh binary; `_ADOPTED` arms now distinct per-period and within 0.3–0.8 SP pts of plain twins (P1 0.5793→0.5710, P10 0.5597→0.5527, P30 0.5521→0.5491, P60 0.5456→0.5456 byte-identical), gap shrinking with reopt period. Verdict: stale-binary artifact, code sound — but the result seeded P1.4 (the incumbent seed is slightly worse; the user then required it anyway on algorithmic grounds). |
+| **P1.4** Reopt seed TL = carried incumbent (permanent, unconditional) | [`active_tasks/P1_4_reopt_seed_from_incumbent/`](active_tasks/P1_4_reopt_seed_from_incumbent/) | User constraint: the reopt seed TL must be **algorithm-derived** (the optimizer's own prior result), not read from YAML or the generator. The old "off" default (`InitializeTimeLimitsFromETConfig`) is YAML-derived (`et_dist_` from `RegularTasks.cpp:61-106`; generator `mu` independent of the option grid). Closest algorithmic option = `ReconstructTimeLimitVecFromResOpt` (the `res_opt_` incumbent). **Implemented choice (b)**: REMOVED the `ReoptStartFromAdoptedTL` knob entirely (not kept as an ablation opt-out) — `ReOptimizePeriodic` now does `IfInitialized() ? ReconstructTimeLimitsFromResOpt() : InitializeTimeLimitsFromETConfig()` unconditionally; the `IfInitialized()` gate still auto-falls-back at interval 0 / INCR_SCRATCH. Also REMOVED the `INCR_P<n>_ADOPTED` A/B arms + their parsing (a stale `_ADOPTED` config now fails LOUDLY in `MaybeOverrideReoptPeriod` rather than silently dispatching to an empty result — the P1.3 trap); the p25 config is 10→6 arms. TDD red→green (48/48 `testIncreOpt_w_TL` + 16/16 ctest). Accepted tradeoff: ~0.3–0.8 SP pts worse at high reopt frequency (→0 at P60). |
+| ~~**P1.5** Add INCR_Px_INIT baselines (default seed)~~ | — | **RETIRED 2026-07-11 (invalidated by P1.4 choice (b)).** P1.5's premise was to add `INCR_P<n>_INIT` arms that set `ReoptStartFromAdoptedTL=false` to A/B the incumbent seed (P1.4's default) against the YAML/generator seed — the same A/B P1.3 ran via `_ADOPTED`. Choice (b) removes the flag entirely (the incumbent seed is the only reopt seed), so P1.5 is impossible as specified. The incumbent-vs-YAML-seed A/B is no longer runnable as a config arm; P1.3's measured tradeoff (~0.3–0.8 SP pts, →0 at P60) stands as the final record. Folder `active_tasks/P1_5_new_baseline_default_seed/` deleted. |
 
 ### P2 — should do (figure safety + doc hygiene)
 
@@ -73,11 +76,18 @@ pass); trial-and-error TL rewrite done + TDD-green (pending commit in P0.1).
 ~~P0.5~~ RESOLVED 2026-07-10 (committed `a8dba07f`→`7fa2e9d2`; subsumes the
 functional TL-init bug by construction — see `finished_tasks/summary.md`) →
 P0.2 (BF audit) → P0.3 (prod figures; depends on P0.5's trustworthy incumbent) →
-P2.1 (fig2 confirm, during P0.3) → P1.1 (P25 ET investigation, open research
-question) → P1.2 (reopt incumbent-degradation investigation; reads the same P25
-A/B data as P1.1 but asks a different question — structural corruption, not ET
-growth; parallel anytime until it needs a code change) → P2.2 (doc hygiene,
-parallel anytime) → P2.3 (`approx_equal` dead-code cleanup, parallel anytime).
+P2.1 (fig2 confirm, during P0.3) → ~~P1.3~~ CLOSED 2026-07-11 (stale-binary
+artifact; `_ADOPTED` A/B re-run on the fresh binary showed the arms within
+0.3–0.8 SP pts of plain twins, gap shrinking with reopt period) → **P1.4**
+(choice (b): incumbent seed made the unconditional, only reopt seed — the
+`ReoptStartFromAdoptedTL` knob + the `_ADOPTED` arms REMOVED; user rebuilds
+`release/` + re-runs the 6-arm A/B to confirm on the loaded tasksets) → P1.1
+(P25 ET investigation, open research question) → ~~P1.5~~ RETIRED 2026-07-11
+(invalidated by P1.4 choice (b); needed the removed flag) → P1.2 (reopt
+incumbent-degradation investigation; reads the same P25 A/B data as P1.1 but
+asks a different question — structural corruption, not ET growth; parallel
+anytime until it needs a code change) → P2.2 (doc hygiene, parallel anytime)
+→ P2.3 (`approx_equal` dead-code cleanup, parallel anytime).
 ~~P0.1~~ RESOLVED 2026-07-10 (subsumed by P0.5; inspectability write discarded —
 see `finished_tasks/summary.md`). Each P0/P1 task is one review-and-commit cycle
 per `agent_coding_rules.md`.

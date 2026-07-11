@@ -466,14 +466,18 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     // The baseline reset (re-eval carried {pa, tl} under the new DAG, or
     // RM+min-TL at interval 0) now runs inside the descent via
     // ResetIncumbentBaseline(true), before the baseline eval.
-    // Descent start: carried adopted TL when the flag is on AND an incumbent
-    // exists (the P0.5 symmetric fix); else Gaussian-mean TL. The
-    // IfInitialized() gate auto-falls-back at interval 0 / INCR_SCRATCH (no
-    // incumbent → ReconstructTimeLimitVecFromResOpt would be all -1 = no-op).
+    // Descent start (P1.4): seed from the carried adopted TL — the optimizer's
+    // own prior result in res_opt_ — whenever an incumbent exists. This is the
+    // permanent, unconditional reopt seed policy: the seed must be
+    // algorithm-derived (the optimizer's own prior output), not read from the
+    // YAML taskset characterization. The IfInitialized() gate auto-falls-back
+    // to the Gaussian-mean TL (InitializeTimeLimitsFromETConfig) at interval
+    // 0 / INCR_SCRATCH (no incumbent → ReconstructTimeLimitVecFromResOpt would
+    // be all -1 = no-op); that fallback is irreducible for any seed policy —
+    // the very first solve has no prior optimizer state to seed from.
     std::vector<double> time_limits =
-        (GlobalVariables::ReoptStartFromAdoptedTL && IfInitialized())
-            ? ReconstructTimeLimitVecFromResOpt()
-            : InitializeTimeLimitsFromETConfig();
+        IfInitialized() ? ReconstructTimeLimitVecFromResOpt()
+                        : InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
         OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);
     } else {

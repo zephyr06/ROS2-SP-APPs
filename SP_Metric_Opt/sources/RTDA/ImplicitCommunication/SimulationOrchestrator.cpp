@@ -16,18 +16,21 @@ namespace SP_OPT_PA {
 
 namespace {
 // True for the INCR_P<n> period-override modes (e.g. INCR_P1, INCR_P10,
-// INCR_P60) and their INCR_P<n>_ADOPTED twins (which additionally set
-// ReoptStartFromAdoptedTL). ReoptimizationPeriod is overridden at binary
-// startup by RunOrchestrator.cpp's MaybeOverrideReoptPeriod, which parses the
-// <n> suffix. The orchestrator treats any INCR_P* exactly as INCR (same
-// incr_optimizer_, same Optimize_w_TL_ScratchOrIncre dispatch); only the
-// period (and, for _ADOPTED, the TL-init flag) differs. Keeping the mode
-// string end-to-end (rather than normalizing to "INCR") means the output
-// subdir is named INCR_P<n>[_ADOPTED] consistently across ExportResults and
+// INCR_P60). ReoptimizationPeriod is overridden at binary startup by
+// RunOrchestrator.cpp's MaybeOverrideReoptPeriod, which parses the <n> suffix.
+// The orchestrator treats any INCR_P<n> exactly as INCR (same incr_optimizer_,
+// same Optimize_w_TL_ScratchOrIncre dispatch); only the period differs.
+// Keeping the mode string end-to-end (rather than normalizing to "INCR") means
+// the output subdir is named INCR_P<n> consistently across ExportResults and
 // RunOrchestrator's exec-time write.
+//
+// P1.4 history: an INCR_P<n>_ADOPTED twin variant used to additionally set the
+// ReoptStartFromAdoptedTL flag; P1.4 made the adopted-TL seed the permanent,
+// unconditional reopt seed and removed the flag, so the _ADOPTED suffix is no
+// longer accepted here (a stale _ADOPTED config fails loudly in
+// MaybeOverrideReoptPeriod rather than dispatching to an empty result).
 bool IsINCRPeriodVariant(const std::string& mode) {
     const std::string prefix = "INCR_P";
-    const std::string adopted_suffix = "_ADOPTED";
     if (mode.rfind(prefix, 0) != 0) return false;
     if (mode.size() == prefix.size()) return false;  // bare "INCR_P" — no digits
     size_t i = prefix.size();
@@ -35,10 +38,7 @@ bool IsINCRPeriodVariant(const std::string& mode) {
         i++;
     }
     if (i == prefix.size()) return false;  // no digits after INCR_P
-    // Either end-of-string (INCR_P<n>) or exactly the _ADOPTED suffix.
-    if (i == mode.size()) return true;
-    return mode.compare(i, adopted_suffix.size(), adopted_suffix) == 0 &&
-           mode.size() == i + adopted_suffix.size();
+    return i == mode.size();  // INCR_P<n> with no trailing suffix
 }
 }  // namespace
 BaseSimulationOrchestrator::BaseSimulationOrchestrator(
