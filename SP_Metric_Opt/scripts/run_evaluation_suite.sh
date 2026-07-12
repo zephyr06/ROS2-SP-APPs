@@ -61,6 +61,15 @@ E2E_WRAPPER="${SCRIPT_DIR}/run_end_to_end.sh"
 
 cd "${PROJECT_ROOT}"
 
+# --- Stage 0: build the release binaries (unless dry-run) ---
+if [[ "${DRY_RUN}" != "1" ]]; then
+    echo "[build] cd release && make -j4"
+    (cd "${PROJECT_ROOT}/release" && make -j4) || {
+        echo "ERROR: release build failed; not running the pipeline." >&2
+        exit 1
+    }
+fi
+
 # --- Stage 1: run the simulation pipeline (unless skipped / dry-run) ---
 if [[ "${SKIP_PIPELINE}" != "1" ]]; then
     if [[ "${DRY_RUN}" == "1" ]]; then
