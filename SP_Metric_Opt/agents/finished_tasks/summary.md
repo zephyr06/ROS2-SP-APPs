@@ -7,6 +7,55 @@
 
 ---
 
+## P1.7 — Simulator ignores `processorId` partitioning (single run-queue overload) — RESOLVED 2026-07-12
+
+- **Origin:** the runtime simulator `FixedTaskPrioritySchedulingOrchestrator::SimulateInterval`
+  (and the CFS sibling `CFSSimulationOrchestrator::SimulateInterval`,
+  `SimulationOrchestrator.cpp`) built ONE `RunQueue(dag_tasks.tasks)` over the
+  whole task set; `ReleaseJobs`/`ReleaseJobsCFS` filtered only on
+  `time_now % period == 0` with **no `processorId` check**, so jobs on
+  `processorId:0` and `:1` competed for the single `processor_free_` flag — two
+  cores declared in YAML, one simulated (mean single-queue util 2.099, max 3.332
+  across 600 generated interval YAMLs vs correct per-proc max mean 1.160). The
+  legacy partitioning path (`ScheduleSimulation.cpp::SimulatedFTP_SingleCore` +
+  `GetProcessorIds`) was always correct; the runtime orchestrator that feeds the
+  eval suite / A/B / figures simply didn't use it.
+- **What landed.** Both `SimulateInterval`s now call `GetProcessorIds(dag_tasks)`
+  and build one `RunQueue` (held in `std::unique_ptr` — `RunQueue` is
+  non-assignable due to its `const TaskSetInfoDerived` member) per distinct
+  `processorId`, stepping all queues in lockstep (Remove/Record/Release/Run per
+  queue per tick). `ReleaseJobs`/`ReleaseJobsCFS` gained an `int processor_id = -1`
+  param (`-1` = release all, preserving the unit-test call sites); when `>= 0`,
+  tasks whose `processorId` doesn't match are skipped. Mirrors the proven legacy
+  per-core model. `RecordFinishedJobs`/`RecordFinishedJobsCFS` unchanged (take
+  `RunQueue&`, read only that queue's `schedule_`, merge into the shared
+  `job_history_`). `ScheduleSimulation.h` got the missing `GetProcessorIds`
+  declaration.
+- **Pivotal blast-radius correction.** The SP metric is **analytic, not
+  simulation-derived**, and was **NEVER distorted** by the bug.
+  `SimulateInterval` → `ObtainSP_TaskSet_And_TimeLimits` (`SP_Metric.cpp:82`) →
+  `ObtainSP_TaskSet` (line 53) → `ProbabilisticRTA_TaskSet` (`RTA.cpp:100`),
+  which **already partitions on `processorId`** via `ExtractTaskSetPerProcessor`
+  (`RTA.cpp:87`). So `mean_sp_norm` / `Mean_SP_Metric` (what every eval-suite
+  gate Q1/Q2/Q3/E1/E3 reads) was always on the correct path, and **no gate
+  verdict moves** after the fix. The bug only distorted the `job_history_`-derived
+  exports (miss-rate / response-time columns in `comparison_summary.csv`, read by
+  `aggregate_across_tasks.py` + `utils.py`, NOT by the gates). E3 was unrelated.
+- **Verified.** 2 new red→green tests in `tests/testScheduleSimulate.cpp`
+  (`SimulateIntervalPartitionsByProcessorId` + `_CFS`) on new input dir
+  `tests/test_data_partition_two_cores/` (assert both cross-core jobs start at
+  `t=0`; buggy code serialized Task1.start to `2`). `testScheduleSimulate` 34/34,
+  ctest 16/16 green (DEBUG). Single-core tasksets byte-identical (all tasks land
+  in the same queue → regression guards green).
+- **Status: staged on `clean_simulation`, NOT committed** (user runs the A/B
+  re-run; standing `git add`-only constraint).
+- **Residual follow-up filed as P2.6** — make the simulation report BOTH the
+  analytical SP and the true SP derived from the RunQueue's simulated RT samples
+  (the user wants SP to eventually come from the actual schedule, not the
+  analytic RTA). This P1.7 fix (honest per-core RT samples) is its prerequisite.
+- *Detail: [`P1_7_cpu_partition_mismatch/`](P1_7_cpu_partition_mismatch/);
+  memory `cpu-partition-mismatch.md`.*
+
 ## P0.5 — Redesign the Optimizer Iteration Process (incumbent state) — RESOLVED 2026-07-10
 
 - **Origin:** the optimizer carried its running "best-so-far" (incumbent)
