@@ -11,17 +11,35 @@ The point: a single, reproducible green/red dashboard that measures the
 ultimate impact of any code or algorithm change. Every change re-runs the
 suite; regressions show as red.
 
-North-star gates
-----------------
-- **Q1** small N: BF >= INCR, gap <= 30%                       (N = smallest quality N)
-- **Q2** large N: INCR >= BF (BF time-out)                     (N = largest quality N)
-- **Q3** INCR >= every baseline                                 (N = largest quality N)
-- **E1** overhead <= 5% (ideal <= 1%) at the overhead probe N  (N = overhead N, >= 10)
-- **E3** INCR_Reopt_X period-monotonicity: per-activation ET   (every N)
-  non-increasing as the reopt period grows, i.e.
-  ET(INCR_Reopt_1) >= ET(INCR_Reopt_5) >= ET(INCR_Reopt_10) >=
-  ET(INCR_Reopt_30) >= ET(INCR_Reopt_60).
-  Investigation gate for the P1.1 residual; currently FAILs by design.
+North-star gates (evaluated PER-N at every conducted N)
+-------------------------------------------------------
+Each gate carries a ``per_n`` list of per-N verdicts (see :func:`_verdict`).
+A gate's overall status is **FAIL only if some CONDUCTED N FAILs** -- a
+missing N (in the regime but not simulated) is reported as ``MISSING`` and is
+NOT fatal, so a fast run that only conducted N=4,6 is not red just because
+N=8/10 were not run. The one loud-fail: if NO N was conducted at all (empty
+regime / all missing) the gate is FAIL (stale/degenerate config must not
+silently PASS).
+
+- **Q1** small N (smaller half of quality_ns): BF >= INCR, gap <= 30%.
+  Q1 is the BF-feasible regime. ``_split_regimes`` routes the smaller half of
+  ``quality_ns`` here.
+- **Q2** large N (larger half of quality_ns): INCR >= BF (BF time-out).
+  Q1/Q2 are complementary regimes -- at small N BF>INCR is expected, so Q2 is
+  not evaluated there (it would fail by design).
+- **Q3** large N: INCR >= every baseline.
+- **E1** overhead <= 5% (ideal <= 1%) at every conducted N (the configured
+  overhead N is the headline probe).
+- **E3** INCR_Reopt_X period-monotonicity: mean SP non-increasing as the reopt
+  period grows, i.e.
+  SP(INCR_Reopt_1) >= SP(INCR_Reopt_5) >= SP(INCR_Reopt_10) >=
+  SP(INCR_Reopt_30) >= SP(INCR_Reopt_60), at every conducted N.
+  More frequent reopt (small period) keeps TL configs fresher, so the
+  smallest period carries the highest SP. (Earlier this gate read
+  per-activation ET, but the recorded ``mean_sched_time`` is a whole-``RunSimulation``
+  wall-clock averaged over intervals and tasksets -- dominated by OS/IO
+  contention noise, not the reopt-period signal -- so it read SP instead, the
+  metric the gate actually cares about. See ``p25-incr-et-grows-with-period``.)
 
 P2.5 removed the ``INCR_SCRATCH`` ablation arm and the E2 gate (its only
 subject pair was INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone, and the
@@ -79,8 +97,9 @@ Q3_BASELINES = ["RM", "CFS", "INCR_NO_TL", "INCR_WCET"]
 # NOT a member -- its default period isn't a sweep point. The config may
 # override this via the eval-only key ``eval_period_arms``. P2.4 renamed the
 # family from the retired INCR_P<n> form; X is the reopt period, ordered small
-# (max reopt) to large (min reopt) so ET is expected non-increasing. X=5 is a
-# NEW arm (the pre-P2.4 family was {1,10,30,60}).
+# (max reopt) to large (min reopt) so SP is expected non-increasing along the
+# list (smaller period = fresher TL = higher SP). X=5 is a NEW arm (the
+# pre-P2.4 family was {1,10,30,60}).
 DEFAULT_PERIOD_ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
                        "INCR_Reopt_30", "INCR_Reopt_60"]
 
@@ -88,7 +107,7 @@ DEFAULT_PERIOD_ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
 Q1_MAX_GAP = 0.30      # small-N BF-vs-INCR gap red-flag line
 E1_RED_LINE = 0.05     # overhead red-flag line
 E1_IDEAL = 0.01        # overhead ideal
-E3_TOLERANCE = 0.02    # E3: relative slack on each period step (ET next <= prev*(1+t))
+E3_TOLERANCE = 0.02    # E3: relative slack on each period step (SP_next <= SP_prev*(1+t))
 
 
 # ---------------------------------------------------------------------------
@@ -144,17 +163,34 @@ def build_metric_lookup(cfg, output_parent=None, run_root=None):
 
 # ---------------------------------------------------------------------------
 # Gate evaluators -- one pure function per gate, each returns a verdict dict.
+#
+# Per-N structure: each gate carries a ``per_n`` list of per-N entries
+# {n, status, measured, detail} (E3 also adds a ``pairs`` sub-list). A gate's
+# overall status is FAIL only if some CONDUCTED N FAILs; a MISSING N (in the
+# regime but no data) is reported but not fatal. See the module docstring.
 # ---------------------------------------------------------------------------
 
-def _verdict(gate, status, measured, threshold, detail):
-    """Build a verdict dict in the canonical shape."""
-    return {
+# Per-N status closed set. Only FAIL flips a gate red.
+PER_N_STATUSES = ("PASS", "FAIL", "MISSING", "SKIP")
+
+
+def _verdict(gate, status, measured, threshold, detail, per_n=None):
+    """Build a verdict dict in the canonical shape.
+
+    ``per_n`` (optional) is a list of per-N entry dicts (see :func:`_assemble`).
+    Kept as a list, not a dict, so JSON serialization does not coerce int N to a
+    string key and so ascending-N order is explicit.
+    """
+    v = {
         "gate": gate,
         "status": status,
         "measured": measured,
         "threshold": threshold,
         "detail": detail,
     }
+    if per_n is not None:
+        v["per_n"] = per_n
+    return v
 
 
 def _sp(lookup, n, sched):
@@ -163,146 +199,248 @@ def _sp(lookup, n, sched):
     return rec["mean_sp_norm"] if rec else None
 
 
-def evaluate_q1(lookup, small_n=4):
-    """Q1: at small N, BF >= INCR with gap <= 30%.
+def _split_regimes(quality_ns):
+    """Split quality_ns into (small_ns, large_ns) by floor-midpoint.
 
-    Gap = ``(BF - INCR) / BF``. PASS only if BF is present and the gap is within
-    the red-flag line. (BF below INCR is also a PASS -- the gate only flags BF
-    *too far ahead*.)
+    The smaller half feeds Q1 (BF-feasible regime); the larger half feeds
+    Q2/Q3 (BF-timeout regime). For odd lengths the EXTRA element goes to LARGE,
+    so [4,6,8] -> small=[4], large=[6,8]. Rationale: Q2/Q3 are the "INCR wins"
+    gates and benefit from more data points; Q1 is the "BF still feasible" gate
+    and one point suffices.
+
+    Returns ([], []) for empty input. Dedupes + sorts ascending.
     """
-    bf = _sp(lookup, small_n, BF)
+    ns = sorted(set(quality_ns))
+    if not ns:
+        return [], []
+    mid = len(ns) // 2          # floor division; odd -> extra to large
+    return ns[:mid], ns[mid:]
+
+
+def _assemble(gate, per_n, threshold, summary):
+    """Collapse per-N entries into one verdict.
+
+    Overall status: FAIL if any CONDUCTED N FAILs; FAIL (not PASS) if no N was
+    conducted at all (regime empty / all missing) -- the loud-fail for a stale
+    or degenerate config. The top-level ``measured`` names the worst N; the
+    ``detail`` joins the per-N details.
+    """
+    conducted = [e for e in per_n if e["status"] not in ("MISSING", "SKIP")]
+    if not per_n or not conducted:
+        # Loud-fail: no N was conducted (regime empty / all missing). Surface
+        # the per-N details (not a generic message) so the specific missing
+        # thing -- "BF missing", "INCR_Reopt_30", "overhead missing" -- is
+        # named at the top level for a fast run that hit only MISSING entries.
+        detail = "; ".join(f"N={e['n']}: {e['detail']}" for e in per_n) or \
+            f"no conducted N for {gate} (regime empty or all missing)"
+        return _verdict(gate, "FAIL", summary, threshold, detail, per_n=per_n)
+    failed = [e for e in conducted if e["status"] == "FAIL"]
+    overall = "FAIL" if failed else "PASS"
+    worst = failed[0] if failed else conducted[-1]
+    detail = "; ".join(f"N={e['n']}: {e['detail']}" for e in per_n)
+    measured = f"worst: N={worst['n']} {worst['status']}"
+    return _verdict(gate, overall, measured, threshold, detail, per_n=per_n)
+
+
+# --- internal per-N helpers (return one per_n entry, not a verdict) ---
+
+def _q1_at_n(lookup, n):
+    """One per_n entry for Q1 at N: BF >= INCR, gap <= 30%."""
+    bf = _sp(lookup, n, BF)
     if bf is None or bf <= 0:
-        return _verdict("Q1", "FAIL", None, f"gap <= {Q1_MAX_GAP:.0%}",
-                        f"BF missing at N={small_n}; cannot evaluate small-N gap")
-    x = _sp(lookup, small_n, INCR)
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"BF missing at N={n}; cannot evaluate small-N gap"}
+    x = _sp(lookup, n, INCR)
     if x is None:
-        return _verdict("Q1", "FAIL", None, f"gap <= {Q1_MAX_GAP:.0%}",
-                        f"INCR missing at N={small_n}; cannot evaluate small-N gap")
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"INCR missing at N={n}; cannot evaluate small-N gap"}
     gap = (bf - x) / bf
-    verdict = "ok" if gap <= Q1_MAX_GAP else "EXCEEDS"
-    status = "PASS" if gap <= Q1_MAX_GAP else "FAIL"
-    return _verdict("Q1", status, f"gap={gap:.1%}",
-                    f"gap <= {Q1_MAX_GAP:.0%}",
-                    f"INCR: gap={gap:.1%} ({verdict})")
+    ok = gap <= Q1_MAX_GAP
+    return {"n": n, "status": "PASS" if ok else "FAIL",
+            "measured": f"gap={gap:.1%}",
+            "detail": f"INCR={x:.4f} vs BF={bf:.4f} (gap={gap:.1%}, "
+                      f"{'ok' if ok else f'EXCEEDS {Q1_MAX_GAP:.0%}'})"}
 
 
-def evaluate_q2(lookup, large_n=8):
-    """Q2: at large N, INCR >= BF (BF time-out)."""
-    bf = _sp(lookup, large_n, BF)
-    x = _sp(lookup, large_n, INCR)
+def _q2_at_n(lookup, n):
+    """One per_n entry for Q2 at N: INCR >= BF."""
+    bf = _sp(lookup, n, BF)
+    x = _sp(lookup, n, INCR)
     if x is None or bf is None:
-        return _verdict("Q2", "FAIL", f"INCR vs BF @ N={large_n}",
-                        "INCR >= BF", f"INCR or BF missing at N={large_n}")
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"INCR or BF missing at N={n}"}
     ok = x >= bf
-    status = "PASS" if ok else "FAIL"
-    return _verdict("Q2", status, f"INCR vs BF @ N={large_n}",
-                    "INCR >= BF",
-                    f"INCR={x:.4f} vs BF={bf:.4f} ({'ok' if ok else 'BELOW'})")
+    return {"n": n, "status": "PASS" if ok else "FAIL",
+            "measured": f"INCR={x:.4f} vs BF={bf:.4f}",
+            "detail": f"INCR={x:.4f} vs BF={bf:.4f} ({'ok' if ok else 'BELOW'})"}
 
 
-def evaluate_q3(lookup, large_n=8):
-    """Q3: INCR >= every baseline at large N."""
-    details = []
-    overall_pass = True
-    missing_baselines = []
-    x = _sp(lookup, large_n, INCR)
+def _q3_at_n(lookup, n):
+    """One per_n entry for Q3 at N: INCR >= every PRESENT baseline.
+
+    A missing baseline is noted in the detail but is NOT fatal for this N --
+    only a baseline BEATING INCR fails the N (the missing ones are auditable
+    via the detail string but do not auto-pass or auto-fail).
+    """
+    x = _sp(lookup, n, INCR)
     if x is None:
-        return _verdict("Q3", "FAIL", f"INCR vs baselines @ N={large_n}",
-                        "INCR >= max(baselines)",
-                        f"INCR missing at N={large_n}")
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"INCR missing at N={n}"}
     beats = []
+    missing_baselines = []
+    n_fail = False
     for b in Q3_BASELINES:
-        bsp = _sp(lookup, large_n, b)
+        bsp = _sp(lookup, n, b)
         if bsp is None:
             missing_baselines.append(b)
             continue
         ok = x >= bsp
         if not ok:
-            overall_pass = False
+            n_fail = True
         beats.append(f"{b}={bsp:.4f}({'ok' if ok else 'BEATS'})")
-    details.append(f"INCR={x:.4f} vs [{', '.join(beats)}]")
+    parts = [f"INCR={x:.4f} vs [{', '.join(beats)}]"]
     if missing_baselines:
-        details.append("missing baselines: " + ", ".join(sorted(set(missing_baselines))))
-    status = "PASS" if overall_pass else "FAIL"
-    return _verdict("Q3", status, f"INCR vs baselines @ N={large_n}",
-                    "INCR >= max(baselines)", "; ".join(details))
+        parts.append("missing baselines: " + ", ".join(sorted(set(missing_baselines))))
+    return {"n": n, "status": "FAIL" if n_fail else "PASS",
+            "measured": f"INCR={x:.4f}",
+            "detail": "; ".join(parts)}
 
 
-def evaluate_e1(lookup, overhead_n=10):
-    """E1: scheduler overhead <= 5% (ideal <= 1%) at the overhead probe N."""
-    rec = lookup.get((overhead_n, INCR))
+def _e1_at_n(lookup, n):
+    """One per_n entry for E1 at N: overhead <= 5% (ideal <= 1%)."""
+    rec = lookup.get((n, INCR))
     if rec is None:
-        return _verdict("E1", "FAIL", f"overhead @ N={overhead_n}",
-                        f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})",
-                        f"INCR missing at N={overhead_n}")
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"INCR missing at N={n}"}
     ov = rec.get("overhead")
     if ov is None:
-        # build_metric_lookup always sets overhead, so a missing key means
-        # a malformed/partial lookup -- the gate cannot verify the claim.
-        return _verdict("E1", "FAIL", f"overhead @ N={overhead_n}",
-                        f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})",
-                        f"INCR: overhead missing at N={overhead_n} -- cannot verify")
-    overall_pass = ov <= E1_RED_LINE
+        # build_metric_lookup always sets overhead, so a missing key means a
+        # malformed/partial lookup -- the gate cannot verify the claim.
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"INCR: overhead missing at N={n} -- cannot verify"}
+    ok = ov <= E1_RED_LINE
     ideal_met = ov <= E1_IDEAL
-    details = [f"INCR: overhead={ov:.2%} "
-               f"(red {E1_RED_LINE:.0%} {'ok' if ov <= E1_RED_LINE else 'EXCEEDS'}, "
-               f"ideal {E1_IDEAL:.0%} {'ok' if ov <= E1_IDEAL else 'missed'})"]
+    detail = (f"INCR: overhead={ov:.2%} "
+              f"(red {E1_RED_LINE:.0%} {'ok' if ok else 'EXCEEDS'}, "
+              f"ideal {E1_IDEAL:.0%} {'ok' if ideal_met else 'missed'})")
     if not ideal_met:
-        details.append("ideal (1%) not met -- red line (5%) is the gate")
-    status = "PASS" if overall_pass else "FAIL"
-    return _verdict("E1", status, f"overhead @ N={overhead_n}",
-                    f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})", "; ".join(details))
+        detail += "; ideal (1%) not met -- red line (5%) is the gate"
+    return {"n": n, "status": "PASS" if ok else "FAIL",
+            "measured": f"overhead={ov:.2%}", "detail": detail}
+
+
+def _e3_at_n(lookup, n, period_arms):
+    """One per_n entry for E3 at N: period arms' mean SP non-increasing.
+
+    Reads ``mean_sp_norm`` (not ``mean_sched_time``) -- the SP-quality metric
+    this gate cares about, not the noisy wall-clock ET (see module docstring).
+    Each entry carries a structured ``pairs`` sub-list
+    ``{prev, next, sp_prev, sp_next, ok}``. A missing arm at this N yields
+    MISSING (reported, not fatal) -- so a missing arm at one N coexisting with
+    a clean PASS at another N leaves the gate PASS.
+    """
+    if len(period_arms) < 2:
+        return {"n": n, "status": "SKIP", "measured": "no pair",
+                "detail": "fewer than 2 period arms configured", "pairs": []}
+    sps = []
+    missing = []
+    for arm in period_arms:
+        rec = lookup.get((n, arm))
+        sp = rec.get("mean_sp_norm") if rec else None
+        if sp is None:
+            missing.append(arm)
+        sps.append((arm, sp))
+    if missing:
+        return {"n": n, "status": "MISSING", "measured": None,
+                "detail": f"missing arms {missing} at N={n}; cannot verify",
+                "pairs": []}
+    pairs = []
+    n_ok = True
+    for (arm_prev, sp_prev), (arm_next, sp_next) in zip(sps, sps[1:]):
+        # non-increasing within tolerance: next <= prev * (1 + tol). SP is
+        # highest at the smallest period (freshest TL), so a rise of next over
+        # prev beyond tol is the violation.
+        limit = sp_prev * (1.0 + E3_TOLERANCE)
+        ok = sp_next <= limit
+        if not ok:
+            n_ok = False
+        pairs.append({"prev": arm_prev, "next": arm_next,
+                      "sp_prev": sp_prev, "sp_next": sp_next, "ok": ok})
+    pair_str = "; ".join(
+        f"{p['prev']}->{p['next']}: {p['sp_prev']:.4f}->{p['sp_next']:.4f} "
+        f"({'ok' if p['ok'] else 'RISES'})" for p in pairs)
+    return {"n": n, "status": "PASS" if n_ok else "FAIL",
+            "measured": "monotonic" if n_ok else "RISES",
+            "detail": pair_str, "pairs": pairs}
+
+
+# --- public evaluators (legacy scalar params map to single-element N-lists) ---
+
+def evaluate_q1(lookup, small_n=None, small_ns=None):
+    """Q1: per-N over small_ns. BF >= INCR with gap <= 30% at each small N.
+
+    ``small_ns`` wins; the legacy scalar ``small_n`` maps to ``[small_n]``; if
+    neither is given, defaults to ``[4]``.
+    """
+    if small_ns is None:
+        small_ns = [small_n] if small_n is not None else [4]
+    per_n = [_q1_at_n(lookup, n) for n in sorted(set(small_ns))]
+    return _assemble("Q1", per_n, f"gap <= {Q1_MAX_GAP:.0%}",
+                     "small-N BF>=INCR, gap<=30%")
+
+
+def evaluate_q2(lookup, large_n=None, large_ns=None):
+    """Q2: per-N over large_ns. INCR >= BF (BF time-out) at each large N."""
+    if large_ns is None:
+        large_ns = [large_n] if large_n is not None else [8]
+    per_n = [_q2_at_n(lookup, n) for n in sorted(set(large_ns))]
+    return _assemble("Q2", per_n, "INCR >= BF",
+                     "large-N INCR>=BF (BF time-out)")
+
+
+def evaluate_q3(lookup, large_n=None, large_ns=None):
+    """Q3: per-N over large_ns. INCR >= every baseline at each large N."""
+    if large_ns is None:
+        large_ns = [large_n] if large_n is not None else [8]
+    per_n = [_q3_at_n(lookup, n) for n in sorted(set(large_ns))]
+    return _assemble("Q3", per_n, "INCR >= max(baselines)",
+                     "large-N INCR>=every baseline")
+
+
+def evaluate_e1(lookup, overhead_n=None, overhead_ns=None):
+    """E1: per-N over overhead_ns. overhead <= 5% (ideal <= 1%) at each N.
+
+    ``overhead_ns`` wins; the legacy scalar ``overhead_n`` maps to
+    ``[overhead_n]``; if neither is given, defaults to ``[10]``. In
+    :func:`evaluate_all_gates` the suite passes EVERY conducted N so E1 reports
+    overhead at all of them (the configured overhead N is the headline probe).
+    """
+    if overhead_ns is None:
+        overhead_ns = [overhead_n] if overhead_n is not None else [10]
+    per_n = [_e1_at_n(lookup, n) for n in sorted(set(overhead_ns))]
+    return _assemble("E1", per_n, f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})",
+                     "overhead<=5% (ideal 1%)")
 
 
 def evaluate_e3(lookup, ns=None, period_arms=None):
-    """E3: INCR_Reopt_X period-monotonicity -- per-activation ET non-increasing.
+    """E3: INCR_Reopt_X period-monotonicity -- mean SP non-increasing.
 
-    For each N, the ordered period arms' ``mean_sched_time`` must be
-    non-increasing (each step within the relative tolerance): the cheapest arm
-    is the largest period. This is the P1.1 investigation gate; it currently
-    FAILs (P1 is still the cheapest) and tracks that residual rather than
-    being a clean regression gate. Bare ``INCR`` is not a member.
+    For each N, the ordered period arms' ``mean_sp_norm`` must be
+    non-increasing (each step within the relative tolerance): the highest-SP
+    arm is the smallest period (freshest TL configs). Bare ``INCR`` is not a
+    member. (Previously read ``mean_sched_time``; that metric was a noisy
+    whole-run wall-clock average, not the per-activation ET the gate intended
+    -- see module docstring.)
     """
     if period_arms is None:
         period_arms = DEFAULT_PERIOD_ARMS
     if ns is None:
         ns = sorted({n for (n, s) in lookup.keys()})
-    if len(period_arms) < 2:
-        return _verdict("E3", "PASS", "no pair to compare",
-                        f"non-increasing over {period_arms}",
-                        "fewer than 2 period arms configured")
-    details = []
-    overall_pass = True
-    for n in ns:
-        ets = []
-        missing = []
-        for arm in period_arms:
-            rec = lookup.get((n, arm))
-            et = rec.get("mean_sched_time") if rec else None
-            if et is None:
-                missing.append(arm)
-            ets.append((arm, et))
-        if missing:
-            details.append(f"N={n}: missing {missing} -- cannot verify")
-            overall_pass = False
-            continue
-        pairs = []
-        n_ok = True
-        for (arm_prev, et_prev), (arm_next, et_next) in zip(ets, ets[1:]):
-            # non-increasing within tolerance: next <= prev * (1 + tol)
-            limit = et_prev * (1.0 + E3_TOLERANCE)
-            ok = et_next <= limit
-            if not ok:
-                n_ok = False
-                overall_pass = False
-            pairs.append(f"{arm_prev}->{arm_next}: "
-                         f"{et_prev:.4f}->{et_next:.4f} "
-                         f"({'ok' if ok else 'RISES'})")
-        details.append(f"N={n}: " + "; ".join(pairs) + (" ok" if n_ok else ""))
-    status = "PASS" if overall_pass else "FAIL"
+    per_n = [_e3_at_n(lookup, n, period_arms) for n in sorted(set(ns))]
     arms_str = " >= ".join(period_arms)
-    return _verdict("E3", status, f"period-monotonicity per N",
-                    f"{arms_str} (tol +/-{E3_TOLERANCE:.0%})", "; ".join(details))
+    return _assemble("E3", per_n, f"period-monotonicity per N",
+                     f"{arms_str} (tol +/-{E3_TOLERANCE:.0%})",
+                     )
 
 
 # ---------------------------------------------------------------------------
@@ -313,17 +451,28 @@ def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None,
                        period_arms=None):
     """Run all 5 north-star gates against the lookup.
 
+    Routing (each gate is evaluated PER-N at every conducted N):
+
+    - **Q1** over the smaller half of ``quality_ns`` (``_split_regimes``).
+    - **Q2/Q3** over the larger half.
+    - **E1** over EVERY N present in the lookup (the configured overhead N is
+      the headline probe, not the only one).
+    - **E3** over every N present in the lookup.
+
+    So a fast run that conducted only N=4,6 evaluates Q1@N=4, Q2/Q3@N=6, and
+    E1/E3 at both -- the points actually run, not a missing N=8/10 headline.
+
     Parameters
     ----------
     lookup : dict
         Output of :func:`build_metric_lookup`.
     quality_ns : list[int] | None
-        N values used for SP-quality gates. ``small_n = min(quality_ns)``,
-        ``large_n`` defaults to ``max(quality_ns)``.
+        N values used for SP-quality gates; split into small (Q1) / large
+        (Q2/Q3) regimes. Falls back to the lookup's N set when ``None``.
     large_n : int | None
-        Override the N for Q2/Q3 (defaults to max of quality_ns).
+        Override Q2/Q3 to a single N (otherwise the larger half of quality_ns).
     overhead_n : int | None
-        N for E1 (defaults to the max N in the lookup, the overhead probe).
+        Headline overhead N for E1 (folded into the every-N set; CLI override).
     period_arms : list[str] | None
         Ordered INCR_Reopt_X arms for E3 (defaults to :data:`DEFAULT_PERIOD_ARMS`).
     """
@@ -331,20 +480,24 @@ def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None,
         ns_present = quality_ns
     else:
         ns_present = sorted({n for (n, _) in lookup.keys()})
-    small_n = min(ns_present) if ns_present else 4
-    if large_n is None:
-        large_n = max(ns_present) if ns_present else 8
-    if overhead_n is None:
-        all_ns = sorted({n for (n, _) in lookup.keys()})
-        overhead_n = max(all_ns) if all_ns else 10
-    e3_ns = sorted({n for (n, _) in lookup.keys()})
+    # Regime split: smaller half -> Q1 (BF-feasible), larger half -> Q2/Q3
+    # (BF-timeout). [4,6]->small=[4],large=[6] so a fast run evaluates Q1 at
+    # N=4 and Q2/Q3 at N=6 -- the points actually conducted.
+    small_ns, large_ns = _split_regimes(ns_present)
+    if large_n is not None:
+        large_ns = [large_n]   # explicit override wins
+    # E1 reports overhead at EVERY conducted N (the configured overhead N is
+    # the headline probe, not the only one); CLI/config override is folded in.
+    all_conducted_ns = sorted({n for (n, _) in lookup.keys()})
+    if overhead_n is not None and overhead_n not in all_conducted_ns:
+        all_conducted_ns = sorted(set(all_conducted_ns) | {overhead_n})
 
     return [
-        evaluate_q1(lookup, small_n=small_n),
-        evaluate_q2(lookup, large_n=large_n),
-        evaluate_q3(lookup, large_n=large_n),
-        evaluate_e1(lookup, overhead_n=overhead_n),
-        evaluate_e3(lookup, ns=e3_ns, period_arms=period_arms),
+        evaluate_q1(lookup, small_ns=small_ns),
+        evaluate_q2(lookup, large_ns=large_ns),
+        evaluate_q3(lookup, large_ns=large_ns),
+        evaluate_e1(lookup, overhead_ns=all_conducted_ns),
+        evaluate_e3(lookup, ns=all_conducted_ns, period_arms=period_arms),
     ]
 
 
@@ -383,7 +536,15 @@ def _format_table(verdicts, overall):
             f"{v['gate']:<5} {v['status']:<6} {str(v['threshold']):<28} "
             f"{str(v['measured']):<22}"
         )
-        lines.append(f"      -> {v['detail']}")
+        # Per-N breakdown: one line per conducted (and MISSING/SKIP) N so the
+        # status at each N actually run is visible at a glance. A missing N
+        # shows as MISSING (not a red headline) -- the "not fatal" guarantee.
+        per_n = v.get("per_n") or []
+        if per_n:
+            for e in per_n:
+                lines.append(f"      -> N={e['n']}: {e['status']:<6} {e['detail']}")
+        else:
+            lines.append(f"      -> {v['detail']}")
     lines.append("-" * 72)
     lines.append(f"OVERALL: {overall}")
     lines.append("=" * 72)

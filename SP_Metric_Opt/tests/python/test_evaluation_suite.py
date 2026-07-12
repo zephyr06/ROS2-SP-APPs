@@ -366,16 +366,17 @@ class TestGateE1(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Gate E3: INCR_Reopt_X period-monotonicity (ET non-increasing as period grows)
+# Gate E3: INCR_Reopt_X period-monotonicity (mean SP non-increasing as period grows)
 # ---------------------------------------------------------------------------
 
 class TestGateE3(unittest.TestCase):
-    """E3: ET(INCR_Reopt_1) >= ET(INCR_Reopt_5) >= ET(INCR_Reopt_10) >=
-    ET(INCR_Reopt_30) >= ET(INCR_Reopt_60) per N.
+    """E3: SP(INCR_Reopt_1) >= SP(INCR_Reopt_5) >= SP(INCR_Reopt_10) >=
+    SP(INCR_Reopt_30) >= SP(INCR_Reopt_60) per N.
 
-    P2.4 renamed the family from the retired INCR_P<n> form (the P<n> knob ran
-    the wrong way for a reader -- P1 read as incremental but was the max-reopt
-    arm). X is the reopt period; larger X = fewer reopt steps = cheaper ET.
+    Smaller reopt period = fresher TL configs = higher SP, so SP is expected
+    non-increasing along the arm list. E3 reads ``mean_sp_norm`` (not
+    ``mean_sched_time`` -- that was a noisy whole-run wall-clock average, not
+    the per-activation ET the gate intended).
     """
 
     ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
@@ -383,16 +384,16 @@ class TestGateE3(unittest.TestCase):
 
     def test_pass_monotonic_all_n(self):
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sched_time": 0.10},
-            (4, "INCR_Reopt_5"): {"mean_sched_time": 0.095},
-            (4, "INCR_Reopt_10"): {"mean_sched_time": 0.09},
-            (4, "INCR_Reopt_30"): {"mean_sched_time": 0.08},
-            (4, "INCR_Reopt_60"): {"mean_sched_time": 0.07},
-            (8, "INCR_Reopt_1"): {"mean_sched_time": 0.20},
-            (8, "INCR_Reopt_5"): {"mean_sched_time": 0.19},
-            (8, "INCR_Reopt_10"): {"mean_sched_time": 0.18},
-            (8, "INCR_Reopt_30"): {"mean_sched_time": 0.16},
-            (8, "INCR_Reopt_60"): {"mean_sched_time": 0.14},
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.90},
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.85},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.75},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
+            (8, "INCR_Reopt_1"): {"mean_sp_norm": 0.80},
+            (8, "INCR_Reopt_5"): {"mean_sp_norm": 0.76},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.72},
+            (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.64},
+            (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.56},
         }
         verdict = ev.evaluate_e3(lookup, ns=[4, 8])
         self.assertEqual(verdict["status"], "PASS")
@@ -400,16 +401,16 @@ class TestGateE3(unittest.TestCase):
     def test_fail_inversion(self):
         """Reopt_5 rising above Reopt_1 (beyond tolerance) FAILs and names the pair."""
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sched_time": 0.04},
-            (4, "INCR_Reopt_5"): {"mean_sched_time": 0.10},   # rises 150%
-            (4, "INCR_Reopt_10"): {"mean_sched_time": 0.09},
-            (4, "INCR_Reopt_30"): {"mean_sched_time": 0.08},
-            (4, "INCR_Reopt_60"): {"mean_sched_time": 0.07},
-            (8, "INCR_Reopt_1"): {"mean_sched_time": 0.20},
-            (8, "INCR_Reopt_5"): {"mean_sched_time": 0.19},
-            (8, "INCR_Reopt_10"): {"mean_sched_time": 0.18},
-            (8, "INCR_Reopt_30"): {"mean_sched_time": 0.16},
-            (8, "INCR_Reopt_60"): {"mean_sched_time": 0.14},
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.40},
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.90},   # rises 125%
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.75},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
+            (8, "INCR_Reopt_1"): {"mean_sp_norm": 0.80},
+            (8, "INCR_Reopt_5"): {"mean_sp_norm": 0.76},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.72},
+            (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.64},
+            (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.56},
         }
         verdict = ev.evaluate_e3(lookup, ns=[4, 8])
         self.assertEqual(verdict["status"], "FAIL")
@@ -419,11 +420,11 @@ class TestGateE3(unittest.TestCase):
     def test_missing_arm_fails_not_crashes(self):
         """A missing period arm FAILs with a clear reason, not a KeyError."""
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sched_time": 0.10},
-            (4, "INCR_Reopt_5"): {"mean_sched_time": 0.095},
-            (4, "INCR_Reopt_10"): {"mean_sched_time": 0.09},
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.90},
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.85},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
             # INCR_Reopt_30 absent
-            (4, "INCR_Reopt_60"): {"mean_sched_time": 0.07},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
         }
         verdict = ev.evaluate_e3(lookup, ns=[4])
         self.assertEqual(verdict["status"], "FAIL")
@@ -431,13 +432,13 @@ class TestGateE3(unittest.TestCase):
         self.assertIn("INCR_Reopt_30", verdict["detail"])
 
     def test_tolerance_allows_small_increase(self):
-        """A 1% rise passes at the 2% tolerance (no flap on ET noise)."""
+        """A 1% rise passes at the 2% tolerance (no flap on SP noise)."""
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sched_time": 0.100},
-            (4, "INCR_Reopt_5"): {"mean_sched_time": 0.101},   # +1%, within tol
-            (4, "INCR_Reopt_10"): {"mean_sched_time": 0.101},
-            (4, "INCR_Reopt_30"): {"mean_sched_time": 0.101},
-            (4, "INCR_Reopt_60"): {"mean_sched_time": 0.100},
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.800},
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.808},   # +1%, within tol
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.808},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.808},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.800},
         }
         verdict = ev.evaluate_e3(lookup, ns=[4])
         self.assertEqual(verdict["status"], "PASS")
@@ -447,6 +448,84 @@ class TestGateE3(unittest.TestCase):
 # End-to-end: full verdict + report writer
 # ---------------------------------------------------------------------------
 
+class TestPerNVerdicts(unittest.TestCase):
+    """Per-N routing: a fast N=4,6 run evaluates each gate at the conducted N.
+
+    The user runs only the fast config (N=4,6). The suite must report each
+    gate's verdict AT EACH conducted N (not a single headline N), and a
+    missing N (in the regime but not simulated) must be MISSING -- not a red
+    headline. ``_split_regimes`` routes [4,6] -> small=[4], large=[6].
+    """
+
+    @staticmethod
+    def _fast_lookup():
+        # N=4 and N=6 only -- the user's fast run. Q1@N=4, Q2/Q3@N=6.
+        return {
+            (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20,
+                        "overhead": 0.02},
+            (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05,
+                          "overhead": 0.005},
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.620, "mean_sched_time": 0.060},
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.610, "mean_sched_time": 0.0575},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.600, "mean_sched_time": 0.055},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.590, "mean_sched_time": 0.050},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.580, "mean_sched_time": 0.045},
+            (6, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
+            (6, "INCR"): {"mean_sp_norm": 0.60, "mean_sched_time": 0.08,
+                          "overhead": 0.008},
+            (6, "RM"): {"mean_sp_norm": 0.50},
+            (6, "CFS"): {"mean_sp_norm": 0.45},
+            (6, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
+            (6, "INCR_WCET"): {"mean_sp_norm": 0.45},
+            (6, "INCR_Reopt_1"): {"mean_sp_norm": 0.620, "mean_sched_time": 0.090},
+            (6, "INCR_Reopt_5"): {"mean_sp_norm": 0.610, "mean_sched_time": 0.0875},
+            (6, "INCR_Reopt_10"): {"mean_sp_norm": 0.600, "mean_sched_time": 0.085},
+            (6, "INCR_Reopt_30"): {"mean_sp_norm": 0.590, "mean_sched_time": 0.080},
+            (6, "INCR_Reopt_60"): {"mean_sp_norm": 0.580, "mean_sched_time": 0.075},
+        }
+
+    def test_q1_evaluated_at_small_n_only(self):
+        lookup = self._fast_lookup()
+        verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4, 6])
+        by_gate = {v["gate"]: v for v in verdicts}
+        # Q1 regime = small half = [4]; Q2/Q3 regime = large half = [6].
+        self.assertEqual([e["n"] for e in by_gate["Q1"]["per_n"]], [4])
+        self.assertEqual([e["n"] for e in by_gate["Q2"]["per_n"]], [6])
+        self.assertEqual([e["n"] for e in by_gate["Q3"]["per_n"]], [6])
+
+    def test_e1_and_e3_evaluated_at_every_conducted_n(self):
+        lookup = self._fast_lookup()
+        verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4, 6])
+        by_gate = {v["gate"]: v for v in verdicts}
+        # E1 (overhead) and E3 (monotonicity) cover EVERY conducted N, not just
+        # the headline overhead N -- the per-N export the user asked for.
+        self.assertEqual([e["n"] for e in by_gate["E1"]["per_n"]], [4, 6])
+        self.assertEqual([e["n"] for e in by_gate["E3"]["per_n"]], [4, 6])
+        self.assertEqual(by_gate["E1"]["per_n"][0]["status"], "PASS")
+        self.assertEqual(by_gate["E3"]["per_n"][0]["status"], "PASS")
+
+    def test_missing_n_is_reported_not_fatal(self):
+        """A gate whose only N is MISSING stays FAIL but carries the per-N entry."""
+        lookup = {(4, "INCR"): {"mean_sp_norm": 0.80}}  # BF missing -> Q1 MISSING
+        verdict = ev.evaluate_q1(lookup, small_ns=[4])
+        self.assertEqual(verdict["status"], "FAIL")
+        self.assertEqual(len(verdict["per_n"]), 1)
+        self.assertEqual(verdict["per_n"][0]["status"], "MISSING")
+        # The specific missing thing is named in the top-level detail.
+        self.assertIn("BF", verdict["detail"])
+
+    def test_table_renders_per_n_lines(self):
+        """_format_table emits one line per (gate, N) so each N's verdict shows."""
+        lookup = self._fast_lookup()
+        verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4, 6])
+        table = ev._format_table(verdicts, "PASS")
+        # Q1 has one conducted N=4 -> one per-N line for it.
+        self.assertIn("-> N=4:", table)
+        # E1 covers both conducted N -> both lines present.
+        self.assertIn("-> N=4: PASS", table)
+        self.assertIn("-> N=6: PASS", table)
+
+
 class TestEvaluateAllGates(unittest.TestCase):
     """evaluate_all_gates ties the 5 gates together into a verdict list."""
 
@@ -454,29 +533,29 @@ class TestEvaluateAllGates(unittest.TestCase):
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20},
             (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05},
-            (4, "INCR_Reopt_1"): {"mean_sched_time": 0.05},
-            (4, "INCR_Reopt_5"): {"mean_sched_time": 0.0475},
-            (4, "INCR_Reopt_10"): {"mean_sched_time": 0.045},
-            (4, "INCR_Reopt_30"): {"mean_sched_time": 0.040},
-            (4, "INCR_Reopt_60"): {"mean_sched_time": 0.035},
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.05},
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.89, "mean_sched_time": 0.0475},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.88, "mean_sched_time": 0.045},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.87, "mean_sched_time": 0.040},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.86, "mean_sched_time": 0.035},
             (8, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
             (8, "INCR"): {"mean_sp_norm": 0.60, "mean_sched_time": 0.08},
-            (8, "INCR_Reopt_1"): {"mean_sched_time": 0.08},
-            (8, "INCR_Reopt_5"): {"mean_sched_time": 0.0775},
-            (8, "INCR_Reopt_10"): {"mean_sched_time": 0.075},
-            (8, "INCR_Reopt_30"): {"mean_sched_time": 0.070},
-            (8, "INCR_Reopt_60"): {"mean_sched_time": 0.065},
+            (8, "INCR_Reopt_1"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.08},
+            (8, "INCR_Reopt_5"): {"mean_sp_norm": 0.79, "mean_sched_time": 0.0775},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.075},
+            (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.77, "mean_sched_time": 0.070},
+            (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.76, "mean_sched_time": 0.065},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
             (8, "INCR_WCET"): {"mean_sp_norm": 0.45},
             (10, "INCR"): {"mean_sp_norm": 0.55, "overhead": 0.02,
                            "mean_sched_time": 0.20},
-            (10, "INCR_Reopt_1"): {"mean_sched_time": 0.20},
-            (10, "INCR_Reopt_5"): {"mean_sched_time": 0.195},
-            (10, "INCR_Reopt_10"): {"mean_sched_time": 0.19},
-            (10, "INCR_Reopt_30"): {"mean_sched_time": 0.18},
-            (10, "INCR_Reopt_60"): {"mean_sched_time": 0.17},
+            (10, "INCR_Reopt_1"): {"mean_sp_norm": 0.70, "mean_sched_time": 0.20},
+            (10, "INCR_Reopt_5"): {"mean_sp_norm": 0.69, "mean_sched_time": 0.195},
+            (10, "INCR_Reopt_10"): {"mean_sp_norm": 0.68, "mean_sched_time": 0.19},
+            (10, "INCR_Reopt_30"): {"mean_sp_norm": 0.67, "mean_sched_time": 0.18},
+            (10, "INCR_Reopt_60"): {"mean_sp_norm": 0.66, "mean_sched_time": 0.17},
         }
         verdicts = ev.evaluate_all_gates(lookup, quality_ns=[4, 8],
                                          large_n=8, overhead_n=10)
