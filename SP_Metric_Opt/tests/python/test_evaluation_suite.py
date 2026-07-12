@@ -3,7 +3,10 @@
 The evaluation suite is a north-star integration test: it ingests the same
 ``comparison_summary.csv`` files the aggregate stage produces, normalizes SP
 via the shared ``normalize_records_sp`` / ``compute_sp_upper_bound`` helpers,
-and evaluates the 5 north-star gates (Q1-Q3, E1, E2) into a PASS/FAIL verdict.
+and evaluates the 5 north-star gates (Q1-Q3, E1, E3) into a PASS/FAIL verdict.
+P2.5 removed the ``INCR_SCRATCH`` ablation arm + the E2 gate (its only subject
+pair was INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone, and E2 is gone
+(the north-star dropped 6 gates -> 5).
 
 These tests mock the filesystem (temporary directories + synthetic CSV files +
 a fake ``taskset_characteristics_interval_0.yaml`` so the SP upper bound is a
@@ -35,7 +38,7 @@ import simulation_experiments.aggregate_across_tasks as agg
 # ---------------------------------------------------------------------------
 
 SCHEDULERS_MAIN = ["INCR", "BF", "RM", "CFS"]
-SCHEDULERS_ABLATION = ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"]
+SCHEDULERS_ABLATION = ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"]
 
 
 def _write_summary_csv(dir_path, rows):
@@ -219,14 +222,13 @@ class TestBuildLookup(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestGateQ1(unittest.TestCase):
-    """Q1: at N=4, BF >= INCR & SCRATCH, gap <= 30%."""
+    """Q1: at N=4, BF >= INCR, gap <= 30%."""
 
     def test_pass_small_gap(self):
         # BF=0.90, INCR=0.80 -> gap = 11.1% -> PASS
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90},
             (4, "INCR"): {"mean_sp_norm": 0.80},
-            (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78},
         }
         verdict = ev.evaluate_q1(lookup)
         self.assertEqual(verdict["status"], "PASS")
@@ -237,7 +239,6 @@ class TestGateQ1(unittest.TestCase):
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90},
             (4, "INCR"): {"mean_sp_norm": 0.50},
-            (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78},
         }
         verdict = ev.evaluate_q1(lookup)
         self.assertEqual(verdict["status"], "FAIL")
@@ -251,17 +252,16 @@ class TestGateQ1(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# Gate Q2: large-N INCR/SCRATCH >= BF
+# Gate Q2: large-N INCR >= BF
 # ---------------------------------------------------------------------------
 
 class TestGateQ2(unittest.TestCase):
-    """Q2: at N=8 (largest SP-quality N), INCR & SCRATCH >= BF."""
+    """Q2: at N=8 (largest SP-quality N), INCR >= BF."""
 
     def test_pass(self):
         lookup = {
             (8, "BF"): {"mean_sp_norm": 0.55},
             (8, "INCR"): {"mean_sp_norm": 0.60},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.58},
         }
         verdict = ev.evaluate_q2(lookup, large_n=8)
         self.assertEqual(verdict["status"], "PASS")
@@ -270,34 +270,22 @@ class TestGateQ2(unittest.TestCase):
         lookup = {
             (8, "BF"): {"mean_sp_norm": 0.60},
             (8, "INCR"): {"mean_sp_norm": 0.55},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.65},
         }
         verdict = ev.evaluate_q2(lookup, large_n=8)
         self.assertEqual(verdict["status"], "FAIL")
         self.assertIn("INCR", verdict["detail"])
 
-    def test_fail_scratch_below_bf(self):
-        lookup = {
-            (8, "BF"): {"mean_sp_norm": 0.60},
-            (8, "INCR"): {"mean_sp_norm": 0.65},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.50},
-        }
-        verdict = ev.evaluate_q2(lookup, large_n=8)
-        self.assertEqual(verdict["status"], "FAIL")
-        self.assertIn("SCRATCH", verdict["detail"])
-
 
 # ---------------------------------------------------------------------------
-# Gate Q3: INCR/SCRATCH >= all baselines at large N
+# Gate Q3: INCR >= all baselines at large N
 # ---------------------------------------------------------------------------
 
 class TestGateQ3(unittest.TestCase):
-    """Q3: INCR & SCRATCH >= max(RM, CFS, INCR_NO_TL, INCR_WCET) at large N."""
+    """Q3: INCR >= max(RM, CFS, INCR_NO_TL, INCR_WCET) at large N."""
 
     def test_pass(self):
         lookup = {
             (8, "INCR"): {"mean_sp_norm": 0.70},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.68},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.60},
@@ -309,7 +297,6 @@ class TestGateQ3(unittest.TestCase):
     def test_fail_baseline_beats_incr(self):
         lookup = {
             (8, "INCR"): {"mean_sp_norm": 0.55},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.68},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.60},  # beats INCR
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
@@ -323,13 +310,12 @@ class TestGateQ3(unittest.TestCase):
         """A missing baseline is reported but does not auto-pass the gate."""
         lookup = {
             (8, "INCR"): {"mean_sp_norm": 0.70},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.68},
             (8, "RM"): {"mean_sp_norm": 0.50},
             # CFS, INCR_NO_TL, INCR_WCET absent
         }
         verdict = ev.evaluate_q3(lookup, large_n=8)
-        # INCR/SCRATCH beat the only present baseline (RM), but the missing
-        # ones must be surfaced in the detail so the run is auditable.
+        # INCR beats the only present baseline (RM), but the missing ones must
+        # be surfaced in the detail so the run is auditable.
         self.assertIn("CFS", verdict["detail"])
 
 
@@ -338,12 +324,11 @@ class TestGateQ3(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestGateE1(unittest.TestCase):
-    """E1: at N=10, INCR & SCRATCH overhead <= 5%."""
+    """E1: at N=10, INCR overhead <= 5%."""
 
     def test_pass(self):
         lookup = {
             (10, "INCR"): {"overhead": 0.02},
-            (10, "INCR_SCRATCH"): {"overhead": 0.03},
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "PASS")
@@ -353,7 +338,6 @@ class TestGateE1(unittest.TestCase):
     def test_fail_over_red_line(self):
         lookup = {
             (10, "INCR"): {"overhead": 0.06},  # 6% > 5%
-            (10, "INCR_SCRATCH"): {"overhead": 0.03},
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "FAIL")
@@ -363,7 +347,6 @@ class TestGateE1(unittest.TestCase):
         """1% < overhead <= 5% passes the red line but misses the ideal."""
         lookup = {
             (10, "INCR"): {"overhead": 0.03},
-            (10, "INCR_SCRATCH"): {"overhead": 0.04},
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "PASS")
@@ -376,60 +359,10 @@ class TestGateE1(unittest.TestCase):
         """A present-but-overhead-less record must FAIL clearly, not KeyError."""
         lookup = {
             (10, "INCR"): {"mean_sp_norm": 0.55},            # no overhead
-            (10, "INCR_SCRATCH"): {"overhead": 0.03},
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "FAIL")
         self.assertIn("overhead missing", verdict["detail"])
-
-
-# ---------------------------------------------------------------------------
-# Gate E2: INCR_ET <= SCRATCH_ET at every N
-# ---------------------------------------------------------------------------
-
-class TestGateE2(unittest.TestCase):
-    """E2: INCR.mean_sched_time <= INCR_SCRATCH.mean_sched_time at every N."""
-
-    def test_pass_all_n(self):
-        lookup = {
-            (4, "INCR"): {"mean_sched_time": 0.05},
-            (4, "INCR_SCRATCH"): {"mean_sched_time": 0.06},
-            (8, "INCR"): {"mean_sched_time": 0.08},
-            (8, "INCR_SCRATCH"): {"mean_sched_time": 0.10},
-            (10, "INCR"): {"mean_sched_time": 0.12},
-            (10, "INCR_SCRATCH"): {"mean_sched_time": 0.15},
-        }
-        verdict = ev.evaluate_e2(lookup, ns=[4, 8, 10])
-        self.assertEqual(verdict["status"], "PASS")
-
-    def test_fail_one_n(self):
-        lookup = {
-            (4, "INCR"): {"mean_sched_time": 0.05},
-            (4, "INCR_SCRATCH"): {"mean_sched_time": 0.06},
-            (8, "INCR"): {"mean_sched_time": 0.20},   # violates
-            (8, "INCR_SCRATCH"): {"mean_sched_time": 0.10},
-            (10, "INCR"): {"mean_sched_time": 0.12},
-            (10, "INCR_SCRATCH"): {"mean_sched_time": 0.15},
-        }
-        verdict = ev.evaluate_e2(lookup, ns=[4, 8, 10])
-        self.assertEqual(verdict["status"], "FAIL")
-        self.assertIn("8", verdict["detail"])
-
-    def test_missing_sched_time_fails_not_crashes(self):
-        """A lookup entry lacking mean_sched_time must FAIL clearly, not KeyError.
-
-        The structural claim "INCR <= SCRATCH" cannot be verified without an ET,
-        so the gate reports a clear reason and FAILs rather than raising.
-        """
-        lookup = {
-            (4, "INCR"): {"mean_sched_time": 0.05},
-            (4, "INCR_SCRATCH"): {"mean_sched_time": 0.06},
-            (8, "INCR"): {"mean_sp_norm": 0.60},          # no mean_sched_time
-            (8, "INCR_SCRATCH"): {"mean_sched_time": 0.10},
-        }
-        verdict = ev.evaluate_e2(lookup, ns=[4, 8])
-        self.assertEqual(verdict["status"], "FAIL")
-        self.assertIn("missing", verdict["detail"].lower())
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +454,6 @@ class TestEvaluateAllGates(unittest.TestCase):
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20},
             (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05},
-            (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.06},
             (4, "INCR_Reopt_1"): {"mean_sched_time": 0.05},
             (4, "INCR_Reopt_5"): {"mean_sched_time": 0.0475},
             (4, "INCR_Reopt_10"): {"mean_sched_time": 0.045},
@@ -529,7 +461,6 @@ class TestEvaluateAllGates(unittest.TestCase):
             (4, "INCR_Reopt_60"): {"mean_sched_time": 0.035},
             (8, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
             (8, "INCR"): {"mean_sp_norm": 0.60, "mean_sched_time": 0.08},
-            (8, "INCR_SCRATCH"): {"mean_sp_norm": 0.58, "mean_sched_time": 0.10},
             (8, "INCR_Reopt_1"): {"mean_sched_time": 0.08},
             (8, "INCR_Reopt_5"): {"mean_sched_time": 0.0775},
             (8, "INCR_Reopt_10"): {"mean_sched_time": 0.075},
@@ -541,8 +472,6 @@ class TestEvaluateAllGates(unittest.TestCase):
             (8, "INCR_WCET"): {"mean_sp_norm": 0.45},
             (10, "INCR"): {"mean_sp_norm": 0.55, "overhead": 0.02,
                            "mean_sched_time": 0.20},
-            (10, "INCR_SCRATCH"): {"mean_sp_norm": 0.54, "overhead": 0.03,
-                                   "mean_sched_time": 0.30},
             (10, "INCR_Reopt_1"): {"mean_sched_time": 0.20},
             (10, "INCR_Reopt_5"): {"mean_sched_time": 0.195},
             (10, "INCR_Reopt_10"): {"mean_sched_time": 0.19},
@@ -553,8 +482,7 @@ class TestEvaluateAllGates(unittest.TestCase):
                                          large_n=8, overhead_n=10)
         statuses = {v["gate"]: v["status"] for v in verdicts}
         self.assertEqual(statuses, {"Q1": "PASS", "Q2": "PASS",
-                                    "Q3": "PASS", "E1": "PASS", "E2": "PASS",
-                                    "E3": "PASS"})
+                                    "Q3": "PASS", "E1": "PASS", "E3": "PASS"})
 
     def test_any_fail_makes_overall_fail(self):
         lookup = {
@@ -562,8 +490,6 @@ class TestEvaluateAllGates(unittest.TestCase):
                         "overhead": 0.02},
             (4, "INCR"): {"mean_sp_norm": 0.40, "mean_sched_time": 0.05,
                           "overhead": 0.005},  # Q1 fails (gap 55%)
-            (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.06,
-                                  "overhead": 0.006},
         }
         # period_arms=[] short-circuits E3 to PASS so the overall FAIL is
         # attributable to Q1 alone (the gate under test), not a missing-arm E3.
@@ -587,9 +513,6 @@ class TestWriteReport(unittest.TestCase):
                             "overhead": 0.02},
                 (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05,
                               "overhead": 0.005},
-                (4, "INCR_SCRATCH"): {"mean_sp_norm": 0.78,
-                                      "mean_sched_time": 0.06,
-                                      "overhead": 0.006},
                 (4, "INCR_Reopt_1"): {"mean_sched_time": 0.05},
                 (4, "INCR_Reopt_5"): {"mean_sched_time": 0.0475},
                 (4, "INCR_Reopt_10"): {"mean_sched_time": 0.045},
@@ -603,7 +526,7 @@ class TestWriteReport(unittest.TestCase):
             with open(report_path) as f:
                 report = json.load(f)
             self.assertIn("gates", report)
-            self.assertEqual(len(report["gates"]), 6)
+            self.assertEqual(len(report["gates"]), 5)
             self.assertIn("overall", report)
             self.assertIn("run_id", report)
             self.assertIn("metrics", report)
@@ -621,7 +544,6 @@ class TestEndToEndMain(unittest.TestCase):
             sp = {
                 "INCR": {4: 0.80, 8: 0.60, 10: 0.55},
                 "BF": {4: 0.90, 8: 0.55, 10: 0.50},
-                "INCR_SCRATCH": {4: 0.78, 8: 0.58, 10: 0.54},
                 "RM": {4: 0.50, 8: 0.45, 10: 0.40},
                 "CFS": {4: 0.45, 8: 0.40, 10: 0.35},
                 "INCR_NO_TL": {4: 0.40, 8: 0.40, 10: 0.35},
@@ -637,7 +559,6 @@ class TestEndToEndMain(unittest.TestCase):
             et = {
                 "INCR": {4: 0.05, 8: 0.08, 10: 0.20},
                 "BF": {4: 0.20, 8: 2.0, 10: 5.0},
-                "INCR_SCRATCH": {4: 0.06, 8: 0.10, 10: 0.30},
                 "RM": {4: 0.01, 8: 0.01, 10: 0.01},
                 "CFS": {4: 0.0, 8: 0.0, 10: 0.0},
                 "INCR_NO_TL": {4: 0.04, 8: 0.07, 10: 0.18},

@@ -67,7 +67,7 @@ PROD_RUN_DIR = os.path.join(
     "p25periodAB_run_prod_dur300_interval10_seed1000_tasks4x6x8",
 )
 ARMS = ["BF", "INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
-        "INCR_Reopt_30", "INCR_Reopt_60", "INCR_SCRATCH"]
+        "INCR_Reopt_30", "INCR_Reopt_60"]
 NUM_INTERVALS_EXPECTED = 30  # 300s / 10s trigger interval
 
 
@@ -124,7 +124,7 @@ def main():
     ap.add_argument("--arms", nargs="+", default=None,
                     help="Subset of arms to run (default: all). e.g. "
                          "--arms INCR_Reopt_1 INCR_Reopt_5 INCR_Reopt_10 "
-                         "INCR_Reopt_30 INCR_Reopt_60 INCR_SCRATCH "
+                         "INCR_Reopt_30 INCR_Reopt_60 "
                          "to skip BF (which is a ceiling reference, not relevant "
                          "to INCR-vs-REOPT ET profiling, and scales badly with N).")
     ap.add_argument("--bin_dir", default="release",

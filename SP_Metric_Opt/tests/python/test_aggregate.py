@@ -551,7 +551,7 @@ class TestGenerateAblationFigures(unittest.TestCase):
             {"num_tasks": 4, "scheduler": "INCR", "mean_sp": 0.90, "std_sp": 0.05,
              "mean_sched_time": 0.01, "std_sched_time": 0.001},
         ]
-        cfg = {"ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"]}
+        cfg = {"ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"]}
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.FIGURES_OUTPUT_DIR = tmpdir
             agg.generate_ablation_group_figures(records, cfg)
@@ -849,7 +849,7 @@ class TestIntegrationStyleFigureGeneration(unittest.TestCase):
         cfg = {
             "num_tasks_for_single_task_figures": 4,
             "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
-            "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"],
+            "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"],
         }
 
         agg.generate_main_group_figures(records, cfg)

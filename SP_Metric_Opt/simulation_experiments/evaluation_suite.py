@@ -13,16 +13,19 @@ suite; regressions show as red.
 
 North-star gates
 ----------------
-- **Q1** small N: BF >= INCR & SCRATCH, gap <= 30%           (N = smallest quality N)
-- **Q2** large N: INCR & SCRATCH >= BF (BF time-out)          (N = largest quality N)
-- **Q3** INCR & SCRATCH >= every baseline                      (N = largest quality N)
+- **Q1** small N: BF >= INCR, gap <= 30%                       (N = smallest quality N)
+- **Q2** large N: INCR >= BF (BF time-out)                     (N = largest quality N)
+- **Q3** INCR >= every baseline                                 (N = largest quality N)
 - **E1** overhead <= 5% (ideal <= 1%) at the overhead probe N  (N = overhead N, >= 10)
-- **E2** INCR scheduler ET <= SCRATCH ET at every N
 - **E3** INCR_Reopt_X period-monotonicity: per-activation ET   (every N)
   non-increasing as the reopt period grows, i.e.
   ET(INCR_Reopt_1) >= ET(INCR_Reopt_5) >= ET(INCR_Reopt_10) >=
   ET(INCR_Reopt_30) >= ET(INCR_Reopt_60).
   Investigation gate for the P1.1 residual; currently FAILs by design.
+
+P2.5 removed the ``INCR_SCRATCH`` ablation arm and the E2 gate (its only
+subject pair was INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone, and the
+north-star dropped 6 gates -> 5.
 
 Normalized SP = ``raw_SP / ideal_SP`` (the P12 fix; ``ideal_SP`` from
 :func:`aggregate_across_tasks.compute_sp_upper_bound`), so the ratio is in
@@ -63,14 +66,13 @@ from simulation_experiments.experiment_config_loader import (  # noqa: E402
     load_experiment_config,
 )
 
-# Scheduler naming. The from-scratch optimizer is the ``INCR_SCRATCH`` mode
-# (no bare ``SCRATCH`` mode exists in RunOrchestrator). ``INCR`` is the
-# incremental optimizer the paper advances; ``BF`` is the brute-force ceiling.
+# Scheduler naming. ``INCR`` is the incremental optimizer the paper advances;
+# ``BF`` is the brute-force ceiling. (The ``INCR_SCRATCH`` ablation arm was
+# removed in P2.5 -- see agents/active_tasks/P2_5_incr_scratch_removal/.)
 INCR = "INCR"
-SCRATCH = "INCR_SCRATCH"
 BF = "BF"
-# Baselines that INCR/SCRATCH must beat for gate Q3 (the ablation group minus
-# INCR/SCRATCH themselves, plus the two non-optimizer schedulers).
+# Baselines that INCR must beat for gate Q3 (the ablation group minus INCR
+# itself, plus the two non-optimizer schedulers).
 Q3_BASELINES = ["RM", "CFS", "INCR_NO_TL", "INCR_WCET"]
 
 # Default ordered period arms for gate E3 (the P1.1 A/B set). Bare ``INCR`` is
@@ -83,7 +85,7 @@ DEFAULT_PERIOD_ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
                        "INCR_Reopt_30", "INCR_Reopt_60"]
 
 # North-star thresholds (from agents/project_evaluation_northstar.md).
-Q1_MAX_GAP = 0.30      # small-N BF-vs-INCR/SCRATCH gap red-flag line
+Q1_MAX_GAP = 0.30      # small-N BF-vs-INCR gap red-flag line
 E1_RED_LINE = 0.05     # overhead red-flag line
 E1_IDEAL = 0.01        # overhead ideal
 E3_TOLERANCE = 0.02    # E3: relative slack on each period step (ET next <= prev*(1+t))
@@ -162,153 +164,94 @@ def _sp(lookup, n, sched):
 
 
 def evaluate_q1(lookup, small_n=4):
-    """Q1: at small N, BF >= INCR & SCRATCH with gap <= 30%.
+    """Q1: at small N, BF >= INCR with gap <= 30%.
 
-    Gap = ``(BF - X) / BF`` for X in {INCR, SCRATCH}. PASS only if BF is present
-    and the gap to *both* is within the red-flag line. (BF below INCR is also a
-    PASS -- the gate only flags BF *too far ahead*.)
+    Gap = ``(BF - INCR) / BF``. PASS only if BF is present and the gap is within
+    the red-flag line. (BF below INCR is also a PASS -- the gate only flags BF
+    *too far ahead*.)
     """
     bf = _sp(lookup, small_n, BF)
     if bf is None or bf <= 0:
         return _verdict("Q1", "FAIL", None, f"gap <= {Q1_MAX_GAP:.0%}",
                         f"BF missing at N={small_n}; cannot evaluate small-N gap")
-    details = []
-    overall_pass = True
-    worst_gap = 0.0
-    for sched, label in [(INCR, "INCR"), (SCRATCH, "SCRATCH")]:
-        x = _sp(lookup, small_n, sched)
-        if x is None:
-            details.append(f"{label} missing at N={small_n}")
-            overall_pass = False
-            continue
-        gap = (bf - x) / bf
-        worst_gap = max(worst_gap, gap)
-        verdict = "ok" if gap <= Q1_MAX_GAP else "EXCEEDS"
-        if gap > Q1_MAX_GAP:
-            overall_pass = False
-        details.append(f"{label}: gap={gap:.1%} ({verdict})")
-    status = "PASS" if overall_pass else "FAIL"
-    return _verdict("Q1", status, f"worst gap={worst_gap:.1%}",
-                    f"gap <= {Q1_MAX_GAP:.0%}", "; ".join(details))
+    x = _sp(lookup, small_n, INCR)
+    if x is None:
+        return _verdict("Q1", "FAIL", None, f"gap <= {Q1_MAX_GAP:.0%}",
+                        f"INCR missing at N={small_n}; cannot evaluate small-N gap")
+    gap = (bf - x) / bf
+    verdict = "ok" if gap <= Q1_MAX_GAP else "EXCEEDS"
+    status = "PASS" if gap <= Q1_MAX_GAP else "FAIL"
+    return _verdict("Q1", status, f"gap={gap:.1%}",
+                    f"gap <= {Q1_MAX_GAP:.0%}",
+                    f"INCR: gap={gap:.1%} ({verdict})")
 
 
 def evaluate_q2(lookup, large_n=8):
-    """Q2: at large N, INCR & SCRATCH >= BF (BF time-out)."""
+    """Q2: at large N, INCR >= BF (BF time-out)."""
     bf = _sp(lookup, large_n, BF)
-    details = []
-    overall_pass = True
-    for sched, label in [(INCR, "INCR"), (SCRATCH, "SCRATCH")]:
-        x = _sp(lookup, large_n, sched)
-        if x is None or bf is None:
-            details.append(f"{label}: missing at N={large_n}")
-            overall_pass = False
-            continue
-        ok = x >= bf
-        if not ok:
-            overall_pass = False
-        details.append(f"{label}={x:.4f} vs BF={bf:.4f} ({'ok' if ok else 'BELOW'})")
-    status = "PASS" if overall_pass else "FAIL"
-    measured = f"INCR,SCRATCH vs BF @ N={large_n}"
-    return _verdict("Q2", status, measured, "INCR,SCRATCH >= BF", "; ".join(details))
+    x = _sp(lookup, large_n, INCR)
+    if x is None or bf is None:
+        return _verdict("Q2", "FAIL", f"INCR vs BF @ N={large_n}",
+                        "INCR >= BF", f"INCR or BF missing at N={large_n}")
+    ok = x >= bf
+    status = "PASS" if ok else "FAIL"
+    return _verdict("Q2", status, f"INCR vs BF @ N={large_n}",
+                    "INCR >= BF",
+                    f"INCR={x:.4f} vs BF={bf:.4f} ({'ok' if ok else 'BELOW'})")
 
 
 def evaluate_q3(lookup, large_n=8):
-    """Q3: INCR & SCRATCH >= every baseline at large N."""
+    """Q3: INCR >= every baseline at large N."""
     details = []
     overall_pass = True
     missing_baselines = []
-    for sched, label in [(INCR, "INCR"), (SCRATCH, "SCRATCH")]:
-        x = _sp(lookup, large_n, sched)
-        if x is None:
-            details.append(f"{label} missing at N={large_n}")
-            overall_pass = False
+    x = _sp(lookup, large_n, INCR)
+    if x is None:
+        return _verdict("Q3", "FAIL", f"INCR vs baselines @ N={large_n}",
+                        "INCR >= max(baselines)",
+                        f"INCR missing at N={large_n}")
+    beats = []
+    for b in Q3_BASELINES:
+        bsp = _sp(lookup, large_n, b)
+        if bsp is None:
+            missing_baselines.append(b)
             continue
-        beats = []
-        for b in Q3_BASELINES:
-            bsp = _sp(lookup, large_n, b)
-            if bsp is None:
-                missing_baselines.append(b)
-                continue
-            ok = x >= bsp
-            if not ok:
-                overall_pass = False
-            beats.append(f"{b}={bsp:.4f}({'ok' if ok else 'BEATS'})")
-        details.append(f"{label}={x:.4f} vs [{', '.join(beats)}]")
+        ok = x >= bsp
+        if not ok:
+            overall_pass = False
+        beats.append(f"{b}={bsp:.4f}({'ok' if ok else 'BEATS'})")
+    details.append(f"INCR={x:.4f} vs [{', '.join(beats)}]")
     if missing_baselines:
         details.append("missing baselines: " + ", ".join(sorted(set(missing_baselines))))
     status = "PASS" if overall_pass else "FAIL"
-    return _verdict("Q3", status, f"INCR,SCRATCH vs baselines @ N={large_n}",
-                    "INCR,SCRATCH >= max(baselines)", "; ".join(details))
+    return _verdict("Q3", status, f"INCR vs baselines @ N={large_n}",
+                    "INCR >= max(baselines)", "; ".join(details))
 
 
 def evaluate_e1(lookup, overhead_n=10):
     """E1: scheduler overhead <= 5% (ideal <= 1%) at the overhead probe N."""
-    details = []
-    overall_pass = True
-    ideal_met = True
-    for sched, label in [(INCR, "INCR"), (SCRATCH, "SCRATCH")]:
-        rec = lookup.get((overhead_n, sched))
-        if rec is None:
-            details.append(f"{label} missing at N={overhead_n}")
-            overall_pass = False
-            continue
-        ov = rec.get("overhead")
-        if ov is None:
-            # build_metric_lookup always sets overhead, so a missing key means
-            # a malformed/partial lookup -- the gate cannot verify the claim.
-            details.append(f"{label}: overhead missing at N={overhead_n} -- cannot verify")
-            overall_pass = False
-            continue
-        if ov > E1_RED_LINE:
-            overall_pass = False
-        if ov > E1_IDEAL:
-            ideal_met = False
-        details.append(f"{label}: overhead={ov:.2%} "
-                       f"(red {E1_RED_LINE:.0%} {'ok' if ov <= E1_RED_LINE else 'EXCEEDS'}, "
-                       f"ideal {E1_IDEAL:.0%} {'ok' if ov <= E1_IDEAL else 'missed'})")
+    rec = lookup.get((overhead_n, INCR))
+    if rec is None:
+        return _verdict("E1", "FAIL", f"overhead @ N={overhead_n}",
+                        f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})",
+                        f"INCR missing at N={overhead_n}")
+    ov = rec.get("overhead")
+    if ov is None:
+        # build_metric_lookup always sets overhead, so a missing key means
+        # a malformed/partial lookup -- the gate cannot verify the claim.
+        return _verdict("E1", "FAIL", f"overhead @ N={overhead_n}",
+                        f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})",
+                        f"INCR: overhead missing at N={overhead_n} -- cannot verify")
+    overall_pass = ov <= E1_RED_LINE
+    ideal_met = ov <= E1_IDEAL
+    details = [f"INCR: overhead={ov:.2%} "
+               f"(red {E1_RED_LINE:.0%} {'ok' if ov <= E1_RED_LINE else 'EXCEEDS'}, "
+               f"ideal {E1_IDEAL:.0%} {'ok' if ov <= E1_IDEAL else 'missed'})"]
     if not ideal_met:
-        details.append("ideal (1%) not met by all -- red line (5%) is the gate")
+        details.append("ideal (1%) not met -- red line (5%) is the gate")
     status = "PASS" if overall_pass else "FAIL"
     return _verdict("E1", status, f"overhead @ N={overhead_n}",
                     f"<= {E1_RED_LINE:.0%} (ideal {E1_IDEAL:.0%})", "; ".join(details))
-
-
-def evaluate_e2(lookup, ns=None):
-    """E2: INCR scheduler ET <= SCRATCH ET at every N.
-
-    The north-star says "INCR cannot run slower than SCRATCH" -- checked at
-    every N the suite ran, since the claim is structural, not N-specific.
-    """
-    if ns is None:
-        ns = sorted({n for (n, s) in lookup.keys()})
-    details = []
-    overall_pass = True
-    for n in ns:
-        incr = lookup.get((n, INCR))
-        scr = lookup.get((n, SCRATCH))
-        if incr is None or scr is None:
-            details.append(f"N={n}: INCR or SCRATCH missing")
-            overall_pass = False
-            continue
-        incr_et = incr.get("mean_sched_time")
-        scr_et = scr.get("mean_sched_time")
-        if incr_et is None or scr_et is None:
-            # The claim is structural ("INCR cannot run slower than SCRATCH");
-            # a missing ET means it cannot be verified -> FAIL with a reason,
-            # not a silent skip and not a KeyError.
-            details.append(f"N={n}: mean_sched_time missing -- cannot verify")
-            overall_pass = False
-            continue
-        ok = incr_et <= scr_et
-        if not ok:
-            overall_pass = False
-        details.append(
-            f"N={n}: INCR={incr_et:.4f}s vs "
-            f"SCRATCH={scr_et:.4f}s ({'ok' if ok else 'SLOWER'})"
-        )
-    status = "PASS" if overall_pass else "FAIL"
-    return _verdict("E2", status, "INCR_ET vs SCRATCH_ET per N",
-                    "INCR_ET <= SCRATCH_ET", "; ".join(details))
 
 
 def evaluate_e3(lookup, ns=None, period_arms=None):
@@ -368,7 +311,7 @@ def evaluate_e3(lookup, ns=None, period_arms=None):
 
 def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None,
                        period_arms=None):
-    """Run all 6 north-star gates against the lookup.
+    """Run all 5 north-star gates against the lookup.
 
     Parameters
     ----------
@@ -394,15 +337,14 @@ def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None,
     if overhead_n is None:
         all_ns = sorted({n for (n, _) in lookup.keys()})
         overhead_n = max(all_ns) if all_ns else 10
-    e2_ns = sorted({n for (n, _) in lookup.keys()})
+    e3_ns = sorted({n for (n, _) in lookup.keys()})
 
     return [
         evaluate_q1(lookup, small_n=small_n),
         evaluate_q2(lookup, large_n=large_n),
         evaluate_q3(lookup, large_n=large_n),
         evaluate_e1(lookup, overhead_n=overhead_n),
-        evaluate_e2(lookup, ns=e2_ns),
-        evaluate_e3(lookup, ns=e2_ns, period_arms=period_arms),
+        evaluate_e3(lookup, ns=e3_ns, period_arms=period_arms),
     ]
 
 
@@ -481,7 +423,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         description=(
             "Project evaluation suite: evaluate a completed run against the "
-            "north-star gates (Q1-Q3, E1, E2). Does not run simulations -- "
+            "north-star gates (Q1-Q3, E1, E3). Does not run simulations -- "
             "run scripts/run_evaluation_suite.sh (or run_end_to_end.sh) first."
         )
     )

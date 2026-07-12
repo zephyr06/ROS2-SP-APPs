@@ -280,14 +280,6 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     }
 }
 
-// 1-arg overload — INCR_SCRATCH entry point. See header for why this is an
-// amnesiac reopt (fresh optimizer each interval → no incumbent carried →
-// RM+min-TL baseline every call), distinct from the persistent optimizer used
-// by Optimize_w_TL_ScratchOrIncre (INCR with period=1).
-PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(int K) {
-    return ReOptimizePeriodic(dag_tasks_, K);
-}
-
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     const DAG_Model& dag_tasks_update, int K) {
     // Modular reopt: every ReoptimizationPeriod-th call (count % period == 0)
@@ -471,10 +463,10 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     // permanent, unconditional reopt seed policy: the seed must be
     // algorithm-derived (the optimizer's own prior output), not read from the
     // YAML taskset characterization. The IfInitialized() gate auto-falls-back
-    // to the Gaussian-mean TL (InitializeTimeLimitsFromETConfig) at interval
-    // 0 / INCR_SCRATCH (no incumbent → ReconstructTimeLimitVecFromResOpt would
-    // be all -1 = no-op); that fallback is irreducible for any seed policy —
-    // the very first solve has no prior optimizer state to seed from.
+    // to the Gaussian-mean TL (InitializeTimeLimitsFromETConfig) at interval 0
+    // (no incumbent → ReconstructTimeLimitVecFromResOpt would be all -1 =
+    // no-op); that fallback is irreducible for any seed policy — the very first
+    // solve has no prior optimizer state to seed from.
     std::vector<double> time_limits =
         IfInitialized() ? ReconstructTimeLimitVecFromResOpt()
                         : InitializeTimeLimitsFromETConfig();

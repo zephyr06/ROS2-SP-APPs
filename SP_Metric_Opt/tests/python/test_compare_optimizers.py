@@ -70,7 +70,7 @@ class TestCompareOptimizers(unittest.TestCase):
         """Ensure the default scheduler list includes the expected modes."""
         expected = {
             "INCR", "BF",
-            "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH",
+            "INCR_NO_TL", "INCR_WCET",
             "RM", "RM_FAST", "RM_SLOW",
             "CFS",
         }

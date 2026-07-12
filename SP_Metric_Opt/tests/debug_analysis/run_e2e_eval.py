@@ -202,7 +202,7 @@ def main():
 
     modes = [
         "RM", "BF", "INCR",
-        "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH",
+        "INCR_NO_TL", "INCR_WCET",
         "RM_FAST", "RM_SLOW",
     ]
 

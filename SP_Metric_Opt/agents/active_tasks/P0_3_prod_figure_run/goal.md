@@ -34,8 +34,9 @@ Data already exists at
 2026-07-04 A/B re-run). Need a new generator in `aggregate_across_tasks.py`
 that:
 - Reads the per-period per-activation ET from the P25 A/B run.
-- Plots ET vs `ReoptimizationPeriod` (P1, P10, P30, P60) with `INCR_SCRATCH`
-  as the floor reference.
+- Plots ET vs `ReoptimizationPeriod` (P1, P10, P30, P60). (P2.5 removed the
+  `INCR_SCRATCH` amnesiac floor that this figure previously drew — the
+  period-monotonicity read now stands on the INCR_Reopt_X arms alone.)
 - Reuses `compute_sp_upper_bound` for any normalization.
 
 ## Run command

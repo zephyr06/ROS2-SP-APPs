@@ -190,7 +190,7 @@ def plot_exec_time(results, output_path):
 
 
 def main():
-    print("=== End-to-End Evaluation: 6-task tasksets, 300s duration, 5 runs, 8 modes ===")
+    print("=== End-to-End Evaluation: 6-task tasksets, 300s duration, 5 runs, 7 modes ===")
 
     # 1. Setup folders
     base_dir = os.path.join(_REPO_ROOT, "tests/e2e_eval_runs")
@@ -202,7 +202,7 @@ def main():
 
     modes = [
         "RM", "BF", "INCR",
-        "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH",
+        "INCR_NO_TL", "INCR_WCET",
         "RM_FAST", "RM_SLOW",
     ]
 

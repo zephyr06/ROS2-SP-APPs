@@ -5,7 +5,7 @@
 ## New P25 period figure generator
 - [ ] Add `fig_p25_et_vs_period` generator to `aggregate_across_tasks.py`
 - [ ] Read per-period per-activation ET from the P25 A/B run
-- [ ] Plot ET vs `ReoptimizationPeriod` (P1, P10, P30, P60) + `INCR_SCRATCH` floor
+- [ ] Plot ET vs `ReoptimizationPeriod` (P1, P10, P30, P60) (no SCRATCH floor — P2.5 removed it)
 - [ ] Reuse `compute_sp_upper_bound` for normalization
 - [ ] Unit test the generator with mock data (assert PNG+PDF non-empty)
 

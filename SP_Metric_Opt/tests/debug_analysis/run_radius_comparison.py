@@ -52,7 +52,7 @@ BASE_MODES = [
 ]
 
 INCR_RADII = [2, 3, 4, 5, 6]
-INCR_ABLATIONS = ["INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"]
+INCR_ABLATIONS = ["INCR", "INCR_NO_TL", "INCR_WCET"]
 
 # ---------------------------------------------------------------------------
 # Helpers

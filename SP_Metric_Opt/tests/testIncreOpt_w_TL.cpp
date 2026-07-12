@@ -425,7 +425,7 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
 
     // 1. Optimize from scratch (can explore all time limit options)
     OptimizePA_Incre_with_TimeLimits opt_scratch(dag_tasks, sp_parameters);
-    opt_scratch.ReOptimizePeriodic(2);
+    opt_scratch.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_scratch = opt_scratch.CollectResults();
 
     // With floor behaviour any TL in [400, 599) yields the same perf (0.5),
@@ -1202,11 +1202,11 @@ TEST_F(CompareAndKeepSynthetic,
 // TL (ReconstructTimeLimitVecFromResOpt) — the optimizer's own prior result in
 // res_opt_ — whenever an incumbent exists. This is the permanent, unconditional
 // policy (P1.4 removed the ReoptStartFromAdoptedTL knob that used to toggle
-// it); the only remaining branch is the IfInitialized() fallback at interval 0
-// / INCR_SCRATCH, covered by the test below. Same StartTLStub observable as the
-// incremental test above (records the first-eval TL vector without altering
-// SP). Fixture: T_perf options {400,600,800,1000}, ET~500 → Gaussian-mean-
-// closest TL is 600; the bootstrap adopts T_adopt != 600.
+// it); the only remaining branch is the IfInitialized() fallback on a fresh
+// optimizer (no incumbent), covered by the test below. Same StartTLStub
+// observable as the incremental test above (records the first-eval TL vector
+// without altering SP). Fixture: T_perf options {400,600,800,1000}, ET~500 →
+// Gaussian-mean-closest TL is 600; the bootstrap adopts T_adopt != 600.
 TEST_F(CompareAndKeepSynthetic, ReOptimizePeriodic_StartsFromAdoptedTL) {
     class StartTLStub : public OptimizePA_Incre_with_TimeLimits {
        public:
@@ -1250,11 +1250,11 @@ TEST_F(CompareAndKeepSynthetic, ReOptimizePeriodic_StartsFromAdoptedTL) {
         << "Sanity: start != Gaussian-mean TL.";
 }
 
-// Interval-0 / INCR_SCRATCH fallback (unchanged by P1.4). On the bootstrap
-// interval there is no incumbent (IfInitialized() == false), so the incumbent
-// seed is impossible and the IfInitialized() guard falls back to the
-// Gaussian-mean TL. This is irreducible for ANY seed policy: the very first
-// solve has no prior optimizer state to seed from.
+// Fresh-optimizer fallback (unchanged by P1.4). On the bootstrap interval of
+// a freshly constructed optimizer there is no incumbent (IfInitialized() ==
+// false), so the incumbent seed is impossible and the IfInitialized() guard
+// falls back to the Gaussian-mean TL. This is irreducible for ANY seed policy:
+// the very first solve has no prior optimizer state to seed from.
 TEST_F(CompareAndKeepSynthetic,
        ReOptimizePeriodic_Interval0FallsBackToGaussianMean) {
     class StartTLStub : public OptimizePA_Incre_with_TimeLimits {

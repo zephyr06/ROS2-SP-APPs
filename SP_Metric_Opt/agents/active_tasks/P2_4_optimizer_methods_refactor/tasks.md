@@ -87,33 +87,35 @@
   methods as planned" = the overload removal (Step 3) + the comment rewrites (Step 1)
   only. Re-flag when P1.6/P1.2 settle.
 
-## Step 5 — `INCR_SCRATCH` removal (SEPARATE SUB-TASK — NOT this pass; result-changing)
+## Step 5 — `INCR_SCRATCH` removal (DONE 2026-07-11 — promoted to P2.5; see [`P2_5_incr_scratch_removal/`](../P2_5_incr_scratch_removal/))
 
-> Filed per the user's "we can remove it in a separate step." Blocked-behind this pass
-> (Step 3 makes the INCR_SCRATCH branch the overload's last caller; Step 5 removes both
-> together). Result-changing (deletes a scheduler arm + a gate) — its own review cycle.
+> Filed per the user's "we can remove it in a separate step." Promoted to its own task
+> (P2.5) because it is result-changing (deletes a scheduler arm + collapses E2) and
+> deserved its own review cycle. P2.5 executed the full removal surface below.
 
-- [ ] `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp` — delete the
-      `INCR_SCRATCH` dispatch branch (:320-337) + the construction-condition string
-      (:295) + the `:290-292` comment; if Step 3 kept the 1-arg overload for this branch,
-      delete the overload now (`OptimizeSP_TL_Incre.h:84`, `.cpp:283-289`).
-- [ ] Configs — drop `INCR_SCRATCH` from `evaluation_suite_config.json`,
+- [x] `sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp` — delete the
+      `INCR_SCRATCH` dispatch branch + the construction-condition string + its comment;
+      delete the 1-arg `ReOptimizePeriodic(int K)` overload (`OptimizeSP_TL_Incre.h` +
+      `.cpp`) now that its last caller (the SCRATCH branch) is gone.
+- [x] Configs — dropped `INCR_SCRATCH` from `evaluation_suite_config.json`,
       `p25_period_ab_config.json`, `experiment_config.json`.
-- [ ] Python — drop SCRATCH from the iteration tuples in `evaluation_suite.py`
-      (Q2/Q3/E1), `compare_optimizers.py`, `aggregate_across_tasks.py`, the ~30
-      test-fixture keys in `test_evaluation_suite.py` / `test_aggregate.py` /
+- [x] Python — dropped SCRATCH from the iteration tuples in `evaluation_suite.py`
+      (Q1/Q2/Q3/E1), `compare_optimizers.py`, `aggregate_across_tasks.py`,
+      `repro_et_grows_with_period.py`, the debug-analysis scripts, and the test-fixture
+      keys in `test_evaluation_suite.py` / `test_aggregate.py` /
       `test_run_end_to_end.py` / `test_compare_optimizers.py`.
-- [ ] `evaluation_suite.py` — DELETE the E2 gate (collapses to E3's first edge once
-      SCRATCH -> Reopt_1 and bare INCR=Reopt_10: `ET(Reopt_10) <= ET(Reopt_1)` is the
-      first edge of E3). Do NOT substitute INCR_P1 for INCR_SCRATCH in E2 — that just
-      re-states E3. Q2/Q3/E1 survive (drop SCRATCH from their tuples).
-- [ ] `agents/project_evaluation_northstar.md` — delete line 10 ("INCR cannot run slower
-      than SCRATCH") + the SCRATCH mentions in lines 3-5.
-- [ ] `agents/active_tasks/P1_6_incr_only_baseline/goal.md` — P1.6 named INCR_SCRATCH as
-      a comparison arm ("vs INCR_SCRATCH isolates the value of carrying the incumbent
-      via warm-start"); removing it narrows P1.6 to the descent-cost axis only (the user
-      accepted this). Update the goal.
-- [ ] Build + ctest green; user re-runs the A/B without INCR_SCRATCH.
+- [x] `evaluation_suite.py` — DELETED the E2 gate (its only subject pair was
+      INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone. Not substituted with
+      Reopt_1 (that would re-state E3's first edge). 5 gates, not 6.
+- [x] `agents/project_evaluation_northstar.md` — deleted the "INCR cannot run slower
+      than SCRATCH" line + the SCRATCH mentions in the SP-quality bullets.
+- [ ] `agents/active_tasks/P1_6_incr_only_baseline/goal.md` — **DEFERRED to the user.**
+      P1.6's premise (compare INCR vs SCRATCH) is now obsolete: with SCRATCH removed,
+      P1.6 needs its comparison axis re-set (vs `INCR_Reopt_1`, the always-reopt-with-
+      memory arm), not a find-replace. P1.6 is PLANNING-ONLY; the user decides its new
+      framing. Tracked in P2.5 dev log.
+- [x] Build + ctest green (16/16); python tests green (287); user re-runs the A/B
+      without INCR_SCRATCH (user's task).
 
 ## Step 6 — Index + hand off (DONE 2026-07-11)
 

@@ -25,8 +25,8 @@
 | **1D** | Mean Miss Rate vs. Number of Tasks | Debug | Main: INCR, BF, RM, CFS |
 | **1E** | Std Miss Rate vs. Number of Tasks | Debug | Main: INCR, BF, RM, CFS |
 | **1F** | SP Metric Distribution Box Plot (fixed task count) | Paper | Main: INCR, BF, RM, CFS |
-| **Ab-A** | Mean SP Metric vs. Number of Tasks | Paper | Ablation: INCR, INCR_NO_TL, INCR_WCET, INCR_SCRATCH |
-| **Ab-B** | Mean Execution Time vs. Number of Tasks | Paper | Ablation: INCR, INCR_NO_TL, INCR_WCET, INCR_SCRATCH |
+| **Ab-A** | Mean SP Metric vs. Number of Tasks | Paper | Ablation: INCR, INCR_NO_TL, INCR_WCET |
+| **Ab-B** | Mean Execution Time vs. Number of Tasks | Paper | Ablation: INCR, INCR_NO_TL, INCR_WCET |
 | **2** | INCR SP vs. Optimizer Invocation Interval [1,5,10,20,30,60]s | Paper | INCR + BF/RM references |
 | **3** | Miss Rate of Important Tasks (top 10% by sp_weight) | Paper | All schedulers |
 | **3b** | Miss Rate of Non-Important Tasks | Debug | All schedulers |

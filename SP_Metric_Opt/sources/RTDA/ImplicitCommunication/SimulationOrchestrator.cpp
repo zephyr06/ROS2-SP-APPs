@@ -293,12 +293,8 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
     // bootstrap a valid baseline taskset + the time_limit_option cache. The
     // per-interval calls rebind dag_tasks_ and rebuild that cache, but res_opt_
     // — the reason the optimizer is persistent — survives those rebinds.
-    // (INCR_SCRATCH is listed too, but its DeterminePrioritiesAndBudgets branch
-    // builds a fresh scratch_opt per interval and never reads incr_optimizer_;
-    // it is the amnesiac control that carries no incumbent.)
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_) ||
-        scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET" ||
-        scheduler_mode_ == "INCR_SCRATCH") {
+        scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
     }
@@ -323,29 +319,6 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
         res = incr_optimizer_.CollectResults();
     } else if (scheduler_mode_ == "BF") {
         res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
-    } else if (scheduler_mode_ == "INCR_SCRATCH") {
-        // ABLATION: amnesiac wide-radius reopt. `scratch_opt` is constructed
-        // fresh each interval and discarded, so no incumbent is carried
-        // → ResetIncumbentBaseline takes the interval-0 branch (RM + min-TL)
-        // every call. The compare-and-keep guard therefore measures the wide
-        // search against a synthetic RM baseline, NOT against the previous
-        // interval's adopted solution. This isolates the value of carrying the
-        // incumbent forward.
-        // DO NOT confuse with INCR_Reopt_1 (bare INCR with ReoptimizationPeriod=1):
-        // that reuses the persistent incr_optimizer_, so res_opt_ carries the prior
-        // interval's incumbent and compare-and-keep is measured against the
-        // running best. INCR_Reopt_1 is the no-memory control's *memory-carrying*
-        // counterpart — both reopt every interval; the difference is solely
-        // whether the incumbent persists. Empirically INCR_Reopt_1 ≥ INCR_SCRATCH
-        // on SP (the carried incumbent is the better compare-and-keep baseline AND
-        // the better descent seed), but this is not airtight: the reopt descent is
-        // patience-bounded (OptimizeSingleTaskTimeLimit) and start-point-dependent,
-        // so a memoryless search can occasionally land a different local optimum.
-        // INCR_SCRATCH is kept only as the no-memory control.
-        OptimizePA_Incre_with_TimeLimits scratch_opt(dag_tasks, sp_parameters);
-        scratch_opt.ReOptimizePeriodic(
-            GlobalVariables::Layer_Node_During_Incremental_Optimization);
-        res = scratch_opt.CollectResults();
     } else if (scheduler_mode_ == "INCR_NO_TL") {
         bool prev = GlobalVariables::disable_time_limit_opt;
         GlobalVariables::disable_time_limit_opt = true;

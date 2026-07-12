@@ -34,7 +34,7 @@ Main group -- optional (when analysis.normalize_sp is true):
     fig1a_mean_sp_normalized_vs_tasks_main.{png,pdf}
     fig1b_std_sp_normalized_vs_tasks_main.{png,pdf}   (debug)
 
-Ablation group (BF, INCR, INCR_NO_TL, INCR_WCET, INCR_SCRATCH):
+Ablation group (BF, INCR, INCR_NO_TL, INCR_WCET):
     fig_ablation_mean_sp_vs_tasks.{png,pdf}
     fig_ablation_mean_exec_time_vs_tasks.{png,pdf}  (log y-axis)
 
@@ -712,7 +712,7 @@ def generate_ablation_group_figures(records, cfg, figures_dir=None):
     """
     scheduler_list = cfg.get(
         "ablation_scheduler_list",
-        ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"],
+        ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"],
     )
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
     os.makedirs(figures_dir, exist_ok=True)
