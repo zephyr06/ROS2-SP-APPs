@@ -70,7 +70,7 @@ class TaskSetForTest_robotics_v18 : public ::testing::Test {
 
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.ReOptimizePeriodic(2);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
 
@@ -84,7 +84,7 @@ TEST_F(TaskSetForTest_robotics_v18, optimize_no_tl) {
     // 1. Run with TL optimization enabled (default behavior)
     GlobalVariables::disable_time_limit_opt = false;
     OptimizePA_Incre_with_TimeLimits opt_with_tl(dag_tasks, sp_parameters);
-    opt_with_tl.ReOptimizePeriodic(2);
+    opt_with_tl.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_opt = opt_with_tl.CollectResults();
     double opt_sp = res_opt.sp_opt;
 
@@ -116,7 +116,7 @@ TEST_F(TaskSetForTest_robotics_v18, optimize_no_tl) {
     // 2. Run with TL optimization disabled
     GlobalVariables::disable_time_limit_opt = true;
     OptimizePA_Incre_with_TimeLimits opt_no_tl(dag_tasks, sp_parameters);
-    opt_no_tl.ReOptimizePeriodic(2);
+    opt_no_tl.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_no_tl = opt_no_tl.CollectResults();
     double no_tl_sp = res_no_tl.sp_opt;
 
@@ -138,14 +138,14 @@ TEST_F(TaskSetForTest_robotics_v18, optimize_wcet) {
     // 1. Run with WCET baseline disabled (default behavior)
     GlobalVariables::use_wcet_execution_time = false;
     OptimizePA_Incre_with_TimeLimits opt_normal(dag_tasks, sp_parameters);
-    opt_normal.ReOptimizePeriodic(2);
+    opt_normal.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_normal = opt_normal.CollectResults();
     double tl_normal = res_normal.id2time_limit[0];
 
     // 2. Run with WCET baseline enabled
     GlobalVariables::use_wcet_execution_time = true;
     OptimizePA_Incre_with_TimeLimits opt_wcet(dag_tasks, sp_parameters);
-    opt_wcet.ReOptimizePeriodic(2);
+    opt_wcet.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_wcet = opt_wcet.CollectResults();
     double tl_wcet = res_wcet.id2time_limit[0];
 
@@ -242,7 +242,7 @@ class TestDDLMissLessTasks : public ::testing::Test {
 TEST_F(TaskSetForTest_robotics_v19, ReOptimizePeriodic) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());
-    opt.ReOptimizePeriodic(2);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
@@ -259,10 +259,10 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks,
                                          sp_parameters);  // high utilization
 
-    // Bootstrap with the 1-arg ReOptimizePeriodic. TSP's full option set is
+    // Bootstrap with ReOptimizePeriodic. TSP's full option set is
     // [400,600,800,1000]; at high utilization SP saturates so all options tie,
     // and the smaller-TL tie-break walks all the way down to 400.
-    opt.ReOptimizePeriodic(2);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_opt = opt.CollectResults();
     EXPECT_EQ(400, res_opt.id2time_limit[0]);
 
@@ -345,7 +345,7 @@ TEST_F(TaskSetForTest_robotics_v19_2, ReOptimizePeriodic) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());
 
-    opt.ReOptimizePeriodic(2);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     EXPECT_TRUE(opt.IfInitialized());
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
@@ -439,9 +439,9 @@ TEST_F(TaskSetForTest_robotics_v19, OptimizeWithOptimizationSpace) {
     // 2. Optimize incrementally starting from warm start (ET pinned at 1000ms)
     OptimizePA_Incre_with_TimeLimits opt_incre(dag_tasks, sp_parameters);
     // Bootstrap the incumbent with a from-scratch call first — the incremental
-    // path requires prev_optimizer_ to be initialized (otherwise the contract
-    // violation in EvaluateTimeLimitConfig_ScratchOrIncre fires).
-    opt_incre.ReOptimizePeriodic(2);
+    // path requires res_opt_ to be initialized (IfInitialized(), otherwise the
+    // contract violation in EvaluateTimeLimitConfig_ScratchOrIncre fires).
+    opt_incre.ReOptimizePeriodic(dag_tasks, 2);
     DAG_Model dag_tasks_warm = dag_tasks;
     dag_tasks_warm.tasks[0].execution_time_dist =
         GetUnitExecutionTimeDist(1000.0);

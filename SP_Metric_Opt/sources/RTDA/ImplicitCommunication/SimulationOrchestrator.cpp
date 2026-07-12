@@ -15,30 +15,36 @@
 namespace SP_OPT_PA {
 
 namespace {
-// True for the INCR_P<n> period-override modes (e.g. INCR_P1, INCR_P10,
-// INCR_P60). ReoptimizationPeriod is overridden at binary startup by
-// RunOrchestrator.cpp's MaybeOverrideReoptPeriod, which parses the <n> suffix.
-// The orchestrator treats any INCR_P<n> exactly as INCR (same incr_optimizer_,
-// same Optimize_w_TL_ScratchOrIncre dispatch); only the period differs.
-// Keeping the mode string end-to-end (rather than normalizing to "INCR") means
-// the output subdir is named INCR_P<n> consistently across ExportResults and
-// RunOrchestrator's exec-time write.
+// True for the INCR_Reopt_X period-override modes (e.g. INCR_Reopt_1,
+// INCR_Reopt_10, INCR_Reopt_60). ReoptimizationPeriod is overridden at binary
+// startup by RunOrchestrator.cpp's MaybeOverrideReoptPeriod, which parses the X.
+// The orchestrator treats any INCR_Reopt_X exactly as INCR (same incr_optimizer_,
+// same Optimize_w_TL_ScratchOrIncre dispatch); only the period differs. X is the
+// reopt period — X=1 reopts every interval (max-reopt), larger X = more
+// incremental. Keeping the mode string end-to-end (rather than normalizing to
+// "INCR") means the output subdir is named INCR_Reopt_X consistently across
+// ExportResults and RunOrchestrator's exec-time write.
 //
-// P1.4 history: an INCR_P<n>_ADOPTED twin variant used to additionally set the
-// ReoptStartFromAdoptedTL flag; P1.4 made the adopted-TL seed the permanent,
+// P2.4: the old INCR_P<n> name is RETIRED. A stale INCR_P<n> config is rejected
+// (HARD ERROR) in MaybeOverrideReoptPeriod and never reaches this function, so
+// the retired name is not aliased here — a stale config falls through dispatch
+// to the RM baseline, not to an INCR schedule.
+//
+// P1.4 history: an INCR_Reopt_X_ADOPTED twin variant used to additionally set
+// the ReoptStartFromAdoptedTL flag; P1.4 made the adopted-TL seed the permanent,
 // unconditional reopt seed and removed the flag, so the _ADOPTED suffix is no
 // longer accepted here (a stale _ADOPTED config fails loudly in
 // MaybeOverrideReoptPeriod rather than dispatching to an empty result).
 bool IsINCRPeriodVariant(const std::string& mode) {
-    const std::string prefix = "INCR_P";
+    const std::string prefix = "INCR_Reopt_";
     if (mode.rfind(prefix, 0) != 0) return false;
-    if (mode.size() == prefix.size()) return false;  // bare "INCR_P" — no digits
+    if (mode.size() == prefix.size()) return false;  // bare "INCR_Reopt_" — no digits
     size_t i = prefix.size();
     while (i < mode.size() && std::isdigit(static_cast<unsigned char>(mode[i]))) {
         i++;
     }
-    if (i == prefix.size()) return false;  // no digits after INCR_P
-    return i == mode.size();  // INCR_P<n> with no trailing suffix
+    if (i == prefix.size()) return false;  // no digits after INCR_Reopt_
+    return i == mode.size();  // INCR_Reopt_X with no trailing suffix
 }
 }  // namespace
 BaseSimulationOrchestrator::BaseSimulationOrchestrator(
@@ -325,12 +331,17 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
         // search against a synthetic RM baseline, NOT against the previous
         // interval's adopted solution. This isolates the value of carrying the
         // incumbent forward.
-        // DO NOT confuse with INCR + ReoptimizationPeriod=1: that reuses the
-        // persistent incr_optimizer_, so prev_optimizer_ carries the prior
+        // DO NOT confuse with INCR_Reopt_1 (bare INCR with ReoptimizationPeriod=1):
+        // that reuses the persistent incr_optimizer_, so res_opt_ carries the prior
         // interval's incumbent and compare-and-keep is measured against the
-        // running best. INCR(period=1) weakly dominates INCR_SCRATCH in SP
-        // (never worse, sometimes strictly better); INCR_SCRATCH is kept only
-        // as the no-memory control.
+        // running best. INCR_Reopt_1 is the no-memory control's *memory-carrying*
+        // counterpart — both reopt every interval; the difference is solely
+        // whether the incumbent persists. Empirically INCR_Reopt_1 ≥ INCR_SCRATCH
+        // on SP (the carried incumbent is the better compare-and-keep baseline AND
+        // the better descent seed), but this is not airtight: the reopt descent is
+        // patience-bounded (OptimizeSingleTaskTimeLimit) and start-point-dependent,
+        // so a memoryless search can occasionally land a different local optimum.
+        // INCR_SCRATCH is kept only as the no-memory control.
         OptimizePA_Incre_with_TimeLimits scratch_opt(dag_tasks, sp_parameters);
         scratch_opt.ReOptimizePeriodic(
             GlobalVariables::Layer_Node_During_Incremental_Optimization);

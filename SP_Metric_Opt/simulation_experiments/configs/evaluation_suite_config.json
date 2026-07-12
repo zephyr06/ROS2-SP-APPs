@@ -1,15 +1,15 @@
 {
-    "_comment": "Project evaluation suite config (P0.4). Drives the north-star integration test: run_end_to_end.sh with this CONFIG_JSON produces the comparison_summary.csv files, then evaluation_suite.py reads them and emits a PASS/FAIL verdict against the six gates in agents/project_evaluation_northstar.md (Q1-Q3 SP-quality, E1 overhead, E2 INCR<=SCRATCH ET, E3 INCR_P<n> period-monotonicity). Scoped to the user's sizing: N=4/6/8 for SP-quality gates + N=10 as the overhead-only probe for E1; Standard sizing (5 tasksets/N x dur=600s x interval=10s, ~30-40 min with the period arms). All eleven schedulers the gates reference are scheduled (union of main+ablation = {BF, INCR, INCR_P1, INCR_P10, INCR_P30, INCR_P60, INCR_SCRATCH, RM, CFS, INCR_NO_TL, INCR_WCET}); the four INCR_P<n> arms are plain INCR with ReoptimizationPeriod overridden to n via the mode-string suffix (parsed in tests/RunOrchestrator.cpp). run_name_prefix='evalsuite' namespaces the run root away from prod/paper runs so the suite never clobbers or is clobbered by them. Use: CONFIG_JSON=simulation_experiments/configs/evaluation_suite_config.json ./scripts/run_evaluation_suite.sh  (or MODE=prod for the full gate run).",
+    "_comment": "Project evaluation suite config (P0.4). Drives the north-star integration test: run_end_to_end.sh with this CONFIG_JSON produces the comparison_summary.csv files, then evaluation_suite.py reads them and emits a PASS/FAIL verdict against the six gates in agents/project_evaluation_northstar.md (Q1-Q3 SP-quality, E1 overhead, E2 INCR<=SCRATCH ET, E3 INCR_Reopt_X period-monotonicity). Scoped to the user's sizing: N=4/6/8 for SP-quality gates + N=10 as the overhead-only probe for E1; Standard sizing (5 tasksets/N x dur=600s x interval=10s, ~30-40 min with the period arms). All twelve schedulers the gates reference are scheduled (union of main+ablation = {BF, INCR, INCR_Reopt_1, INCR_Reopt_5, INCR_Reopt_10, INCR_Reopt_30, INCR_Reopt_60, INCR_SCRATCH, RM, CFS, INCR_NO_TL, INCR_WCET}); the five INCR_Reopt_X arms are plain INCR with ReoptimizationPeriod overridden to X via the mode-string suffix (parsed in tests/RunOrchestrator.cpp). X is the reopt period: X=1 reopts every interval (max reopt), larger X = more incremental. P2.4 renamed the family from the retired INCR_P<n> form (the P<n> knob ran the wrong way for a reader -- P1 read as incremental but was the max-reopt arm); a stale INCR_P<n> config now fails loudly. INCR_Reopt_5 is a NEW arm (the existing family was {1,10,30,60}). run_name_prefix='evalsuite' namespaces the run root away from prod/paper runs so the suite never clobbers or is clobbered by them. Use: CONFIG_JSON=simulation_experiments/configs/evaluation_suite_config.json ./scripts/run_evaluation_suite.sh  (or MODE=prod for the full gate run).",
     "_comment_on_naming": "All keys use full descriptive names, mirroring experiment_config.json. Times are in seconds unless noted. The eval_* keys are read only by evaluation_suite.py (the gate->N mapping); the pipeline ignores them.",
 
     "test_mode": {
-        "_comment": "Fast smoke: 1 taskset, 70s (>= 2x max hyper-period 66s), N={4,8,10} so every gate has data, all eleven schedulers (incl. the four INCR_P<n> period arms E3 checks at every N). Validates that the suite runs end-to-end and produces a verdict before launching the ~30-40-min prod run.",
+        "_comment": "Fast smoke: 1 taskset, 70s (>= 2x max hyper-period 66s), N={4,8,10} so every gate has data, all twelve schedulers (incl. the five INCR_Reopt_X period arms E3 checks at every N). Validates that the suite runs end-to-end and produces a verdict before launching the ~30-40-min prod run.",
         "num_tasks_for_cross_task_comparison": [4, 6],
         "num_tasks_for_single_task_figures": 4,
         "num_tasksets_to_generate": 1,
         "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
-        "main_scheduler_list": ["INCR", "BF", "RM", "CFS", "INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"],
+        "main_scheduler_list": ["INCR", "BF", "RM", "CFS", "INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"],
         "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"],
         "interval_sweep_seconds_list": [10],
         "parallel_worker_processes": 12,
@@ -19,16 +19,16 @@
         "number_of_gmm_trace_instances_per_path": 1,
         "eval_quality_task_counts": [4, 8],
         "eval_overhead_task_count": 10,
-        "eval_period_arms": ["INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"]
+        "eval_period_arms": ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
     "prod_mode": {
-        "_comment": "Full gate run: 5 tasksets per task count, N={4,6,8,10}, 600s @ interval 10s (~60 scheduling triggers per run). base_random_seed=1000 so tasksets are deterministic and comparable across schedulers. N=4/6/8 are the SP-quality gate points (Q1 small-N=4, Q2/Q3 large-N=8); N=10 is the E1 overhead probe (and also covered by E2); the four INCR_P<n> arms run at every N for the E3 period-monotonicity gate (currently FAILs -- the open P1.1 residual; suite exits red by design until P1.1 resolves). parallel_worker_processes=12 (one scheduler per worker within a taskset; schedulers are independent).",
+        "_comment": "Full gate run: 5 tasksets per task count, N={4,6,8,10}, 600s @ interval 10s (~60 scheduling triggers per run). base_random_seed=1000 so tasksets are deterministic and comparable across schedulers. N=4/6/8 are the SP-quality gate points (Q1 small-N=4, Q2/Q3 large-N=8); N=10 is the E1 overhead probe (and also covered by E2); the five INCR_Reopt_X arms run at every N for the E3 period-monotonicity gate (currently FAILs -- the open P1.1 residual; suite exits red by design until P1.1 resolves). parallel_worker_processes=12 (one scheduler per worker within a taskset; schedulers are independent).",
         "num_tasks_for_cross_task_comparison": [4, 6, 8, 10],
         "num_tasks_for_single_task_figures": 8,
         "num_tasksets_to_generate": 5,
         "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
-        "main_scheduler_list": ["INCR", "BF", "RM", "CFS", "INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"],
+        "main_scheduler_list": ["INCR", "BF", "RM", "CFS", "INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"],
         "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET", "INCR_SCRATCH"],
         "interval_sweep_seconds_list": [10],
         "parallel_worker_processes": 12,
@@ -38,7 +38,7 @@
         "number_of_gmm_trace_instances_per_path": 1,
         "eval_quality_task_counts": [4, 6, 8],
         "eval_overhead_task_count": 10,
-        "eval_period_arms": ["INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"]
+        "eval_period_arms": ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
 
     "plotting": {

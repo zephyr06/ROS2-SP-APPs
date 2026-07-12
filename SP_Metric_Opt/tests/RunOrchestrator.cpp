@@ -8,62 +8,99 @@
 
 using namespace SP_OPT_PA;
 
-// Parse an INCR_P<n> mode string and override ReoptimizationPeriod with n.
+// Parse an INCR_Reopt_X mode string and override ReoptimizationPeriod with X.
 // Period is otherwise loaded from parameters.yaml; the orchestrator dispatches
-// INCR_P<n> exactly as INCR (IsINCRPeriodVariant). Encoding the period in the
-// mode string lets the A/B config sweep through the existing scheduler-name
+// INCR_Reopt_X exactly as INCR (IsINCRPeriodVariant). Encoding the period in
+// the mode string lets the A/B config sweep through the existing scheduler-name
 // plumbing with no YAML mutation (which would race compare_optimizers.py's
-// parallel workers).
+// parallel workers). X is the reoptimization period: every X-th interval runs
+// a from-scratch descent (ReOptimizePeriodic), the rest run warm-started
+// incremental (OptimizeIncre_w_TL). X=1 = reopt every interval (the max-reopt
+// extreme); larger X = more incremental, less reopt. The name surfaces what the
+// period counts, unlike the retired INCR_P<n> form where P1 read as
+// "incremental, period 1" but was the max-reopt arm.
 //
-// P1.4 history: an INCR_P<n>_ADOPTED suffix used to additionally set the
+// P2.4: the old INCR_P<n> name is RETIRED. A stale INCR_P<n> config is a HARD
+// ERROR (mirror the P1.4 _ADOPTED pattern), NOT a silent alias — the P1.3
+// regression was exactly a stale config silently dispatching to an empty
+// result. The hard error prints to stderr and the mode falls through dispatch
+// to the RM baseline (degenerate), so the stale name is loud, not silent.
+//
+// P1.4 history: an INCR_Reopt_X_ADOPTED suffix used to additionally set the
 // ReoptStartFromAdoptedTL flag so the reopt descent seeded from the carried
 // adopted TL (the algorithmic seed) instead of the Gaussian-mean TL. P1.4 made
 // that seed the permanent, unconditional policy and REMOVED the flag (and the
-// _ADOPTED arms). Any trailing suffix after the digits (e.g. a stale
-// _ADOPTED arm in a config) is now a HARD ERROR rather than a silent
-// fall-through — the P1.3 regression was exactly a stale config silently
-// dispatching to an empty result.
-// Returns true if mode is an INCR_P<n> variant (regardless of whether the
-// override succeeded); false otherwise.
+// _ADOPTED arms). Any trailing suffix after the digits (e.g. a stale _ADOPTED
+// arm in a config) is now a HARD ERROR rather than a silent fall-through.
+// Returns true if mode is an INCR_Reopt_X variant OR a retired INCR_P<n> form
+// (either way "claimed" so it falls through to the RM baseline, not silently
+// aliased); false otherwise.
 static bool MaybeOverrideReoptPeriod(const std::string& mode) {
-    const std::string prefix = "INCR_P";
-    if (mode.rfind(prefix, 0) != 0 || mode.size() <= prefix.size()) {
-        return false;  // not an INCR_P* variant (or bare "INCR_P")
-    }
-    size_t i = prefix.size();
-    while (i < mode.size() && std::isdigit(static_cast<unsigned char>(mode[i]))) {
-        i++;
-    }
-    if (i == prefix.size()) {
-        return true;  // INCR_P with no digits — reject silently
-    }
-    const std::string digits = mode.substr(prefix.size(), i - prefix.size());
-    int period = 0;
-    try {
-        period = std::stoi(digits);
-    } catch (const std::exception& e) {
-        std::cerr << "Error: invalid INCR_P<n> suffix '" << digits
-                  << "' in mode '" << mode << "': " << e.what() << "\n";
+    const std::string prefix = "INCR_Reopt_";
+    if (mode.rfind(prefix, 0) == 0 && mode.size() > prefix.size()) {
+        size_t i = prefix.size();
+        while (i < mode.size() && std::isdigit(static_cast<unsigned char>(mode[i]))) {
+            i++;
+        }
+        if (i == prefix.size()) {
+            return true;  // INCR_Reopt_ with no digits — reject silently
+        }
+        const std::string digits = mode.substr(prefix.size(), i - prefix.size());
+        int period = 0;
+        try {
+            period = std::stoi(digits);
+        } catch (const std::exception& e) {
+            std::cerr << "Error: invalid INCR_Reopt_X suffix '" << digits
+                      << "' in mode '" << mode << "': " << e.what() << "\n";
+            return true;
+        }
+        if (period < 1) {
+            std::cerr << "Error: INCR_Reopt_X period must be >= 1, got " << period
+                      << " (mode=" << mode << ")\n";
+            return true;
+        }
+        if (i != mode.size()) {
+            // P1.4: any trailing suffix (e.g. the removed _ADOPTED) is a hard
+            // error, not a silent alias. Fail loudly so a stale config can't
+            // dispatch to an empty ResourceOptResult (the P1.3 trap).
+            std::cerr << "Error: unrecognized INCR_Reopt_X suffix '"
+                      << mode.substr(i) << "' in mode '" << mode
+                      << "'. P1.4 removed the _ADOPTED arms (the adopted-TL seed "
+                      << "is now the unconditional default). Use plain INCR_Reopt_"
+                      << period << ".\n";
+            return true;
+        }
+        GlobalVariables::ReoptimizationPeriod = period;
         return true;
     }
-    if (period < 1) {
-        std::cerr << "Error: INCR_P<n> period must be >= 1, got " << period
-                  << " (mode=" << mode << ")\n";
-        return true;
+
+    // P2.4: the retired INCR_P<n> name is a HARD ERROR, not a silent alias.
+    const std::string old_prefix = "INCR_P";
+    if (mode.rfind(old_prefix, 0) == 0 && mode.size() > old_prefix.size()) {
+        size_t i = old_prefix.size();
+        while (i < mode.size() && std::isdigit(static_cast<unsigned char>(mode[i]))) {
+            i++;
+        }
+        if (i > old_prefix.size()) {
+            // Stale INCR_P<n> (possibly with a trailing suffix) — tell the user
+            // the new name. Covers INCR_P1, INCR_P10, and the doubly-stale
+            // INCR_P<n>_ADOPTED (both the P2.4 rename and P1.4's suffix
+            // removal). The period is NOT overridden, so the run falls through
+            // dispatch to the RM baseline (degenerate) — loud, not silent.
+            std::cerr << "Error: mode '" << mode
+                      << "' uses the RETIRED INCR_P<n> name (P2.4 renamed it)."
+                      << " The P<n> knob ran the wrong way for a reader (P1 ="
+                      << " reopt every interval, the max-reopt extreme, NOT"
+                      << " incremental). Use INCR_Reopt_<n> instead (same period,"
+                      << " same dispatch). This is a HARD ERROR, not a silent"
+                      << " alias — the run will fall through to the RM baseline.\n";
+            return true;
+        }
+        // INCR_P followed by a non-digit (e.g. the future INCR_PURE) is not a
+        // retired period-variant rename; leave it for its own dispatch branch.
     }
-    if (i != mode.size()) {
-        // P1.4: any trailing suffix (e.g. the removed _ADOPTED) is a hard
-        // error, not a silent alias. Fail loudly so a stale config can't
-        // dispatch to an empty ResourceOptResult (the P1.3 trap).
-        std::cerr << "Error: unrecognized INCR_P<n> suffix '"
-                  << mode.substr(i) << "' in mode '" << mode
-                  << "'. P1.4 removed the _ADOPTED arms (the adopted-TL seed "
-                  << "is now the unconditional default). Use plain INCR_P"
-                  << period << ".\n";
-        return true;
-    }
-    GlobalVariables::ReoptimizationPeriod = period;
-    return true;
+
+    return false;
 }
 
 int main(int argc, char** argv) {
@@ -73,8 +110,11 @@ int main(int argc, char** argv) {
                   << " [export_level] [sample_interval_sec]\n";
         std::cerr << "Modes: RM, BF, INCR, INCR_NO_TL, INCR_WCET, INCR_SCRATCH, "
                   << "RM_FAST, RM_SLOW\n";
-        std::cerr << "  INCR_P<n>: INCR with ReoptimizationPeriod overridden to n "
-                  << "(e.g. INCR_P1, INCR_P10, INCR_P30, INCR_P60)\n";
+        std::cerr << "  INCR_Reopt_X: INCR with ReoptimizationPeriod overridden to X "
+                  << "(X = reopt period; X=1 reopts every interval, larger X = more"
+                  << " incremental. e.g. INCR_Reopt_1, INCR_Reopt_5, INCR_Reopt_10,"
+                  << " INCR_Reopt_30, INCR_Reopt_60). Bare INCR uses the YAML period"
+                  << " (default 10). The retired INCR_P<n> name is a HARD ERROR.\n";
         std::cerr << "  export_level: 0=sp only, 1=+task miss rate, "
                   << "2=+task aggregate, 3=full traces (def="
                   << GlobalVariables::EXPORT_DETAIL_LEVEL << ")\n";
@@ -96,7 +136,7 @@ int main(int argc, char** argv) {
         GlobalVariables::METRIC_SAMPLE_INTERVAL_SECONDS = std::stoi(argv[6]);
     }
 
-    // INCR_P<n> period override. Done after the optional CLI overrides so the
+    // INCR_Reopt_X period override. Done after the optional CLI overrides so the
     // period is set exactly once and deterministically from the mode string.
     MaybeOverrideReoptPeriod(mode);
 

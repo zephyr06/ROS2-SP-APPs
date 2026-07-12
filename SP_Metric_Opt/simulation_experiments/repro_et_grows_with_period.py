@@ -4,8 +4,9 @@
 Context
 -------
 In the P25 period A/B (`configs/p25_period_ab_config.json`), the prod run observed
-that ``INCR_P10`` / ``INCR_P30`` / ``INCR_P60`` had *higher* per-activation
-scheduler execution time than ``INCR_P1`` in several tasksets -- even though a
+that ``INCR_Reopt_10`` / ``INCR_Reopt_30`` / ``INCR_Reopt_60`` had *higher*
+per-activation scheduler execution time than ``INCR_Reopt_1`` in several tasksets
+-- even though a
 larger period means *fewer* reoptimization steps (the expensive wide-radius
 search) and *more* cheap incremental steps.  Intuitively ET should *shrink* as
 the period grows; the data showed the opposite.
@@ -65,7 +66,8 @@ PROD_RUN_DIR = os.path.join(
     "simulation_experiments", "optimizer_comparison", "runs",
     "p25periodAB_run_prod_dur300_interval10_seed1000_tasks4x6x8",
 )
-ARMS = ["BF", "INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60", "INCR_SCRATCH"]
+ARMS = ["BF", "INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
+        "INCR_Reopt_30", "INCR_Reopt_60", "INCR_SCRATCH"]
 NUM_INTERVALS_EXPECTED = 30  # 300s / 10s trigger interval
 
 
@@ -121,7 +123,8 @@ def main():
                          "OS-scheduling noise).")
     ap.add_argument("--arms", nargs="+", default=None,
                     help="Subset of arms to run (default: all). e.g. "
-                         "--arms INCR_P1 INCR_P10 INCR_P30 INCR_P60 INCR_SCRATCH "
+                         "--arms INCR_Reopt_1 INCR_Reopt_5 INCR_Reopt_10 "
+                         "INCR_Reopt_30 INCR_Reopt_60 INCR_SCRATCH "
                          "to skip BF (which is a ceiling reference, not relevant "
                          "to INCR-vs-REOPT ET profiling, and scales badly with N).")
     ap.add_argument("--bin_dir", default="release",

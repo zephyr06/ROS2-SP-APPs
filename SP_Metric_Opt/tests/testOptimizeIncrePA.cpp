@@ -309,7 +309,7 @@ TEST(OptimizePA_Incre_with_TimeLimits_TDD, ComplexityLinear_3N) {
     SP_Parameters sp_params(dag);
 
     OptimizePA_Incre_with_TimeLimits optimizer(dag, sp_params);
-    optimizer.ReOptimizePeriodic(2);
+    optimizer.ReOptimizePeriodic(dag, 2);
 
     int evaluated_count = optimizer.eval_count_;
 

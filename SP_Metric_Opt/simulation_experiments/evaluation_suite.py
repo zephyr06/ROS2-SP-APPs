@@ -18,9 +18,10 @@ North-star gates
 - **Q3** INCR & SCRATCH >= every baseline                      (N = largest quality N)
 - **E1** overhead <= 5% (ideal <= 1%) at the overhead probe N  (N = overhead N, >= 10)
 - **E2** INCR scheduler ET <= SCRATCH ET at every N
-- **E3** INCR_P<n> period-monotonicity: per-activation ET      (every N)
+- **E3** INCR_Reopt_X period-monotonicity: per-activation ET   (every N)
   non-increasing as the reopt period grows, i.e.
-  ET(INCR_P1) >= ET(INCR_P10) >= ET(INCR_P30) >= ET(INCR_P60).
+  ET(INCR_Reopt_1) >= ET(INCR_Reopt_5) >= ET(INCR_Reopt_10) >=
+  ET(INCR_Reopt_30) >= ET(INCR_Reopt_60).
   Investigation gate for the P1.1 residual; currently FAILs by design.
 
 Normalized SP = ``raw_SP / ideal_SP`` (the P12 fix; ``ideal_SP`` from
@@ -74,8 +75,12 @@ Q3_BASELINES = ["RM", "CFS", "INCR_NO_TL", "INCR_WCET"]
 
 # Default ordered period arms for gate E3 (the P1.1 A/B set). Bare ``INCR`` is
 # NOT a member -- its default period isn't a sweep point. The config may
-# override this via the eval-only key ``eval_period_arms``.
-DEFAULT_PERIOD_ARMS = ["INCR_P1", "INCR_P10", "INCR_P30", "INCR_P60"]
+# override this via the eval-only key ``eval_period_arms``. P2.4 renamed the
+# family from the retired INCR_P<n> form; X is the reopt period, ordered small
+# (max reopt) to large (min reopt) so ET is expected non-increasing. X=5 is a
+# NEW arm (the pre-P2.4 family was {1,10,30,60}).
+DEFAULT_PERIOD_ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
+                       "INCR_Reopt_30", "INCR_Reopt_60"]
 
 # North-star thresholds (from agents/project_evaluation_northstar.md).
 Q1_MAX_GAP = 0.30      # small-N BF-vs-INCR/SCRATCH gap red-flag line
@@ -307,7 +312,7 @@ def evaluate_e2(lookup, ns=None):
 
 
 def evaluate_e3(lookup, ns=None, period_arms=None):
-    """E3: INCR_P<n> period-monotonicity -- per-activation ET non-increasing.
+    """E3: INCR_Reopt_X period-monotonicity -- per-activation ET non-increasing.
 
     For each N, the ordered period arms' ``mean_sched_time`` must be
     non-increasing (each step within the relative tolerance): the cheapest arm
@@ -377,7 +382,7 @@ def evaluate_all_gates(lookup, quality_ns=None, large_n=None, overhead_n=None,
     overhead_n : int | None
         N for E1 (defaults to the max N in the lookup, the overhead probe).
     period_arms : list[str] | None
-        Ordered INCR_P<n> arms for E3 (defaults to :data:`DEFAULT_PERIOD_ARMS`).
+        Ordered INCR_Reopt_X arms for E3 (defaults to :data:`DEFAULT_PERIOD_ARMS`).
     """
     if quality_ns:
         ns_present = quality_ns

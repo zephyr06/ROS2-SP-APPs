@@ -60,7 +60,7 @@ int main(int argc, char *argv[]) {
 
     // read a DAG and optimize it for the first time
     PriorityVec pa_opt = opt.ReOptimizePeriodic(
-        GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        dag_tasks, GlobalVariables::Layer_Node_During_Incremental_Optimization);
 
     TimerType finish_time = CurrentTimeInProfiler;
     // PrintPriorityVec(dag_tasks.tasks, pa_opt);

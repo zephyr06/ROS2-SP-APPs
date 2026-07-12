@@ -64,7 +64,7 @@ class TaskSetForTest_robotics_v18 : public ::testing::Test {
 
 TEST_F(TaskSetForTest_robotics_v18, optimize) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.ReOptimizePeriodic(2);
+    opt.ReOptimizePeriodic(dag_tasks, 2);
     ResourceOptResult res_opt = opt.CollectResults();
     PrintPriorityVec(dag_tasks.tasks, res_opt.priority_vec);
 

@@ -244,10 +244,10 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
 
     // Debug seam (debugMode==1, inert in production): emit the changed-task
     // count (ndiff) for this incremental call. Originally added for the P1.1
-    // INCR_P10 probe that confirmed the descent-start-TL fix collapses the
-    // perf-pair false positives (ndiff 5 -> 0). Kept as a reusable invariant
-    // check — re-run the probe if the FindTaskWithDifferentEt baseline logic
-    // is touched.
+    // INCR_Reopt_10 probe (then named INCR_P10) that confirmed the descent-
+    // start-TL fix collapses the perf-pair false positives (ndiff 5 -> 0).
+    // Kept as a reusable invariant check — re-run the probe if the
+    // FindTaskWithDifferentEt baseline logic is touched.
     if (GlobalVariables::debugMode == 1) {
         static int probe_call_idx = 0;
         std::cerr << "[INCR-NDIFF-PROBE] call=" << probe_call_idx
