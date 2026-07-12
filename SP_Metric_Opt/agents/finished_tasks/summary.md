@@ -7,6 +7,41 @@
 
 ---
 
+## P2.2 — Doc & memory hygiene — CLOSED 2026-07-12 as superseded / moot (NOT executed)
+
+- **Disposition: closed, not worked.** Every substantive item was overtaken by
+  later resolutions before this task was picked up; the task-as-specified is
+  obsolete. No code, agent doc, or memory file was edited — only the closure was
+  recorded.
+- **(a) Memory `interval-sweep-stale-flags-bug`** — premise stale in the
+  *opposite* direction. The memory claims `compare_optimizers.py` **removed**
+  `--on_taskset_config_change` / `--run_root` (sweep-stage crash, exit 2), but
+  current code **accepts** both (`compare_optimizers.py:303` `--run_root`,
+  `:334` `--on_taskset_config_change`). The described flag-removal never
+  persisted; the crash doesn't reproduce. The task's "mark RESOLVED-cite-the-fix"
+  edit was therefore the wrong action. **No algorithm-performance impact** — even
+  live this would be a sweep-stage CLI plumbing crash; the algorithm runs in the
+  simulate stage (SP metric / optimizer computation unaffected), and the memory's
+  own `--steps simulate aggregate` workaround yields correct optimize/aggregate
+  output minus the period-sensitivity data. `run_end_to_end.sh` always runs
+  simulate→sweep→aggregate (P22) and the P25 A/B config uses
+  `interval_sweep_seconds_list=[10]` (single point → sweep no-op) — e2e doesn't
+  crash. The memory file itself was left untouched (out of scope here); flagged
+  for a separate one-line memory retirement.
+- **(b) §5 corrections** (`investigation_problems_encountered.md` →
+  `debug_runtime0704_incr.md` §10/§11 + `p25-incr-et-grows-with-period` memory) —
+  predate the P1.1 resolution. Memory `p25-ndiff-diff-semantics` (2026-07-07)
+  re-derived the "2-vs-8 discrepancy" as false-positives (NOT UNRESOLVED) and
+  concluded "Fix C & Fix D both wrong levers"; P0.5 (2026-07-10,
+  `a8dba07f`→`7fa2e9d2`) resolved the gate (both diff sides carry adopted TL;
+  runtime `ndiff` 5→0). Both §5 asks moot.
+- **(c) `issues.md` #9/#3/#6** — `issues.md` was deleted in commit `66c96c14`
+  (2026-07-06, "remove issues.md"). Resolved-by-deletion; no file to mark.
+- **(d) `trial_and_error`** — already DONE (committed @ `88af2c54` + `fa0b857f`);
+  P0.1 has since landed. Self-resolved.
+- *Detail: [`P2_2_doc_memory_hygiene/`](P2_2_doc_memory_hygiene/) ("Closure
+  disposition" in `goal.md`); rationale traces in the per-item bullets above.*
+
 ## P1.7 — Simulator ignores `processorId` partitioning (single run-queue overload) — RESOLVED 2026-07-12
 
 - **Origin:** the runtime simulator `FixedTaskPrioritySchedulingOrchestrator::SimulateInterval`

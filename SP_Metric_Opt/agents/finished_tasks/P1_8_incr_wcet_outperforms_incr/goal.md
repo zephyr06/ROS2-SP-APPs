@@ -1,3 +1,5 @@
+User comment: this is marked as fixed, as N=6 shows expected results
+
 # P1.8 — INCR_WCET outperforms INCR in the eval-suite run (theoretically implausible)
 
 **Priority:** P1 (investigation — a Q3-gate-relevant anomaly; user: "this is
