@@ -18,6 +18,16 @@ P1 is still the cheapest INCR arm. The residual gap is the per-variation
 **Per user (2026-07-06):** do NOT re-frame the claim or implement Fix C yet —
 **investigate first**. This task is investigation, not implementation.
 
+**Update (2026-07-07):** the gate is RESOLVED and the yardstick corrected (YAML
+Gaussian ≠ ground truth for TL-optimizable tasks — see `dev_log.md` YARDSTICK
+CORRECTION section). User approved implementing the fix the correction
+identifies: start the incremental descent from the carried adopted TL
+(`ReconstructTimeLimitVecFromResOpt()`) instead of the Gaussian-mean TL
+(`InitializeTimeLimitsFromETConfig()`), at `OptimizeIncre_w_TL:373`, with an
+edge-case guard for tasks that lost their perf pair. This lifts the 2026-07-06
+hold FOR THIS LEVER ONLY. Fix C and Fix D remain out of scope (wrong levers);
+equal-radii A/B dropped.
+
 ## The gate: reconcile the 2-vs-8 discrepancy
 
 Until this is resolved, Fix C and Fix D are both poorly scoped.
