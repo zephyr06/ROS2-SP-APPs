@@ -17,7 +17,7 @@ sys.path.append(os.getcwd())
 from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
 
 
-MODES = ["INCR", "BF"]
+MODES = ["INCR_Reopt_10", "BF"]
 
 def parse_sp_values(output_dir, mode):
     """Parse interval_sp_metrics.txt for SP values."""

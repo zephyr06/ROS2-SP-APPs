@@ -30,6 +30,15 @@ silently PASS).
 - **Q3** large N: INCR >= every baseline.
 - **E1** overhead <= 5% (ideal <= 1%) at every conducted N (the configured
   overhead N is the headline probe).
+
+The incremental optimizer the paper advances is exposed as the
+``INCR_Reopt_10`` arm (reopt period 10 -- the same scheduler the bare ``INCR``
+arm used to name; see ``tests/RunOrchestrator.cpp``). The bare ``INCR`` arm was
+removed from every config's scheduler list as a redundant duplicate of
+``INCR_Reopt_10`` (same dispatch path via ``IsINCRPeriodVariant``, same
+``ReoptimizationPeriod``). All gates that previously read ``INCR`` as their
+subject now read ``INCR_Reopt_10``: Q1 (BF-vs-INCR gap), Q2 (INCR>=BF), Q3
+(INCR>=baselines), and E1 (INCR overhead).
 - **E3** INCR_Reopt_X period-monotonicity: mean SP non-increasing as the reopt
   period grows, i.e.
   SP(INCR_Reopt_1) >= SP(INCR_Reopt_5) >= SP(INCR_Reopt_10) >=
@@ -84,22 +93,27 @@ from simulation_experiments.experiment_config_loader import (  # noqa: E402
     load_experiment_config,
 )
 
-# Scheduler naming. ``INCR`` is the incremental optimizer the paper advances;
-# ``BF`` is the brute-force ceiling. (The ``INCR_SCRATCH`` ablation arm was
-# removed in P2.5 -- see agents/active_tasks/P2_5_incr_scratch_removal/.)
-INCR = "INCR"
+# Scheduler naming. ``INCR`` names the incremental optimizer the paper advances
+# and is the gate subject for Q1/Q2/Q3/E1. The canonical arm exposing it is
+# ``INCR_Reopt_10`` (reopt period 10) -- the bare ``INCR`` arm was a redundant
+# duplicate of ``INCR_Reopt_10`` (same dispatch path, same
+# ``ReoptimizationPeriod``) and was dropped from every config's scheduler list,
+# so the gates read the one arm that is actually run. ``BF`` is the brute-force
+# ceiling. (The ``INCR_SCRATCH`` ablation arm was removed in P2.5 -- see
+# agents/active_tasks/P2_5_incr_scratch_removal/.)
+INCR = "INCR_Reopt_10"
 BF = "BF"
 # Baselines that INCR must beat for gate Q3 (the ablation group minus INCR
 # itself, plus the two non-optimizer schedulers).
 Q3_BASELINES = ["RM", "CFS", "INCR_NO_TL", "INCR_WCET"]
 
-# Default ordered period arms for gate E3 (the P1.1 A/B set). Bare ``INCR`` is
-# NOT a member -- its default period isn't a sweep point. The config may
-# override this via the eval-only key ``eval_period_arms``. P2.4 renamed the
-# family from the retired INCR_P<n> form; X is the reopt period, ordered small
-# (max reopt) to large (min reopt) so SP is expected non-increasing along the
-# list (smaller period = fresher TL = higher SP). X=5 is a NEW arm (the
-# pre-P2.4 family was {1,10,30,60}).
+# Default ordered period arms for gate E3 (the P1.1 A/B set). ``INCR_Reopt_10``
+# (the canonical incremental arm the Q1/Q2/Q3/E1 gates read) IS the period=10
+# member of this sweep. The config may override this via the eval-only key
+# ``eval_period_arms``. P2.4 renamed the family from the retired INCR_P<n> form;
+# X is the reopt period, ordered small (max reopt) to large (min reopt) so SP is
+# expected non-increasing along the list (smaller period = fresher TL = higher
+# SP). X=5 is a NEW arm (the pre-P2.4 family was {1,10,30,60}).
 DEFAULT_PERIOD_ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
                        "INCR_Reopt_30", "INCR_Reopt_60"]
 
@@ -427,8 +441,9 @@ def evaluate_e3(lookup, ns=None, period_arms=None):
 
     For each N, the ordered period arms' ``mean_sp_norm`` must be
     non-increasing (each step within the relative tolerance): the highest-SP
-    arm is the smallest period (freshest TL configs). Bare ``INCR`` is not a
-    member. (Previously read ``mean_sched_time``; that metric was a noisy
+    arm is the smallest period (freshest TL configs). The canonical incremental
+    arm ``INCR_Reopt_10`` (the Q1/Q2/Q3/E1 subject) is the period=10 member of
+    this sweep. (Previously read ``mean_sched_time``; that metric was a noisy
     whole-run wall-clock average, not the per-activation ET the gate intended
     -- see module docstring.)
     """

@@ -266,7 +266,7 @@ def main():
     )
     parser.add_argument(
         "-s", "--schedulers", nargs="+",
-        default=["INCR", "BF", "RM_FAST", "RM_SLOW"],
+        default=["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW"],
         help="List of schedulers to run"
     )
     parser.add_argument(

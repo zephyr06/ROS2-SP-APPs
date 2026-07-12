@@ -67,9 +67,14 @@ class TestCompareOptimizers(unittest.TestCase):
         self.assertEqual(path, "/base/tasks6_dur300_interval10_seed42")
 
     def test_all_schedulers_list(self):
-        """Ensure the default scheduler list includes the expected modes."""
+        """Ensure the default scheduler list includes the expected modes.
+
+        The canonical incremental arm is ``INCR_Reopt_10`` (reopt period 10) --
+        the bare ``INCR`` arm was a redundant duplicate of it and was dropped
+        from the default list, so the gates read the one arm actually run.
+        """
         expected = {
-            "INCR", "BF",
+            "INCR_Reopt_10", "BF",
             "INCR_NO_TL", "INCR_WCET",
             "RM", "RM_FAST", "RM_SLOW",
             "CFS",

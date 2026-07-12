@@ -8,6 +8,13 @@ P2.5 removed the ``INCR_SCRATCH`` ablation arm + the E2 gate (its only subject
 pair was INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone, and E2 is gone
 (the north-star dropped 6 gates -> 5).
 
+The gate subject ``INCR`` (the ``evaluation_suite.INCR`` constant) is the
+``INCR_Reopt_10`` arm -- the bare ``INCR`` arm was a redundant duplicate of
+``INCR_Reopt_10`` (same dispatch path, same ``ReoptimizationPeriod``) and was
+dropped from every config's scheduler list, so the fixtures below key the
+incremental arm under ``INCR_Reopt_10`` (the one arm actually run). The gate
+detail strings still print the conceptual label "INCR".
+
 These tests mock the filesystem (temporary directories + synthetic CSV files +
 a fake ``taskset_characteristics_interval_0.yaml`` so the SP upper bound is a
 known constant) to verify the gate logic and the end-to-end report writer
@@ -37,8 +44,8 @@ import simulation_experiments.aggregate_across_tasks as agg
 # Fixtures
 # ---------------------------------------------------------------------------
 
-SCHEDULERS_MAIN = ["INCR", "BF", "RM", "CFS"]
-SCHEDULERS_ABLATION = ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"]
+SCHEDULERS_MAIN = ["INCR_Reopt_10", "BF", "RM", "CFS"]
+SCHEDULERS_ABLATION = ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET"]
 
 
 def _write_summary_csv(dir_path, rows):
@@ -170,19 +177,19 @@ class TestBuildLookup(unittest.TestCase):
         temp_base = tempfile.mkdtemp()
         try:
             cfg = _eval_cfg(temp_base, [4, 8])
-            sp = {"INCR": {4: 0.9, 8: 0.8}, "BF": {4: 0.95, 8: 0.6}}
-            et = {"INCR": {4: 0.05, 8: 0.08}, "BF": {4: 0.2, 8: 2.0}}
+            sp = {"INCR_Reopt_10": {4: 0.9, 8: 0.8}, "BF": {4: 0.95, 8: 0.6}}
+            et = {"INCR_Reopt_10": {4: 0.05, 8: 0.08}, "BF": {4: 0.2, 8: 2.0}}
             _build_synthetic_run(temp_base, cfg, sp, et)
 
             lookup = ev.build_metric_lookup(cfg, output_parent=temp_base)
             # Ceiling is 1.0, so normalized == raw.
-            self.assertAlmostEqual(lookup[(4, "INCR")]["mean_sp_norm"], 0.9)
+            self.assertAlmostEqual(lookup[(4, "INCR_Reopt_10")]["mean_sp_norm"], 0.9)
             self.assertAlmostEqual(lookup[(8, "BF")]["mean_sp_norm"], 0.6)
             # Overhead = mean_sched_time / interval (interval=10).
-            self.assertAlmostEqual(lookup[(4, "INCR")]["overhead"], 0.005)
+            self.assertAlmostEqual(lookup[(4, "INCR_Reopt_10")]["overhead"], 0.005)
             self.assertAlmostEqual(lookup[(8, "BF")]["overhead"], 0.2)
             # Raw sched time is carried too.
-            self.assertAlmostEqual(lookup[(8, "INCR")]["mean_sched_time"], 0.08)
+            self.assertAlmostEqual(lookup[(8, "INCR_Reopt_10")]["mean_sched_time"], 0.08)
         finally:
             shutil.rmtree(temp_base)
 
@@ -200,19 +207,19 @@ class TestBuildLookup(unittest.TestCase):
         temp_base = tempfile.mkdtemp()
         try:
             cfg = _eval_cfg(temp_base, [4], dur=600, seed=1000)
-            sp = {"INCR": {4: 0.9}}
-            et = {"INCR": {4: 0.05}}
+            sp = {"INCR_Reopt_10": {4: 0.9}}
+            et = {"INCR_Reopt_10": {4: 0.05}}
             run_root = _build_synthetic_run(temp_base, cfg, sp, et)
             # Stale dir: same N, different dur, also under sim/.
             stale = os.path.join(run_root, "sim", "tasks4_dur300_interval10_seed1000")
             _write_summary_csv(stale, [
-                {"scheduler": "INCR", "mean_sp": 0.10, "mean_sched_time": 5.0},
+                {"scheduler": "INCR_Reopt_10", "mean_sp": 0.10, "mean_sched_time": 5.0},
             ])
             _write_upper_bound_yaml(stale, 4, weight_per_task=0.25)
 
             lookup = ev.build_metric_lookup(cfg, output_parent=temp_base)
-            # Only the matching run's INCR value (0.9), not the stale 0.10.
-            self.assertAlmostEqual(lookup[(4, "INCR")]["mean_sp_norm"], 0.9)
+            # Only the matching run's INCR_Reopt_10 value (0.9), not the stale 0.10.
+            self.assertAlmostEqual(lookup[(4, "INCR_Reopt_10")]["mean_sp_norm"], 0.9)
         finally:
             shutil.rmtree(temp_base)
 
@@ -228,7 +235,7 @@ class TestGateQ1(unittest.TestCase):
         # BF=0.90, INCR=0.80 -> gap = 11.1% -> PASS
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90},
-            (4, "INCR"): {"mean_sp_norm": 0.80},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
         }
         verdict = ev.evaluate_q1(lookup)
         self.assertEqual(verdict["status"], "PASS")
@@ -238,14 +245,14 @@ class TestGateQ1(unittest.TestCase):
         # BF=0.90, INCR=0.50 -> gap = 44.4% -> FAIL
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90},
-            (4, "INCR"): {"mean_sp_norm": 0.50},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.50},
         }
         verdict = ev.evaluate_q1(lookup)
         self.assertEqual(verdict["status"], "FAIL")
 
     def test_fail_missing_bf(self):
         """No BF at N=4 -> cannot evaluate -> FAIL with a clear reason."""
-        lookup = {(4, "INCR"): {"mean_sp_norm": 0.80}}
+        lookup = {(4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80}}
         verdict = ev.evaluate_q1(lookup)
         self.assertEqual(verdict["status"], "FAIL")
         self.assertIn("BF", verdict["detail"])
@@ -261,7 +268,7 @@ class TestGateQ2(unittest.TestCase):
     def test_pass(self):
         lookup = {
             (8, "BF"): {"mean_sp_norm": 0.55},
-            (8, "INCR"): {"mean_sp_norm": 0.60},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.60},
         }
         verdict = ev.evaluate_q2(lookup, large_n=8)
         self.assertEqual(verdict["status"], "PASS")
@@ -269,7 +276,7 @@ class TestGateQ2(unittest.TestCase):
     def test_fail_incr_below_bf(self):
         lookup = {
             (8, "BF"): {"mean_sp_norm": 0.60},
-            (8, "INCR"): {"mean_sp_norm": 0.55},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.55},
         }
         verdict = ev.evaluate_q2(lookup, large_n=8)
         self.assertEqual(verdict["status"], "FAIL")
@@ -285,7 +292,7 @@ class TestGateQ3(unittest.TestCase):
 
     def test_pass(self):
         lookup = {
-            (8, "INCR"): {"mean_sp_norm": 0.70},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.70},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.60},
@@ -296,7 +303,7 @@ class TestGateQ3(unittest.TestCase):
 
     def test_fail_baseline_beats_incr(self):
         lookup = {
-            (8, "INCR"): {"mean_sp_norm": 0.55},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.55},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.60},  # beats INCR
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
@@ -309,7 +316,7 @@ class TestGateQ3(unittest.TestCase):
     def test_missing_baseline_is_noted(self):
         """A missing baseline is reported but does not auto-pass the gate."""
         lookup = {
-            (8, "INCR"): {"mean_sp_norm": 0.70},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.70},
             (8, "RM"): {"mean_sp_norm": 0.50},
             # CFS, INCR_NO_TL, INCR_WCET absent
         }
@@ -328,7 +335,7 @@ class TestGateE1(unittest.TestCase):
 
     def test_pass(self):
         lookup = {
-            (10, "INCR"): {"overhead": 0.02},
+            (10, "INCR_Reopt_10"): {"overhead": 0.02},
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "PASS")
@@ -337,7 +344,7 @@ class TestGateE1(unittest.TestCase):
 
     def test_fail_over_red_line(self):
         lookup = {
-            (10, "INCR"): {"overhead": 0.06},  # 6% > 5%
+            (10, "INCR_Reopt_10"): {"overhead": 0.06},  # 6% > 5%
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "FAIL")
@@ -346,7 +353,7 @@ class TestGateE1(unittest.TestCase):
     def test_between_ideal_and_red_is_pass_with_note(self):
         """1% < overhead <= 5% passes the red line but misses the ideal."""
         lookup = {
-            (10, "INCR"): {"overhead": 0.03},
+            (10, "INCR_Reopt_10"): {"overhead": 0.03},
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "PASS")
@@ -358,7 +365,7 @@ class TestGateE1(unittest.TestCase):
     def test_missing_overhead_key_fails_not_crashes(self):
         """A present-but-overhead-less record must FAIL clearly, not KeyError."""
         lookup = {
-            (10, "INCR"): {"mean_sp_norm": 0.55},            # no overhead
+            (10, "INCR_Reopt_10"): {"mean_sp_norm": 0.55},            # no overhead
         }
         verdict = ev.evaluate_e1(lookup, overhead_n=10)
         self.assertEqual(verdict["status"], "FAIL")
@@ -459,27 +466,31 @@ class TestPerNVerdicts(unittest.TestCase):
 
     @staticmethod
     def _fast_lookup():
-        # N=4 and N=6 only -- the user's fast run. Q1@N=4, Q2/Q3@N=6.
+        # N=4 and N=6 only -- the user's fast run. Q1@N=4, Q2/Q3@N=6. The
+        # canonical incremental arm is INCR_Reopt_10 (the gate subject for
+        # Q1/Q2/Q3/E1); it is also the period=10 member of the E3 sweep, so its
+        # row carries both the gate metrics (SP + overhead) and the E3 metric
+        # (mean_sched_time), with one SP value consistent across both roles.
+        # The bare "INCR" arm was a redundant duplicate of INCR_Reopt_10 and is
+        # no longer scheduled.
         return {
             (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20,
                         "overhead": 0.02},
-            (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05,
-                          "overhead": 0.005},
             (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.620, "mean_sched_time": 0.060},
             (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.610, "mean_sched_time": 0.0575},
-            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.600, "mean_sched_time": 0.055},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.600, "mean_sched_time": 0.05,
+                                   "overhead": 0.005},
             (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.590, "mean_sched_time": 0.050},
             (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.580, "mean_sched_time": 0.045},
             (6, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
-            (6, "INCR"): {"mean_sp_norm": 0.60, "mean_sched_time": 0.08,
-                          "overhead": 0.008},
             (6, "RM"): {"mean_sp_norm": 0.50},
             (6, "CFS"): {"mean_sp_norm": 0.45},
             (6, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
             (6, "INCR_WCET"): {"mean_sp_norm": 0.45},
             (6, "INCR_Reopt_1"): {"mean_sp_norm": 0.620, "mean_sched_time": 0.090},
             (6, "INCR_Reopt_5"): {"mean_sp_norm": 0.610, "mean_sched_time": 0.0875},
-            (6, "INCR_Reopt_10"): {"mean_sp_norm": 0.600, "mean_sched_time": 0.085},
+            (6, "INCR_Reopt_10"): {"mean_sp_norm": 0.600, "mean_sched_time": 0.08,
+                                   "overhead": 0.008},
             (6, "INCR_Reopt_30"): {"mean_sp_norm": 0.590, "mean_sched_time": 0.080},
             (6, "INCR_Reopt_60"): {"mean_sp_norm": 0.580, "mean_sched_time": 0.075},
         }
@@ -506,7 +517,7 @@ class TestPerNVerdicts(unittest.TestCase):
 
     def test_missing_n_is_reported_not_fatal(self):
         """A gate whose only N is MISSING stays FAIL but carries the per-N entry."""
-        lookup = {(4, "INCR"): {"mean_sp_norm": 0.80}}  # BF missing -> Q1 MISSING
+        lookup = {(4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80}}  # BF missing -> Q1 MISSING
         verdict = ev.evaluate_q1(lookup, small_ns=[4])
         self.assertEqual(verdict["status"], "FAIL")
         self.assertEqual(len(verdict["per_n"]), 1)
@@ -530,30 +541,34 @@ class TestEvaluateAllGates(unittest.TestCase):
     """evaluate_all_gates ties the 5 gates together into a verdict list."""
 
     def test_all_pass(self):
+        # INCR_Reopt_10 is BOTH the Q1/Q2/Q3/E1 gate subject (the canonical
+        # incremental arm) AND the period=10 member of the E3 sweep, so its row
+        # carries the gate SP value, the E3 sweep SP value (one value, shared),
+        # and the E1 overhead. The bare "INCR" arm was a redundant duplicate of
+        # INCR_Reopt_10 and is no longer scheduled.
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20},
-            (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05},
             (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.05},
             (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.89, "mean_sched_time": 0.0475},
-            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.88, "mean_sched_time": 0.045},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.88, "mean_sched_time": 0.045,
+                                   "overhead": 0.0045},
             (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.87, "mean_sched_time": 0.040},
             (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.86, "mean_sched_time": 0.035},
             (8, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
-            (8, "INCR"): {"mean_sp_norm": 0.60, "mean_sched_time": 0.08},
             (8, "INCR_Reopt_1"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.08},
             (8, "INCR_Reopt_5"): {"mean_sp_norm": 0.79, "mean_sched_time": 0.0775},
-            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.075},
+            (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.78, "mean_sched_time": 0.075,
+                                   "overhead": 0.0075},
             (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.77, "mean_sched_time": 0.070},
             (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.76, "mean_sched_time": 0.065},
             (8, "RM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
             (8, "INCR_WCET"): {"mean_sp_norm": 0.45},
-            (10, "INCR"): {"mean_sp_norm": 0.55, "overhead": 0.02,
-                           "mean_sched_time": 0.20},
             (10, "INCR_Reopt_1"): {"mean_sp_norm": 0.70, "mean_sched_time": 0.20},
             (10, "INCR_Reopt_5"): {"mean_sp_norm": 0.69, "mean_sched_time": 0.195},
-            (10, "INCR_Reopt_10"): {"mean_sp_norm": 0.68, "mean_sched_time": 0.19},
+            (10, "INCR_Reopt_10"): {"mean_sp_norm": 0.68, "mean_sched_time": 0.19,
+                                   "overhead": 0.019},
             (10, "INCR_Reopt_30"): {"mean_sp_norm": 0.67, "mean_sched_time": 0.18},
             (10, "INCR_Reopt_60"): {"mean_sp_norm": 0.66, "mean_sched_time": 0.17},
         }
@@ -567,8 +582,8 @@ class TestEvaluateAllGates(unittest.TestCase):
         lookup = {
             (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.20,
                         "overhead": 0.02},
-            (4, "INCR"): {"mean_sp_norm": 0.40, "mean_sched_time": 0.05,
-                          "overhead": 0.005},  # Q1 fails (gap 55%)
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.40, "mean_sched_time": 0.05,
+                                   "overhead": 0.005},  # Q1 fails (gap 55%)
         }
         # period_arms=[] short-circuits E3 to PASS so the overall FAIL is
         # attributable to Q1 alone (the gate under test), not a missing-arm E3.
@@ -590,11 +605,10 @@ class TestWriteReport(unittest.TestCase):
             lookup = {
                 (4, "BF"): {"mean_sp_norm": 0.90, "mean_sched_time": 0.2,
                             "overhead": 0.02},
-                (4, "INCR"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.05,
-                              "overhead": 0.005},
                 (4, "INCR_Reopt_1"): {"mean_sched_time": 0.05},
                 (4, "INCR_Reopt_5"): {"mean_sched_time": 0.0475},
-                (4, "INCR_Reopt_10"): {"mean_sched_time": 0.045},
+                (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80, "mean_sched_time": 0.045,
+                                        "overhead": 0.0045},
                 (4, "INCR_Reopt_30"): {"mean_sched_time": 0.040},
                 (4, "INCR_Reopt_60"): {"mean_sched_time": 0.035},
             }
@@ -620,23 +634,29 @@ class TestEndToEndMain(unittest.TestCase):
         temp_base = tempfile.mkdtemp()
         try:
             cfg = _eval_cfg(temp_base, [4, 8, 10])
+            # INCR_Reopt_10 is BOTH the Q1/Q2/Q3/E1 gate subject AND the
+            # period=10 member of the E3 sweep, so its SP must (a) beat BF/the
+            # baselines for Q1/Q2/Q3 and (b) sit within a non-increasing E3
+            # chain Reopt_1>=Reopt_5>=Reopt_10>=Reopt_30>=Reopt_60. The bare
+            # "INCR" arm was a redundant duplicate of INCR_Reopt_10 and is no
+            # longer scheduled, so it is not in the sp/et dicts.
             sp = {
-                "INCR": {4: 0.80, 8: 0.60, 10: 0.55},
                 "BF": {4: 0.90, 8: 0.55, 10: 0.50},
                 "RM": {4: 0.50, 8: 0.45, 10: 0.40},
                 "CFS": {4: 0.45, 8: 0.40, 10: 0.35},
                 "INCR_NO_TL": {4: 0.40, 8: 0.40, 10: 0.35},
                 "INCR_WCET": {4: 0.45, 8: 0.45, 10: 0.40},
-                # E3 period arms -- SP is irrelevant to E3, but must be present
-                # so _build_synthetic_run writes a CSV row for each arm.
-                "INCR_Reopt_1": {4: 0.80, 8: 0.60, 10: 0.55},
-                "INCR_Reopt_5": {4: 0.80, 8: 0.60, 10: 0.55},
-                "INCR_Reopt_10": {4: 0.80, 8: 0.60, 10: 0.55},
-                "INCR_Reopt_30": {4: 0.80, 8: 0.60, 10: 0.55},
-                "INCR_Reopt_60": {4: 0.80, 8: 0.60, 10: 0.55},
+                # E3 period arms -- SP non-increasing as the reopt period grows
+                # (Reopt_1 >= Reopt_5 >= Reopt_10 >= Reopt_30 >= Reopt_60) so E3
+                # passes; INCR_Reopt_10's SP also satisfies Q1 (gap<=30% vs BF),
+                # Q2 (>=BF), and Q3 (>=every baseline) at each N.
+                "INCR_Reopt_1": {4: 0.85, 8: 0.62, 10: 0.57},
+                "INCR_Reopt_5": {4: 0.84, 8: 0.61, 10: 0.56},
+                "INCR_Reopt_10": {4: 0.83, 8: 0.60, 10: 0.55},
+                "INCR_Reopt_30": {4: 0.82, 8: 0.59, 10: 0.54},
+                "INCR_Reopt_60": {4: 0.81, 8: 0.58, 10: 0.53},
             }
             et = {
-                "INCR": {4: 0.05, 8: 0.08, 10: 0.20},
                 "BF": {4: 0.20, 8: 2.0, 10: 5.0},
                 "RM": {4: 0.01, 8: 0.01, 10: 0.01},
                 "CFS": {4: 0.0, 8: 0.0, 10: 0.0},

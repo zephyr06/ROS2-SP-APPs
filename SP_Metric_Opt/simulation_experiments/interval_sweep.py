@@ -304,7 +304,7 @@ def _normalize_sweep_data(data, ideal_sp):
 
 def _draw_interval_sweep_variant(data, cfg, output_path_stem, ylabel, title):
     """Draw one Figure 2 variant (raw or normalized) and save it."""
-    schedulers = cfg.get("main_scheduler_list", ["INCR", "BF", "RM", "CFS"])
+    schedulers = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM", "CFS"])
     color_map = get_scheduler_color_map(schedulers)
 
     intervals = sorted({d["interval"] for d in data})
@@ -324,7 +324,14 @@ def _draw_interval_sweep_variant(data, cfg, output_path_stem, ylabel, title):
                 yerr.append(points[0]["std_sp"])
         if not x:
             continue
-        if sched == "INCR":
+        if sched.startswith("INCR_Reopt_"):
+            # The incremental optimizer (any INCR_Reopt_X arm) is the headline
+            # -- draw it as a prominent errorbar curve across the sweep. The
+            # bare "INCR" arm was a duplicate of INCR_Reopt_10 and is no longer
+            # scheduled, so match the whole family by prefix (a period sweep
+            # with several INCR_Reopt_X arms draws one curve per arm, which is
+            # the intended comparison; previously all of them were misdrawn as
+            # flat baseline lines because only the literal "INCR" matched).
             ax.errorbar(
                 x, y, yerr=yerr, marker="o", markersize=8, linewidth=2,
                 label=sched, color=color_map.get(sched, "gray"),
@@ -406,7 +413,7 @@ def main():
     n_sec = args.n_sec if args.n_sec is not None else cfg.get("simulation_duration_seconds", 30)
     interval_list = cfg.get("interval_sweep_seconds_list", [5, 10])
     base_seed = cfg.get("base_random_seed", 1000)
-    main_schedulers = cfg.get("main_scheduler_list", ["INCR", "BF", "RM", "CFS"])
+    main_schedulers = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM", "CFS"])
     export_level = cfg.get("export_detail_level", 1)
     important_task_pct = cfg.get("analysis", {}).get("important_task_top_percentage", 0.10)
     num_workers = cfg.get("parallel_worker_processes", None)

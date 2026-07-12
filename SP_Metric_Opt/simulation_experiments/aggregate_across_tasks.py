@@ -555,7 +555,7 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     Fig 1A variant (``fig1a_mean_sp_normalized_vs_tasks_main``) is emitted
     alongside the raw Fig 1A, so both views are available for the paper.
     """
-    scheduler_list = cfg.get("main_scheduler_list", ["INCR", "BF", "RM", "CFS"])
+    scheduler_list = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
     os.makedirs(figures_dir, exist_ok=True)
 
@@ -651,7 +651,7 @@ def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
         return
 
     target_tasks = cfg.get("num_tasks_for_single_task_figures", 6)
-    scheduler_list = cfg.get("main_scheduler_list", ["INCR", "BF", "RM", "CFS"])
+    scheduler_list = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
 
     # Filter to target task count, sort schedulers in consistent order
@@ -712,7 +712,7 @@ def generate_ablation_group_figures(records, cfg, figures_dir=None):
     """
     scheduler_list = cfg.get(
         "ablation_scheduler_list",
-        ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"],
+        ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET"],
     )
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
     os.makedirs(figures_dir, exist_ok=True)
@@ -777,7 +777,7 @@ def generate_distribution_boxplot(cfg, figures_dir=None, run_root=None):
         return
 
     target_tasks = cfg.get("num_tasks_for_single_task_figures", 6)
-    scheduler_list = cfg.get("main_scheduler_list", ["INCR", "BF", "RM", "CFS"])
+    scheduler_list = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
 
     # P23: sims now live under <run_root>/sim/; only the legacy/standalone path
