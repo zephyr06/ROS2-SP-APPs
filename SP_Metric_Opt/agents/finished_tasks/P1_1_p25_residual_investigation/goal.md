@@ -1,5 +1,7 @@
 # P1.1 — P25 Residual Investigation
 
+User comment: This task seems to be staled
+
 **Priority:** P1 (open research question; user: "gain more understanding before closing")
 **Status:** not started
 **Reference docs:** `agents/investigation/` (the 3 P25 docs)

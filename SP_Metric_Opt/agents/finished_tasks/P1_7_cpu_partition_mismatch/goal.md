@@ -49,6 +49,46 @@ record; the resolution is summarized in `dev_log.md` and in
 
 ---
 
+## Follow-up note (added 2026-07-12) — generator feasibility, the D1 "separate pass"
+
+P1.7's D1 (below) deferred the generator-calibration question: *"fix the
+simulator to partition first, measure, then decide whether the generator needs a
+separate pass."* The simulator pass is DONE; the **generator pass is now
+confirmed warranted**, surfaced by the P1.8 investigation
+(`agents/active_tasks/P1_8_incr_wcet_outperforms_incr/`).
+
+**Empirical sweep of the same N=4 run's 10 generated tasksets**
+(`taskset_characteristics_interval_0.yaml`, 40 tasks total), checking ET vs
+period and WCET vs deadline:
+
+| violation | tasks affected | tasksets affected |
+|---|---|---|
+| `execution_time_mu > period` (avg ET exceeds period — the user's flag) | 2/40 | 2/10 (taskset_1 t2: mu=21.4/P=20; taskset_7 t2: mu=518.1/P=500) |
+| `execution_time_max > deadline` (WCET exceeds deadline) | ~18/40 | **9/10** (only taskset_9 is clean) |
+| `execution_time_mu > deadline` with σ=1.0 (deterministic certain-miss) | 5/40 | 5/10 (taskset_0 t3, taskset_1 t0+t2, taskset_5 t3, taskset_7 t3) |
+
+**So the unschedulable-task problem is systemic, not a one-off.** The user
+flagged the `mu > period` case (taskset_1 t2) specifically; the broader
+`WCET > deadline` case is ~9× more prevalent and was already the substrate of
+P1.8's Finding 3. A task with WCET > deadline is analytically unschedulable
+unless a time limit strictly < deadline is adopted — and most of these tasks
+have **no** `timePerformancePairs` (no TL ladder), so no TL can rescue them.
+
+**What this means for P1.7's D1:** the generator enforces no bound on avg-ET vs
+period (nor WCET vs deadline) — confirmed empirically. Whether the source
+enforces *any* feasibility constraint, and where `per_core_cpu_util` calibrates
+ET, is being traced in P1.8's Step 0 (source citation to be recorded there).
+The generator-feasibility fix (clamp `ET_max ≤ deadline`, or `mu ≤ k·period`, or
+reject+regenerate) is the D1 "separate pass" P1.7 deferred — it is now an active
+question under **P1.8's D1** (is WCET>deadline a generator bug → F1, or
+intentional stress → F2/F4?), NOT a P1.7 reopen. P1.7 stays RESOLVED (the
+simulator partitioning fix is correct and standalone); this is the downstream
+generator pass P1.7 always said would be a separate decision.
+
+**Cross-link:** P1.8 `goal.md` Finding 3 + H1d; P1.8 `dev_log.md` 2026-07-12.
+
+---
+
 ## Original finding (2026-07-12, preserved as the evaluation record)
 
 **Original status:** FINDING CONFIRMED 2026-07-12 (code + data verified; **NO
