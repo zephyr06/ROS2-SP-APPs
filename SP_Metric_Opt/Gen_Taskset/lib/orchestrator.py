@@ -11,6 +11,7 @@ from .taskset_generator import generate_taskset_parameters, load_and_fill_taskse
 from .trajectory import generate_stops_in_map, generate_path_only
 from .trace_generator import generate_execution_time_trace
 from .visualizer import plot_moving_trajectory
+from .feasibility_clamp import clamp_avg_et_to_period
 
 # Interval settings
 UPDATE_INTERVAL_S = 10
@@ -426,3 +427,14 @@ def run_full_generation_pipeline(
         add_perf_records=add_perf_records,
         interact=interact
     )
+
+    # 4. Feasibility clamp (P1.8, fix F1): pull any non-perf task whose avg ET
+    # exceeds 0.95*period back inside the period across every emitted
+    # characteristics YAML, and relabel its deadline to the period. Removes the
+    # WCET/mu > deadline/period substrate the generator emits (no feasibility
+    # guard in taskset_generator.py) that let INCR_WCET beat INCR on
+    # catastrophically-unschedulable tasksets. Perf-record tasks are skipped
+    # (their min/max are TL-grid bounds). Runs AFTER all characteristics YAMLs
+    # are on disk, BEFORE the pipeline returns. See feasibility_clamp.py for
+    # the FiniteDist-truncates-at-max trace behind the mu+max+min clamp.
+    clamp_avg_et_to_period(dir_path, et_over_period_cap=0.95)

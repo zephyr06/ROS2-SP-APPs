@@ -76,7 +76,23 @@ def test_integration_pipeline():
         char_data = yaml.safe_load(f)
         
     assert len(char_data["tasks"]) == 3
-    
+
+    # P1.8 (fix F1): the post-generation feasibility clamp must leave every
+    # non-perf task with execution_time_mu <= 0.95*period (the clamp's
+    # invariant). Perf-record tasks are exempt — their min/max are TL-grid
+    # bounds, not ET-support bounds — so only assert against non-perf tasks.
+    for t in char_data["tasks"]:
+        if not t.get("performance_records_time"):
+            assert t["execution_time_mu"] <= 0.95 * t["period"], (
+                f"P1.8 clamp invariant violated on task {t['name']}: "
+                f"mu={t['execution_time_mu']} > 0.95*period={0.95 * t['period']}"
+            )
+            # and the scored support upper bound must be inside the period too
+            assert t["execution_time_max"] <= 0.95 * t["period"], (
+                f"P1.8 clamp invariant violated on task {t['name']}: "
+                f"max={t['execution_time_max']} > 0.95*period={0.95 * t['period']}"
+            )
+
     # 1. Verify weights normalization (sum of sp_weight should equal SP_WEIGHTS_SUM)
     total_weight = sum(t["sp_weight"] for t in char_data["tasks"])
     assert abs(total_weight - config_data["SP_WEIGHTS_SUM"]) < 1e-5
