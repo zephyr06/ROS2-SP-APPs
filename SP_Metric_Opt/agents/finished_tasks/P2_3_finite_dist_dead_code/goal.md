@@ -1,7 +1,11 @@
 # P2.3 — `FiniteDist::approx_equal` dead-code cleanup
 
 **Priority:** P2 (doc/cleanup hygiene; not a behavior fix)
-**Status:** not started
+**Status:** DONE 2026-07-12 (wire-up path, working tree only — not committed).
+`operator==` now delegates to `approx_equal(other, 1e-1)`; tolerance kept at the
+old inline `1e-1` to stay behavior-neutral. **16/16 ctest green** (also fixed a
+pre-existing build-wiring gap: `RunOrchestrator` binary now built by
+`check.SP_OPT` via `add_dependencies`). See `dev_log.md`.
 
 ## The issue
 

@@ -19,7 +19,8 @@ FiniteDist::FiniteDist(const GaussianDist& gauss_dist, double min_val,
                        double max_val, int granularity)
     : min_time(min_val), max_time(max_val) {
     distribution.reserve(granularity);
-    if (granularity < 1) CoutError("Invalid granularity!");
+    if (granularity < 1)
+        CoutError("Invalid granularity!");
 
     double step = (max_val - min_val) / (double(granularity) - 1);
     distribution.push_back(Value_Proba(min_val, gauss_dist.CDF(min_val)));
@@ -138,7 +139,8 @@ bool FiniteDist::AddOnePreemption(const FiniteDist& execution_time_dist,
         tail.Convolve(execution_time_dist);
         head.Coalesce(tail);
         UpdateDistribution(head.distribution);
-        CompressDistributionWithOnlySize(int(GlobalVariables::Granularity * 1.0));
+        CompressDistributionWithOnlySize(
+            int(GlobalVariables::Granularity * 1.0));
         return true;
     }
 }
@@ -254,7 +256,8 @@ double FiniteDist::CDF(double x) const {
 void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
                                 int end_index, int size_after_compres) {
     int element_counts_before_merge = end_index - start_index + 1;
-    if (element_counts_before_merge <= size_after_compres) return;
+    if (element_counts_before_merge <= size_after_compres)
+        return;
 
     int size_per_merge =
         ceil(double(element_counts_before_merge) / size_after_compres);
@@ -284,7 +287,8 @@ void CompressDistributionVector(std::vector<Value_Proba>& vec, int start_index,
 
 void FiniteDist::CompressDistribution(size_t max_size,
                                       double compress_threshold) {
-    if (distribution.size() <= max_size) return;
+    if (distribution.size() <= max_size)
+        return;
 
     // Single-pass buffer-based compression.
     // Enforce threshold >= 1.0/max_size so the output size bound is guaranteed
@@ -312,7 +316,8 @@ void FiniteDist::CompressDistribution(size_t max_size,
         }
     }
 
-    // Merge trailing buffer into the last element so total probability stays 1.0
+    // Merge trailing buffer into the last element so total probability
+    // stays 1.0
     if (buf_prob > 0) {
         if (!new_dist.empty()) {
             auto& last = new_dist.back();
@@ -343,27 +348,24 @@ double FiniteDist::GetAvgValue() const {
     }
 }
 bool FiniteDist::approx_equal(const FiniteDist& other, double tolerance) const {
-    if (distribution.size() != other.distribution.size()) return false;
+    if (distribution.size() != other.distribution.size())
+        return false;
     for (uint i = 0; i < distribution.size(); i++) {
         const Value_Proba& a = distribution[i];
         const Value_Proba& b = other.distribution[i];
-        if (!approx_equal_double(a.value, b.value, tolerance)) return false;
+        if (!approx_equal_double(a.value, b.value, tolerance))
+            return false;
         if (!approx_equal_double(a.probability, b.probability, tolerance))
             return false;
     }
-    if (!approx_equal_double(min_time, other.min_time, tolerance)) return false;
-    if (!approx_equal_double(max_time, other.max_time, tolerance)) return false;
+    if (!approx_equal_double(min_time, other.min_time, tolerance))
+        return false;
+    if (!approx_equal_double(max_time, other.max_time, tolerance))
+        return false;
     return true;
 }
 
 bool FiniteDist::operator==(const FiniteDist& other) const {
-    if (distribution.size() != other.distribution.size()) return false;
-    double tolerance = 1e-1;
-    for (uint i = 0; i < distribution.size(); i++) {
-        if (distribution[i] != other.distribution[i]) return false;
-    }
-    if (!approx_equal_double(min_time, other.min_time, tolerance)) return false;
-    if (!approx_equal_double(max_time, other.max_time, tolerance)) return false;
-    return true;
+    return this->approx_equal(other, 1e-1);
 }
 }  // namespace SP_OPT_PA
