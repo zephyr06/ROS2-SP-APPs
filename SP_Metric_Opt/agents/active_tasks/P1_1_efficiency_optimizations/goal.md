@@ -1,4 +1,4 @@
-# P3.1 — Efficiency Optimizations (reference)
+# P1.1 — Efficiency Optimizations (reference)
 
 > Memory and algorithmic optimizations for the `INCR` scheduler and Response Time
 > Analysis (`RTA`). **All live items below are deferred** (perf, not correctness)
@@ -25,21 +25,6 @@
 * **State:** still by-value as of 2026-07-04; the commented-out reference
   members at lines 39–40 of `OptimizeSP_Incre.h` are the leftover sketch of
   this idea.
-
----
-
-## Incremental HP-task convolution $O(N^2) \to O(N)$ — DEFERRED (on hold)
-
-* **Location:** `sources/Safety_Performance_Metric/RTA.cpp`
-  (`ProbabilisticRTA_TaskSet_SingleCore`)
-* **Bottleneck:** For task `i`, the algorithm calls
-  `GetRTA_OneTask(tasks[i], hp_tasks)`, which performs $i$ convolutions of all
-  higher-priority task execution times from scratch.
-* **Optimization proposal:** Maintain a running convolved distribution
-  `hp_conv` of all higher-priority tasks as we iterate through the taskset, and
-  convolve task `i` with `hp_conv` once.
-* **State:** ON HOLD — needs verification that dynamic preemptions and
-  deadlines are evaluated correctly under merged convolutions.
 
 ---
 
@@ -83,6 +68,12 @@
 These are **already landed**; recorded here for "why is the code this shape"
 context. The source is the source of truth.
 
+* **Incremental HP-task convolution $O(N^2) \to O(N)$** — IMPLEMENTED in
+  `sources/Safety_Performance_Metric/RTA.cpp` (`ProbabilisticRTA_TaskSet_SingleCore`).
+  Maintains a running convolved distribution `hp_tasks_et_conv` of all higher-priority
+  tasks as we iterate through the sorted taskset, calling the 3-argument version of
+  `GetRTA_OneTask` to convolve the current task with the running distribution.
+  Correctness verified by unit tests.
 * **Flat vector sort-coalesce for convolution** — IMPLEMENTED in
   `FiniteDist::Convolve` (`sources/Safety_Performance_Metric/Probability.cpp:71-`).
   Convolves into a flat pre-allocated `std::vector<Value_Proba>`,
@@ -98,3 +89,9 @@ context. The source is the source of truth.
   and replaced by a single persistent `OptimizePA_Incre prev_optimizer_`
   incumbent. The incumbent-copy cost the old cache-item was trying to avoid is
   now addressed structurally (one incumbent, not a map of them).
+
+---
+
+## Potential Speedup Ideas Queue
+
+All potential, candidate, and rejected/deferred efficiency optimization ideas are tracked dynamically in [idea_queue.md](file:///home/zephyr/Programming/ROS2-SP-APPs/SP_Metric_Opt/agents/active_tasks/P1_1_efficiency_optimizations/idea_queue.md).
