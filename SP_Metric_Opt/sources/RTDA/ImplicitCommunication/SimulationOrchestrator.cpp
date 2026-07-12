@@ -7,9 +7,11 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <numeric>
 
 #include "sources/RTDA/ImplicitCommunication/RunQueue.h"
+#include "sources/RTDA/ImplicitCommunication/ScheduleSimulation.h"
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 
 namespace SP_OPT_PA {
@@ -441,12 +443,17 @@ void FixedTaskPrioritySchedulingOrchestrator::ReleaseJobs(
     LLint time_now, LLint end_time, const DAG_Model& dag_tasks,
     const ResourceOptResult& res, RunQueue& run_queue,
     std::unordered_map<int, std::vector<float>>& traces,
-    std::unordered_map<int, size_t>& trace_indices) {
+    std::unordered_map<int, size_t>& trace_indices, int processor_id) {
     if (time_now >= end_time)
         return;
 
     for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
         const auto& task = dag_tasks.tasks[i];
+        // P1.7: partition on processorId. processor_id == -1 means "release all"
+        // (single-queue legacy callers / unit tests). Otherwise only release
+        // jobs belonging to this core's queue — two cores then run in parallel.
+        if (processor_id >= 0 && task.processorId != processor_id)
+            continue;
         if (time_now % task.period == 0) {
             JobCEC job_curr(i, time_now / task.period);
 
@@ -499,7 +506,23 @@ void FixedTaskPrioritySchedulingOrchestrator::SimulateInterval(int interval_idx,
         DeterminePrioritiesAndBudgets(dag_tasks, sp_parameters);
     ApplyTaskConfigurations(dag_tasks, res);
 
-    RunQueue run_queue(dag_tasks.tasks);
+    // P1.7: partition on processorId — one RunQueue per declared core, stepped
+    // in lockstep so the cores run in parallel (two cores declared, two cores
+    // simulated). Mirrors the proven legacy SimulatedFTP_SingleCore
+    // (ScheduleSimulation.cpp) per-core RunQueue model. RunQueue holds a const
+    // TaskSetInfoDerived member so is non-assignable; use unique_ptr to keep the
+    // vector movable-free. RecordFinishedJobs takes RunQueue& and reads only
+    // that queue's schedule_, so per-queue calls merge into the shared
+    // job_history_ (a job lives in exactly one queue; the find_if dedup is a
+    // no-op across queues).
+    std::vector<int> processor_ids = GetProcessorIds(dag_tasks);
+    std::vector<std::unique_ptr<RunQueue>> run_queues;
+    run_queues.reserve(processor_ids.size());
+    for (int pid : processor_ids) {
+        run_queues.push_back(
+            std::make_unique<RunQueue>(dag_tasks.tasks));
+    }
+
     std::unordered_map<int, std::vector<float>> traces;
     std::unordered_map<int, size_t> trace_indices;
 
@@ -509,11 +532,15 @@ void FixedTaskPrioritySchedulingOrchestrator::SimulateInterval(int interval_idx,
     }
 
     for (LLint time_now = start_time; time_now <= end_time; time_now++) {
-        run_queue.RemoveFinishedJob(time_now);
-        RecordFinishedJobs(time_now, run_queue, res, dag_tasks);
-        ReleaseJobs(time_now, end_time, dag_tasks, res, run_queue, traces,
-                    trace_indices);
-        run_queue.RunJobHigestPriority(time_now);
+        for (size_t q = 0; q < run_queues.size(); q++) {
+            RunQueue& run_queue = *run_queues[q];
+            int processor_id = processor_ids[q];
+            run_queue.RemoveFinishedJob(time_now);
+            RecordFinishedJobs(time_now, run_queue, res, dag_tasks);
+            ReleaseJobs(time_now, end_time, dag_tasks, res, run_queue, traces,
+                        trace_indices, processor_id);
+            run_queue.RunJobHigestPriority(time_now);
+        }
     }
 
     std::vector<double> time_limits(dag_tasks.tasks.size(), -1);
@@ -621,12 +648,15 @@ void CFSSimulationOrchestrator::UpdateActiveCounts(
 void CFSSimulationOrchestrator::ReleaseJobsCFS(
     LLint time_now, LLint end_time, const DAG_Model& dag_tasks,
     RunQueue& run_queue, std::unordered_map<int, std::vector<float>>& traces,
-    std::unordered_map<int, size_t>& trace_indices) {
+    std::unordered_map<int, size_t>& trace_indices, int processor_id) {
     if (time_now >= end_time)
         return;
 
     for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
         const auto& task = dag_tasks.tasks[i];
+        // P1.7: partition on processorId (mirror ReleaseJobs). -1 = release all.
+        if (processor_id >= 0 && task.processorId != processor_id)
+            continue;
         if (time_now % task.period == 0) {
             JobCEC job_curr(i, time_now / task.period);
 
@@ -691,14 +721,32 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
         task.setExecutionTime(task.execution_time_dist.GetAvgValue());
     }
 
-    RunQueue run_queue(dag_tasks.tasks);
-    std::unordered_map<int, double> accumulated_et;
-    std::unordered_map<int, int> active_jobs_count;
-    std::set<std::pair<double, int>> run_queue_set;
-
-    for (const auto& task : dag_tasks.tasks) {
-        accumulated_et[task.id] = 0.0;
-        active_jobs_count[task.id] = 0;
+    // P1.7: partition on processorId — one RunQueue + one set of CFS
+    // bookkeeping per declared core, stepped in lockstep so the cores run in
+    // parallel (mirror the FTP SimulateInterval partitioning and the legacy
+    // SimulatedCFS_SingleCore per-core model). The CFS helpers take RunQueue&
+    // and are queue-agnostic; off-core tasks stay at count 0 / never enter this
+    // core's run_queue_set, so initializing the per-queue maps over all tasks
+    // is harmless. RecordFinishedJobsCFS merges each queue's finished jobs into
+    // the shared job_history_ (a job lives in exactly one queue).
+    std::vector<int> processor_ids = GetProcessorIds(dag_tasks);
+    struct CFSPerCoreState {
+        std::unique_ptr<RunQueue> run_queue;
+        std::unordered_map<int, double> accumulated_et;
+        std::unordered_map<int, int> active_jobs_count;
+        std::set<std::pair<double, int>> run_queue_set;
+        int running_task_id = -1;
+    };
+    std::vector<CFSPerCoreState> cores;
+    cores.reserve(processor_ids.size());
+    for (int pid : processor_ids) {
+        CFSPerCoreState s;
+        s.run_queue = std::make_unique<RunQueue>(dag_tasks.tasks);
+        for (const auto& task : dag_tasks.tasks) {
+            s.accumulated_et[task.id] = 0.0;
+            s.active_jobs_count[task.id] = 0;
+        }
+        cores.push_back(std::move(s));
     }
 
     std::unordered_map<int, std::vector<float>> traces;
@@ -708,38 +756,46 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
         trace_indices[i] = 0;
     }
 
-    int running_task_id = -1;
-
     for (LLint time_now = start_time; time_now <= end_time; time_now++) {
-        UpdateCFSVirtualTimes(running_task_id, accumulated_et, run_queue_set);
-        run_queue.RemoveFinishedJob(time_now);
-        RecordFinishedJobsCFS(time_now, run_queue, dag_tasks);
-        UpdateActiveCounts(run_queue, dag_tasks, active_jobs_count,
-                           run_queue_set, accumulated_et);
-        ReleaseJobsCFS(time_now, end_time, dag_tasks, run_queue, traces,
-                       trace_indices);
+        for (size_t q = 0; q < cores.size(); q++) {
+            RunQueue& run_queue = *cores[q].run_queue;
+            auto& accumulated_et = cores[q].accumulated_et;
+            auto& active_jobs_count = cores[q].active_jobs_count;
+            auto& run_queue_set = cores[q].run_queue_set;
+            int& running_task_id = cores[q].running_task_id;
+            int processor_id = processor_ids[q];
 
-        // Update active counts for newly released jobs and manage set
-        int prev_counts[16];  // small fixed-size buffer for speed
-        size_t n_tasks = dag_tasks.tasks.size();
-        for (size_t i = 0; i < n_tasks; ++i) {
-            prev_counts[i] = active_jobs_count[dag_tasks.tasks[i].id];
-        }
-        for (size_t i = 0; i < n_tasks; ++i) {
-            int tid = dag_tasks.tasks[i].id;
-            int new_c = 0;
-            for (const auto& job_info : run_queue.job_queue_) {
-                if (job_info.job.taskId == tid) {
-                    ++new_c;
+            UpdateCFSVirtualTimes(running_task_id, accumulated_et,
+                                  run_queue_set);
+            run_queue.RemoveFinishedJob(time_now);
+            RecordFinishedJobsCFS(time_now, run_queue, dag_tasks);
+            UpdateActiveCounts(run_queue, dag_tasks, active_jobs_count,
+                               run_queue_set, accumulated_et);
+            ReleaseJobsCFS(time_now, end_time, dag_tasks, run_queue, traces,
+                           trace_indices, processor_id);
+
+            // Update active counts for newly released jobs and manage set
+            int prev_counts[16];  // small fixed-size buffer for speed
+            size_t n_tasks = dag_tasks.tasks.size();
+            for (size_t i = 0; i < n_tasks; ++i) {
+                prev_counts[i] = active_jobs_count[dag_tasks.tasks[i].id];
+            }
+            for (size_t i = 0; i < n_tasks; ++i) {
+                int tid = dag_tasks.tasks[i].id;
+                int new_c = 0;
+                for (const auto& job_info : run_queue.job_queue_) {
+                    if (job_info.job.taskId == tid) {
+                        ++new_c;
+                    }
                 }
+                if (prev_counts[i] == 0 && new_c > 0) {
+                    run_queue_set.insert({accumulated_et[tid], tid});
+                }
+                active_jobs_count[tid] = new_c;
             }
-            if (prev_counts[i] == 0 && new_c > 0) {
-                run_queue_set.insert({accumulated_et[tid], tid});
-            }
-            active_jobs_count[tid] = new_c;
-        }
 
-        ScheduleCFS(time_now, run_queue, run_queue_set, running_task_id);
+            ScheduleCFS(time_now, run_queue, run_queue_set, running_task_id);
+        }
     }
 
     // CFS does not use time limits; pass all -1

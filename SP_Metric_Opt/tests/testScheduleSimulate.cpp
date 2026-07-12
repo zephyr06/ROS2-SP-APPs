@@ -1069,6 +1069,83 @@ TEST_F(RunQueueTestFixture, RunningJobIndex_CorrectAfterErase) {
     EXPECT_EQ(1, rq.size());
 }
 
+// P1.7 — runtime SimulateInterval must partition on processorId.
+//
+// Two tasks, equal period (10) and ET (2), but on DIFFERENT cores
+// (processorId 0 and 1). RM priority: Task0 < Task1.
+//
+// On the BUGGY single-queue simulator: at t=0 both jobs release into one
+// RunQueue; Task0 (higher priority) runs [0,2], then Task1 runs [2,4] —
+// SERIALIZED on one core, Task1.start == 2.
+//
+// On the FIXED per-processorId simulator: each core has its own RunQueue, so
+// Task0 runs [0,2] on core 0 and Task1 runs [0,2] on core 1 IN PARALLEL —
+// Task1.start == 0. Two cores declared, two cores simulated.
+//
+// This test drives the real runtime path (RunSimulation -> SimulateInterval ->
+// RecordFinishedJobs -> job_history_), NOT the legacy SimulateFixedPrioritySched
+// path that already partitions.
+TEST(OrchestratorTest, SimulateIntervalPartitionsByProcessorId) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_partition_two_cores";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_partition_two_cores";
+    std::filesystem::remove_all(output_dir);
+
+    FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
+                                                         "RM", 100);
+    orchestrator.RunSimulation();
+
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_FALSE(history.empty());
+
+    // Job 0 of Task0 and Job 0 of Task1 are both released at t=0. With correct
+    // per-core partitioning they run in parallel, so BOTH start at t=0.
+    // (On the buggy single queue, Task1.start would be 2 — serialized.)
+    int task0_j0_start = -1;
+    int task1_j0_start = -1;
+    for (const auto& r : history) {
+        if (r.taskId == 0 && r.jobId == 0) task0_j0_start = r.startTime;
+        if (r.taskId == 1 && r.jobId == 0) task1_j0_start = r.startTime;
+    }
+    ASSERT_NE(-1, task0_j0_start);
+    ASSERT_NE(-1, task1_j0_start);
+    EXPECT_EQ(0, task0_j0_start);
+    EXPECT_EQ(0, task1_j0_start)
+        << "Task1 on processorId:1 must run in parallel with Task0 on "
+           "processorId:0, not be serialized behind it on one queue";
+}
+
+// P1.7 CFS sibling — same partitioning requirement on the CFS orchestrator.
+// Two equal-period/ET tasks on different cores must run in parallel under CFS
+// too (both start at t=0), not be serialized on one CFS run queue.
+TEST(OrchestratorTest, SimulateIntervalPartitionsByProcessorId_CFS) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_partition_two_cores";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_partition_two_cores_cfs";
+    std::filesystem::remove_all(output_dir);
+
+    CFSSimulationOrchestrator orchestrator(input_dir, output_dir, 100);
+    orchestrator.RunSimulation();
+
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_FALSE(history.empty());
+
+    int task0_j0_start = -1;
+    int task1_j0_start = -1;
+    for (const auto& r : history) {
+        if (r.taskId == 0 && r.jobId == 0) task0_j0_start = r.startTime;
+        if (r.taskId == 1 && r.jobId == 0) task1_j0_start = r.startTime;
+    }
+    ASSERT_NE(-1, task0_j0_start);
+    ASSERT_NE(-1, task1_j0_start);
+    EXPECT_EQ(0, task0_j0_start);
+    EXPECT_EQ(0, task1_j0_start)
+        << "CFS: Task1 on processorId:1 must run in parallel with Task0 on "
+           "processorId:0, not be serialized behind it on one queue";
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

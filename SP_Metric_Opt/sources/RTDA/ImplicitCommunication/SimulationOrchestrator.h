@@ -64,7 +64,7 @@ public:
     void RecordFinishedJobs(LLint time_now, RunQueue& run_queue, const ResourceOptResult& res, const DAG_Model& dag_tasks);
     void ReleaseJobs(LLint time_now, LLint end_time, const DAG_Model& dag_tasks, const ResourceOptResult& res,
                      RunQueue& run_queue, std::unordered_map<int, std::vector<float>>& traces,
-                     std::unordered_map<int, size_t>& trace_indices);
+                     std::unordered_map<int, size_t>& trace_indices, int processor_id = -1);
 
 private:
     std::string scheduler_mode_;
@@ -123,7 +123,7 @@ public:
     // would avoid the second linear pass.
     void ReleaseJobsCFS(LLint time_now, LLint end_time, const DAG_Model& dag_tasks, RunQueue& run_queue,
                         std::unordered_map<int, std::vector<float>>& traces,
-                        std::unordered_map<int, size_t>& trace_indices);
+                        std::unordered_map<int, size_t>& trace_indices, int processor_id = -1);
 
     // INEFFICIENCY: After picking the task with minimum virtual runtime from
     // the ordered set (O(log T)), this function performs a linear scan over

@@ -10,6 +10,10 @@ namespace SP_OPT_PA {
 void AddTasksToRunQueue(RunQueue &run_queue, const DAG_Model &dag_tasks,
                         int processor_id, LLint time_now);
 
+// P1.7: distinct processorId values declared across the task set. Used by the
+// runtime orchestrator (SimulateInterval) to build one RunQueue per core.
+std::vector<int> GetProcessorIds(const DAG_Model &dag_tasks);
+
 Schedule SimulatedFTP_SingleCore(const DAG_Model &dag_tasks,
                                  const TaskSetInfoDerived &tasks_info,
                                  int processor_id);
