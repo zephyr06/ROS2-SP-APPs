@@ -1,5 +1,5 @@
 # Python caching
-__pycache__/
+*pycache*
 *.py[cod]
 *$py.class
 .pytest_cache/
@@ -42,6 +42,7 @@ simulation_experiments/debug_analysis/
 # (bench drivers, p24-eval sweep scripts, run logs/pid files). Local-only.
 /benchmark/
 /Testing/
+temp_run/
 
 # Binary / Output / Log formats
 *.log
