@@ -521,6 +521,196 @@ TEST(FiniteDist, BlockCompress_EmptyAndSingleElement) {
     EXPECT_EQ(5, dist_single.distribution[0].value);
 }
 
+// ============================================================================
+// Idea 10: Single-Point (Degenerate) Convolution Fast Path
+// ============================================================================
+// Convolve(A, {(v, 1.0)}) is mathematically a pure value-shift:
+//   {(a.value + v, a.probability) for a in A}
+// A uniform shift preserves sorted order and creates no duplicate values, so
+// no sort and no coalesce are needed. The fast path in Probability.cpp exploits
+// this. These tests pin the contract so the fast path cannot drift from the
+// general N×M + sort + coalesce path. They are characterization tests: they
+// pass today (slow path) and must keep passing after the fast path lands.
+// Single-point operands arise from GetUnitExecutionTimeDist(time_limit)
+// (Probability.h), which replaces a TL'd perf-pair task's ET with a degenerate
+// distribution once a time limit is applied.
+
+TEST(FiniteDist, Convolve_SinglePointOther_ShiftsValues) {
+    // A (multi-point) convolved with single-point B(v=5):
+    // each A value += 5, probabilities unchanged, sorted order preserved.
+    std::vector<Value_Proba> a_vec = {Value_Proba(1, 0.2), Value_Proba(4, 0.3),
+                                      Value_Proba(9, 0.5)};
+    FiniteDist a(a_vec);
+    FiniteDist b = GetUnitExecutionTimeDist(5.0);  // single-point {(5, 1.0)}
+    a.Convolve(b);
+    EXPECT_EQ(3u, a.size());
+    EXPECT_EQ(6, a[0].value);
+    EXPECT_NEAR(0.2, a[0].probability, 1e-9);
+    EXPECT_EQ(9, a[1].value);
+    EXPECT_NEAR(0.3, a[1].probability, 1e-9);
+    EXPECT_EQ(14, a[2].value);
+    EXPECT_NEAR(0.5, a[2].probability, 1e-9);
+    EXPECT_EQ(6, a.min_time);
+    EXPECT_EQ(14, a.max_time);
+}
+
+TEST(FiniteDist, Convolve_SinglePointSelf_ShiftsOther) {
+    // Symmetric: single-point A(v=5) convolved with multi-point B.
+    // Result is B's distribution shifted by +5 (order follows B's sorted order).
+    // This pins that the size-1-`this` branch rebuilds `this` from `other`.
+    std::vector<Value_Proba> b_vec = {Value_Proba(2, 0.4), Value_Proba(7, 0.6)};
+    FiniteDist a = GetUnitExecutionTimeDist(5.0);
+    FiniteDist b(b_vec);
+    a.Convolve(b);
+    EXPECT_EQ(2u, a.size());
+    EXPECT_EQ(7, a[0].value);
+    EXPECT_NEAR(0.4, a[0].probability, 1e-9);
+    EXPECT_EQ(12, a[1].value);
+    EXPECT_NEAR(0.6, a[1].probability, 1e-9);
+    EXPECT_EQ(7, a.min_time);
+    EXPECT_EQ(12, a.max_time);
+}
+
+TEST(FiniteDist, Convolve_SinglePointZero_IsIdentity) {
+    // Convolve with single-point at 0 is identity (no shift).
+    std::vector<Value_Proba> a_vec = {Value_Proba(3, 0.1), Value_Proba(7, 0.9)};
+    FiniteDist a(a_vec);
+    FiniteDist zero = GetUnitExecutionTimeDist(0.0);
+    a.Convolve(zero);
+    EXPECT_EQ(2u, a.size());
+    EXPECT_EQ(3, a[0].value);
+    EXPECT_NEAR(0.1, a[0].probability, 1e-9);
+    EXPECT_EQ(7, a[1].value);
+    EXPECT_NEAR(0.9, a[1].probability, 1e-9);
+    EXPECT_EQ(3, a.min_time);
+    EXPECT_EQ(7, a.max_time);
+}
+
+TEST(FiniteDist, Convolve_SinglePointScalesProbability) {
+    // A single-point operand need NOT have probability 1.0. The degenerate
+    // convolution Convolve(A, {(v,p)}) = {(a.value+v, a.probability*p)} —
+    // values shift by v AND probabilities scale by p. This is the case that
+    // actually fires in AddOnePreemption (the preemption tail is a single
+    // mass point with p<1). Pinned so the fast path never drops the scale.
+    std::vector<Value_Proba> a_vec = {Value_Proba(4, 0.7), Value_Proba(5, 0.3)};
+    FiniteDist a(a_vec);
+    // single-point {(11, 0.003)} — NOT produced by GetUnitExecutionTimeDist,
+    // but Convolve is a general API and must honor it.
+    FiniteDist sp(std::vector<Value_Proba>{Value_Proba(11, 0.003)});
+    a.Convolve(sp);
+    EXPECT_EQ(2u, a.size());
+    EXPECT_EQ(15, a[0].value);
+    EXPECT_NEAR(0.7 * 0.003, a[0].probability, 1e-9);
+    EXPECT_EQ(16, a[1].value);
+    EXPECT_NEAR(0.3 * 0.003, a[1].probability, 1e-9);
+    EXPECT_EQ(15, a.min_time);
+    EXPECT_EQ(16, a.max_time);
+}
+
+TEST(FiniteDist, Convolve_SinglePointCoalescesDuplicateValues) {
+    // When the multi-point operand has duplicate values, a uniform shift keeps
+    // those duplicates adjacent; the fast path must coalesce them to match the
+    // general N×M + sort + coalesce path exactly. Construct A with two equal
+    // values; after shift they must merge into one entry summing probabilities.
+    std::vector<Value_Proba> a_vec = {Value_Proba(2, 0.4), Value_Proba(2, 0.1),
+                                      Value_Proba(5, 0.5)};
+    FiniteDist a(a_vec);
+    FiniteDist sp = GetUnitExecutionTimeDist(3.0);  // shift by +3
+    a.Convolve(sp);
+    // {2,2,5} shifted by +3 -> {5,5,8}; the two 5s coalesce -> {5@0.5, 8@0.5}
+    EXPECT_EQ(2u, a.size());
+    EXPECT_EQ(5, a[0].value);
+    EXPECT_NEAR(0.5, a[0].probability, 1e-9);
+    EXPECT_EQ(8, a[1].value);
+    EXPECT_NEAR(0.5, a[1].probability, 1e-9);
+    EXPECT_EQ(5, a.min_time);
+    EXPECT_EQ(8, a.max_time);
+}
+
+TEST(FiniteDist, Convolve_SinglePointPreservesOrderAndProbs) {
+    // Larger, non-uniformly-spaced distribution with a NEGATIVE shift.
+    // Shift must keep it sorted with probabilities intact (exercises both
+    // shift directions and confirms min_time/max_time track the shift).
+    std::vector<Value_Proba> a_vec = {Value_Proba(-2, 0.05), Value_Proba(0, 0.15),
+                                      Value_Proba(3, 0.30),
+                                      Value_Proba(7, 0.50)};
+    FiniteDist a(a_vec);
+    FiniteDist shift = GetUnitExecutionTimeDist(-2.5);
+    a.Convolve(shift);
+    EXPECT_EQ(4u, a.size());
+    // sorted order preserved (uniform shift of a sorted vector stays sorted)
+    for (size_t i = 1; i < a.size(); ++i)
+        EXPECT_GT(a[i].value, a[i - 1].value);
+    EXPECT_EQ(-4.5, a[0].value);
+    EXPECT_NEAR(0.05, a[0].probability, 1e-9);
+    EXPECT_EQ(-2.5, a[1].value);
+    EXPECT_NEAR(0.15, a[1].probability, 1e-9);
+    EXPECT_EQ(0.5, a[2].value);
+    EXPECT_NEAR(0.30, a[2].probability, 1e-9);
+    EXPECT_EQ(4.5, a[3].value);
+    EXPECT_NEAR(0.50, a[3].probability, 1e-9);
+    EXPECT_EQ(-4.5, a.min_time);
+    EXPECT_EQ(4.5, a.max_time);
+}
+
+// Differential test: across a table of representative multi-point distributions
+// and shift values, Convolve(A, single-point(v, p)) must equal an independent
+// hand-rolled reference (values += v, probabilities *= p, then sort + coalesce).
+// This is the oracle that would catch a fast-path bug such as forgetting to
+// update min_time/max_time, dropping the probability scale, or skipping the
+// adjacent coalesce on duplicate values.
+TEST(FiniteDist, Convolve_SinglePointMatchesShiftReference) {
+    struct Case {
+        std::vector<Value_Proba> a;
+        double shift;
+        double prob;  // probability mass of the single-point operand
+    };
+    std::vector<Case> cases = {
+        // p = 1.0 (the GetUnitExecutionTimeDist case): pure shift.
+        {{Value_Proba(1, 0.5), Value_Proba(2, 0.5)}, 10.0, 1.0},
+        {{Value_Proba(0, 0.2), Value_Proba(5, 0.3), Value_Proba(100, 0.5)}, 7.5,
+         1.0},
+        {{Value_Proba(-10, 0.25), Value_Proba(0, 0.25), Value_Proba(10, 0.25),
+          Value_Proba(20, 0.25)}, -3.0, 1.0},
+        // p < 1.0 (the AddOnePreemption tail case): shift AND scale.
+        {{Value_Proba(4, 0.7), Value_Proba(5, 0.3)}, 11.0, 0.003},
+        // Duplicate values in A that coalesce after shift.
+        {{Value_Proba(2, 0.4), Value_Proba(2, 0.1), Value_Proba(5, 0.5)}, 3.0,
+         1.0},
+    };
+    for (const Case& c : cases) {
+        FiniteDist a(c.a);
+        FiniteDist sp(std::vector<Value_Proba>{Value_Proba(c.shift, c.prob)});
+        a.Convolve(sp);
+
+        // Independent reference: shift values, scale probs, sort, coalesce.
+        std::vector<Value_Proba> ref = c.a;
+        for (auto& vp : ref) {
+            vp.value += c.shift;
+            vp.probability *= c.prob;
+        }
+        std::sort(ref.begin(), ref.end(),
+                  [](const Value_Proba& x, const Value_Proba& y) {
+                      return x.value < y.value;
+                  });
+        std::vector<Value_Proba> ref_merged;
+        ref_merged.reserve(ref.size());
+        for (const auto& item : ref) {
+            if (!ref_merged.empty() &&
+                ref_merged.back().value == item.value) {
+                ref_merged.back().probability += item.probability;
+            } else {
+                ref_merged.push_back(item);
+            }
+        }
+        FiniteDist ref_dist(ref_merged);
+
+        EXPECT_EQ(ref_merged.size(), a.size());
+        EXPECT_TRUE(a.approx_equal(ref_dist, 1e-9))
+            << "shift=" << c.shift << " prob=" << c.prob;
+    }
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

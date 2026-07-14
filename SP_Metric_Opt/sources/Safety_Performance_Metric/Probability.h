@@ -109,6 +109,10 @@ class FiniteDist : public ProbabilityDistributionBase {
     // standard convolution to perform probabilitistic addition
     void Convolve(const FiniteDist& other);
 
+    // single-point (degenerate) fast path for Convolve; precondition: at least
+    // one of `this` / `other` is a single-point distribution.
+    void ConvolveSinglePoint(const FiniteDist& other);
+
     void Normalize() {
         int p_sum = 0;
         for (const Value_Proba& element : distribution)

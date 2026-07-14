@@ -68,11 +68,58 @@ void FiniteDist::Coalesce(const FiniteDist& other) {
     UpdateDistribution(m_v2p);
 }
 
+// Convolution with a single support point {(v, p)} is a uniform value-shift
+// plus a probability scale. A uniform shift preserves sorted order, so this is
+// O(n) with no std::sort (vs the O(n*m)+sort general path). Duplicates (if any)
+// are adjacent after the shift and are coalesced in place.
+void ShiftAndCoalesce(std::vector<Value_Proba>& dist, double v, double p) {
+    for (Value_Proba& vp : dist) {
+        vp.value += v;
+        vp.probability *= p;
+    }
+    size_t write = 0;
+    for (size_t read = 0; read < dist.size(); ++read) {
+        if (write > 0 && dist[write - 1].value == dist[read].value) {
+            dist[write - 1].probability += dist[read].probability;
+        } else {
+            dist[write++] = dist[read];
+        }
+    }
+    dist.resize(write);
+}
+
+// Single-point (degenerate) fast path for Convolve. Precondition: at least one
+// of `this` / `other` is a single-point distribution (e.g. a TL'd task's ET via
+// GetUnitExecutionTimeDist). `this` is mutated in place; min/max are refreshed.
+void FiniteDist::ConvolveSinglePoint(const FiniteDist& other) {
+    if (other.distribution.size() == 1) {
+        // other is single-point: shift+scale this in place.
+        ShiftAndCoalesce(distribution, other.distribution[0].value,
+                         other.distribution[0].probability);
+    } else if (distribution.size() == 1) {
+        // this is single-point: adopt other's support, then shift+scale.
+        double v = distribution[0].value;
+        double p = distribution[0].probability;
+        distribution = other.distribution;
+        ShiftAndCoalesce(distribution, v, p);
+    } else {
+        CoutError("ConvolveSinglePoint precondition violated: neither operand "
+                  "is a single-point distribution");
+    }
+    UpdateMinMaxValues();
+}
+
 // O(n^2) flat-vector + sort + coalesce (avoids hash-map overhead)
 void FiniteDist::Convolve(const FiniteDist& other) {
     if (distribution.empty() || other.distribution.empty()) {
         distribution.clear();
         UpdateMinMaxValues();
+        return;
+    }
+
+    // Single-point fast path: shift+scale, no sort.
+    if (other.distribution.size() == 1 || distribution.size() == 1) {
+        ConvolveSinglePoint(other);
         return;
     }
 
