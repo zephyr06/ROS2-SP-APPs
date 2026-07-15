@@ -1,6 +1,7 @@
 
 #include <unordered_map>
 
+#include "sources/Safety_Performance_Metric/RTA.h"
 #include "sources/TaskModel/RegularTasks.h"
 namespace SP_OPT_PA {
 
@@ -57,6 +58,12 @@ FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks, const 
 
 std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     const TaskSet& tasks_input) {
+    std::vector<FiniteDist> hp_tasks_et_conv_ignored;
+    return ProbabilisticRTA_TaskSet_SingleCore(tasks_input, hp_tasks_et_conv_ignored);
+}
+
+std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
+    const TaskSet& tasks_input, std::vector<FiniteDist>& hp_tasks_et_conv_vec) {
     std::unordered_map<int, int> task_id_to_index;
     for (int i = 0; i < tasks_input.size(); i++)
         task_id_to_index[tasks_input[i].id] = i;
@@ -69,16 +76,24 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     std::vector<FiniteDist> rtas(n);
     TaskSet hp_tasks;
     hp_tasks.reserve(n - 1);
-    
+
+    // Checkpoint store: hp_tasks_et_conv_vec[i] is the HP-tasks'-ET convolution
+    // of tasks[0..i) — i.e. the rolling hp_tasks_et_conv snapshotted at the top
+    // of iteration i, before tasks[i] is folded in. hp_tasks_et_conv_vec[0] is
+    // the empty-HP-set identity. This is exactly the value the 3-arg
+    // GetRTA_OneTask consumes, so a patched suffix reuses it verbatim.
+    hp_tasks_et_conv_vec.assign(n, FiniteDist({Value_Proba(0, 1.0)}));
     FiniteDist hp_tasks_et_conv({Value_Proba(0, 1.0)});
     for (int i = 0; i < n; i++) {
-        FiniteDist rta_curr = GetRTA_OneTask(tasks[i], hp_tasks, hp_tasks_et_conv);
+        hp_tasks_et_conv_vec[i] = hp_tasks_et_conv;
+        FiniteDist rta_curr =
+            GetRTA_OneTask(tasks[i], hp_tasks, hp_tasks_et_conv);
 
-        // rtas.push_back(rta_curr);
         rtas[task_id_to_index[tasks[i].id]] = rta_curr;
         hp_tasks.push_back(tasks[i]);
-        
-        hp_tasks_et_conv.CompressDistributionWithOnlySize(GlobalVariables::Granularity * 1);
+
+        hp_tasks_et_conv.CompressDistributionWithOnlySize(
+            GlobalVariables::Granularity * 1);
         hp_tasks_et_conv.Convolve(tasks[i].execution_time_dist);
     }
     return rtas;

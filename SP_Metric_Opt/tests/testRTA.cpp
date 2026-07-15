@@ -172,6 +172,70 @@ TEST_F(TaskSetForTest_2tasks, GetDDL_MissProbability_v4) {
     EXPECT_NEAR(1.0, GetDDL_MissProbability(dists, 4), 1e-3);
     EXPECT_NEAR(0.66666666, GetDDL_MissProbability(dists, 5), 1e-3);
 }
+// 3-task single-core fixture for the HP-prefix checkpoint store (P1.9 step 2).
+// priorities 0 < 1 < 2 → sorted HP-first order is exactly {t0, t1, t2}; gives
+// hp_tasks_et_conv_vec non-trivial intermediate entries at indices 0,1,2.
+class TaskSetForTest_3tasks_prefix : public ::testing::Test {
+   public:
+    void SetUp() override {
+        GlobalVariables::Granularity = 10;
+        std::vector<Value_Proba> d0 = {
+            Value_Proba(1, 0.6), Value_Proba(2, 0.3), Value_Proba(3, 0.1)};
+        std::vector<Value_Proba> d1 = {Value_Proba(4, 0.7),
+                                       Value_Proba(5, 0.3)};
+        std::vector<Value_Proba> d2 = {Value_Proba(2, 0.5),
+                                       Value_Proba(6, 0.5)};
+        // Task(id, exec, period, deadline, priority) — single-core RTA ignores
+        // processorId (sorts by priority); 5-arg form matches the existing
+        // fixtures above.
+        tasks.push_back(Task(0, d0, 5, 5, 0));
+        tasks.push_back(Task(1, d1, 12, 12, 1));
+        tasks.push_back(Task(2, d2, 20, 20, 2));
+    }
+    TaskSet tasks;
+};
+
+// The 2-arg overload must reproduce the rolling hp_tasks_et_conv bit-for-bit:
+// hp_tasks_et_conv_vec[i] == convolution of the higher-priority tasks' ET
+// dists [0, i), with hp_tasks_et_conv_vec[0] == FiniteDist({Value_Proba(0,
+// 1.0)}). This independently replays the rolling computation from
+// RTA.cpp:73,81-82 and compares.
+TEST_F(TaskSetForTest_3tasks_prefix, HpTasksEtConvVec_MatchesRollingValue) {
+    std::vector<FiniteDist> rtas;
+    std::vector<FiniteDist> hp_tasks_et_conv_vec;
+    ProbabilisticRTA_TaskSet_SingleCore(tasks, hp_tasks_et_conv_vec);
+
+    ASSERT_EQ(tasks.size(), hp_tasks_et_conv_vec.size());
+
+    // Independent replay of the rolling hp_tasks_et_conv.
+    FiniteDist rolling({Value_Proba(0, 1.0)});
+    for (size_t i = 0; i < tasks.size(); i++) {
+        EXPECT_TRUE(hp_tasks_et_conv_vec[i] == rolling)
+            << "hp_tasks_et_conv_vec[" << i << "] != rolling value";
+        rolling.CompressDistributionWithOnlySize(
+            GlobalVariables::Granularity * 1);
+        rolling.Convolve(tasks[i].execution_time_dist);
+    }
+}
+
+// Behavior preservation: the 2-arg overload must return bit-identical rtas to
+// the 1-arg version on the same input (the pinned-rtas tests above are the
+// oracle; this adds an explicit same-input differential).
+TEST_F(TaskSetForTest_3tasks_prefix, TwoArgOverload_SameRtasAsOneArg) {
+    std::vector<FiniteDist> rtas_one_arg =
+        ProbabilisticRTA_TaskSet_SingleCore(tasks);
+
+    std::vector<FiniteDist> rtas_two_arg;
+    std::vector<FiniteDist> hp_tasks_et_conv_vec_ignored;
+    rtas_two_arg = ProbabilisticRTA_TaskSet_SingleCore(tasks, hp_tasks_et_conv_vec_ignored);
+
+    ASSERT_EQ(rtas_one_arg.size(), rtas_two_arg.size());
+    for (size_t i = 0; i < rtas_one_arg.size(); i++) {
+        EXPECT_TRUE(rtas_one_arg[i] == rtas_two_arg[i])
+            << "rtas[" << i << "] diverged between 1-arg and 2-arg overloads";
+    }
+}
+
 class TaskSetv9 : public ::testing::Test {
    public:
     void SetUp() override {
