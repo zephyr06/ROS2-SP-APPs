@@ -420,7 +420,7 @@ def main():
     for idx in range(args.n_tasksets):
         if args.verbose >= 1:
             print(f"\n{'='*60}")
-            print(f"TASKSET {idx + 1} / {args.n_tasksets}")
+            print(f"TASKSET {idx + 1} / {args.n_tasksets}, N={args.num_tasks}")
             print(f"{'='*60}")
 
         taskset_dir = os.path.join(output_dir_abs, f"taskset_{idx}")
