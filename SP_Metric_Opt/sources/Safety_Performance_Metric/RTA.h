@@ -1,6 +1,8 @@
 #pragma once
 // TODO: generalize to working with execution time distribution
 
+#include <unordered_map>
+
 #include "sources/TaskModel/RegularTasks.h"
 namespace SP_OPT_PA {
 FiniteDist GetRTA_OneTask(const Task& task_curr, const TaskSet& hp_tasks);
@@ -17,6 +19,12 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     const TaskSet& tasks, std::vector<FiniteDist>& hp_tasks_et_conv_vec);
 
 std::vector<FiniteDist> ProbabilisticRTA_TaskSet(const TaskSet& tasks);
+
+// Partition `tasks` by `processorId` (one TaskSet per core). Declared here so
+// the per-core RTA cache (RTA_Cache.h) can derive a candidate's per-core
+// partition to diff against a cached `sorted_task_ids`.
+// TODO: remove ProcessorTaskSet struct and methods (legacy).
+std::unordered_map<int, TaskSet> ExtractTaskSetPerProcessor(const TaskSet& tasks);
 
 double GetDDL_MissProbability(const FiniteDist& finite_dist, double ddl);
 }  // namespace SP_OPT_PA

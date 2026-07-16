@@ -133,6 +133,11 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet(const TaskSet& tasks) {
     return rtas;
 }
 
+// ComputeRTA_FullAndCache + the cache reuse-query/patcher API live in
+// RTA_Cache.cpp (declared in RTA_Cache.h). They were relocated out of RTA.cpp
+// because the locked signature takes PriorityVec (OptimizeSP_Base.h), which
+// would form a header cycle through RTA.h.
+
 double GetDDL_MissProbability(const FiniteDist& finite_dist, double ddl) {
     auto itr = std::upper_bound(finite_dist.distribution.begin(),
                                 finite_dist.distribution.end(), ddl,

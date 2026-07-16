@@ -54,6 +54,15 @@ double GetAvgTaskPerfTerm(std::string& ext_file_path,
 double ObtainSP_TaskSet(const TaskSet& tasks,
                         const SP_Parameters& sp_parameters);
 
+// Apply time limits to task execution_time_dist: for each i with
+// time_limits[i] != -1, replace execution_time_dist with a unit distribution
+// (point mass) at time_limits[i] via GetUnitExecutionTimeDist; -1 leaves the
+// task's base dist untouched. Declared here so the per-core RTA cache
+// (RTA_Cache.h) can apply TLs when building/patching a cache. Returns a new
+// TaskSet (does not mutate the input).
+TaskSet ApplyTimeLimitsToTasksExecutionTime(
+    const TaskSet& tasks, const std::vector<double>& time_limits);
+
 // Apply time limits to task execution_time_dist (unit distribution at time limit),
 // then compute SP. time_limit[i] == -1 means no limit for that task.
 double ObtainSP_TaskSet_And_TimeLimits(

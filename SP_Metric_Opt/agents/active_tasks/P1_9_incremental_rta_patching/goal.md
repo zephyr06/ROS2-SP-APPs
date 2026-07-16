@@ -74,6 +74,19 @@ B's entire RTA vector unchanged.
   multi-task diff, any ET change on a cached core, or a new interval
   (DAG_ET change) must invalidate. **Bit-identical** to a full recompute by
   construction (it *is* the cached recompute result).
+* **Validity design (refined 2026-07-14)**: the cache stores two things per
+  core — `sorted_task_ids` (the per-core priority ORDER, which is the
+  SUFFICIENT proxy for pa_vec; RTA cares about order, not priority values) and
+  `tl_vec` (the per-core time limits). `tl_vec` is a SUFFICIENT proxy for
+  ET-dist validity because within an interval ET dists mutate ONLY via TL
+  (`ApplyTimeLimitsToTasksExecutionTime` → `GetUnitExecutionTimeDist(tl)`, a
+  deterministic point mass) — so `stored_tl[i] == current_tl[i]` ⟺ ET-dist
+  unchanged (tl==-1 = the immutable base Gaussian, which never moves mid-walk).
+  The one exception, the one-time WCET ablation
+  (`ApplyWCETAblationIfRequired`, `OptimizeSP_TL_Incre.cpp:487`), is a setup
+  boundary covered by the interval reset. So `pa_vec` is NOT stored
+  (redundant with `sorted_task_ids`); `tl_vec` IS stored. Full design in
+  `tasks.md`.
 
 ### Sub-task 1b — HP-prefix checkpoint store
 
@@ -128,16 +141,40 @@ documented in P1.1 `goal.md` §3 — *provided* it is invalidated on:
 2. multi-task diff (`FindTaskWithDifferentEt` flags >1 task);
 3. new interval (DAG_ET change).
 
-**Cache implementation design is locked (2026-07-13).** Four decisions:
-(1) `hp_tasks_et_conv_vec[i]` = HP-tasks'-ET convolution `[0, i)` on a core,
-consumed verbatim by the 3-arg `GetRTA_OneTask`; (2) cache compute/patch
-are **free functions** in `RTA.h`/`RTA.cpp` taking the cache by reference
-and mutating in place (not class methods); (3) **one cache per interval**,
-never crosses intervals, held by `OptimizePA_Incre_with_TimeLimits`,
-no-PA-change (TL) path implemented first; (4) **replaces the existing RTA
-path outright** — no knob, no fallback, correctness gated by differential
-unit tests. Full design, the `PerCoreRTACache` value type, the three free
-functions, and the named build order live in `tasks.md`.
+**Cache implementation design is locked (2026-07-13, refined 2026-07-14).**
+Four decisions: (1) `hp_tasks_et_conv_vec[i]` = HP-tasks'-ET convolution
+`[0, i)` on a core, consumed verbatim by the 3-arg `GetRTA_OneTask`;
+(2) cache compute/patch are **free functions** taking the cache by reference
+and mutating in place (not class methods) — now in a dedicated
+`RTA_Cache.h`/`RTA_Cache.cpp` (refined 2026-07-14: living in `RTA.h`/`.cpp`
+caused a header cycle that forced the as-built signature divergence; a
+dedicated leaf header breaks it and lets the locked `(dag, pa_vec, tl_vec,
+cache)` signature stand); (3) **one cache per interval**, never crosses
+intervals, held by `OptimizePA_Incre_with_TimeLimits`
+(`EvaluateSPWithPriorityVec` is a per-candidate free fn, can't hold the
+member), no-PA-change (TL) path implemented first; (4) **replaces the
+existing RTA path outright** — no knob, no fallback, correctness gated by
+differential unit tests. **Validity refinement (2026-07-14):** the cache
+stores `sorted_task_ids` (sufficient pa_vec proxy — per-core order, not
+values) + `tl_vec` (sufficient ET-dist proxy within an interval, since ET
+dists mutate only via TL). Full design, the `PerCoreRTACache` value type,
+the three free functions, and the named build order live in `tasks.md`.
+
+**API revision (2026-07-15, pre-commit of 3c):** decision (2) is refined —
+`PerCoreRTACache` is now a **class** (private data + read accessors + query
+helpers + a `Populate` build method), not a bare struct, to centralize the
+sorted_task_ids↔rta↔tl_vec↔hp_tasks_et_conv_vec alignment invariant. The
+cache-level entry points (`ComputeRTA_FullAndCache`, `ClassifyReuse`, the
+patchers) remain **free functions** taking the cache by reference. The role-2
+reuse query is redesigned: the per-core `CacheReuseInfo`/`AnalyzeCacheReuse`/
+`CacheConsistentWith` surface is replaced by a **per-task `enum class
+RTAReuseClass` vector** from `ClassifyReuse(cache, dag, changed_task_ids)`
+(v0 = same-processor check; `RecomputeWithHpPrefix` declared but not produced
+until the prefix refinement paired with the patchers). `CacheConsistentWith` is
+dropped (derivable: all tasks `RtaReuse`). Full record in `tasks.md` §"API
+revision" + `dev_log.md` §2026-07-15 (API revision). The step-3c scope, the
+baseline-only 3b decision, Hazard A/B, and the DECIDED required-
+`PerCoreRTACache&` seam on `OptimizeIncre` are UNCHANGED.
 
 ---
 
@@ -152,3 +189,59 @@ functions, and the named build order live in `tasks.md`.
   — that remains deferred.
 - Does **not** implement Idea 13 (multi-fidelity coarse search) or Idea 15
   (patience-bounded 1D walk) — separate ideas in `idea_queue.md`.
+- **Step 3b is BASELINE-ONLY** (2026-07-14 scope decision): the cache is wired
+  into the incremental optimizer's eval path and `ProbabilisticRTA_TaskSet` is
+  retired from THAT path only. The shared free-fn path
+  (`EvaluateSPWithPriorityVec` → `ObtainSP_DAG` → `ObtainSP_TaskSet` →
+  `ProbabilisticRTA_TaskSet`) stays for `OptimizePA_BF` / `OptimizeSP_TL_BF`
+  until step 7's end-to-end review. Decision 4's "no fallback, replaced
+  outright" applies to the incremental path at 3b; full retirement everywhere
+  is deferred. The cache is BUILT per candidate at 3b (full compute + populate);
+  reuse (patching) is steps 4/5. Full call-chain map + wiring shape + the two
+  integration hazards (A: cache owner on derived class vs PA loop on base class
+  with a sliced inner optimizer → seam threads the cache by parameter;
+  B: `ObtainSP_DAG_From_Dists` omits `perf_coefficient` from the node term → the
+  assembly inlines it, NOT a bare `ObtainSP_DAG_From_Dists` call) in `tasks.md`
+  §"Step 3b design". **NEXT (gated on user commit of 3c + OK to code): implement
+  3b** — add `per_core_rta_cache_` member (on the DERIVED owner, NOT base — Hazard A)
+  + the cache-aware eval seam (**DECIDED 2026-07-15 user: a REQUIRED `PerCoreRTACache&`
+  param on `OptimizeIncre` — always active, no separate fn, no optional pointer; the
+  required ref satisfies `agent_coding_rules.md` L3/L10**) + the perf_coefficient-corrected
+  assembly + the differential test (fixture must include a perf-pair task + a
+  chain, else Hazard B hides). **Scope note (2026-07-15): the seam's primary
+  target is `OptimizeIncre` `:239`/`:279` (the per-candidate O(N²) sites);
+  `OptimizeFromScratch`'s beam search (`UpdateSP`→`GetRTA_OneTask`) bypasses
+  `ProbabilisticRTA_TaskSet` and is NOT cache-replaceable — only its single `:136`
+  final eval is, which is secondary (signature unchanged at 3b).**
+
+---
+
+## Extra Ideas & Design Refinements (Proposed 2026-07-15)
+
+The following refinements are documented as potential design enhancements to be integrated alongside or after step 3b:
+
+1. **Unified Caching API (`EvaluateRTA_WithCache`)**: Merges full compute, TL patching, priority patching, and exact-match reuse into a single robust entry point. The cache automatically determines status per core, simplifying the optimizer integration and eliminating manual index tracking.
+2. **Zero-Copy Order Derivation**: Optimizes `AnalyzeCacheReuse`'s internal candidate sorting by working with task ID primitives rather than allocating and copying full `Task` structures and `FiniteDist` arrays.
+3. **Allocation-Free Flat RTA Rebuilding**: Flattens cache distributions to flat priority-aligned RTA output in O(N) using task-ID indexed arrays instead of hash-maps.
+4. **Speculative Cache Copying**: Ensures speculative evaluations do not affect the champion's cache by using the "scratch copy on spec, swap on accept" pattern (extremely cheap at ~16KB data size).
+
+---
+
+## STATUS: ON HOLD (2026-07-15) — API rev 2 designed, not implemented
+
+The user reshaped the cache API a second time (rev 2 — **self-supplied cache**:
+whole-taskset, `rta_` flat by task id, stores `pa_` + a `dag_tasks` copy;
+`Initialize`/`UpdateFullCache`/`CheckTaskSetRTAReuse`/`GetRTA_OneTask` members
++ free `EvaluateRTA_WithCache`; `tl` threaded directly at the seam — option
+(a), verified in scope at `OptimizeSP_TL_Incre.cpp:142-146`/`:161`), then
+**put `RTA_Cache` on hold** to resolve a more-important issue first. **No code
+written for rev 2** — design-only. Full record + 5 open questions for the user
+in `tasks.md` §"API revision 2" + `dev_log.md` §2026-07-15 (API rev 2). The
+staged 3c code on disk still carries the rev-1 surface (uncommitted).
+
+**Resume sequence:** answer Q1–Q5 → write `RTA_Cache.h` to the locked rev-2
+surface → implement step 3b (required `PerCoreRTACache&` + `tl` seam on
+`OptimizeIncre`, `per_core_rta_cache_` member on the derived owner — now ONE
+whole-taskset object, NOT the rev-1 per-core map, so the §"Step 3b design"
+wiring shape is STALE w.r.t. rev 2 and must be rewritten) → steps 4/5/7.
+
