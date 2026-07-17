@@ -158,44 +158,88 @@ TEST(TaskSet, FindTaskWithDifferentEt) {
     auto diff3 = FindTaskWithDifferentEt(dag22, dag24);
     EXPECT_EQ(0, diff3.size());
 }
-TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations) {
+// The four *_full_range tests pin the FULL candidate-range contract: pass
+// exclude_opt_pa=false so the generator still emits the carried-position
+// variation (i == old_priority_index), which reconstructs pa_vec exactly. They
+// document the range logic that the default-true path (below) skips.
+TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_full_range) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = {0, 1, 2, 3};
     std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
-        pa_vec1, 0, PriorityChangeStatus::OpenToAll);
+        pa_vec1, 0, PriorityChangeStatus::OpenToAll, /*exclude_opt_pa=*/false);
     EXPECT_EQ(4, res.size());
     AssertEqualVectorExact<int>({0, 1, 2, 3}, res[0], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 0, 2, 3}, res[1], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 2, 0, 3}, res[2], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 2, 3, 0}, res[3], 1e-3, __LINE__);
 }
-TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_increase) {
+TEST_F(TaskSetForTest_robotics_v7,
+       FindPriorityVec1D_Variations_increase_full_range) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = {0, 1, 2, 3};
     std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
-        pa_vec1, 0, PriorityChangeStatus::Increase);
+        pa_vec1, 0, PriorityChangeStatus::Increase, /*exclude_opt_pa=*/false);
     EXPECT_EQ(1, res.size());
     AssertEqualVectorExact<int>({0, 1, 2, 3}, res[0], 1e-3, __LINE__);
 }
-TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_increase2) {
+TEST_F(TaskSetForTest_robotics_v7,
+       FindPriorityVec1D_Variations_increase2_full_range) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = {0, 1, 2, 3};
     std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
-        pa_vec1, 1, PriorityChangeStatus::Increase);
+        pa_vec1, 1, PriorityChangeStatus::Increase, /*exclude_opt_pa=*/false);
     EXPECT_EQ(2, res.size());
     AssertEqualVectorExact<int>({1, 0, 2, 3}, res[0], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({0, 1, 2, 3}, res[1], 1e-3, __LINE__);
 }
-TEST_F(TaskSetForTest_robotics_v7, FindPriorityVec1D_Variations_decrease) {
+TEST_F(TaskSetForTest_robotics_v7,
+       FindPriorityVec1D_Variations_decrease_full_range) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     PriorityVec pa_vec1 = {0, 1, 2, 3};
     std::vector<PriorityVec> res = FindPriorityVec1D_Variations(
-        pa_vec1, 0, PriorityChangeStatus::Decrease);
+        pa_vec1, 0, PriorityChangeStatus::Decrease, /*exclude_opt_pa=*/false);
     EXPECT_EQ(4, res.size());
     AssertEqualVectorExact<int>({0, 1, 2, 3}, res[0], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 0, 2, 3}, res[1], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 2, 0, 3}, res[2], 1e-3, __LINE__);
     AssertEqualVectorExact<int>({1, 2, 3, 0}, res[3], 1e-3, __LINE__);
+}
+
+// The default-true path (what OptimizeIncre inherits): exclude_opt_pa=true
+// drops the carried-position variation — the one that reconstructs pa_vec and
+// whose SP-eval would duplicate the incumbent's already-scored baseline. Size
+// is one less than the full range in each PriorityChangeStatus, and none of the
+// emitted variations equals the carried PA.
+TEST_F(TaskSetForTest_robotics_v7,
+       FindPriorityVec1D_Variations_excludes_carried_pa) {
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityVec pa_vec1 = {0, 1, 2, 3};
+    // OpenToAll full range is 4 (positions 0..3); carried at index 0 dropped -> 3.
+    std::vector<PriorityVec> res_open = FindPriorityVec1D_Variations(
+        pa_vec1, 0, PriorityChangeStatus::OpenToAll);
+    EXPECT_EQ(3, res_open.size());
+    for (const PriorityVec& pa : res_open)
+        ASSERT_NE(pa, (PriorityVec{0, 1, 2, 3}));
+
+    // Increase on task 0: full range is index 0 only (the carried pos) -> 0.
+    std::vector<PriorityVec> res_inc = FindPriorityVec1D_Variations(
+        pa_vec1, 0, PriorityChangeStatus::Increase);
+    EXPECT_EQ(0, res_inc.size());
+
+    // Increase on task 1: full range is indices 0,1 (2); carried at index 1
+    // dropped -> 1 (index 0 only).
+    std::vector<PriorityVec> res_inc2 = FindPriorityVec1D_Variations(
+        pa_vec1, 1, PriorityChangeStatus::Increase);
+    EXPECT_EQ(1, res_inc2.size());
+    AssertEqualVectorExact<int>({1, 0, 2, 3}, res_inc2[0], 1e-3, __LINE__);
+
+    // Decrease on task 0: full range is indices 0..3 (4); carried at index 0
+    // dropped -> 3.
+    std::vector<PriorityVec> res_dec = FindPriorityVec1D_Variations(
+        pa_vec1, 0, PriorityChangeStatus::Decrease);
+    EXPECT_EQ(3, res_dec.size());
+    for (const PriorityVec& pa : res_dec)
+        ASSERT_NE(pa, (PriorityVec{0, 1, 2, 3}));
 }
 
 class TaskSetForTest_robotics_v25 : public ::testing::Test {

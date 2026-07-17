@@ -179,7 +179,7 @@ int GetProrityIndex(const PriorityVec& pa_vec, int task_id) {
 }
 std::vector<PriorityVec> FindPriorityVec1D_Variations(
     const PriorityVec& pa_vec, int task_id,
-    PriorityChangeStatus priority_change) {
+    PriorityChangeStatus priority_change, bool exclude_opt_pa) {
     int old_priority_index = GetProrityIndex(pa_vec, task_id);
     int lb, ub;
     switch (priority_change) {
@@ -204,6 +204,11 @@ std::vector<PriorityVec> FindPriorityVec1D_Variations(
     res.reserve(pa_vec.size());
     PriorityVec pa_vec_ref = RemoveOneTask(pa_vec, task_id);
     for (int i = lb; i <= ub; i++) {
+        // The carried position (i == old_priority_index) reconstructs pa_vec
+        // exactly; scoring it duplicates the incumbent's baseline SP. Skip it
+        // when the caller asked to exclude the carried PA (the default — the
+        // sub-incremental scores the carried PA once as its baseline).
+        if (exclude_opt_pa && i == old_priority_index) continue;
         PriorityVec pa_vec_new = pa_vec_ref;
         pa_vec_new.insert(pa_vec_new.begin() + i, task_id);
         res.push_back(pa_vec_new);

@@ -65,9 +65,16 @@ enum PriorityChangeStatus { Increase, Decrease, OpenToAll };
 
 PriorityChangeStatus AnalyzePriorityChangeStatus(
     const SP_Parameters& sp_parameters, int task_id, bool et_increased);
+// `exclude_opt_pa` (default true): skip emitting the variation that re-
+// inserts task_id at its carried position (i == old_priority_index). That
+// variation reconstructs `pa_vec` exactly, so scoring it re-computes the
+// incumbent's SP — the redundant eval the sub-incremental (OptimizeIncre_
+// SingleTask) avoids by scoring the carried PA once as the baseline. Callers
+// that want the FULL candidate range (including the carried position) pass
+// false (e.g. unit tests asserting the range contract).
 std::vector<PriorityVec> FindPriorityVec1D_Variations(
     const PriorityVec& pa_vec, int task_id,
-    PriorityChangeStatus priority_change);
+    PriorityChangeStatus priority_change, bool exclude_opt_pa = true);
 
 class OptimizePA_Incre : public OptimimizePA_Base {
    public:
