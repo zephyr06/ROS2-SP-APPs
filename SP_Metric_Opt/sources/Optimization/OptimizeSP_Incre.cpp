@@ -137,6 +137,39 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
     return res;
 }
 
+std::vector<int> FindTasksWithFlexibleTimeLimits(const DAG_Model& dag_tasks) {
+    std::vector<int> res;
+    for (int i = 0; i < dag_tasks.tasks.size(); i++) {
+        if (!dag_tasks.tasks[i].timePerformancePairs.empty()) {
+            res.push_back(i);
+        }
+    }
+    return res;
+}
+
+std::vector<DiffObj> FindEnvTaskWithDifferentEt(
+    const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated) {
+    // Type-E (env-changed) diff: FindTaskWithDifferentEt's result MINUS
+    // TL-flexible tasks. A TL-flexible task's execution_time_dist is built from
+    // raw mu/min/max YAML fields (no adopted-TL override at read), and
+    // FiniteDist::operator!= is a 10%-relative approx_equal, so its dist can
+    // compare unequal across intervals for non-env (TL/grid) reasons; filtering
+    // the TL-flexible set leaves a clean env-only signal. See the header comment.
+    std::vector<DiffObj> full =
+        FindTaskWithDifferentEt(dag_tasks, dag_tasks_updated);
+    std::vector<int> tl_flexible = FindTasksWithFlexibleTimeLimits(dag_tasks);
+    std::unordered_set<int> tl_flexible_set(tl_flexible.begin(),
+                                            tl_flexible.end());
+    std::vector<DiffObj> seq;
+    seq.reserve(full.size());
+    for (const DiffObj& d : full) {
+        if (tl_flexible_set.count(d.task_id) == 0) {
+            seq.push_back(d);
+        }
+    }
+    return seq;
+}
+
 std::vector<DiffObj> FindTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated) {
     std::vector<DiffObj> seq;

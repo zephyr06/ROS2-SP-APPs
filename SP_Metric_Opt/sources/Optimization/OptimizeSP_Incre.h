@@ -56,6 +56,30 @@ struct DiffObj {
     int task_id;
     bool increase;
 };
+
+// Task IDs with time-limit freedom: a task is TL-flexible iff it carries a
+// non-empty `timePerformancePairs` (the perf-pair grid). Mirrors the
+// `{-1}`-sentinel test in RecordTimeLimitOptions (OptimizeSP_TL_BF.cpp): tasks
+// WITHOUT pairs get the `{-1}`-only option set (no TL freedom); tasks WITH
+// pairs are the TL-flexible set the serialized Type-L step walks.
+std::vector<int> FindTasksWithFlexibleTimeLimits(const DAG_Model& dag_tasks);
+
+// Reports tasks whose pre-TL execution_time_dist moved, MINUS TL-flexible
+// tasks. This is the Type-E (env-changed) diff of the serialized search
+// (P1.10 D2, amended 2026-07-17): FiniteDist::operator!= is a 10%-relative
+// approx_equal (Probability.cpp:415-417), and a TL-flexible task's
+// execution_time_dist is built from the raw mu/min/max YAML fields with no
+// read-time override to the adopted TL, so its dist can compare unequal across
+// intervals for TL-induced reasons (not env). Filtering TL-flexible tasks here
+// is therefore more robust than relying on the caller to equalize their ET —
+// the env signal survives cleanly without depending on bit-equal perf-pair
+// dists. The UNFILTERED `FindTaskWithDifferentEt` below stays as-is for the
+// TL-walk call site (`OptimizeIncre`'s :282), which MUST keep flagging the
+// TL-walked (TL-flexible) task so its 1D priority is re-searched each TL step
+// (until P1.10 Phase 2 migrates that path to OptimizeIncre_SingleTask).
+std::vector<DiffObj> FindEnvTaskWithDifferentEt(
+    const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated);
+
 std::vector<DiffObj> FindTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated);
 

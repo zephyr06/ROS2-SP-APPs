@@ -8,6 +8,8 @@
 
 #include <unistd.h>  // access/F_OK for the optional-data guard in the N=10 probe
 
+#include <set>
+
 using ::testing::AtLeast;  // #1
 using ::testing::Return;
 using namespace std;
@@ -157,6 +159,70 @@ TEST(TaskSet, FindTaskWithDifferentEt) {
     EXPECT_TRUE(diff2[0].increase);
     auto diff3 = FindTaskWithDifferentEt(dag22, dag24);
     EXPECT_EQ(0, diff3.size());
+}
+
+// FindTasksWithFlexibleTimeLimits: only tasks with a non-empty
+// timePerformancePairs are TL-flexible. In v19 only TSP (task 0) carries
+// performance_records_time (see TaskData/test_robotics_v19.yaml); MPC/RRT/SLAM
+// have none. So the flexible set is {0}.
+TEST(TaskSet, FindTasksWithFlexibleTimeLimits) {
+    auto dag19 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v19.yaml");
+    auto flex = FindTasksWithFlexibleTimeLimits(dag19);
+    ASSERT_EQ(1u, flex.size());
+    EXPECT_EQ(0, flex[0]);
+}
+
+// FindEnvTaskWithDifferentEt filters TL-flexible tasks out of the full diff.
+// v19->v21 moves TWO tasks' execution_time_dist: TSP (task 0, TL-flexible,
+// 1500.9->400.9) and SLAM (task 3, NOT TL-flexible, 2853->285). The unfiltered
+// FindTaskWithDifferentEt flags both {0,3}; the env-only filter drops the
+// TL-flexible TSP and reports only SLAM {3} — the env signal survives without
+// depending on bit-equal perf-pair dists (FiniteDist::operator!= is 10%-relative
+// approx_equal, Probability.cpp:415-417).
+TEST(TaskSet, FindEnvTaskWithDifferentEt_filtersTLFlexible) {
+    auto dag19 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v19.yaml");
+    auto dag21 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v21.yaml");
+
+    auto full = FindTaskWithDifferentEt(dag19, dag21);
+    auto env = FindEnvTaskWithDifferentEt(dag19, dag21);
+
+    // Sanity: the full diff sees both movers.
+    ASSERT_EQ(2u, full.size());
+    std::set<int> full_ids = {full[0].task_id, full[1].task_id};
+    EXPECT_EQ((std::set<int>{0, 3}), full_ids);
+
+    // The env filter drops the TL-flexible TSP (0), keeps SLAM (3).
+    ASSERT_EQ(1u, env.size());
+    EXPECT_EQ(3, env[0].task_id);
+    EXPECT_FALSE(env[0].increase);  // SLAM 2853 -> 285: decrease
+}
+
+// When the flagged task is NOT TL-flexible, the env filter is a no-op: the two
+// functions report the same diff. v22->v23 moves MPC (task 1, no perf records)
+// only — so full == env. (v22 has a TL-flexible TSP, but TSP is unchanged
+// here, so the filter's TSP membership is irrelevant.) This is the case the
+// env filter must not over-filter: a non-TL-flexible mover is never dropped.
+TEST(TaskSet, FindEnvTaskWithDifferentEt_noopWhenFlaggedNotTLFlexible) {
+    auto dag22 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v22.yaml");
+    auto dag23 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v23.yaml");
+    auto dag24 = ReadDAG_Tasks(GlobalVariables::PROJECT_PATH +
+                               "TaskData/test_robotics_v24.yaml");
+
+    auto full23 = FindTaskWithDifferentEt(dag22, dag23);
+    auto env23 = FindEnvTaskWithDifferentEt(dag22, dag23);
+    ASSERT_EQ(1u, full23.size());
+    EXPECT_EQ(full23[0].task_id, env23[0].task_id);
+    EXPECT_EQ(full23[0].increase, env23[0].increase);
+    EXPECT_EQ(full23.size(), env23.size());
+
+    auto full24 = FindTaskWithDifferentEt(dag22, dag24);
+    auto env24 = FindEnvTaskWithDifferentEt(dag22, dag24);
+    EXPECT_EQ(full24.size(), env24.size());
 }
 // The four *_full_range tests pin the FULL candidate-range contract: pass
 // exclude_opt_pa=false so the generator still emits the carried-position
