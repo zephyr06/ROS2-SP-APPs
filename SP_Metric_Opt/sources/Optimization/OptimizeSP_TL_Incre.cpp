@@ -182,14 +182,15 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     (void)K;  // unused: the primitive re-searches one task's 1D positions (no
               // beam)
 
-    // TODO(future): the caller (Type-L lambda / Type-E site) already holds the
-    // trial `time_limits` and could pre-build this DAG once and pass it in,
-    // avoiding the per-eval UpdateExtDistBasedOnTimeLimit rebuild. Not done now
-    // because this method is a `virtual` eval seam overridden by test stubs
-    // (StartTLStub / RecordingDispatcherOpt), which do not build a real DAG —
-    // threading a DAG_Model through the signature would force stubs to
-    // construct one. The rebuild is cheap relative to ObtainSP_DAG inside
-    // EvaluateSPWithPriorityVec, so the cost is negligible today.
+    // The per-eval DAG rebuild is required, not redundant: the cost-dominant
+    // caller is the Type-L walk, which calls this once PER trial TL step with a
+    // DIFFERENT `time_limits` each time, so each call's candidate DAG genuinely
+    // differs and must be rebuilt. The Type-E call (committed TL) does double-
+    // build the champion DAG (BuildChallengerFromIncumbent builds the same DAG
+    // from the committed TL), but that is one call per Type-E entry per interval
+    // — negligible, and the redundant build there is expected to be subsumed by
+    // the P1.9 RTA cache's |diff|==0 full-reuse path (same DAG, different PA),
+    // not by threading a pre-built DAG through this eval seam.
     DAG_Model dag_tasks_cur =
         UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
 
@@ -355,10 +356,16 @@ OptimizePA_Incre_with_TimeLimits::BuildSerializedTaskQueue(
     std::vector<SerializedTaskQueueEntry> queue;
     queue.reserve(type_e.size() + type_l.size());
     for (const DiffObj& d : type_e) {
-        queue.push_back(
-            {d.task_id, SerializedTaskQueueEntry::Kind::EnvChanged});
+        // Carry the env-move direction (DiffObj.increase) on the entry so the
+        // Type-E handler reads it directly instead of recomputing the full env
+        // diff per entry to recover one bool (FindEnvTaskWithDifferentEt was
+        // already computed once above to build this queue).
+        queue.push_back({d.task_id, SerializedTaskQueueEntry::Kind::EnvChanged,
+                         d.increase});
     }
     for (int tid : type_l) {
+        // TLFlexible entries leave et_increased=false (unused — the walk derives
+        // per-step direction from the trial-vs-committed TL sign).
         queue.push_back({tid, SerializedTaskQueueEntry::Kind::TLFlexible});
     }
     // Sort together by weight DESCENDING (D3). Stable so same-weight E/L keep
@@ -413,28 +420,12 @@ void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
         if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
             // Type-E: one sub-incremental re-search of env-changed task's 1D
             // priority with the COMMITTED TL (no TL walk). et_increased = the
-            // env-move direction (FindEnvTaskWithDifferentEt's
-            // DiffObj.increase).
-            // TODO(future): this recomputes the full env diff per Type-E entry
-            // just to look up one task's `.increase`, but BuildSerializedTaskQueue
-            // already computed FindEnvTaskWithDifferentEt once to build the queue
-            // and discarded the DiffObj (only task_id survived into the entry).
-            // Clean fix: carry `et_increased` (or the whole DiffObj) on
-            // SerializedTaskQueueEntry for Type-E entries, populate it once in
-            // BuildSerializedTaskQueue, and drop this in-loop recompute. Not done
-            // now to keep the flag-removal milestone a single coherent change.
-            std::vector<DiffObj> env_diff =
-                FindEnvTaskWithDifferentEt(dag_tasks_prev_pre_tl, dag_tasks_);
-            bool et_increased = false;
-            for (const DiffObj& d : env_diff) {
-                if (d.task_id == entry.task_id) {
-                    et_increased = d.increase;
-                    break;
-                }
-            }
+            // env-move direction, carried on the entry (populated once in
+            // BuildSerializedTaskQueue from FindEnvTaskWithDifferentEt's
+            // DiffObj.increase) — no per-entry env-diff recompute.
             current_config_sp = EvaluateTimeLimitConfig_SubIncremental(
                 K, starting_time_limits, static_cast<size_t>(entry.task_id),
-                et_increased);
+                entry.et_increased);
             // SubIncremental commits the adopted {pa, tl} via UpdateRecords;
             // refresh the working TL vector from the (possibly) adopted
             // champion so the next step diffs against the true current

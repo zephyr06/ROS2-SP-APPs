@@ -58,9 +58,17 @@ struct TaskSortingHeuristic {
 // One entry in the serialized E+L queue (P1.10). `kind` dispatches the step
 // handler: EnvChanged → one sub-incremental re-search with the committed TL;
 // TLFlexible → the trial-and-error TL walk whose steps call the sub-incremental.
+//
+// `et_increased` is meaningful ONLY for Kind::EnvChanged entries: it is the
+// env-move direction (FindEnvTaskWithDifferentEt's DiffObj.increase), captured
+// once when the queue is built so the Type-E handler does NOT recompute the full
+// env diff per entry just to recover one bool. For Kind::TLFlexible entries it is
+// unused (the walk derives et_increased per step from the trial-vs-committed TL
+// sign) and set to false.
 struct SerializedTaskQueueEntry {
     int task_id;
     enum class Kind { EnvChanged, TLFlexible } kind;
+    bool et_increased = false;
 };
 
 class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
