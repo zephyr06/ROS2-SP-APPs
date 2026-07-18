@@ -1,140 +1,466 @@
 #include "sources/Safety_Performance_Metric/RTA_Cache.h"
 
-#include <algorithm>
+#include <stdexcept>
 #include <unordered_set>
 
+#include "sources/Optimization/OptimizeSP_Base.h"  // UpdateTaskSetPriorities
+#include "sources/Optimization/OptimizeSP_Incre.h"  // FindTaskWithDifferentEt, DiffObj
+#include "sources/Safety_Performance_Metric/PrioritySwitchAnalysis.h"  // RestEqualAfterRemoving, FindCoreOfTask, AnalyzePrioritySwitch(PerCore), PrioritySwitchStatus/Analysis
 #include "sources/Safety_Performance_Metric/SP_Metric.h"  // ApplyTimeLimitsToTasksExecutionTime
+#include "sources/Utils/Parameters.h"  // GlobalVariables::Granularity
 
 namespace SP_OPT_PA {
 
-// --- PerCoreRTACache build path (role 1 helper) ---
-const std::vector<FiniteDist>& PerCoreRTACache::Populate(
-    int processor_id, const TaskSet& core_tasks,
-    const std::vector<double>& time_limits) {
-    processor_id_ = processor_id;
+namespace {
 
-    // Canonicalize HP-first by priority so rta_[i] / hp_tasks_et_conv_vec_[i]
-    // / sorted_task_ids_[i] / tl_vec_[i] all align at sorted position i.
-    // ProbabilisticRTA_TaskSet_SingleCore scatters its returned rtas by INPUT
-    // position but fills hp_tasks_et_conv_vec_ by SORTED position, so passing an
-    // already-sorted taskset makes the two align.
-    TaskSet core_sorted = core_tasks;
-    std::sort(core_sorted.begin(), core_sorted.end(),
-              [](const Task& a, const Task& b) {
-                  return a.priority < b.priority;
-              });
+// Identity HP-prefix (empty HP set) — matches RTA.cpp:86.
+FiniteDist IdentityPrefix() {
+    return FiniteDist(std::vector<Value_Proba>{Value_Proba(0, 1.0)});
+}
 
-    sorted_task_ids_.clear();
-    sorted_task_ids_.reserve(core_sorted.size());
-    tl_vec_.clear();
-    tl_vec_.reserve(core_sorted.size());
-    for (const Task& t : core_sorted) {
-        sorted_task_ids_.push_back(t.id);
-        // time_limits is indexed by task id (== position in dag.tasks); -1 if
-        // the caller passed a shorter vec or this task has no TL.
-        tl_vec_.push_back(t.id < static_cast<int>(time_limits.size())
-                              ? time_limits[t.id]
-                              : -1.0);
+// Roll `hp_tasks_et_conv` forward by one task, matching RTA.cpp:95-97:
+// Compress(Granularity*1) then Convolve(task ET).
+void RollPrefix(FiniteDist& hp_tasks_et_conv, const FiniteDist& et) {
+    hp_tasks_et_conv.CompressDistributionWithOnlySize(
+        GlobalVariables::Granularity * 1);
+    hp_tasks_et_conv.Convolve(et);
+}
+
+}  // namespace
+
+// --- priority-analysis utilities (defined here, declared in
+// PrioritySwitchAnalysis.h) ----------------------------------------------
+// Bodies are the spec the header documents; see that header for the algorithm
+// and the test suite (testRTA.cpp) for the pinned edge cases.
+
+bool RestEqualAfterRemoving(const std::vector<int>& candidate_order,
+                            const std::vector<int>& champion_order,
+                            int task_id) {
+    size_t i = 0, j = 0;
+    while (i < candidate_order.size() && j < champion_order.size()) {
+        if (candidate_order[i] == task_id) { i++; continue; }
+        if (champion_order[j] == task_id) { j++; continue; }
+        if (candidate_order[i] != champion_order[j]) return false;
+        i++; j++;
+    }
+    // Drain any trailing `task_id` entries on either side; any other trailing
+    // task means the orders differ in length after removal (unequal counts).
+    while (i < candidate_order.size() && candidate_order[i] == task_id) i++;
+    while (j < champion_order.size() && champion_order[j] == task_id) j++;
+    return i == candidate_order.size() && j == champion_order.size();
+}
+
+int FindCoreOfTask(const std::unordered_map<int, std::vector<int>>& per_core,
+                   int task_id) {
+    for (const auto& [core, order] : per_core) {
+        for (int tid : order)
+            if (tid == task_id)
+                return core;
+    }
+    return -1;
+}
+
+PrioritySwitchStatus AnalyzePrioritySwitchPerCore(
+    const std::vector<int>& candidate_order,
+    const std::vector<int>& champion_order, PrioritySwitchAnalysis& out) {
+    if (candidate_order == champion_order)
+        return PrioritySwitchStatus::AllIdentical;
+
+    size_t i = 0;
+    while (i < candidate_order.size() &&
+           candidate_order[i] == champion_order[i])
+        i++;
+    if (i == candidate_order.size())
+        return PrioritySwitchStatus::NotSingle;  // defensive: flagged diff but
+                                                 // equal
+    int candidate_task = candidate_order[i], champion_task = champion_order[i];
+    int moved_task_id = -1;
+    if (RestEqualAfterRemoving(candidate_order, champion_order,
+                               candidate_task)) {
+        moved_task_id = candidate_task;
+    } else if (RestEqualAfterRemoving(candidate_order, champion_order,
+                                      champion_task)) {
+        moved_task_id = champion_task;
+    } else {
+        return PrioritySwitchStatus::NotSingle;  // neither removal matches ⇒ >1
+                                                 // move
+    }
+    for (size_t j = 0; j < champion_order.size(); j++)
+        if (champion_order[j] == moved_task_id) {
+            out.old_pos = static_cast<int>(j);
+            break;
+        }
+    for (size_t j = 0; j < candidate_order.size(); j++)
+        if (candidate_order[j] == moved_task_id) {
+            out.new_pos = static_cast<int>(j);
+            break;
+        }
+    out.moved_task_id = moved_task_id;
+    return PrioritySwitchStatus::SingleChange;
+}
+
+PrioritySwitchAnalysis AnalyzePrioritySwitch(
+    const std::unordered_map<int, std::vector<int>>& candidate_per_core,
+    const std::unordered_map<int, std::vector<int>>& champion_per_core) {
+    static const std::vector<int> empty_vec;
+    PrioritySwitchAnalysis result;
+
+    // (1) Per-core size check.
+    for (const auto& [core, candidate_order] : candidate_per_core) {
+        auto champ_it = champion_per_core.find(core);
+        const std::vector<int>& champion_order =
+            champ_it != champion_per_core.end() ? champ_it->second : empty_vec;
+        if (candidate_order.size() != champion_order.size())
+            return result;
+    }
+    for (const auto& [core, champion_order] : champion_per_core) {
+        if (candidate_per_core.find(core) != candidate_per_core.end())
+            continue;
+        if (!champion_order.empty())
+            return result;  // champ core emptied/migrated
     }
 
-    // Drives the 2-arg SingleCore (emits hp_tasks_et_conv_vec_); rta_[i] is the
-    // RTA of the task at sorted position i. core_sorted is already sorted, so
-    // SingleCore's internal re-sort is a no-op and its input-position scatter
-    // lands in the same order as sorted_task_ids_.
-    rta_ = ProbabilisticRTA_TaskSet_SingleCore(core_sorted,
-                                               hp_tasks_et_conv_vec_);
+    // (2) Find the one core (if any) whose order differs, then delegate the
+    // per-core remove-and-compare to AnalyzePrioritySwitchPerCore.
+    int changed_core = -1;
+    for (const auto& [core, candidate_order] : candidate_per_core) {
+        auto champ_it = champion_per_core.find(core);
+        const std::vector<int>& champion_order =
+            champ_it != champion_per_core.end() ? champ_it->second : empty_vec;
+        const PrioritySwitchStatus per_core_status =
+            AnalyzePrioritySwitchPerCore(candidate_order, champion_order,
+                                         result);
+        if (per_core_status != PrioritySwitchStatus::AllIdentical) {
+            if (changed_core != -1)
+                return result;  // 2nd changed core ⇒ >1
+            if (per_core_status == PrioritySwitchStatus::NotSingle)
+                return result;
+            changed_core = core;
+        }
+    }
+
+    // (3) No order diff ⇒ no priority change.
+    if (changed_core == -1) {
+        result.status = PrioritySwitchStatus::AllIdentical;
+        return result;
+    }
+
+    result.status = PrioritySwitchStatus::SingleChange;
+    result.changed_core = changed_core;
+    return result;
+}
+
+// Per-core priority ORDER from (dag, pa): for each processorId, the task ids
+// on that core in ascending-priority order (lower pa position = higher
+// priority; pa[i] = task id at priority index i). Mirrors
+// ProbabilisticRTA_TaskSet_SingleCore's sort (RTA.cpp:72-74) applied AFTER
+// UpdateTaskSetPriorities sets priority=i.
+std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
+    const DAG_Model& dag_tasks, const PriorityVec& pa) const {
+    TaskSet prioritized = UpdateTaskSetPriorities(dag_tasks.tasks, pa);
+    std::unordered_map<int, std::vector<int>> order;
+    for (const Task& t : prioritized) {
+        order[t.processorId].push_back(t.id);
+    }
+    return order;
+}
+
+// Full N-task RTA for (dag, pa, tl) + store the champion triple + flat rta_ +
+// per-core HP-prefix checkpoints. Bit-identical to ProbabilisticRTA_TaskSet:
+// bake TL → apply pa (sorts HP-first) → ProbabilisticRTA_TaskSet (partitions by
+// processorId internally). The HP-prefix checkpoints are re-rolled separately
+// (efficiency TODO: ProbabilisticRTA_TaskSet could emit them, avoiding a second
+// per-core ET-convolution pass — deferred until the cache is wired hot).
+const std::vector<FiniteDist>& RTACache::Initialize(
+    const DAG_Model& dag_tasks, const PriorityVec& pa,
+    const std::vector<double>& tl) {
+    dag_champion_ = dag_tasks;
+    pa_champion_ = pa;
+    tl_champion_ = tl;
+
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
+    rta_ = ProbabilisticRTA_TaskSet(tasks_prioritized);
+
+    RebuildPrefixes(tasks_prioritized);
+    candidate_rta_ = rta_;
     return rta_;
 }
 
-// ============================================================================
-// (1) BUILD — full compute + populate the cache.
-// ============================================================================
+// Cheap commit: store the champion triple + the caller-supplied rtas (a vector
+// Evaluate/Initialize returned for this triple) + rebuild hp_prefix_per_core_
+// by re-rolling the per-core ET-convolution. No RTA work (no
+// ResolvePreemptions, no GetRTA_OneTask).
+void RTACache::AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
+                             const std::vector<double>& tl,
+                             const std::vector<FiniteDist>& rtas) {
+    dag_champion_ = dag_tasks;
+    pa_champion_ = pa;
+    tl_champion_ = tl;
+    rta_ = rtas;
+    candidate_rta_ = rtas;
 
-std::vector<FiniteDist> ComputeRTA_FullAndCache(
-    const DAG_Model& dag_tasks, const PriorityVec& priority_assignment,
-    const std::vector<double>& time_limits,
-    std::unordered_map<int, PerCoreRTACache>& cache) {
-    // Apply TLs (by-id) then priorities (sorts HP-first), matching the live
-    // path order: ObtainSP_DAG 3-arg → ApplyTimeLimits on the by-id TaskSet →
-    // ObtainSP_DAG 2-arg → ... → SingleCore sorts by priority.
-    TaskSet tasks_with_tl =
-        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, time_limits);
-    TaskSet tasks_prioritized =
-        UpdateTaskSetPriorities(tasks_with_tl, priority_assignment);
-
-    std::unordered_map<int, int> task_id2index;
-    for (size_t i = 0; i < tasks_prioritized.size(); i++) {
-        task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
-    }
-
-    std::unordered_map<int, TaskSet> processor_task_set =
-        ExtractTaskSetPerProcessor(tasks_prioritized);
-
-    std::vector<FiniteDist> rtas(tasks_prioritized.size());
-    cache.clear();
-
-    for (const auto& kv : processor_task_set) {
-        int processor_id = kv.first;
-        const TaskSet& tasks_core = kv.second;
-
-        PerCoreRTACache& entry = cache[processor_id];
-        entry.Populate(processor_id, tasks_core, time_limits);
-
-        // Scatter this core's rtas back into the flat vector by task id. The
-        // cache's rta_ is aligned to sorted position; the flat vector is
-        // aligned to dag.tasks position (== task id), so the lookup-by-id is
-        // the same as the legacy ProbabilisticRTA_TaskSet scatter.
-        for (size_t i = 0; i < tasks_core.size(); i++) {
-            int tid = tasks_core[i].id;
-            rtas[task_id2index.at(tid)] = entry.Rta()[i];
-        }
-    }
-    return rtas;
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
+    RebuildPrefixes(tasks_prioritized);
 }
 
-// ============================================================================
-// (2) REUSE QUERY — per-task classification (v0: same-processor check).
-// ============================================================================
-
-std::vector<RTAReuseClass> ClassifyReuse(
-    const std::unordered_map<int, PerCoreRTACache>& cache,
-    const DAG_Model& dag_tasks,
-    const std::vector<int>& changed_task_ids) {
-    // Empty cache → nothing reusable for anyone.
-    if (cache.empty()) {
-        return std::vector<RTAReuseClass>(
-            dag_tasks.tasks.size(), RTAReuseClass::Recompute);
-    }
-
-    // Collect the processorIds that own at least one changed task. A task
-    // sharing any of these is conservatively `Recompute` (its core's RTA may
-    // have shifted, even if this task sits above the changed position — v0 does
-    // not exploit the within-core prefix reuse point yet).
-    std::unordered_set<int> changed_processors;
-    for (int changed_task_id : changed_task_ids) {
-        if (changed_task_id >= 0 &&
-            changed_task_id < static_cast<int>(dag_tasks.tasks.size())) {
-            changed_processors.insert(
-                dag_tasks.tasks[changed_task_id].processorId);
+// Rebuild hp_prefix_per_core_[core][i] = HP-ET convolution of the
+// priority-sorted tasks [0, i) on `core` (i.e. exactly what 3-arg
+// GetRTA_OneTask consumes), by rolling the ET-convolution forward in priority
+// order. Reproduces exactly the prefixes ProbabilisticRTA_TaskSet_SingleCore
+// emits (same bake, same sort).
+void RTACache::RebuildPrefixes(const TaskSet& tasks_prioritized) {
+    std::unordered_map<int, TaskSet> per_core =
+        ExtractTaskSetPerProcessor(tasks_prioritized);
+    hp_prefix_per_core_.clear();
+    for (const auto& [core, core_tasks] : per_core) {
+        // core_tasks is priority-sorted
+        std::vector<FiniteDist>& prefixes = hp_prefix_per_core_[core];
+        prefixes.assign(core_tasks.size(), IdentityPrefix());
+        FiniteDist hp_tasks_et_conv = IdentityPrefix();
+        for (size_t i = 0; i < core_tasks.size(); i++) {
+            prefixes[i] = hp_tasks_et_conv;
+            RollPrefix(hp_tasks_et_conv, core_tasks[i].execution_time_dist);
         }
     }
+}
 
-    std::vector<RTAReuseClass> result(dag_tasks.tasks.size(),
-                                      RTAReuseClass::RtaReuse);
-    for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
-        const Task& task = dag_tasks.tasks[i];
-        bool core_in_cache = cache.find(task.processorId) != cache.end();
-        bool core_changed = changed_processors.count(task.processorId) > 0;
-        if (!core_in_cache || core_changed) {
-            result[i] = RTAReuseClass::Recompute;
-        }
-        // else: this task's core has no changed task and is cached → RtaReuse.
-        // (RecomputeWithHpPrefix is declared but not produced by v0.)
+// Boolean predicate: does the candidate differ from the stored champion by AT
+// MOST one task (ET and/or per-core priority position)? Thin non-throwing
+// wrapper over TryComputeSingleChange (the merged algorithm). See the header
+// doc for the find-ET-diff → remove-one → compare-rest algorithm.
+bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
+                                  const PriorityVec& pa,
+                                  const std::vector<double>& tl) const {
+    TaskSetDifference ignored;
+    return TryComputeSingleChange(dag_tasks, pa, tl, ignored);
+}
+
+// The single shared single-change analyzer. See the header doc for the full
+// algorithm. Returns true + fills `out` iff |diff| <= 1; false otherwise.
+// Never throws; leaves `out` untouched on false. The no-champion case returns
+// false (ComputeTaskSetDifference short-circuits it to {-1,...} before here).
+//
+// "Remove one task from both vectors, compare the rest": if removing a task
+// from both the champion and candidate per-core order makes them equal, then
+// that task's relocation (or ET change, if it's the known ET-diff task) is the
+// SINGLE change; everything else is identical. If neither removal matches, a
+// second task also moved → not single.
+bool RTACache::TryComputeSingleChange(const DAG_Model& dag_tasks,
+                                      const PriorityVec& pa,
+                                      const std::vector<double>& tl,
+                                      TaskSetDifference& out) const {
+    // Dedup'd baked-DAG dance (was repeated in IsSingleTaskChange +
+    // ComputeTaskSetDifference before the merge).
+    TaskSet champ_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_champion_.tasks, tl_champion_);
+    TaskSet cand_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    DAG_Model champ_dag_baked = dag_champion_;
+    champ_dag_baked.tasks = champ_baked;
+    DAG_Model cand_dag_baked = dag_tasks;
+    cand_dag_baked.tasks = cand_baked;
+    std::vector<DiffObj> et_diff =
+        FindTaskWithDifferentEt(champ_dag_baked, cand_dag_baked);
+
+    // (1) ET diff: >1 ET-changed task ⇒ not single.
+    if (et_diff.size() > 1)
+        return false;
+
+    std::unordered_map<int, std::vector<int>> candidate_per_core =
+        PerCoreOrderFromPa(dag_tasks, pa);
+    std::unordered_map<int, std::vector<int>> champion_per_core =
+        PerCoreOrderFromPa(dag_champion_, pa_champion_);
+
+    // (2) Priority-order analysis on the two per-core maps. Returns the status
+    // (not single / all identical / single change) and, when single, the
+    // changed core + the moved task's locators for the pure-priority-move case.
+    // For the ET-known case we re-run the remove-and-compare below with the
+    // known task id (it isn't a "discover the moved task" case).
+    PrioritySwitchAnalysis pa_switch =
+        AnalyzePrioritySwitch(candidate_per_core, champion_per_core);
+    if (pa_switch.status == PrioritySwitchStatus::NotSingle)
+        return false;
+
+    int changed_core = pa_switch.status == PrioritySwitchStatus::SingleChange
+                           ? pa_switch.changed_core
+                           : -1;
+
+    // (3) No ET diff + no per-core order diff ⇒ |diff|==0 (identity).
+    if (et_diff.empty() && changed_core == -1) {
+        out = TaskSetDifference{-1, -1, -1, -1};
+        return true;
+    }
+
+    // (4) Cross-check: if both an ET diff and a priority move exist, they must
+    // be on the SAME core (the moved task is the ET-changed task) ⇒ one merged
+    // change. Different cores ⇒ 2 changes ⇒ not single.
+    int et_task_id = et_diff.empty() ? -1 : et_diff.front().task_id;
+    int et_core =
+        et_task_id != -1 ? FindCoreOfTask(candidate_per_core, et_task_id) : -1;
+    if (et_task_id != -1 && changed_core != -1 && et_core != changed_core)
+        return false;
+
+    int moved_task_id, old_pos, new_pos;
+    if (et_task_id != -1) {
+        // ET-known branch: the changed task is et_task_id. Remove it from both
+        // orders on its ACTUAL core (et_core) and check the rest matches — else
+        // a SEPARATE task also moved ⇒ not single. The ET-diff task's own
+        // priority move (if any) is absorbed by removing it (combined ET+move ⇒
+        // single change). changed_core == -1 here ⟺ ET-only change (no priority
+        // move) ⟺ old_pos == new_pos; set the locator core to where it sits.
+        const std::vector<int>& candidate_order =
+            candidate_per_core.at(et_core);
+        const std::vector<int>& champion_order = champion_per_core.at(et_core);
+        moved_task_id = et_task_id;
+        for (size_t i = 0; i < candidate_order.size(); i++)
+            if (candidate_order[i] == et_task_id) {
+                new_pos = static_cast<int>(i);
+                break;
+            }
+        for (size_t i = 0; i < champion_order.size(); i++)
+            if (champion_order[i] == et_task_id) {
+                old_pos = static_cast<int>(i);
+                break;
+            }
+        if (!RestEqualAfterRemoving(candidate_order, champion_order,
+                                    et_task_id))
+            return false;
+        changed_core = et_core;
+    } else {
+        // Pure-priority-move branch (0 ET diff): the moved task + locators were
+        // discovered by AnalyzePrioritySwitch.
+        moved_task_id = pa_switch.moved_task_id;
+        old_pos = pa_switch.old_pos;
+        new_pos = pa_switch.new_pos;
+    }
+
+    out = TaskSetDifference{moved_task_id, changed_core, old_pos, new_pos};
+    return true;
+}
+
+// The difference between the candidate and the stored champion. Assumes the
+// P1.10 single-change invariant (|diff| <= 1); THROWS when >1 task differs.
+// Delegates the analysis to TryComputeSingleChange (the merged
+// IsSingleTaskChange algorithm). Returns a LOCATOR set (no klass):
+// changed_task_id==-1 ⟺ |diff|==0.
+TaskSetDifference RTACache::ComputeTaskSetDifference(
+    const DAG_Model& dag_tasks, const PriorityVec& pa,
+    const std::vector<double>& tl) const {
+    if (!HasChampion())
+        return TaskSetDifference{-1, -1, -1, -1};
+
+    TaskSetDifference diff;
+    if (!TryComputeSingleChange(dag_tasks, pa, tl, diff)) {
+        throw std::runtime_error(
+            "RTACache::ComputeTaskSetDifference: candidate differs from "
+            "champion "
+            "by more than one task — violates the P1.10 single-change "
+            "invariant. "
+            "Call IsSingleTaskChange to guard multi-change candidates.");
+    }
+    return diff;  // changed_task_id == -1 ⟺ |diff|==0
+}
+
+// Per-task reuse view from the same diff:
+//   no champion / |diff|>1 → every task NoReuse
+//   |diff|==0              → every task FullReuse
+//   |diff|==1              → every task on the SAME core as the change is
+//                            Recompute; every task on a DIFFERENT core is
+//                            FullReuse. (v1: cross-core reuse; same-core
+//                            suffix reuse is a later refinement.)
+std::vector<RTAReusePerTask> RTACache::ClassifyReusePerTask(
+    const DAG_Model& dag_tasks, const PriorityVec& pa,
+    const std::vector<double>& tl) const {
+    std::vector<RTAReusePerTask> result(dag_tasks.tasks.size(),
+                                        RTAReusePerTask::NoReuse);
+    if (!HasChampion())
+        return result;
+
+    TaskSetDifference diff = ComputeTaskSetDifference(dag_tasks, pa, tl);
+    // Derive the per-task verdict from the locators (no klass field):
+    // changed_task_id == -1 ⟺ |diff|==0 → every task FullReuse.
+    if (diff.changed_task_id == -1) {
+        std::fill(result.begin(), result.end(), RTAReusePerTask::FullReuse);
+        return result;
+    }
+    // |diff|==1: same-core (diff.core) → NoReuse, cross-core → FullReuse.
+    std::fill(result.begin(), result.end(), RTAReusePerTask::FullReuse);
+    std::unordered_map<int, std::vector<int>> cand_order =
+        PerCoreOrderFromPa(dag_tasks, pa);
+    const std::vector<int>& changed_core_tasks = cand_order.at(diff.core);
+    for (int tid : changed_core_tasks) {
+        result[tid] = RTAReusePerTask::NoReuse;
     }
     return result;
 }
 
-// Patchers (PatchRTA_OneTaskTL, PatchRTA_PriorityMove) are declared in
-// RTA_Cache.h and defined in steps 4/5 (Loop B / Loop A dispatch).
+// Candidate RTA via the single-change invariant. Writes candidate_rta_
+// (champion rta_ untouched), returns &candidate_rta_. Dispatch is derived from
+// the locators ComputeTaskSetDifference returns (no klass field):
+//   no champion            → Initialize (full compute).
+//   changed_task_id == -1  → copy champion rta_ to candidate_rta_, return.
+//   changed_task_id >= 0   → seed candidate_rta_ with champion rta_, then for
+//                            each task on a DIFFERENT core than diff.core reuse
+//                            verbatim; for each task on diff.core recompute via
+//                            GetRTA_OneTask in candidate priority order.
+const std::vector<FiniteDist>& RTACache::Evaluate(
+    const DAG_Model& dag_tasks, const PriorityVec& pa,
+    const std::vector<double>& tl) {
+    if (!HasChampion()) {
+        return Initialize(dag_tasks, pa, tl);
+    }
+
+    // Verdict-driven dispatch: ClassifyReusePerTask says per task whether to
+    // reuse the champion RTA (FullReuse) or recompute (NoReuse). Seed every
+    // task with the champion RTA, then overwrite only the NoReuse tasks. This
+    // is the generalization point — a future same-core-suffix refinement only
+    // needs ClassifyReusePerTask to emit ReuseHpTasksEt + a branch here, not a
+    // rewrite of Evaluate.
+    std::vector<RTAReusePerTask> verdict =
+        ClassifyReusePerTask(dag_tasks, pa, tl);
+    candidate_rta_ = rta_;  // seed: every FullReuse task keeps champion RTA
+
+    bool any_recompute = false;
+    for (RTAReusePerTask v : verdict) {
+        if (v == RTAReusePerTask::NoReuse) {
+            any_recompute = true;
+            break;
+        }
+    }
+    if (!any_recompute)
+        return candidate_rta_;  // |diff|==0: pure reuse
+
+    // Recompute the NoReuse tasks. Walk each core in CANDIDATE priority order
+    // so each recompute sees the correct candidate-ET HP set (the tasks above
+    // it on the same core, accumulated as we walk). FullReuse tasks are skipped
+    // (their seeded value stays) but still pushed to hp_tasks so a later
+    // NoReuse task's HP set is complete.
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
+    std::unordered_map<int, int> task_id2index;
+    for (size_t i = 0; i < tasks_prioritized.size(); i++) {
+        task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
+    }
+    std::unordered_map<int, TaskSet> per_core =
+        ExtractTaskSetPerProcessor(tasks_prioritized);
+
+    for (const auto& [core, core_tasks] : per_core) {
+        // core_tasks is in candidate priority order
+        TaskSet hp_tasks;
+        for (const Task& task_curr : core_tasks) {
+            if (verdict[task_curr.id] == RTAReusePerTask::NoReuse) {
+                candidate_rta_[task_id2index.at(task_curr.id)] =
+                    GetRTA_OneTask(task_curr, hp_tasks);
+            }
+            hp_tasks.push_back(task_curr);
+        }
+    }
+    return candidate_rta_;
+}
 
 }  // namespace SP_OPT_PA

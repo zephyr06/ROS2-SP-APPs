@@ -4,6 +4,7 @@
 #include "sources/Safety_Performance_Metric/Probability.h"
 #include "sources/Safety_Performance_Metric/RTA.h"
 #include "sources/Safety_Performance_Metric/RTA_Cache.h"  // PerCoreRTACache, ComputeRTA_FullAndCache, ClassifyReuse, RTAReuseClass (P1.9)
+#include "sources/Safety_Performance_Metric/PrioritySwitchAnalysis.h"  // RestEqualAfterRemoving, AnalyzePrioritySwitch(PerCore), PrioritySwitchStatus/Analysis (P1.9 priority-analysis utilities)
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/readwrite.h"
@@ -269,6 +270,10 @@ class TaskSetForTest_4tasks_2cores_cache : public ::testing::Test {
         tasks[1].processorId = 0;
         tasks[2].processorId = 1;
         tasks[3].processorId = 1;
+        // Task 2 carries a perf pair (Hazard B coverage: a TL-flexible task
+        // whose perf_coefficient != 1.0). Its ET avg ~4 → perf 0.5 at TL 4.
+        tasks[2].timePerformancePairs = {TimePerfPair(2, 1.0),
+                                         TimePerfPair(6, 0.5)};
         // priority_vec[i] = task id at priority index i (small index = high
         // priority). Here the ctor priorities already match id order, so the
         // HP-first per-core order is core0 {t0,t1}, core1 {t2,t3}.
@@ -277,7 +282,9 @@ class TaskSetForTest_4tasks_2cores_cache : public ::testing::Test {
         // entries; full-passthrough TLs pin the differential vs the no-TL
         // oracle, and the TL-specific test toggles one entry.
         time_limits = {-1, -1, -1, -1};
-        dag_tasks = DAG_Model(tasks, {}, {});
+        // One chain (t0 → t2) so DAG-level RTDA terms are non-trivial; the
+        // cache's flat-by-id rta_ must still align with dag.tasks position.
+        dag_tasks = DAG_Model(tasks, {{0, 2}}, {1e9});
     }
     TaskSet tasks;
     PriorityVec priority_vec;
@@ -298,200 +305,497 @@ static std::vector<FiniteDist> OracleRtas(
     return ProbabilisticRTA_TaskSet(tasks_prioritized);
 }
 
-// ComputeRTA_FullAndCache must return bit-identical rtas to the oracle (the old
-// path: apply TLs → apply pa_vec → ProbabilisticRTA_TaskSet) on the same input
-// tuple. Decision-4 acceptance gate: the cache replaces the old path outright,
-// so the old path is the oracle here (kept long enough to verify, then removed
-// at step 3b).
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ComputeRTA_FullAndCache_SameRtasAs_Oracle) {
+// RTACache::Initialize must return bit-identical rtas to the oracle (apply TLs
+// → apply pa_vec → ProbabilisticRTA_TaskSet) on the same input tuple. The
+// acceptance gate: every cache path reproduces the full-recompute result.
+TEST_F(TaskSetForTest_4tasks_2cores_cache, Initialize_SameRtasAs_Oracle) {
     std::vector<FiniteDist> rtas_oracle =
         OracleRtas(dag_tasks, priority_vec, time_limits);
 
-    std::unordered_map<int, PerCoreRTACache> cache;
-    std::vector<FiniteDist> rtas_cached =
-        ComputeRTA_FullAndCache(dag_tasks, priority_vec, time_limits, cache);
+    RTACache cache;
+    const std::vector<FiniteDist>& rtas_cached =
+        cache.Initialize(dag_tasks, priority_vec, time_limits);
 
     ASSERT_EQ(rtas_oracle.size(), rtas_cached.size());
     for (size_t i = 0; i < rtas_oracle.size(); i++) {
         EXPECT_TRUE(rtas_oracle[i] == rtas_cached[i])
-            << "rtas[" << i << "] diverged between oracle and cached path";
+            << "rtas[" << i << "] diverged between oracle and Initialize";
     }
+    EXPECT_TRUE(cache.HasChampion());
 }
 
-// The cache must be self-consistent: each core's entry has matching lengths
-// (sorted_task_ids / rta / tl_vec / hp_tasks_et_conv_vec), its rta[i] equals the
-// flat rtas[task's index] for the task at sorted position i, tl_vec[i] aligns
-// with the time limit of sorted_task_ids[i], and every task lands in exactly one
-// core. Also confirms both cores are present (2 tasks each).
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ComputeRTA_FullAndCache_CacheIsSelfConsistent) {
-    std::unordered_map<int, PerCoreRTACache> cache;
-    std::vector<FiniteDist> rtas =
-        ComputeRTA_FullAndCache(dag_tasks, priority_vec, time_limits, cache);
-
-    ASSERT_EQ(cache.size(), 2u);
-    std::set<int> seen_task_ids;
-    for (const auto& kv : cache) {
-        const PerCoreRTACache& cache_entry = kv.second;
-        ASSERT_EQ(cache_entry.SortedTaskIds().size(), cache_entry.Rta().size());
-        ASSERT_EQ(cache_entry.SortedTaskIds().size(),
-                  cache_entry.TlVec().size());
-        ASSERT_EQ(cache_entry.SortedTaskIds().size(),
-                  cache_entry.HpTasksEtConvVec().size());
-        EXPECT_TRUE(cache_entry.HpTasksEtConvVec()[0] ==
-                    FiniteDist({Value_Proba(0, 1.0)}))
-            << "hp_tasks_et_conv_vec[0] must be the empty-HP-set identity";
-        for (size_t i = 0; i < cache_entry.SortedTaskIds().size(); i++) {
-            int task_id = cache_entry.SortedTaskIds()[i];
-            seen_task_ids.insert(task_id);
-            // tl_vec[i] must be the time limit of the task at sorted position i
-            // (the ET-dist validity proxy the cache relies on).
-            EXPECT_DOUBLE_EQ(time_limits[task_id], cache_entry.TlVec()[i])
-                << "tl_vec[" << i << "] on core " << kv.first
-                << " != time_limits of task " << task_id;
-            // sorted HP-first (priority ascending), as SingleCore sorts.
-            if (i > 0) {
-                int prev = tasks[cache_entry.SortedTaskIds()[i - 1]].priority;
-                int curr = tasks[cache_entry.SortedTaskIds()[i]].priority;
-                EXPECT_LT(prev, curr) << "cache not sorted HP-first on core "
-                                      << kv.first;
-            }
-            // cache_entry.Rta()[i] must equal the flat rtas for that task.
-            int flat_index = -1;
-            for (size_t j = 0; j < tasks.size(); j++) {
-                if (tasks[j].id == task_id) {
-                    flat_index = static_cast<int>(j);
-                    break;
-                }
-            }
-            ASSERT_NE(flat_index, -1);
-            EXPECT_TRUE(cache_entry.Rta()[i] == rtas[flat_index])
-                << "cache rta[" << i << "] on core " << kv.first
-                << " != flat rtas[" << flat_index << "]";
-        }
-    }
-    // every task landed in exactly one core.
-    EXPECT_EQ(seen_task_ids.size(), tasks.size());
-}
-
-// TL coverage deferred from step 3a: with a real TL applied (a point-mass ET
-// dist via GetUnitExecutionTimeDist), the cache fn must STILL match the oracle
-// bit-for-bit. This pins that the cache's internal ApplyTimeLimitsToTasks
-// ExecutionTime + per-core tl_vec storage reproduce TL-driven RTA exactly.
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ComputeRTA_FullAndCache_WithTL_SameRtasAs_Oracle) {
-    // Give task 1 (core 0, lower priority on its core) a real TL of 3 — its ET
-    // dist becomes a point mass at 3, changing its own RTA and task 0's... no:
-    // task 1 is LOWER priority, so only task 1's own RTA (the suffix) changes.
+// Initialize with a real TL applied (point-mass ET via GetUnitExecutionTimeDist)
+// must still match the oracle bit-for-bit. Pins that the cache's TL-bake
+// reproduces TL-driven RTA exactly.
+TEST_F(TaskSetForTest_4tasks_2cores_cache, Initialize_WithTL_SameRtasAs_Oracle) {
+    // Task 1 (core 0, lower priority on its core) gets TL 3 → only task 1's RTA
+    // (the suffix) changes; task 0's HP set is unaffected.
     std::vector<double> tl = {-1, 3, -1, -1};
 
     std::vector<FiniteDist> rtas_oracle = OracleRtas(dag_tasks, priority_vec, tl);
 
-    std::unordered_map<int, PerCoreRTACache> cache;
-    std::vector<FiniteDist> rtas_cached =
-        ComputeRTA_FullAndCache(dag_tasks, priority_vec, tl, cache);
+    RTACache cache;
+    const std::vector<FiniteDist>& rtas_cached =
+        cache.Initialize(dag_tasks, priority_vec, tl);
 
     ASSERT_EQ(rtas_oracle.size(), rtas_cached.size());
     for (size_t i = 0; i < rtas_oracle.size(); i++) {
         EXPECT_TRUE(rtas_oracle[i] == rtas_cached[i])
             << "rtas[" << i << "] diverged under TL between oracle and cache";
     }
-    // The stored tl_vec must reflect the applied TL on the affected core.
-    ASSERT_EQ(cache.count(0), 1u);
-    const PerCoreRTACache& core0 = cache.at(0);
-    // core0 sorted HP-first = {t0, t1}; t0 has no TL (-1), t1 has TL 3.
-    ASSERT_EQ(core0.SortedTaskIds().size(), 2u);
-    ASSERT_EQ(core0.SortedTaskIds()[0], 0);
-    ASSERT_EQ(core0.SortedTaskIds()[1], 1);
-    EXPECT_DOUBLE_EQ(core0.TlVec()[0], -1.0);
-    EXPECT_DOUBLE_EQ(core0.TlVec()[1], 3.0);
 }
 
-// ClassifyReuse v0 against the SAME state the cache was built with, with NO
-// changed tasks: every task is RtaReuse (the "candidate == champion" case).
-// Also exercises the class query helpers (PositionOfTask / ContainsTask) as a
-// sanity check on the populated cache geometry.
+// Evaluate on a candidate identical to the champion → FullReuse: returns the
+// champion rtas verbatim (zero RTA work), bit-identical to the oracle.
 TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ClassifyReuse_IdentityCandidate_AllRtaReuse) {
-    std::unordered_map<int, PerCoreRTACache> cache;
-    ComputeRTA_FullAndCache(dag_tasks, priority_vec, time_limits, cache);
+       Evaluate_IdentityCandidate_FullReuse) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
 
-    std::vector<RTAReuseClass> reuse =
-        ClassifyReuse(cache, dag_tasks, /*changed_task_ids=*/{});
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, time_limits);
 
-    ASSERT_EQ(reuse.size(), tasks.size());
-    for (size_t i = 0; i < reuse.size(); i++) {
-        EXPECT_EQ(reuse[i], RTAReuseClass::RtaReuse)
-            << "task " << i << " must be RtaReuse vs an unchanged champion";
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on identity Evaluate";
+    }
+    // Champion state untouched: a second identity Evaluate still matches.
+    const std::vector<FiniteDist>& rtas_eval2 =
+        cache.Evaluate(dag_tasks, priority_vec, time_limits);
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval2[i]);
+    }
+}
+
+// Evaluate on a candidate that differs by ONE task's TL (the Type-L serialized
+// step) → ReuseHpTasksEt: patches the changed task's suffix via the stored
+// HP-prefix, bit-identical to the oracle. Core 1 (untouched) reused verbatim.
+TEST_F(TaskSetForTest_4tasks_2cores_cache, Evaluate_TLChange_OneTaskPatch) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Candidate: task 1's TL moves -1 → 3 (one task's ET changes on core 0).
+    std::vector<double> tl_cand = {-1, 3, -1, -1};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, tl_cand);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, tl_cand);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on TL-change Evaluate";
+    }
+}
+
+// Evaluate on a candidate that differs by ONE task's priority position (the
+// O(N²) priority-move case) → ReuseHpTasksEt: patches the moved task + its
+// suffix via the stored HP-prefix, bit-identical to the oracle.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_PriorityMove_OneTaskPatch) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Candidate: swap tasks 0 and 1's priority positions on core 0
+    // (priority_vec[0]=1, [1]=0 → core 0 order {t1, t0}).
+    PriorityVec pa_cand = {1, 0, 2, 3};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, pa_cand, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, pa_cand, time_limits);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on priority-move Evaluate";
+    }
+}
+
+// Evaluate on a candidate that differs by BOTH the moved task's ET AND its
+// priority position (the combined ET+move case) → still one merged change →
+// ReuseHpTasksEt, bit-identical to the oracle.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_TLAndPriorityMove_CombinedPatch) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Candidate: task 1's TL → 3 AND tasks 0/1 priority swap.
+    PriorityVec pa_cand = {1, 0, 2, 3};
+    std::vector<double> tl_cand = {-1, 3, -1, -1};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, pa_cand, tl_cand);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, pa_cand, tl_cand);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on combined TL+move Evaluate";
+    }
+}
+
+// Evaluate with no champion → Initialize (full compute), bit-identical to the
+// oracle. The empty-cache fallback.
+TEST_F(TaskSetForTest_4tasks_2cores_cache, Evaluate_NoChampion_FallsBackToInit) {
+    RTACache cache;
+    EXPECT_FALSE(cache.HasChampion());
+
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, time_limits);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on no-champion Evaluate";
+    }
+    EXPECT_TRUE(cache.HasChampion());
+}
+
+// AdoptChampion: after Evaluate produces a candidate RTA, AdoptChampion promotes
+// it to champion (rebuilds HP-prefixes by re-rolling ET-convolution). A
+// subsequent identity Evaluate on the adopted triple → FullReuse, bit-identical
+// to the oracle. Pins that the rebuilt prefixes are valid for future patches.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       AdoptChampion_RebuiltPrefixesValidForNextPatch) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Walk: candidate = TL change on task 1, adopt it, then patch again from
+    // the new champion.
+    std::vector<double> tl_cand = {-1, 3, -1, -1};
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, tl_cand);
+    cache.AdoptChampion(dag_tasks, priority_vec, tl_cand, rtas_eval);
+
+    // From the adopted champion, patch task 1's TL again (3 → 5): one-task
+    // change vs the new champion.
+    std::vector<double> tl_cand2 = {-1, 5, -1, -1};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, tl_cand2);
+    const std::vector<FiniteDist>& rtas_eval2 =
+        cache.Evaluate(dag_tasks, priority_vec, tl_cand2);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval2.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval2[i])
+            << "rtas[" << i
+            << "] diverged on post-AdoptChampion patch (rebuilt prefix)";
+    }
+}
+
+// ComputeTaskSetDifference: |diff|==0 → changed_task_id==-1; |diff|==1 (TL) →
+// locators filled (changed task + core, old_pos==new_pos for ET-only); >1 →
+// THROWS (violates the single-change invariant). IsSingleTaskChange is the
+// non-throwing predicate. No `klass` field — the verdict is derived from the
+// locators.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       ComputeTaskSetDifference_ClassesThreeCases) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // |diff|==0: same triple → changed_task_id == -1.
+    TaskSetDifference d0 =
+        cache.ComputeTaskSetDifference(dag_tasks, priority_vec, time_limits);
+    EXPECT_EQ(d0.changed_task_id, -1);
+    EXPECT_TRUE(cache.IsSingleTaskChange(dag_tasks, priority_vec, time_limits));
+
+    // |diff|==1: one TL change on task 1 (core 0).
+    std::vector<double> tl_cand = {-1, 3, -1, -1};
+    TaskSetDifference d1 =
+        cache.ComputeTaskSetDifference(dag_tasks, priority_vec, tl_cand);
+    EXPECT_EQ(d1.changed_task_id, 1);
+    EXPECT_EQ(d1.core, 0);
+    EXPECT_EQ(d1.old_pos, d1.new_pos);  // ET-only move: position unchanged
+    EXPECT_TRUE(cache.IsSingleTaskChange(dag_tasks, priority_vec, tl_cand));
+
+    // |diff|>1: two TL changes → IsSingleTaskChange false, and
+    // ComputeTaskSetDifference throws (invariant violation).
+    std::vector<double> tl_two = {-1, 3, 4, -1};
+    EXPECT_FALSE(cache.IsSingleTaskChange(dag_tasks, priority_vec, tl_two));
+    EXPECT_THROW(
+        cache.ComputeTaskSetDifference(dag_tasks, priority_vec, tl_two),
+        std::runtime_error);
+}
+
+// ClassifyReusePerTask: |diff|==0 → all FullReuse; |diff|==1 (v1 cross-core
+// reuse) → every task on the SAME core as the change is recompute (NoReuse),
+// every task on a DIFFERENT core is FullReuse.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       ClassifyReusePerTask_TLChange_SuffixOnChangedCore) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // |diff|==0 → all FullReuse.
+    std::vector<RTAReusePerTask> r0 =
+        cache.ClassifyReusePerTask(dag_tasks, priority_vec, time_limits);
+    ASSERT_EQ(r0.size(), tasks.size());
+    for (size_t i = 0; i < r0.size(); i++) {
+        EXPECT_EQ(r0[i], RTAReusePerTask::FullReuse);
     }
 
-    // Sanity: core 0 owns {t0,t1}, core 1 owns {t2,t3}; t0 is at sorted
-    // position 0 on core 0; t3 is NOT on core 0.
-    const PerCoreRTACache& core0 = cache.at(0);
-    EXPECT_EQ(core0.PositionOfTask(0), 0);
-    EXPECT_EQ(core0.PositionOfTask(1), 1);
-    EXPECT_FALSE(core0.ContainsTask(3));
-    EXPECT_EQ(core0.Size(), 2);
+    // |diff|==1: task 1 TL change (core 0). v1: every task on core 0 {t0,t1}
+    // is recompute (the changed task's HP set shifts on its whole core); every
+    // task on the untouched core 1 {t2,t3} is FullReuse.
+    std::vector<double> tl_cand = {-1, 3, -1, -1};
+    std::vector<RTAReusePerTask> r1 =
+        cache.ClassifyReusePerTask(dag_tasks, priority_vec, tl_cand);
+    ASSERT_EQ(r1.size(), tasks.size());
+    EXPECT_EQ(r1[0], RTAReusePerTask::NoReuse);   // t0: same core as change
+    EXPECT_EQ(r1[1], RTAReusePerTask::NoReuse);   // t1: changed task
+    EXPECT_EQ(r1[2], RTAReusePerTask::FullReuse);  // t2: core 1 untouched
+    EXPECT_EQ(r1[3], RTAReusePerTask::FullReuse);  // t3: core 1 untouched
 }
 
-// A TL change to one task on core 0 (task 1): v0 is conservative — BOTH tasks
-// on the changed core (t0 AND t1) are Recompute (the unchanged prefix above the
-// change is not yet exploited), while both tasks on the untouched core 1 are
-// RtaReuse. This is the cross-core skip payoff; the within-core prefix reuse is
-// a later refinement (RecomputeWithHpPrefix, not produced by v0).
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ClassifyReuse_TLChangeOnCore0_ChangedCoreRecomputes) {
-    std::unordered_map<int, PerCoreRTACache> cache;
-    ComputeRTA_FullAndCache(dag_tasks, priority_vec, time_limits, cache);
+// No champion → ClassifyReusePerTask returns all-NoReuse; ComputeTaskSetDifference
+// returns {-1,...} (no verdict); IsSingleTaskChange returns false.
+TEST_F(TaskSetForTest_4tasks_2cores_cache, NoChampion_AllNoReuse) {
+    RTACache cache;
+    EXPECT_FALSE(cache.HasChampion());
 
-    // Task 1 sits on core 0; changing its TL marks core 0 changed.
-    std::vector<RTAReuseClass> reuse =
-        ClassifyReuse(cache, dag_tasks, /*changed_task_ids=*/{1});
-
-    ASSERT_EQ(reuse.size(), tasks.size());
-    // Core 0 = {t0, t1} → both Recompute (v0 conservative: whole core).
-    EXPECT_EQ(reuse[0], RTAReuseClass::Recompute);
-    EXPECT_EQ(reuse[1], RTAReuseClass::Recompute);
-    // Core 1 = {t2, t3} → untouched → RtaReuse.
-    EXPECT_EQ(reuse[2], RTAReuseClass::RtaReuse);
-    EXPECT_EQ(reuse[3], RTAReuseClass::RtaReuse);
-}
-
-// A priority move on core 0 (changing task 0's priority position): same verdict
-// shape as the TL change under v0 — both tasks on the changed core Recompute,
-// both on the untouched core RtaReuse. Confirms v0 is uniform across change
-// types (it keys on processorId only, not on change kind).
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ClassifyReuse_PriorityMoveOnCore0_ChangedCoreRecomputes) {
-    std::unordered_map<int, PerCoreRTACache> cache;
-    ComputeRTA_FullAndCache(dag_tasks, priority_vec, time_limits, cache);
-
-    // Task 0's priority moves → core 0 changed.
-    std::vector<RTAReuseClass> reuse =
-        ClassifyReuse(cache, dag_tasks, /*changed_task_ids=*/{0});
-
-    ASSERT_EQ(reuse.size(), tasks.size());
-    EXPECT_EQ(reuse[0], RTAReuseClass::Recompute);
-    EXPECT_EQ(reuse[1], RTAReuseClass::Recompute);
-    EXPECT_EQ(reuse[2], RTAReuseClass::RtaReuse);
-    EXPECT_EQ(reuse[3], RTAReuseClass::RtaReuse);
-}
-
-// ClassifyReuse on an empty cache: every task is Recompute (no champion to
-// reuse). This replaces the old CacheConsistentWith_EmptyCache_IsFalse test —
-// "empty cache" is captured by "no task is reusable" in the per-task vector.
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       ClassifyReuse_EmptyCache_AllRecompute) {
-    std::unordered_map<int, PerCoreRTACache> empty_cache;
-    std::vector<RTAReuseClass> reuse =
-        ClassifyReuse(empty_cache, dag_tasks, /*changed_task_ids=*/{});
-
-    ASSERT_EQ(reuse.size(), tasks.size());
-    for (size_t i = 0; i < reuse.size(); i++) {
-        EXPECT_EQ(reuse[i], RTAReuseClass::Recompute)
-            << "task " << i << " must Recompute with an empty cache";
+    std::vector<RTAReusePerTask> r =
+        cache.ClassifyReusePerTask(dag_tasks, priority_vec, time_limits);
+    ASSERT_EQ(r.size(), tasks.size());
+    for (size_t i = 0; i < r.size(); i++) {
+        EXPECT_EQ(r[i], RTAReusePerTask::NoReuse);
     }
+    TaskSetDifference d =
+        cache.ComputeTaskSetDifference(dag_tasks, priority_vec, time_limits);
+    EXPECT_EQ(d.changed_task_id, -1);
+    EXPECT_FALSE(cache.IsSingleTaskChange(dag_tasks, priority_vec, time_limits));
+}
+
+// ============================================================================
+// Direct unit tests for the P1.9 priority-analysis utilities
+// (PrioritySwitchAnalysis.h). These are pure functions on hand-built
+// vector<int> / unordered_map<int, vector<int>> inputs — no DAG/Task setup —
+// pinning the two-pointer-walk + remove-and-compare edge cases that the
+// DAG-level RTACache tests above exercise only indirectly. The functions live
+// in namespace SP_OPT_PA (in effect via `using namespace SP_OPT_PA;` above).
+// ============================================================================
+
+// RestEqualAfterRemoving: the two-pointer "remove one task from both vectors,
+// compare the rest" test. Caller guarantees same-size orders + `task_id`
+// appears exactly once in each; the cases below honor that (the size-mismatch
+// case documents the violated-precondition return, not a legal call).
+TEST(RestEqualAfterRemovingTest, IdenticalOrders_RemovingAnyTask_True) {
+    std::vector<int> order = {0, 1, 2, 3};
+    EXPECT_TRUE(RestEqualAfterRemoving(order, order, 0));
+    EXPECT_TRUE(RestEqualAfterRemoving(order, order, 2));
+    EXPECT_TRUE(RestEqualAfterRemoving(order, order, 3));
+}
+
+TEST(RestEqualAfterRemovingTest, OneTaskMovedToFront_True) {
+    // candidate moved task 3 to the front; champion keeps id order.
+    std::vector<int> cand = {3, 0, 1, 2};
+    std::vector<int> champ = {0, 1, 2, 3};
+    EXPECT_TRUE(RestEqualAfterRemoving(cand, champ, 3));
+}
+
+TEST(RestEqualAfterRemovingTest, OneTaskMovedToEnd_True) {
+    // candidate moved task 0 to the end; exercises trailing-`task_id` drain on
+    // the candidate side.
+    std::vector<int> cand = {1, 2, 3, 0};
+    std::vector<int> champ = {0, 1, 2, 3};
+    EXPECT_TRUE(RestEqualAfterRemoving(cand, champ, 0));
+}
+
+TEST(RestEqualAfterRemovingTest, OneTaskMovedToMiddle_True) {
+    std::vector<int> cand = {0, 2, 1, 3};
+    std::vector<int> champ = {0, 1, 2, 3};
+    EXPECT_TRUE(RestEqualAfterRemoving(cand, champ, 2));
+}
+
+TEST(RestEqualAfterRemovingTest, TaskIdAtFrontOfBoth_True) {
+    // `task_id` is the first entry in both; the rest matches → true (drain on
+    // both sides at the very first step).
+    std::vector<int> cand = {7, 0, 1, 2};
+    std::vector<int> champ = {7, 0, 1, 2};
+    EXPECT_TRUE(RestEqualAfterRemoving(cand, champ, 7));
+}
+
+TEST(RestEqualAfterRemovingTest, SecondTaskAlsoMoved_False) {
+    // Removing task 2 leaves candidate {0,1,3} vs champion {0,3,1} → differ.
+    std::vector<int> cand = {0, 2, 1, 3};
+    std::vector<int> champ = {0, 3, 2, 1};
+    EXPECT_FALSE(RestEqualAfterRemoving(cand, champ, 2));
+}
+
+TEST(RestEqualAfterRemovingTest, TwoTaskSwap_False) {
+    // A swap is 2 moves; removing one still leaves the other moved.
+    std::vector<int> cand = {1, 0, 3, 2};
+    std::vector<int> champ = {0, 1, 2, 3};
+    EXPECT_FALSE(RestEqualAfterRemoving(cand, champ, 0));
+    EXPECT_FALSE(RestEqualAfterRemoving(cand, champ, 1));
+}
+
+TEST(RestEqualAfterRemovingTest, SizeMismatchWithExtraNonTaskId_False) {
+    // Precondition violated (different sizes = core migration; the caller
+    // rejects this before calling). The walk must not misreport equality when
+    // the length mismatch surfaces: removing `task_id` (5, absent from both)
+    // leaves the 2-element candidate {0,1} vs the 3-element champion {0,1,2}
+    // — the trailing drain cannot absorb a non-`task_id` entry, so the final
+    // index check fails. (If the extra element WERE `task_id`, the rest would
+    // genuinely match — the size guard is the caller's job, not this fn's.)
+    std::vector<int> cand = {0, 1};
+    std::vector<int> champ = {0, 1, 2};
+    EXPECT_FALSE(RestEqualAfterRemoving(cand, champ, 5));
+}
+
+TEST(RestEqualAfterRemovingTest, SizeMismatchButExtraIsTaskId_True) {
+    // Same-size precondition violated, BUT the only extra entry IS `task_id`:
+    // removing it from the longer champion leaves {0,1} == candidate {0,1}, so
+    // the rest genuinely matches → true. Documents that the size guard lives
+    // in the caller (AnalyzePrioritySwitch's size check), NOT here — this fn
+    // answers only "do the un-skipped sequences match?"
+    std::vector<int> cand = {0, 1};
+    std::vector<int> champ = {0, 1, 2};
+    EXPECT_TRUE(RestEqualAfterRemoving(cand, champ, 2));
+}
+
+TEST(RestEqualAfterRemovingTest, EmptyOrders_True) {
+    std::vector<int> empty;
+    EXPECT_TRUE(RestEqualAfterRemoving(empty, empty, 0));
+}
+
+TEST(RestEqualAfterRemovingTest, SingleElement_RemovingIt_True) {
+    std::vector<int> single = {5};
+    EXPECT_TRUE(RestEqualAfterRemoving(single, single, 5));
+}
+
+// AnalyzePrioritySwitchPerCore: per-core single-move detection + locator fill.
+// Returns AllIdentical / SingleChange (with moved_task_id/old_pos/new_pos) /
+// NotSingle. Caller guarantees same-size vectors (a size mismatch is a core
+// migration rejected before this fn — not constructed here, as the first-
+// mismatch scan would read out of bounds).
+TEST(AnalyzePrioritySwitchPerCoreTest, Identical_AllIdentical) {
+    std::vector<int> order = {0, 1, 2, 3};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(order, order, out),
+              PrioritySwitchStatus::AllIdentical);
+    // Locators untouched on AllIdentical.
+    EXPECT_EQ(out.moved_task_id, -1);
+}
+
+TEST(AnalyzePrioritySwitchPerCoreTest, MoveToFront_SingleChange) {
+    std::vector<int> cand = {3, 0, 1, 2};
+    std::vector<int> champ = {0, 1, 2, 3};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(cand, champ, out),
+              PrioritySwitchStatus::SingleChange);
+    EXPECT_EQ(out.moved_task_id, 3);
+    EXPECT_EQ(out.old_pos, 3);  // champion's position of task 3
+    EXPECT_EQ(out.new_pos, 0);  // candidate's position of task 3
+}
+
+TEST(AnalyzePrioritySwitchPerCoreTest, MoveToEnd_SingleChange) {
+    std::vector<int> cand = {1, 2, 3, 0};
+    std::vector<int> champ = {0, 1, 2, 3};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(cand, champ, out),
+              PrioritySwitchStatus::SingleChange);
+    EXPECT_EQ(out.moved_task_id, 0);
+    EXPECT_EQ(out.old_pos, 0);
+    EXPECT_EQ(out.new_pos, 3);
+}
+
+TEST(AnalyzePrioritySwitchPerCoreTest, MoveToMiddle_SingleChange) {
+    std::vector<int> cand = {0, 2, 1, 3};
+    std::vector<int> champ = {0, 1, 2, 3};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(cand, champ, out),
+              PrioritySwitchStatus::SingleChange);
+    EXPECT_EQ(out.moved_task_id, 2);
+    EXPECT_EQ(out.old_pos, 2);
+    EXPECT_EQ(out.new_pos, 1);
+}
+
+TEST(AnalyzePrioritySwitchPerCoreTest, TwoTaskSwap_NotSingle) {
+    std::vector<int> cand = {1, 0, 3, 2};
+    std::vector<int> champ = {0, 1, 2, 3};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(cand, champ, out),
+              PrioritySwitchStatus::NotSingle);
+}
+
+TEST(AnalyzePrioritySwitchPerCoreTest, TwoIndependentMoves_NotSingle) {
+    // Tasks 1 and 3 both shifted; removing either leaves the other moved.
+    std::vector<int> cand = {0, 3, 2, 1};
+    std::vector<int> champ = {0, 1, 2, 3};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(cand, champ, out),
+              PrioritySwitchStatus::NotSingle);
+}
+
+TEST(AnalyzePrioritySwitchPerCoreTest, IdenticalSingleElement_AllIdentical) {
+    std::vector<int> single = {5};
+    PrioritySwitchAnalysis out;
+    EXPECT_EQ(AnalyzePrioritySwitchPerCore(single, single, out),
+              PrioritySwitchStatus::AllIdentical);
+}
+
+// AnalyzePrioritySwitch: whole-map size check + find-the-one-changed-core +
+// delegate. Builds unordered_map<int, vector<int>> inline.
+TEST(AnalyzePrioritySwitchTest, AllCoresIdentical_AllIdentical) {
+    std::unordered_map<int, std::vector<int>> per_core = {
+        {0, {0, 1}}, {1, {2, 3}}};
+    EXPECT_EQ(AnalyzePrioritySwitch(per_core, per_core).status,
+              PrioritySwitchStatus::AllIdentical);
+}
+
+TEST(AnalyzePrioritySwitchTest, OneCoreSingleMove_SingleChange) {
+    // One genuine single move on core 0: task 1 relocated to the front.
+    std::unordered_map<int, std::vector<int>> cand = {
+        {0, {1, 0, 2}}, {1, {3, 4}}};
+    std::unordered_map<int, std::vector<int>> champ = {
+        {0, {0, 1, 2}}, {1, {3, 4}}};
+    PrioritySwitchAnalysis r = AnalyzePrioritySwitch(cand, champ);
+    EXPECT_EQ(r.status, PrioritySwitchStatus::SingleChange);
+    EXPECT_EQ(r.changed_core, 0);
+    EXPECT_EQ(r.moved_task_id, 1);
+}
+
+TEST(AnalyzePrioritySwitchTest, OneCoreTwoMove_NotSingle) {
+    std::unordered_map<int, std::vector<int>> cand = {
+        {0, {1, 0, 3, 2}}, {1, {4, 5}}};  // core 0: two swaps
+    std::unordered_map<int, std::vector<int>> champ = {
+        {0, {0, 1, 2, 3}}, {1, {4, 5}}};
+    EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
+              PrioritySwitchStatus::NotSingle);
+}
+
+TEST(AnalyzePrioritySwitchTest, TwoCoresEachSingleMove_NotSingle) {
+    // Each core has one genuine single move (task 2 → front on core 0; task 4
+    // → front on core 1); two changed cores ⇒ NotSingle via the 2nd-core check.
+    std::unordered_map<int, std::vector<int>> cand = {
+        {0, {2, 0, 1}}, {1, {4, 3}}};
+    std::unordered_map<int, std::vector<int>> champ = {
+        {0, {0, 1, 2}}, {1, {3, 4}}};
+    EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
+              PrioritySwitchStatus::NotSingle);
+}
+
+TEST(AnalyzePrioritySwitchTest, SizeMismatchOnOneCore_NotSingle) {
+    // Core 0 grew by one (core migration) ⇒ NotSingle via the size check.
+    std::unordered_map<int, std::vector<int>> cand = {
+        {0, {0, 1, 2}}, {1, {3, 4}}};
+    std::unordered_map<int, std::vector<int>> champ = {
+        {0, {0, 1}}, {1, {3, 4}}};
+    EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
+              PrioritySwitchStatus::NotSingle);
+}
+
+TEST(AnalyzePrioritySwitchTest, ChampionCoreEmptied_NotSingle) {
+    // Champion has core 2 (non-empty) that the candidate lacks ⇒ migration.
+    std::unordered_map<int, std::vector<int>> cand = {{0, {0, 1}}};
+    std::unordered_map<int, std::vector<int>> champ = {
+        {0, {0, 1}}, {2, {2, 3}}};
+    EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
+              PrioritySwitchStatus::NotSingle);
 }
 
 class TaskSetv9 : public ::testing::Test {

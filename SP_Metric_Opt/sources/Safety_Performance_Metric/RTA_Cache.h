@@ -1,21 +1,15 @@
 #pragma once
-// Per-core RTA cache (P1.9 — Incremental RTA Patching). See
-// agents/active_tasks/P1_9_incremental_rta_patching/{goal,tasks}.md for the
-// full design; this header is the API surface.
+// Single-champion RTA cache (P1.9 — Incremental RTA Patching, rev 3). See
+// agents/active_tasks/P1_9_incremental_rta_patching/{goal,tasks}.md.
 //
-// Why a dedicated header (not RTA.h): the locked cache signature takes
-// `PriorityVec`, declared in OptimizeSP_Base.h, which includes SP_Metric.h,
-// which includes RTA.h — so putting these decls in RTA.h would be a header
-// cycle. RTA_Cache.h is a downstream leaf nothing-upstream includes; it pulls
-// in RTA.h (FiniteDist/TaskSet/GetRTA_OneTask/SingleCore/ExtractTaskSetPer
-// Processor) + DAG_Model.h (DAG_Model) + OptimizeSP_Base.h (PriorityVec),
-// all cycle-free.
+// One cache object bundles to ONE champion solution. The P1.10 single-change
+// invariant (`|diff|<=1` per SP-eval vs champion on the serialized path) means
+// Evaluate only ever answers: nothing changed? (reuse all) or one task's ET
+// and/or priority position changed? (patch the suffix from that task).
 //
-// API revision 2026-07-15: the role-2 reuse query is a per-task enum vector
-// (`ClassifyReuse` → `std::vector<RTAReuseClass>`, indexed by task id), NOT the
-// per-core `CacheReuseInfo` struct from the staged 3c. `PerCoreRTACache` is a
-// CLASS (private data + accessors), not a struct. `CacheConsistentWith` is
-// dropped (derivable: "all tasks RtaReuse"). See tasks.md §"API revision".
+// Lives in a dedicated leaf header (not RTA.h) to avoid a header cycle:
+// the cache signature takes `PriorityVec` (OptimizeSP_Base.h → SP_Metric.h →
+// RTA.h), so RTA.h cannot depend back on these decls.
 
 #include <unordered_map>
 #include <vector>
@@ -26,158 +20,202 @@
 
 namespace SP_OPT_PA {
 
-// Memoized RTA *output* (no PA-search state) — a pure function of (per-core
-// taskset, per-core priority order, per-core ET dists). Within an interval the
-// last two reduce to (sorted_task_ids, tl_vec), two of the fields below.
-//
-// A CLASS (not a struct) so the alignment invariant — sorted_task_ids / rta /
-// tl_vec / hp_tasks_et_conv_vec are all length-n parallel arrays indexed by
-// sorted-priority position — is centralized in one type instead of trusted to
-// every free function. Read accessors + the Populate build path + per-core
-// query helpers land now; patcher mutators land with steps 4/5.
-class PerCoreRTACache {
+// Per-task reuse extent, DERIVED from `TaskSetDifference` inside
+// `ClassifyReusePerTask` (a locator has no business carrying a per-task verdict
+// — that's a per-task analyst's job, not the diff's). `Evaluate` dispatches on
+// the same derivation. Kept as an enum so the per-task vector has a name.
+enum class RTAReusePerTask {
+    // Full recompute of this task's RTA. Fires for every task when the cache
+    // has no champion OR (off-path) the candidate differs by more than one
+    // task. On the serialized path it fires for every task on the SAME core as
+    // the single change (its HP set shifts).
+    NoReuse,
+    // Return the champion's stored rta_[task] verbatim. Fires under |diff|==0
+    // for every task, and under |diff|==1 for every task on a DIFFERENT core
+    // than the change (untouched core → identical HP set → identical RTA).
+    FullReuse,
+    // Reserved for the future same-core-suffix refinement (reuse the champion's
+    // HP-ET prefix at min(old_pos,new_pos), recompute only the suffix). NOT
+    // emitted by ClassifyReusePerTask v1, which recomputes the whole changed
+    // core (every same-core task → NoReuse). Kept so the enum names the v2 path.
+    ReuseHpTasksEt,
+};
+
+// The single whole-taskset diff `ComputeTaskSetDifference` returns — a set of
+// LOCATORS, NOT a decision. `changed_task_id == -1` means |diff|==0 (no change
+// → FullReuse); otherwise the one changed task + its core + its old/new
+// per-core priority positions. This is a *difference* (a property of the pair);
+// the cache's ACTION is Evaluate's dispatch derived from these locators, not a
+// field on the struct.
+struct TaskSetDifference {
+    int changed_task_id;  // the one moved/ET-changed task; -1 iff |diff|==0
+    int core;     // processorId of the changed task; -1 iff |diff|==0
+    int old_pos;  // changed task's position in the CHAMPION's per-core order
+    int new_pos;  // changed task's position in the CANDIDATE's per-core order
+};
+
+// Memoized RTA output (no PA-search state) bundled to ONE champion. Stores the
+// champion (dag, pa, tl) triple + its flat RTA + per-core HP-prefix
+// checkpoints. `Evaluate` reads champion state to patch a candidate that
+// differs by at most one task; `AdoptChampion` promotes a candidate to
+// champion. Pure memoization: Evaluate never mutates committed champion state,
+// so a rejected candidate's RTA never touches it (commit is AdoptChampion
+// only).
+class RTACache {
    public:
-    PerCoreRTACache() = default;
-    explicit PerCoreRTACache(int processor_id) : processor_id_(processor_id) {}
+    RTACache() = default;
 
-    // --- read accessors (const) ---
-    int ProcessorId() const { return processor_id_; }
-    const std::vector<int>& SortedTaskIds() const { return sorted_task_ids_; }
-    const std::vector<double>& TlVec() const { return tl_vec_; }
+    // Compute the full N-task RTA for (dag, pa, tl) and store it + the triple +
+    // the per-core HP-prefix checkpoints. Overwrites all prior state. Expensive
+    // (full RTA) — call once per interval / new champion, NOT per candidate.
+    // `tl[i] == -1` means no TL for task i (keep its base dist). Returns the
+    // flat rta vector indexed by task id (bit-identical to
+    // ProbabilisticRTA_TaskSet).
+    const std::vector<FiniteDist>& Initialize(const DAG_Model& dag_tasks,
+                                              const PriorityVec& pa,
+                                              const std::vector<double>& tl);
+
+    // Cheap commit: promote the candidate (dag, pa, tl, rtas) the caller just
+    // evaluated to champion, with NO full RTA. `rtas` MUST be the vector a
+    // prior Evaluate/Initialize returned for this same triple; the cache stores
+    // it as `rta_` then rebuilds `hp_prefix_per_core_` by re-rolling the per-core
+    // ET-convolution from (dag, pa, tl) — O(N) convolves, no RTA work. On the
+    // serialized path the single champion writer is CommitIncumbent
+    // (OptimizeSP_TL_Incre.cpp:699), so the AdoptChampion call goes inside it.
+    void AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
+                       const std::vector<double>& tl,
+                       const std::vector<FiniteDist>& rtas);
+
+    // Compute the candidate's full flat RTA for (dag, pa, tl), exploiting the
+    // single-change invariant vs the stored champion. Does NOT mutate champion
+    // state — writes the candidate RTA to `candidate_rta_` and returns it;
+    // commit via AdoptChampion. Verdict-driven dispatch: Evaluate calls
+    // ClassifyReusePerTask to get the per-task reuse verdict, seeds every task
+    // with the champion RTA (FullReuse tasks keep it), then recomputes the
+    // NoReuse tasks via GetRTA_OneTask in candidate priority order so each
+    // recompute sees the correct candidate-ET HP set. This keeps Evaluate a
+    // mechanical per-task dispatcher: a future same-core-suffix refinement
+    // only needs ClassifyReusePerTask to emit ReuseHpTasksEt + a branch here,
+    // not a rewrite of the dispatch loop.
+    //   • no champion → Initialize (full compute).
+    // Returned ref is valid until the next Evaluate/Initialize/AdoptChampion.
+    const std::vector<FiniteDist>& Evaluate(const DAG_Model& dag_tasks,
+                                            const PriorityVec& pa,
+                                            const std::vector<double>& tl);
+
+    // --- read accessors (const) ------------------------------------------
+    bool HasChampion() const { return !rta_.empty(); }
     const std::vector<FiniteDist>& Rta() const { return rta_; }
-    const std::vector<FiniteDist>& HpTasksEtConvVec() const {
-        return hp_tasks_et_conv_vec_;
-    }
 
-    // --- per-core query helpers (used by the classifier + patchers) ---
-    int Size() const { return static_cast<int>(sorted_task_ids_.size()); }
+    // The difference between the candidate (dag, pa, tl) and the stored
+    // champion, WITHOUT computing any RTA. The pure query half of Evaluate.
+    // Returns a LOCATOR set (no verdict field): `changed_task_id == -1` iff the
+    // candidate is identical to the champion (|diff|==0); otherwise the one
+    // changed task + its core + its old/new per-core priority positions.
+    //
+    // The single-change check (the algorithm IsSingleTaskChange used to carry
+    // separately) is now INLINED here via TryComputeSingleChange — see its
+    // doc for the find-ET-diff → remove-one → compare-rest algorithm.
+    //   • no champion             → {changed_task_id:-1, ...} (callers read as
+    //     "no verdict / all-NoReuse"; distinct from |diff|==0 only by context)
+    //   • |diff|==0               → {changed_task_id:-1, ...}
+    //   • |diff|==1               → locators filled in (core = changed task's
+    //     core; old_pos==new_pos for an ET-only move)
+    //   • |diff|>1                → THROWS (violates the P1.10 single-change
+    //     invariant; the cache only serves the |diff|<=1 cases). Use
+    //     IsSingleTaskChange to ask first if you cannot prove the invariant.
+    // Pure; may be called on a cache with no champion (returns {-1,...}, no throw).
+    TaskSetDifference ComputeTaskSetDifference(
+        const DAG_Model& dag_tasks, const PriorityVec& pa,
+        const std::vector<double>& tl) const;
 
-    // Sorted-priority position of `task_id` on this core, or -1 if it is not
-    // on this core.
-    int PositionOfTask(int task_id) const {
-        for (int i = 0; i < Size(); i++) {
-            if (sorted_task_ids_[i] == task_id) return i;
-        }
-        return -1;
-    }
-    bool ContainsTask(int task_id) const {
-        return PositionOfTask(task_id) >= 0;
-    }
+    // Boolean predicate: does the candidate differ from the stored champion by
+    // AT MOST one task (ET and/or per-core priority position)? true for |diff|
+    // in {0,1} (the two cases Evaluate serves), false for no champion or >1.
+    // The P1.10 single-change invariant as a query instead of an assertion —
+    // AssertSingleChangeInvariant (OptimizeSP_TL_Incre.cpp:270, debugMode-only)
+    // throws on the >1 case; IsSingleTaskChange lets a caller ASK (e.g. a
+    // budget-aware caller that wants to skip a multi-change candidate before
+    // any RTA work). Thin non-throwing wrapper over TryComputeSingleChange;
+    // ComputeTaskSetDifference throws when this returns false and a champion
+    // exists.
+    bool IsSingleTaskChange(const DAG_Model& dag_tasks, const PriorityVec& pa,
+                            const std::vector<double>& tl) const;
 
-    // --- build path (role 1 helper) ---
-    // Populate this core's cache from `core_tasks` (sorted HP-first by
-    // priority — Populate re-sorts defensively so the caller may pass it in any
-    // order). Sets processor_id_, sorted_task_ids_, tl_vec_ (looked up by task
-    // id from `time_limits`, indexed by task id; -1 if missing), and drives the
-    // 2-arg ProbabilisticRTA_TaskSet_SingleCore to fill rta_ +
-    // hp_tasks_et_conv_vec_. Because the sort canonicalizes the order, rta_[i]
-    // / hp_tasks_et_conv_vec_[i] / sorted_task_ids_[i] / tl_vec_[i] all align
-    // at sorted position i. Returns a const ref to the populated rta_.
-    const std::vector<FiniteDist>& Populate(
-        int processor_id,
-        const TaskSet& core_tasks,
-        const std::vector<double>& time_limits);
+    // Per-task reuse view: result[i] = reuse extent for task i. DERIVED from
+    // the locator set ComputeTaskSetDifference returns (no klass on the diff):
+    //   • no champion             → every task NoReuse
+    //   • changed_task_id == -1   → every task FullReuse (|diff|==0)
+    //   • changed_task_id >= 0    → every task on a DIFFERENT core than
+    //     `diff.core` is FullReuse; every task on the SAME core is NoReuse
+    //     (its HP set shifted under the single change).
+    // (v1: cross-core reuse; same-core suffix reuse is a later refinement —
+    // ReuseHpTasksEt is reserved for it and not emitted here.)
+    // Pure; may be called on a cache with no champion (returns all-NoReuse).
+    std::vector<RTAReusePerTask> ClassifyReusePerTask(
+        const DAG_Model& dag_tasks, const PriorityVec& pa,
+        const std::vector<double>& tl) const;
 
    private:
-    int processor_id_ = -1;
-    // sorted_task_ids_[i] = task id at priority index i on this core (sorted by
-    // pa_vec priority, descending HP-first). The SUFFICIENT proxy for pa_vec:
-    // RTA cares about per-core ORDER, not priority VALUES — a cross-core
-    // priority shift preserving each core's internal order changes no core's
-    // RTA. pa_vec is therefore NOT stored (redundant for validity).
-    std::vector<int> sorted_task_ids_;
-    // tl_vec_[i] = time limit of sorted_task_ids_[i] at cache-build time; -1 =
-    // no TL (the immutable base Gaussian dist). ET-DIST VALIDITY PROXY: within
-    // an interval ET dists mutate ONLY via TL application
-    // (ApplyTimeLimitsToTasksExecutionTime → GetUnitExecutionTimeDist(tl), a
-    // deterministic point mass at tl), so
-    //   ET-dist[i] unchanged  <=>  stored tl_vec_[i] == current tl_vec_[i]
-    // (tl==-1 = the immutable base dist, which never moves mid-walk). The one
-    // exception, the one-time WCET ablation (ApplyWCETAblationIfRequired), is a
-    // setup boundary covered by the interval reset.
-    std::vector<double> tl_vec_;
-    // rta_[i] = RTA distribution of sorted_task_ids_[i]; length ==
-    // sorted_task_ids_.size().
+    // The champion triple:
+    DAG_Model dag_champion_;
+    PriorityVec pa_champion_;
+    std::vector<double> tl_champion_;
+    // The champion RTA, flat by task id (rta_[i] = RTA of task i).
     std::vector<FiniteDist> rta_;
-    // hp_tasks_et_conv_vec_[i] = HP-ET convolution of sorted_task_ids_[0..i):
-    //   hp_tasks_et_conv_vec_[0] == FiniteDist({Value_Proba(0, 1.0)}), and
-    //   hp_tasks_et_conv_vec_[i] is exactly what the 3-arg GetRTA_OneTask
-    //   consumes. This is the reuse primitive the patchers replay a suffix from.
-    std::vector<FiniteDist> hp_tasks_et_conv_vec_;
+    // Per-core HP-prefix checkpoints (the reuse primitive):
+    // hp_prefix_per_core_[processorId][i] = HP-ET convolution of the tasks
+    // sorted above position i on that core = exactly what 3-arg GetRTA_OneTask
+    // consumes. Built by Initialize, consumed by Evaluate's patch branch,
+    // rolled forward by AdoptChampion.
+    std::unordered_map<int, std::vector<FiniteDist>> hp_prefix_per_core_;
+
+    // Candidate RTA buffer (Evaluate's output; champion rta_ untouched until
+    // AdoptChampion). AdoptChampion's `rtas` arg is a vector returned here.
+    std::vector<FiniteDist> candidate_rta_;
+
+    // Per-core priority ORDER from (dag, pa): for each processorId, the task
+    // ids on that core sorted ascending by priority value (lower = higher
+    // priority; matches ProbabilisticRTA_TaskSet_SingleCore's sort at
+    // RTA.cpp:72-74). Shared by ComputeTaskSetDifference (candidate side) and
+    // Evaluate's patch branch (candidate order for the suffix recompute). Pure.
+    std::unordered_map<int, std::vector<int>> PerCoreOrderFromPa(
+        const DAG_Model& dag_tasks, const PriorityVec& pa) const;
+
+    // Rebuild hp_prefix_per_core_ from `tasks_prioritized` (TL-baked + pa-sorted)
+    // by re-rolling the per-core ET-convolution. Shared by Initialize +
+    // AdoptChampion (both rebuild prefixes after setting the champion triple).
+    void RebuildPrefixes(const TaskSet& tasks_prioritized);
+
+    // The single shared single-change analyzer (the merged IsSingleTaskChange
+    // algorithm). Returns true + fills `out` with the change locators iff the
+    // candidate differs from the champion by AT MOST one task (ET and/or
+    // per-core priority position); returns false otherwise (and leaves `out`
+    // untouched). No-champion → returns false. NEVER throws — the throwing
+    // boundary is ComputeTaskSetDifference. Algorithm:
+    //   1. ET diff: FindTaskWithDifferentEt(champion_baked, candidate_baked).
+    //      If >1 task's ET moved → false (would-be |diff|>1).
+    //   2. Per-core priority order: for each core, the candidate's order vs the
+    //      champion's. A core with differing sizes → false (task migrated
+    //      cores, a multi-change). At most ONE core may differ.
+    //   3. The "remove one task from both vectors, compare the rest" test:
+    //      - 1 ET-diff task X (the known change): remove X from both the
+    //        champion and candidate per-core order; if the rest still differs,
+    //        a SEPARATE task also moved → false. Absorbs X's own priority move
+    //        (combined ET+move → single change).
+    //      - 0 ET-diff task (pure priority move): scan left-to-right; at the
+    //        first mismatch i, the moved task is champ[i] OR cand[i] — try
+    //        removing each; if either makes the rest match, that's the single
+    //        move (locate moved_task_id, old_pos, new_pos); if neither → false.
+    //      - 0 ET diff + every core identical → |diff|==0, out.changed_task_id
+    //        stays -1, returns true.
+    //   4. Cross-check: the priority-move core (if any) and the ET-diff task's
+    //      core must be the same single core, else >1 change → false.
+    // out.changed_task_id == -1 after a true return ⟺ |diff|==0.
+    bool TryComputeSingleChange(const DAG_Model& dag_tasks,
+                                const PriorityVec& pa,
+                                const std::vector<double>& tl,
+                                TaskSetDifference& out) const;
 };
-
-// ============================================================================
-// (1) BUILD — full compute + populate the cache (the baseline/descent path).
-// ============================================================================
-
-// Full compute: applies pa_vec (UpdateTaskSetPriorities) + tl_vec
-// (ApplyTimeLimitsToTasksExecutionTime) to `dag_tasks.tasks`, drives each core's
-// PerCoreRTACache::Populate, and returns the flat rta vector (same shape &
-// values as ProbabilisticRTA_TaskSet — bit-identical by construction; the
-// differential test pins it). Overwrites `cache` (it is its own commit — call
-// only for the new champion / new interval). `time_limits[i] == -1` means no TL
-// for task i (keep base dist).
-std::vector<FiniteDist> ComputeRTA_FullAndCache(
-    const DAG_Model& dag_tasks,
-    const PriorityVec& priority_assignment,
-    const std::vector<double>& time_limits,
-    std::unordered_map<int, PerCoreRTACache>& cache);
-
-// ============================================================================
-// (2) REUSE QUERY — read-only: "for each task, can its RTA be read from
-//     cache?" No RTA. Returns one verdict per task, indexed by task id.
-// ============================================================================
-
-// Per-task reuse classification of `cache` against a candidate described by the
-// set of tasks whose ET dist or priority changed (`changed_task_ids`). Read-only
-// — never mutates the cache, never runs RTA. The return is indexed by task id
-// (length == dag_tasks.tasks.size(); the codebase invariant dag.tasks[i].id==i
-// makes id == position). Richer than a bool because reuse is not binary.
-//
-// v0 (2026-07-15) is deliberately SIMPLE: a task is `Recompute` if any changed
-// task shares its processorId (conservative — assume the worst within a changed
-// core), else `RtaReuse` (changed tasks are on a different core → this task's
-// RTA is untouched). Empty cache → all `Recompute`. A task whose core is absent
-// from the cache is `Recompute` (partition change / uncached core). This does
-// NOT yet exploit the within-core HP-prefix reuse point — the unchanged prefix
-// above a changed position is marked `Recompute` too, not `RtaReuse`/
-// `RecomputeWithHpPrefix`. That prefix refinement lands paired with the patchers
-// (steps 4/5); `RecomputeWithHpPrefix` is declared but NOT produced by v0.
-enum class RTAReuseClass {
-    RtaReuse,               // cached rta valid verbatim — return it, zero work
-    RecomputeWithHpPrefix,  // own rta stale, but hp_tasks_et_conv_vec[p] reusable
-    Recompute               // must recompute from scratch (prefix invalidated)
-};
-std::vector<RTAReuseClass> ClassifyReuse(
-    const std::unordered_map<int, PerCoreRTACache>& cache,
-    const DAG_Model& dag_tasks,
-    const std::vector<int>& changed_task_ids);
-
-// ============================================================================
-// (3) UPDATE — cache-update patchers (Loop A + Loop B). MUTATE cache in place.
-//     Defined in steps 4/5; declared here so the API surface is complete.
-// ============================================================================
-
-// TL patch (Loop B, no PA change): one task's TL changed to `new_tl` at
-// priority position `priority_position` on `core`. Reuses
-// hp_tasks_et_conv_vec[priority_position], recomputes rta[p..n) via the 3-arg
-// GetRTA_OneTask, leaves other cores' cached rta untouched. Writes the suffix
-// rta + the rolled-forward hp_tasks_et_conv_vec[p+1..n] + updated tl_vec back
-// into cache[core]. Returns the flat rta vector. TDD: bit-identical to a full
-// recompute (ComputeRTA_FullAndCache) on the same (pa_vec, tl_vec).
-std::vector<FiniteDist> PatchRTA_OneTaskTL(
-    int changed_task_id, int core, int priority_position, double new_tl,
-    const DAG_Model& dag_tasks,
-    std::unordered_map<int, PerCoreRTACache>& cache);
-
-// Priority-move patch (Loop A, PA change): one task moved old_pos→new_pos on
-// `core`. Reuses hp_tasks_et_conv_vec[min(old_pos,new_pos)], replays the suffix
-// in the new sorted order. The O(N²)→O(k) payoff. Writes the reordered suffix
-// back into cache[core]. Returns the flat rta vector. TDD: bit-identical to a
-// full recompute.
-std::vector<FiniteDist> PatchRTA_PriorityMove(
-    int moved_task_id, int core, int old_pos, int new_pos,
-    const DAG_Model& dag_tasks,
-    std::unordered_map<int, PerCoreRTACache>& cache);
 
 }  // namespace SP_OPT_PA
