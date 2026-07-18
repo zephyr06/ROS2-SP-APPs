@@ -287,6 +287,42 @@ TEST_F(TaskSetForTest_robotics_v19, optimize_incremental) {
               1.0);  // relaxed for debug mode coordinate descent
 }
 
+// P1.10 Phase 3 — the single-change invariant proof (P1.9's unblock condition).
+// Every SP-eval on the serialized path must change AT MOST one task's ET vs the
+// champion: Type-L TL step → |diff|==1 (the walked task); Type-E env-changed
+// step → |diff|==0 (the env move is absorbed into dag_tasks_ on both diff sides,
+// so candidate DAG == champion DAG — only the re-searched PA varies). |diff|>1
+// would mean the champion drifted, breaking the sub-incremental's premise.
+//
+// The invariant is checked inside EvaluateTimeLimitConfig_SubIncremental via
+// AssertSingleChangeInvariant, which is gated on debugMode and THROWS on a
+// violation. So this test proves the invariant by RUNNING the serialized path
+// across an update that exercises BOTH step kinds (v19→v21 moves the TL-flexible
+// TSP task 0's dist AND the env-only SLAM task 3's dist — see the D2
+// FindEnvTaskWithDifferentEt tests) with debugMode forced on: if any eval
+// violated |diff|<=1, the assertion would throw and abort the test (FAIL).
+// Reaching the EXPECT_GT line means the invariant held for every eval.
+TEST_F(TaskSetForTest_robotics_v19, SerializedIncremental_SingleChangeInvariant) {
+    DAG_Model dag_tasks_updated = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH +
+        "TaskData/test_robotics_v21.yaml");  // moves TSP (TL-flexible) + SLAM (env)
+
+    int saved_debug = GlobalVariables::debugMode;
+    GlobalVariables::debugMode = 1;  // arm the invariant assertion
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.ReOptimizePeriodic(dag_tasks, 2);  // bootstrap the incumbent
+    // If the single-change invariant is violated at any SP-eval below,
+    // AssertSingleChangeInvariant throws → the test aborts here (FAIL).
+    opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
+    ResourceOptResult res = opt.CollectResults();
+
+    GlobalVariables::debugMode = saved_debug;
+
+    // Sanity: the run produced a finite SP (it completed the queue walk).
+    EXPECT_GT(res.sp_opt, 0.0);
+}
+
 TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
     printf(
         "\n-------- TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions "
@@ -894,15 +930,14 @@ TEST_F(CompareAndKeepSynthetic,
 //
 // Synthetic 2-task DAG: T_perf (task 0) carries 10 evenly-spaced TL options
 // [0,10,...,90] with ET=45 (closest option = index 4, value 40). T_noise is a
-// small fixed-ET task. The dispatcher re-runs the wide-radius
-// ReOptimizePeriodic every ReoptimizationPeriod-th call and the narrow-radius
-// OptimizeIncre_w_TL otherwise. Under the trial-and-error walk BOTH branches
-// record the FULL per-task option set (no radius cap), so the recorded option
-// count is no longer a branch-distinguishing signal. Instead, the routing is
-// observed via the `from_scratch` flag the evaluator receives: the reopt branch
-// passes from_scratch=true, the incremental branch from_scratch=false. The
-// fixture's RecordingDispatcherOpt subclass records every flag value, so a test
-// can assert which branch each dispatch took.
+// small fixed-ET task. The dispatcher re-runs ReOptimizePeriodic every
+// ReoptimizationPeriod-th call and OptimizeIncre_w_TL otherwise. Routing is
+// observed via TWO seams: the reopt branch drives its candidates through
+// EvaluateTimeLimitConfig_ScratchOrIncre (from_scratch=true); the incremental
+// branch drives its interval search through PerformSerializedTaskQueueOptimization
+// (P1.10 — the serialized E+L queue). The fixture's RecordingDispatcherOpt
+// subclass records BOTH (the from_scratch flags AND a count of serialized
+// entries), so a test can assert which branch each dispatch took.
 //
 // ReoptimizationPeriod is PINNED in SetUp (=10) so this fixture is independent
 // of the production default in parameters.yaml. These tests exercise dispatch
@@ -911,12 +946,14 @@ TEST_F(CompareAndKeepSynthetic,
 class CounterDispatcherSynthetic : public ::testing::Test {
    public:
     // Subclass that records the from_scratch flag of every
-    // EvaluateTimeLimitConfig_ScratchOrIncre call. This is the only call the
-    // coordinate-descent walk makes per candidate, so the recorded flags are
-    // exactly the routing decisions the dispatcher made.
+    // EvaluateTimeLimitConfig_ScratchOrIncre call (the reopt branch's per-candidate
+    // eval) AND counts entries into PerformSerializedTaskQueueOptimization (the
+    // incremental branch's driver). The recorded signals are exactly the routing
+    // decisions the dispatcher made.
     class RecordingDispatcherOpt : public OptimizePA_Incre_with_TimeLimits {
        public:
         std::vector<bool> from_scratch_flags;
+        int serialized_entries = 0;
         using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
         double EvaluateTimeLimitConfig_ScratchOrIncre(
             int K, const std::vector<double>& time_limits,
@@ -925,6 +962,14 @@ class CounterDispatcherSynthetic : public ::testing::Test {
             return OptimizePA_Incre_with_TimeLimits::
                 EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
                                                        from_scratch);
+        }
+        void PerformSerializedTaskQueueOptimization(
+            int K, std::vector<double>& starting_time_limits,
+            const DAG_Model& dag_tasks_prev_pre_tl) override {
+            ++serialized_entries;
+            OptimizePA_Incre_with_TimeLimits::
+                PerformSerializedTaskQueueOptimization(
+                    K, starting_time_limits, dag_tasks_prev_pre_tl);
         }
     };
 
@@ -999,40 +1044,38 @@ TEST_F(CounterDispatcherSynthetic,
     }
 }
 
-// count == 0 routes to reopt (from_scratch=true); count == 1 is not modular
-// (1 % 10 != 0) so the second call routes to the incremental branch
-// (from_scratch=false). The routing is observable via the recorded flags: the
-// second call pushes at least one false flag (the incremental branch evaluates
-// its candidates with from_scratch=false), proving the incremental branch —
-// not reopt — ran. The incumbent established by the first call lets the
-// incremental path's warm-start contract hold (no CoutError).
+// count == 0 routes to reopt (from_scratch=true, driven through
+// EvaluateTimeLimitConfig_ScratchOrIncre); count == 1 is not modular
+// (1 % 10 != 0) so the second call routes to the incremental branch, driven
+// through PerformSerializedTaskQueueOptimization (P1.10 — the serialized E+L
+// queue; the per-candidate eval is the sub-incremental, NOT ScratchOrIncre).
+// The routing is observable via the recorded counts: the second call enters the
+// serialized driver at least once, proving the incremental branch — not reopt —
+// ran. The incumbent established by the first call lets the incremental path's
+// warm-start contract hold (no CoutError).
 TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
 
     // count == 0 → reopt. Establishes the incumbent.
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     ASSERT_EQ(1, opt.reoptimization_interval_count_);
-    const size_t flags_after_reopt = opt.from_scratch_flags.size();
-    ASSERT_GT(flags_after_reopt, 0u);
+    ASSERT_GT(opt.from_scratch_flags.size(), 0u);
     for (bool fs : opt.from_scratch_flags) {
         ASSERT_TRUE(fs);
     }
+    // count == 0 routes to reopt, NOT the serialized incremental driver.
+    ASSERT_EQ(0, opt.serialized_entries)
+        << "count==0 must NOT enter the serialized incremental driver.";
 
     // count == 1 → 1 % 10 != 0 → incremental.
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     EXPECT_EQ(2, opt.reoptimization_interval_count_);
-    // The incremental branch pushed at least one false flag (from_scratch=false)
-    // — the routing signal that the second call took the incremental branch.
-    bool saw_incremental_flag = false;
-    for (size_t i = flags_after_reopt; i < opt.from_scratch_flags.size(); ++i) {
-        if (!opt.from_scratch_flags[i]) {
-            saw_incremental_flag = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(saw_incremental_flag)
-        << "count==1 must route through the incremental (from_scratch=false) "
-        << "branch; every flag was true (reopt ran instead).";
+    // The incremental branch entered the serialized driver — the routing signal
+    // that the second call took the incremental branch (not reopt).
+    EXPECT_GE(opt.serialized_entries, 1)
+        << "count==1 must route through the incremental (serialized driver) "
+        << "branch; it never entered PerformSerializedTaskQueueOptimization "
+        << "(reopt ran instead).";
 }
 
 // INCR diff-baseline invariant (P0.5 redesign). The whole point of carrying an
@@ -1106,11 +1149,11 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
 
 // P1.1 descent-start-TL fix. The incremental descent's STARTING time-limit
 // vector determines what `UpdateExtDistBasedOnTimeLimit` applies as point dists
-// on the update side of `FindTaskWithDifferentEt`'s diff (see
-// EvaluateTimeLimitConfig_ScratchOrIncre: dag_tasks_cur =
-// UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits), then OptimizeIncre
-// diffs the challenger's dag_tasks_ — the carried ADOPTED-TL DAG rebuilt from
-// res_opt_ via BuildChallengerFromIncumbent — against dag_tasks_cur).
+// on the update side of `FindTaskWithDifferentEt`'s diff (the serialized driver
+// builds dag_baseline = UpdateExtDistBasedOnTimeLimit(dag_tasks_,
+// starting_time_limits) for its baseline re-score; the per-task sub-incremental
+// evals build dag_tasks_cur = UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl)
+// with tl seeded from the same starting vector).
 //
 // The baseline side carries the interval-(N-1) adopted TL (SeedStateFromIncumbent
 // applies ReconstructTimeLimitVecFromResOpt()). The update side MUST start from
@@ -1121,12 +1164,12 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
 // and the diff flagged every perf-pair task whose adopted TL != Gaussian-mean TL
 // (a TL-drift false positive, independent of any real ET change).
 //
-// Observable: the FIRST time_limits the descent evaluates is its start vector
-// (the baseline eval at the top of PerformCoordinateDescentForTaskConfigOpt).
-// A stub overriding EvaluateTimeLimitConfig_ScratchOrIncre records that first
-// vector without altering the SP (the real RTA still drives adoption via
-// OptimizeFromScratch / OptimizeIncre, which ignore the override's return value
-// for the SP they adopt — the override only intercepts the time_limits arg).
+// Observable: the starting_time_limits the serialized incremental driver is
+// entered with IS the descent's start vector (OptimizeIncre_w_TL seeds it from
+// ReconstructTimeLimitVecFromResOpt() and passes it to
+// PerformSerializedTaskQueueOptimization). A stub overriding that entry records
+// the vector without altering the SP (the real RTA still drives adoption inside
+// the driver; the override only intercepts the starting_time_limits arg).
 //
 // The fixture's T_perf has options {400,600,800,1000} and ET~500, so the
 // Gaussian-mean-closest TL is 600. The bootstrap (ReOptimizePeriodic, real RTA)
@@ -1135,24 +1178,25 @@ TEST_F(CompareAndKeepSynthetic, OptimizeIncre_AdvancesPrevOptimizerDagTasks) {
 // interval's descent start at T_adopt (the carried adopted TL), not 600.
 TEST_F(CompareAndKeepSynthetic,
        OptimizeIncre_w_TL_StartsDescentFromCarriedAdoptedTL) {
-    // Stub: records the first time_limits the descent evaluates (its start
-    // vector). Does NOT alter SP — the real RTA drives adoption.
+    // Stub: records the starting_time_limits the serialized incremental driver
+    // is entered with (the descent's start vector). Does NOT alter SP — the real
+    // RTA drives adoption inside the driver.
     class StartTLStub : public OptimizePA_Incre_with_TimeLimits {
        public:
         std::vector<double> first_eval_tl;
-        bool capture = false;  // set true to record the next descent's first eval
+        bool capture = false;  // set true to record the next descent's entry TL
         explicit StartTLStub(const DAG_Model& dag, const SP_Parameters& sp)
             : OptimizePA_Incre_with_TimeLimits(dag, sp) {}
 
-        double EvaluateTimeLimitConfig_ScratchOrIncre(
-            int K, const std::vector<double>& time_limits,
-            bool from_scratch) override {
+        void PerformSerializedTaskQueueOptimization(
+            int K, std::vector<double>& starting_time_limits,
+            const DAG_Model& dag_tasks_prev_pre_tl) override {
             if (capture && first_eval_tl.empty()) {
-                first_eval_tl = time_limits;
+                first_eval_tl = starting_time_limits;
             }
-            return OptimizePA_Incre_with_TimeLimits::
-                EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
-                                                       from_scratch);
+            OptimizePA_Incre_with_TimeLimits::
+                PerformSerializedTaskQueueOptimization(
+                    K, starting_time_limits, dag_tasks_prev_pre_tl);
         }
     };
 
@@ -1184,7 +1228,8 @@ TEST_F(CompareAndKeepSynthetic,
     opt.OptimizeIncre_w_TL(dag_tasks, 2);
 
     ASSERT_EQ(2u, opt.first_eval_tl.size())
-        << "Descent did not evaluate any config; cannot observe the start TL.";
+        << "Serialized incremental driver was not entered; cannot observe the "
+        << "start TL.";
     EXPECT_DOUBLE_EQ(adopted_tl, opt.first_eval_tl[0])
         << "Incremental descent must start from the carried ADOPTED TL ("
         << adopted_tl << "), not the Gaussian-mean-closest TL ("

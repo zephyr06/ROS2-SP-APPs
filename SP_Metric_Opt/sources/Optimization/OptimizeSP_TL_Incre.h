@@ -55,6 +55,14 @@ struct TaskSortingHeuristic {
     bool operator()(size_t idx1, size_t idx2) const;
 };
 
+// One entry in the serialized E+L queue (P1.10). `kind` dispatches the step
+// handler: EnvChanged → one sub-incremental re-search with the committed TL;
+// TLFlexible → the trial-and-error TL walk whose steps call the sub-incremental.
+struct SerializedTaskQueueEntry {
+    int task_id;
+    enum class Kind { EnvChanged, TLFlexible } kind;
+};
+
 class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
    public:
     OptimizePA_Incre_with_TimeLimits() {};
@@ -107,6 +115,38 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     virtual double EvaluateTimeLimitConfig_ScratchOrIncre(
         int K, const std::vector<double>& time_limits, bool from_scratch);
 
+    // The shared SP-eval entry for the serialized queue (P1.10). Mirrors the
+    // incremental branch of EvaluateTimeLimitConfig_ScratchOrIncre but calls
+    // OptimizeIncre_SingleTask (the |diff|==1 primitive) instead of OptimizeIncre.
+    //
+    // `task_idx`: the ONE task whose ET differs from the champion (Type-E: the
+    // env-changed task, time_limits = committed TL; Type-L: the TL-walked task,
+    // time_limits = trial TL). `et_increased`: caller-supplied direction of the
+    // ET change vs the champion — drives AnalyzePriorityChangeStatus's half-range
+    // pruning inside the primitive (a wrong direction prunes the wrong half and
+    // can miss the optimum), so the caller MUST supply it. `K` is carried for
+    // signature symmetry with ScratchOrIncre; the sub-incremental primitive
+    // re-searches one task's 1D positions and does not use a beam width.
+    //
+    // Virtual so the serialized walk can be unit-tested with a TL→SP stub.
+    virtual double EvaluateTimeLimitConfig_SubIncremental(
+        int K, const std::vector<double>& time_limits, size_t task_idx,
+        bool et_increased);
+
+    // P1.10 Phase 3: assert the single-change invariant on the serialized path
+    // (debugMode-only). `champion_dag` = BuildChallengerFromIncumbent's DAG;
+    // `candidate_dag` = the trial DAG the sub-incremental primitive is about to
+    // re-search. The diff must be EMPTY (Type-E: the env move is absorbed into
+    // dag_tasks_ on both sides → cancels; candidate DAG == champion DAG, only the
+    // re-searched PA varies) or flag exactly `task_idx` (Type-L: the walked task's
+    // TL moved). |diff|>1 or a 1-flagging-different-task means the champion
+    // drifted — the single-change premise P1.9's rev-2 cache relies on (single-task
+    // RTA patch, or full reuse at |diff|==0) is broken → throws via CoutError.
+    // No-op when debugMode is off (production stays free of the per-eval diff cost).
+    void AssertSingleChangeInvariant(const DAG_Model& champion_dag,
+                                     const DAG_Model& candidate_dag,
+                                     size_t task_idx) const;
+
     std::vector<double> InitializeTimeLimitsFromETConfig();
     void InitializeTimeLimitsToSmallest(std::vector<double>& time_limits);
     // One time-limit per task, each at its smallest option (-1 if a task has no
@@ -127,8 +167,8 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     // Unidirectional trial-and-error walk for ONE task's time limit. Steps
     // outward from `baseline_val` in direction `step` (+1 up, -1 down) through
-    // the task's FULL recorded option set, evaluating each candidate via
-    // EvaluateTimeLimitConfig_ScratchOrIncre. Adopts a candidate when
+    // the task's FULL recorded option set, evaluating each candidate via `eval`
+    // (a TL->SP function bound by the caller). Adopts a candidate when
     // IsBetterTimeLimitOption returns true; otherwise spends one unit of
     // `patience` (a total non-improvement budget, NOT reset on improvement).
     // Stops when patience hits 0 or the option-set boundary is reached.
@@ -139,17 +179,71 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // be non-unimodal at high utilization). `current_sp` is the best SP so far
     // across the whole descent. `baseline_val` is the TL the walk steps from —
     // it MUST be a member of the option set, else the walk is a no-op.
-    double OptimizeSingleTaskTimeLimit(size_t task_idx, int K,
-                                       std::vector<double>& time_limits,
-                                       double current_sp, double baseline_val,
-                                       int step, bool from_scratch,
-                                       int patience);
+    //
+    // `eval` receives the trial `time_limits` (with task_idx already set to the
+    // candidate) and returns the resulting SP. The eval-injection overload is
+    // the walk core: the legacy 7-arg wrapper below binds `eval` to
+    // EvaluateTimeLimitConfig_ScratchOrIncre (the reopt/BF path); the
+    // serialized Type-L step (P1.10) binds it to the sub-incremental eval,
+    // which skips the redundant re-score the legacy eval pays each step.
+    double OptimizeSingleTaskTimeLimit(
+        size_t task_idx, int K, std::vector<double>& time_limits,
+        double current_sp, double baseline_val, int step, bool from_scratch,
+        int patience);
+
+    // The walk core with an injected eval. `K` is captured into the eval
+    // closure by the caller (the legacy path threads `from_scratch` instead).
+    // Identical walk to the 7-arg overload above; factored out so the
+    // serialized Type-L step can reuse the SAME patience-bounded outward walk
+    // with a different (sub-incremental) per-candidate eval — behavior of the
+    // walk itself is unchanged.
+    double OptimizeSingleTaskTimeLimit_Impl(
+        size_t task_idx, std::vector<double>& time_limits, double current_sp,
+        double baseline_val, int step, int patience,
+        std::function<double(const std::vector<double>&)> eval);
 
     // Fast path when GlobalVariables::disable_time_limit_opt is set: pin every
     // task's TL to its smallest option and evaluate that single config (no
     // coordinate-descent search). Returns the resulting priority assignment.
     PriorityVec OptimizeWithTimeLimitOptDisabled(
         int K, std::vector<double>& time_limits, bool from_scratch);
+
+    // Type-L set (P1.10, helper C): task IDs with TL freedom, i.e. those whose
+    // time_limit_option_for_each_task_[id] is NOT the {-1}-only sentinel. These
+    // are the tasks the legacy descent walks (PerformCoordinateDescentForTaskConfigOpt
+    // :266-267 skip is the inverse filter). Pure query over existing state.
+    std::vector<int> CollectTLFlexibleTaskIds() const;
+
+    // Merged + sorted E+L queue (P1.10, function D). Merges the Type-E set
+    // (FindEnvTaskWithDifferentEt(dag_tasks_prev_pre_tl, dag_tasks_)) and the
+    // Type-L set (CollectTLFlexibleTaskIds), sorts TOGETHER by task WEIGHT
+    // DESCENDING (D3 — simple, uniform key; high-weight first). Each entry
+    // carries its Kind so the loop dispatches to the right handler. `prev_pre_tl`
+    // is the LOCAL pre-TL DAG captured by the caller before the absorb.
+    //
+    // DEDUP POLICY (#5): a task may NOT be both env-changed AND TL-flexible
+    // (disjoint by generator design — TL-flexible tasks have no env dependence).
+    // If a task appears in BOTH at runtime → CoutError (a contract violation,
+    // not an optimization choice). NOT a silent winner-pick.
+    std::vector<SerializedTaskQueueEntry> BuildSerializedTaskQueue(
+        const DAG_Model& dag_tasks_prev_pre_tl) const;
+
+    // Serialized loop driver (P1.10, function F) — the INCREMENTAL-path
+    // replacement for PerformCoordinateDescentForTaskConfigOpt. Resets the
+    // incumbent baseline, re-scores the champion under the new env (dedicated
+    // re-score, NOT ScratchOrIncre — #6: must not optimize before the queue's
+    // sorted order is honored), builds the E+L queue, and walks it serially
+    // (EnvChanged → EvaluateTimeLimitConfig_SubIncremental; TLFlexible → the TL
+    // walk whose steps call the sub-incremental). `dag_tasks_prev_pre_tl` is the
+    // LOCAL pre-TL DAG captured before the :313 absorb (Type-E diff source).
+    //
+    // Virtual so the serialized incremental path can be unit-tested with a stub
+    // that observes the entry (e.g. the starting TL vector, or that the
+    // incremental branch ran at all) without altering the real RTA-driven walk —
+    // mirroring the ScratchOrIncre override pattern.
+    virtual void PerformSerializedTaskQueueOptimization(
+        int K, std::vector<double>& starting_time_limits,
+        const DAG_Model& dag_tasks_prev_pre_tl);
 
     // Compare-and-keep helpers (see ReOptimizePeriodic 3-arg).
     std::vector<double> ReconstructTimeLimitVecFromResOpt();
