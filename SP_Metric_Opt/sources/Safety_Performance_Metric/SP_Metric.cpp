@@ -1,6 +1,7 @@
 
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 
+#include "sources/Optimization/OptimizeSP_Base.h"  // UpdateTaskSetPriorities
 #include "sources/Utils/readwrite.h"
 namespace SP_OPT_PA {
 std::vector<double> GetChainsDDL(const DAG_Model& dag_tasks) {
@@ -133,11 +134,12 @@ double ObtainSP_DAG_From_Dists(
     double sp_overall = 0;
     for (uint i = 0; i < dag_tasks.tasks.size(); i++) {
         int task_id = dag_tasks.tasks[i].id;
-        double sp_val = ObtainSP(node_rts_dists[i], dag_tasks.tasks[i].deadline,
-                                 sp_parameters.thresholds_node.at(task_id),
-                                 sp_parameters.weights_node.at(task_id));
-        // std::cout << dag_tasks.tasks[i].name << " " << sp_val << std::endl;
-        sp_overall += sp_val;
+        double perf_coefficient = dag_tasks.tasks[i].GetPerfCoefficient();
+        sp_overall +=
+            ObtainSP(node_rts_dists[i], dag_tasks.tasks[i].deadline,
+                     sp_parameters.thresholds_node.at(task_id),
+                     sp_parameters.weights_node.at(task_id)) *
+            perf_coefficient;
     }
     for (uint i = 0; i < dag_tasks.chains_.size(); i++) {
         sp_overall +=
@@ -146,6 +148,32 @@ double ObtainSP_DAG_From_Dists(
                      sp_parameters.weights_path.at(i));
     }
     return sp_overall;
+}
+
+// P1.13 — cache-path drop-in for the oracle `EvaluateSPWithPriorityVec` body.
+// Mirrors it EXACTLY (bake TL → apply pa → ObtainSP_DAG) except the per-node RTA
+// is the caller-supplied `node_rtas` (an RTACache return) instead of a fresh
+// `ProbabilisticRTA_TaskSet`. Chain terms recomputed via
+// `GetRTDA_Dist_AllChains` (no cache win on chains — Q4; matches `ObtainSP_DAG`).
+// `perf_coefficient` is handled uniformly inside `ObtainSP_DAG_From_Dists`
+// (Hazard B fixed in place — no separate perf-coeff variant needed).
+double ObtainSP_Full_From_NodeRTAs(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl,
+    const std::vector<FiniteDist>& node_rtas) {
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized =
+        UpdateTaskSetPriorities(tasks_baked, priority_assignment);
+    DAG_Model dag_tasks_eval = dag_tasks;
+    dag_tasks_eval.tasks = tasks_prioritized;
+
+    std::vector<FiniteDist> reaction_time_dists =
+        GetRTDA_Dist_AllChains<ObjReactionTime>(dag_tasks_eval);
+
+    return ObtainSP_DAG_From_Dists(
+        dag_tasks_eval, sp_parameters, node_rtas, reaction_time_dists);
 }
 
 double GetTaskPerfTerm(
@@ -199,17 +227,24 @@ double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& tsp_ext_path, std::string& chain0_path,
                             std::string& file_path_ref) {
     int granularity = GlobalVariables::Granularity;
-    DAG_Model dag_tasks =
-        ReadDAG_Tasks(file_path_ref);  // only read the tasks without worrying
-                                       // about the execution time distribution
+    DAG_Model dag_tasks = ReadDAG_Tasks(file_path_ref);
 
     SP_Parameters sp_parameters = ReadSP_Parameters(file_path_ref);
-    assert(dag_tasks.tasks[0].name == "TSP");
-    double tsp_weight = GetAvgTaskPerfTerm(
-        tsp_ext_path, dag_tasks.tasks[0].timePerformancePairs);
-    sp_parameters.update_node_weight(0, tsp_weight);
+    // Load TSP's MEASURED execution-time samples (tsp_ext_path) into TSP's
+    // execution_time_dist BEFORE scoring. The node-RTA files (tsp_path etc.)
+    // hold TSP's *response time*; the ET samples here are the input the SP
+    // metric's perf coefficient must read. `ObtainSP_DAG_From_Dists` applies
+    // `GetPerfCoefficient()` once (Hazard B fixed in place), and
+    // `GetPerfCoefficient()` reads `execution_time_dist.GetAvgValue()` — so the
+    // dist MUST carry the measured ET, not the analytic Gaussian from the yaml.
+    // (The old code instead reduced these samples to a single average perf
+    // coefficient and shoved it into TSP's weight slot — the wrong place, now
+    // removed.)
+    std::vector<double> tsp_ext_times = ReadTxtFile(tsp_ext_path);
+    dag_tasks.tasks[0].execution_time_dist =
+        FiniteDist(tsp_ext_times, granularity);
+
     std::vector<FiniteDist> node_rts_dists;
-    // std::string folder_path="TaskData/AnalyzeSP_Metric/";
     node_rts_dists.push_back(FiniteDist(ReadTxtFile(tsp_path), granularity));
     node_rts_dists.push_back(FiniteDist(ReadTxtFile(mpc_path), granularity));
     node_rts_dists.push_back(FiniteDist(ReadTxtFile(rrt_path), granularity));

@@ -54,11 +54,10 @@ int main(int argc, char *argv[]) {
     program.add_argument("--tsp_ext_path")
         .default_value(std::string("TaskData/AnalyzeSP_Metric/tsp_ext.txt"))
         .help(
-            "the relative path of the yaml file that saves execution time data "
-            "about "
-            "the tasks. Example: TaskData/AnalyzeSP_Metric/tsp_ext.txt. It is "
-            "also okay to directly pass global path that starts with '/', such "
-            "as /root/usr/slam.txt ");
+            "the relative path of the txt file that saves measured execution "
+            "time data about the tasks. Example: "
+            "TaskData/AnalyzeSP_Metric/tsp_ext.txt. It is also okay to directly "
+            "pass global path that starts with '/', such as /root/usr/slam.txt ");
 
     program.add_argument("--file_path")
         .default_value(std::string("TaskData/test_robotics_v19.yaml"))
@@ -83,6 +82,7 @@ int main(int argc, char *argv[]) {
     string mpc_path = program.get<std::string>("--mpc_path");
 
     string tsp_path = program.get<std::string>("--tsp_path");
+
     string tsp_ext_path = program.get<std::string>("--tsp_ext_path");
 
     string chain0_path = program.get<std::string>("--chain0_path");
