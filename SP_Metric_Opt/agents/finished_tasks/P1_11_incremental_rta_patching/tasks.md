@@ -2,10 +2,29 @@
 
 > See `goal.md` for scope and design.
 > One small sub-task at a time, review + commit after each.
+>
+> **Scope narrowed 2026-07-18:** P1.11 owns the cache design + build only. The
+> integration (wiring the cache into the optimizer, dispatching it in the hot
+> loops) moved to **P1.12** — see
+> [`../P1_12_integrate_rta_cache/tasks.md`](../P1_12_integrate_rta_cache/tasks.md).
+> The Phase 1 / Phase 2 sections below are retained as historical record of the
+> original plan; they are tracked in P1.12 now.
 
 ---
 
-## Phase 1 — Wire Cache into Live Eval Path (Step 3b, baseline-only)
+## Phase 0 — Cache + API + Direct Unit Tests ✅ DONE (working tree, NOT committed) → P1.11 scope complete
+
+> P1.11's owned scope (cache design + build) is complete here. The remaining
+> integration work below (Phase 1 + Phase 2) moved to P1.12 on 2026-07-18.
+
+- [x] Rev-3 single-champion `RTACache` class (`RTA_Cache.h/.cpp`): `Initialize` / `AdoptChampion` / `Evaluate` / `ComputeTaskSetDifference` / `IsSingleTaskChange` / `ClassifyReusePerTask`.
+- [x] Priority-analysis utilities extracted to leaf header `PrioritySwitchAnalysis.h` (`RestEqualAfterRemoving` two-pointer walk, `FindCoreOfTask`, `AnalyzePrioritySwitchPerCore`, `AnalyzePrioritySwitch`).
+- [x] Differential tests (bit-identical to `ProbabilisticRTA_TaskSet` oracle) + 24 direct unit tests for the priority-analysis helpers.
+- [x] **16/16 ctest + 46/46 testRTA green.**
+
+---
+
+## Phase 1 — Wire Cache into Live Eval Path (Step 3b, baseline-only) ← NEXT
 
 - [ ] **Infrastructure wiring**:
   - Add `RTACache rta_cache_` member to `OptimizePA_Incre_with_TimeLimits` (in `OptimizeSP_TL_Incre.h`).

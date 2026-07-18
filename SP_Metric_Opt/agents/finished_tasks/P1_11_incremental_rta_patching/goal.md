@@ -2,6 +2,13 @@
 
 > Implements **Idea 11** of `P1_1_efficiency_optimizations/idea_queue.md`.
 > Gated on P1.10 (proven single-change invariant). Target regime: larger N.
+>
+> **Scope narrowed 2026-07-18:** P1.11 now owns the cache **design + build**
+> (Phase 0, DONE, working tree uncommitted). The **integration** of this cache
+> into the live incremental optimizer eval path (former Phase 1 + Phase 2) was
+> split out to a new task, **P1.12** — see
+> [`../P1_12_integrate_rta_cache/`](../P1_12_integrate_rta_cache/). This file
+> remains the design doc for the `RTACache` API surface P1.12 consumes.
 
 ---
 
