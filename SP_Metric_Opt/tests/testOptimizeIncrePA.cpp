@@ -304,6 +304,55 @@ TEST_F(TaskSetForTest_robotics_v27, GetPriorityAssignments_IncrementalOpt) {
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
 }
 
+// Differential test for the D1 main extraction (OptimizeIncre_SingleTask).
+// On a |diff|==1 update, OptimizeIncre's loop body makes exactly ONE
+// OptimizeIncre_SingleTask call (after the baseline seed). So the primitive
+// alone — given the same baseline-seed the full method computes — must land on
+// the SAME opt_pa_/opt_sp_ as the full OptimizeIncre. Proves the extraction is
+// behavior-preserving (a refactor, not new behavior). Uses the v22->v23 pair,
+// which FindTaskWithDifferentEt flags as exactly one changed task (task 1,
+// increase) — see the FindTaskWithDifferentEt test above.
+TEST(OptimizeIncre_SingleTask, Differential_BitIdenticalOnSingleEtChange) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    DAG_Model dag_update = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v23.yaml");
+    SP_Parameters sp = SP_Parameters(dag_base);
+
+    // Sanity: the update must be a |diff|==1 case (else this isn't testing the
+    // primitive's single-task contract).
+    std::vector<DiffObj> diff = FindTaskWithDifferentEt(dag_base, dag_update);
+    ASSERT_EQ(diff.size(), 1u);
+    int task_id = diff[0].task_id;
+    bool et_increased = diff[0].increase;
+
+    // Two independent optimizers from the same scratch state — OptimizeFromScratch
+    // is deterministic given K, so optA and optB hold identical opt_pa_/opt_sp_/
+    // dag_tasks_ after this.
+    OptimizePA_Incre optA(dag_base, sp);
+    optA.OptimizeFromScratch(2);
+    OptimizePA_Incre optB(dag_base, sp);
+    optB.OptimizeFromScratch(2);
+    AssertEqualVectorExact<int>(optA.opt_pa_, optB.opt_pa_, 1e-3, __LINE__);
+    EXPECT_DOUBLE_EQ(optA.opt_sp_, optB.opt_sp_);
+
+    // Path A: the full OptimizeIncre (baseline seed + one SingleTask call +
+    // dag_tasks_ advance).
+    PriorityVec pa_full = optA.OptimizeIncre(dag_update);
+
+    // Path B: the primitive alone, with the SAME baseline seed OptimizeIncre
+    // would have computed (the carried PA's SP under the new env). This is the
+    // contract: OptimizeIncre_SingleTask TRUSTS opt_sp_ (caller-set).
+    optB.opt_sp_ =
+        EvaluateSPWithPriorityVec(dag_update, sp, optB.opt_pa_);
+    PriorityVec pa_primitive =
+        optB.OptimizeIncre_SingleTask(dag_update, task_id, et_increased);
+
+    // The primitive must reproduce the full method's adopted PA and SP exactly.
+    AssertEqualVectorExact<int>(pa_full, pa_primitive, 1e-3, __LINE__);
+    EXPECT_DOUBLE_EQ(optA.opt_sp_, optB.opt_sp_);
+}
+
 TEST(OptimizePA_Incre_with_TimeLimits_TDD, SortingHeuristic) {
     std::vector<Value_Proba> dist = {Value_Proba(1, 1.0)};
     TaskSet tasks;

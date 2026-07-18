@@ -99,7 +99,31 @@ class OptimizePA_Incre : public OptimimizePA_Base {
     */
     PriorityVec OptimizeFromScratch(int K);
 
-    PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update);
+    // Incremental re-search over ALL tasks whose ET changed since the last
+    // dag_tasks_ (FindTaskWithDifferentEt). Seeds opt_sp_ to the carried PA's SP
+    // under the new env (the former :243-244 baseline), then re-searches each
+    // changed task. `baseline_sp` (default INT_MIN = "not provided") lets a
+    // caller that already holds the carried PA's new-env SP skip the baseline
+    // re-score; if provided it MUST equal
+    // EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_) for
+    // the exact dag_tasks_update + opt_pa_, else the strict-> adopt test would
+    // compare against a wrong seed. Advances dag_tasks_ to dag_tasks_update
+    // (orchestrator-owned under P0.5 — inert, the challenger is rebuilt each
+    // step; kept for bit-identity).
+    PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update,
+                              double baseline_sp = INT_MIN);
+
+    // The sub-incremental primitive: assumes EXACTLY ONE task's ET changed
+    // (task_id). Trusts opt_sp_ as the current baseline (caller-set: OptimizeIncre
+    // scores the carried PA at :243-244, or a TL handler seeds it via
+    // BuildChallengerFromIncumbent / a fresh Type-E new-env baseline). Generates
+    // the 1D priority variations for task_id (one half, per
+    // AnalyzePriorityChangeStatus, with exclude_opt_pa=true), scores each, and
+    // adopts on strict > — bit-identical to the former :274-292 loop body.
+    // Mutates opt_pa_/opt_sp_ in place. Does NOT advance dag_tasks_
+    // (orchestrator-owned).
+    PriorityVec OptimizeIncre_SingleTask(const DAG_Model& dag_tasks_update,
+                                         int task_id, bool et_increased);
 
     bool IfInitialized() const { return !opt_pa_.empty(); }
 };

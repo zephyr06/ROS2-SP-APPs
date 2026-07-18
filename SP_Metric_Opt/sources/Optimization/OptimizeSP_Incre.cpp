@@ -208,13 +208,17 @@ std::vector<PriorityVec> FindPriorityVec1D_Variations(
         // exactly; scoring it duplicates the incumbent's baseline SP. Skip it
         // when the caller asked to exclude the carried PA (the default — the
         // sub-incremental scores the carried PA once as its baseline).
-        if (exclude_opt_pa && i == old_priority_index) continue;
+        if (exclude_opt_pa && i == old_priority_index)
+            continue;
         PriorityVec pa_vec_new = pa_vec_ref;
         pa_vec_new.insert(pa_vec_new.begin() + i, task_id);
         res.push_back(pa_vec_new);
     }
     return res;
 }
+
+// TODO: re-evaluate this heuristic, i feel we can do better with
+// trial-and-error walk
 PriorityChangeStatus AnalyzePriorityChangeStatus(
     const SP_Parameters& sp_parameters, int task_id, bool et_increased) {
     if (et_increased) {
@@ -235,13 +239,43 @@ PriorityChangeStatus AnalyzePriorityChangeStatus(
     }
 }
 
-PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
+PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
+    const DAG_Model& dag_tasks_update, int task_id, bool et_increased) {
+    // Assumes EXACTLY ONE task's ET changed (task_id). Trusts opt_sp_ as the
+    // current baseline (caller-set: OptimizeIncre scores the carried PA at
+    // :243-244, or a TL handler seeds it). Re-searches task_id over one half of
+    // the priority positions (per AnalyzePriorityChangeStatus), adopting on
+    // strict >. Bit-identical to the former :274-292 loop body. Does NOT
+    // advance dag_tasks_ (orchestrator-owned).
+    std::vector<PriorityVec> pa_vec_variations = FindPriorityVec1D_Variations(
+        opt_pa_, task_id,
+        AnalyzePriorityChangeStatus(sp_parameters_, task_id, et_increased));
+    for (const PriorityVec& priority_assignment : pa_vec_variations) {
+        double sp_eval = EvaluateSPWithPriorityVec(
+            dag_tasks_update, sp_parameters_, priority_assignment);
+        PrintPA_IfDebugMode(priority_assignment, sp_eval);
+        if (sp_eval > opt_sp_) {
+            opt_sp_ = sp_eval;
+            opt_pa_ = priority_assignment;
+        }
+    }
+    return opt_pa_;
+}
+
+PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
+                                            double baseline_sp) {
     if (opt_pa_.size() == 0) {
         CoutError("OptimizeIncre called before OptimizeFromScratch");
     }
     // reset optimal sp
-    opt_sp_ =
-        EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_);
+    // baseline_sp (default INT_MIN = "not provided"): score the carried PA
+    // under the new env (the former :243-244 baseline). A caller that already
+    // holds that SP may pass it to skip the re-score. If provided it MUST equal
+    // EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_).
+    opt_sp_ = (baseline_sp == INT_MIN)
+                  ? EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_,
+                                              opt_pa_)
+                  : baseline_sp;
     // std::cout << "Initial SP before incremental optimziation is: " << opt_sp_
     //           << "\n";
     std::vector<DiffObj> tasks_with_diff_et =
@@ -261,34 +295,21 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update) {
             for (int i = 0; i < dag_tasks_.tasks.size(); i++) {
                 bool flagged = (dag_tasks_.tasks[i].execution_time_dist !=
                                 dag_tasks_update.tasks[i].execution_time_dist);
-                std::cerr << "[INCR-NDIFF-PROBE]   task " << i << " base_avg="
-                          << dag_tasks_.tasks[i].execution_time_dist.GetAvgValue()
-                          << " upd_avg="
-                          << dag_tasks_update.tasks[i].execution_time_dist.GetAvgValue()
-                          << (flagged ? " FLAGGED" : "") << "\n";
+                std::cerr
+                    << "[INCR-NDIFF-PROBE]   task " << i << " base_avg="
+                    << dag_tasks_.tasks[i].execution_time_dist.GetAvgValue()
+                    << " upd_avg="
+                    << dag_tasks_update.tasks[i]
+                           .execution_time_dist.GetAvgValue()
+                    << (flagged ? " FLAGGED" : "") << "\n";
             }
         }
         probe_call_idx++;
     }
 
     for (DiffObj task_diff_obj : tasks_with_diff_et) {
-        int task_id = task_diff_obj.task_id;
-        bool et_increased = task_diff_obj.increase;
-        // TODO!!!!
-        std::vector<PriorityVec> pa_vec_variations =
-            FindPriorityVec1D_Variations(
-                opt_pa_, task_id,
-                AnalyzePriorityChangeStatus(sp_parameters_, task_id,
-                                            et_increased));
-        for (const PriorityVec& priority_assignment : pa_vec_variations) {
-            double sp_eval = EvaluateSPWithPriorityVec(
-                dag_tasks_update, sp_parameters_, priority_assignment);
-            PrintPA_IfDebugMode(priority_assignment, sp_eval);
-            if (sp_eval > opt_sp_) {
-                opt_sp_ = sp_eval;
-                opt_pa_ = priority_assignment;
-            }
-        }
+        OptimizeIncre_SingleTask(dag_tasks_update, task_diff_obj.task_id,
+                                 task_diff_obj.increase);
     }
     // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
     //           << "\n";
