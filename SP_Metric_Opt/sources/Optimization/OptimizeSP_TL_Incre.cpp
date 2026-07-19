@@ -393,6 +393,13 @@ void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
     // 1. Gate reset (incremental: opt_sp_=-1.0 so the first UpdateRecords
     //    force-commits). Same role as the legacy :258.
     ResetIncumbentBaseline(/*from_scratch=*/false);
+    // P1.12 increment 2a: re-arm the cache gate for THIS walk body. The reset
+    // above cleared it (reopt path keeps the cache off; this path turns it on).
+    // The single-change invariant (|diff|<=1 per serialized SP-eval) holds for
+    // every CommitIncumbent reached while this is true, so AdoptChampion stays
+    // consistent with res_opt_ and Evaluate never throws. The gate is cleared
+    // again by the next interval's ResetIncumbentBaseline.
+    rta_cache_active_ = true;
 
     // 2. Baseline = DEDICATED RE-SCORE (#6). The champion's carried {pa, tl} is
     //    re-scored under the NEW env DAG to seed opt_sp_. It must NOT optimize
@@ -721,6 +728,24 @@ void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     res_opt_.SaveTimeLimits(dag_tasks_.tasks, tl);
     res_opt_.UpdatePriorityVec(opt_pa_);
     res_opt_.sp_opt = opt_sp_;
+    // P1.12 increment 2a: advance the cache-champion to track res_opt_. The
+    // cache's Evaluate does NOT advance the champion (only AdoptChampion/
+    // Initialize do); if the champion stays frozen at an earlier triple, a
+    // later serialized eval drifts to |diff|>1 and Evaluate throws. AdoptChampion
+    // is cheap (stores caller rtas + rebuilds per-core HP-prefixes, NO RTA) but
+    // needs the rtas for THIS triple — fetch them via Evaluate against the SAME
+    // (dag_tasks_, pa, tl) being committed: that triple == the candidate the
+    // adopting eval just scored, so Evaluate short-circuits to FullReuse and
+    // returns the cached candidate_rta_ (near-zero cost, no extra RTA, no SP
+    // regression). Gated by rta_cache_active_ so the reopt path (shares this
+    // writer, can commit a >1 change) neither throws nor regresses. NOT yet
+    // read by the eval path — the oracle EvaluateSPWithPriorityVec is still
+    // live; this only keeps the cache warm for the 2b read-side swap.
+    if (rta_cache_active_) {
+        const std::vector<FiniteDist>& rtas =
+            rta_cache_.Evaluate(dag_tasks_, pa, tl);
+        rta_cache_.AdoptChampion(dag_tasks_, pa, tl, rtas);
+    }
 }
 
 // Throwaway challenger rebuilt from res_opt_ (the champion) each candidate, not
@@ -755,6 +780,15 @@ OptimizePA_Incre_with_TimeLimits::BuildChallengerFromIncumbent() {
 //    committed (read prior → re-eval → commit).
 void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
     bool from_scratch) {
+    // P1.12 increment 2a: a new interval's walk starts from a cold cache. The
+    // champion triple the cache holds is for the PREVIOUS interval's env+TL;
+    // carrying it forward would make the first serialized eval diff >1 (the
+    // env moved, dag_tasks_ re-seeded) → Evaluate would throw. Default-construct
+    // (no RTA_Cache.h change — RTACache has no Clear()). Clear the gate too, so
+    // the reopt path (which also calls ResetIncumbentBaseline(true)) keeps the
+    // cache off; PerformSerializedTaskQueueOptimization re-arms it for the walk.
+    rta_cache_ = RTACache();
+    rta_cache_active_ = false;
     if (from_scratch) {
         if (IfInitialized()) {
             std::vector<double> tl_prev = ReconstructTimeLimitVecFromResOpt();

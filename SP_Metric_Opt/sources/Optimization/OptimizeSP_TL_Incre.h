@@ -1,6 +1,7 @@
 #pragma once
 #include "sources/Optimization/OptimizeSP_Incre.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
+#include "sources/Safety_Performance_Metric/RTA_Cache.h"
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 
 namespace SP_OPT_PA {
@@ -282,6 +283,24 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     // data members
     ResourceOptResult res_opt_;
+    // Single-champion RTA cache (P1.12). Mirrors res_opt_ — adopted at the same
+    // commit point (CommitIncumbent), reset at the same baseline point
+    // (ResetIncumbentBaseline). As of increment 2a it is WRITTEN at
+    // CommitIncumbent (gated by rta_cache_active_) and reset at
+    // ResetIncumbentBaseline, but NOT yet read — the oracle
+    // EvaluateSPWithPriorityVec still answers all SP evals (so this change is
+    // behavior-preserving: all tests bit-identical). The read-side swap
+    // (Evaluate instead of EvaluateSPWithPriorityVec) lands in increment 2b.
+    RTACache rta_cache_;
+    // Gating flag for rta_cache_ (P1.12 increment 2a). true ONLY while inside
+    // PerformSerializedTaskQueueOptimization (the sole path where the P1.10
+    // single-change invariant |diff|<=1 holds, so the cache's AdoptChampion
+    // stays consistent with res_opt_). Set false in ResetIncumbentBaseline so
+    // the reopt path — which shares CommitIncumbent but can commit a >1 change
+    // via memoryless OptimizeFromScratch — neither throws in Evaluate (which
+    // calls ComputeTaskSetDifference unguarded via ClassifyReusePerTask) nor
+    // regresses. CommitIncumbent does cache work iff this is true.
+    bool rta_cache_active_ = false;
     // Transient per-call: the per-task TL search window recorded fresh at the
     // top of each OptimizeIncre_w_TL / ReOptimizePeriodic call. NOT part of the
     // incumbent (the carried TL lives in res_opt_.id2time_limit).
