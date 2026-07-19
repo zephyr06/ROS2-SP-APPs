@@ -187,10 +187,10 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     // DIFFERENT `time_limits` each time, so each call's candidate DAG genuinely
     // differs and must be rebuilt. The Type-E call (committed TL) does double-
     // build the champion DAG (BuildChallengerFromIncumbent builds the same DAG
-    // from the committed TL), but that is one call per Type-E entry per interval
-    // — negligible, and the redundant build there is expected to be subsumed by
-    // the P1.9 RTA cache's |diff|==0 full-reuse path (same DAG, different PA),
-    // not by threading a pre-built DAG through this eval seam.
+    // from the committed TL), but that is one call per Type-E entry per
+    // interval — negligible, and the redundant build there is expected to be
+    // subsumed by the P1.9 RTA cache's |diff|==0 full-reuse path (same DAG,
+    // different PA), not by threading a pre-built DAG through this eval seam.
     DAG_Model dag_tasks_cur =
         UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
 
@@ -244,8 +244,44 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     // champion SP — would be missed, stopping the walk early). This is the one
     // re-score the sub-incremental path keeps (the redundant carried-POSITION
     // VARIATION is still dropped at the generator).
-    challenger.opt_sp_ = EvaluateSPWithPriorityVec(
-        dag_tasks_cur, sp_parameters_, challenger.opt_pa_);
+    //
+    // P1.12 increment 2b — READ-SIDE SWAP: route this re-score through the
+    // single-champion RTA cache instead of the oracle. The cache-champion
+    // tracks res_opt_ (adopted at every CommitIncumbent, gated by
+    // rta_cache_active_, which this serialized path re-arms). The candidate
+    // triple (dag_tasks_cur, challenger.opt_pa_, time_limits) vs the adopted
+    // champion (dag_tasks_, opt_pa_, committed_tl) satisfies the single-change
+    // invariant |diff|<=1 this path asserts: Type-L (one task's trial TL moved
+    // vs the committed TL) → |diff|==1, Evaluate patches that one task's RTA;
+    // Type-E (trial TL == committed TL, env absorbed on both diff sides) →
+    // |diff|==0, Evaluate short-circuits to FullReuse. Evaluate is
+    // bit-identical to the oracle's ProbabilisticRTA_TaskSet (2b blocker fixed
+    // 2026-07-19) and ObtainSP_Full_From_NodeRTAs mirrors the oracle body with
+    // perf_coefficient handled in ObtainSP_DAG_From_Dists (Hazard B, fixed by
+    // P1.13), so this re-score is bit-identical to the former
+    // EvaluateSPWithPriorityVec call on every in-budget eval.
+    //
+    // P1.14 cancel contract: this re-score runs under the INCR BFDLSharedBudget
+    // scope (Optimize_w_TL_ScratchOrIncre:616). The oracle returns INT_MIN on
+    // cancel (entry + post-ObtainSP_DAG) so a cancelled eval is discarded by
+    // UpdateRecords' strict-> adopt guard (compare-and-keep). The cache path
+    // has no internal cancel polls, so mirror that contract here: INT_MIN on
+    // entry-cancel (skip the Evaluate) and on post-Evaluate cancel (discard the
+    // partial rtas + skip the SP assembly). Without this, a cancelled eval
+    // could return a garbage SP that wins the strict-> test and gets adopted,
+    // regressing the P1.14 TIME_LIMIT fix. The adopt path (CommitIncumbent's
+    // gated Evaluate+AdoptChampion) runs its own Evaluate on the committed
+    // triple and is unaffected — a cancelled candidate never reaches it.
+    if (BFSharedBudgetCancelled()) {
+        challenger.opt_sp_ = INT_MIN;
+    } else {
+        const std::vector<FiniteDist>& baseline_rtas =
+            rta_cache_.Evaluate(dag_tasks_cur, challenger.opt_pa_, time_limits);
+
+        challenger.opt_sp_ = ObtainSP_Full_From_NodeRTAs(
+            dag_tasks_cur, sp_parameters_, challenger.opt_pa_, time_limits,
+            baseline_rtas);
+    }
     challenger.OptimizeIncre_SingleTask(
         dag_tasks_cur, static_cast<int>(task_idx), et_increased);
     double current_sp = challenger.opt_sp_;
@@ -364,8 +400,8 @@ OptimizePA_Incre_with_TimeLimits::BuildSerializedTaskQueue(
                          d.increase});
     }
     for (int tid : type_l) {
-        // TLFlexible entries leave et_increased=false (unused — the walk derives
-        // per-step direction from the trial-vs-committed TL sign).
+        // TLFlexible entries leave et_increased=false (unused — the walk
+        // derives per-step direction from the trial-vs-committed TL sign).
         queue.push_back({tid, SerializedTaskQueueEntry::Kind::TLFlexible});
     }
     // Sort together by weight DESCENDING (D3). Stable so same-weight E/L keep
@@ -608,9 +644,9 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     // non-INCR callers of the shared SP-eval functions are unaffected — exactly
     // the P1.14 BF shape (OptimizeSP_TL_BF.cpp:89 installs the same guard at
     // EnumeratePA_with_TimeLimits entry), one level up. On cancel,
-    // EvaluateSPWithPriorityVec returns INT_MIN; the walk's strict-> adopt guard
-    // (IsBetterTimeLimitOption / UpdateRecords) treats that as "not better" and
-    // keeps the incumbent (compare-and-keep), so in-budget runs are
+    // EvaluateSPWithPriorityVec returns INT_MIN; the walk's strict-> adopt
+    // guard (IsBetterTimeLimitOption / UpdateRecords) treats that as "not
+    // better" and keeps the incumbent (compare-and-keep), so in-budget runs are
     // byte-identical. The existing polls inside ObtainSP_DAG / ObtainSP_TaskSet
     // / RTA.cpp / SP_Metric.cpp do the actual interruption.
     BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
@@ -731,16 +767,17 @@ void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     // P1.12 increment 2a: advance the cache-champion to track res_opt_. The
     // cache's Evaluate does NOT advance the champion (only AdoptChampion/
     // Initialize do); if the champion stays frozen at an earlier triple, a
-    // later serialized eval drifts to |diff|>1 and Evaluate throws. AdoptChampion
-    // is cheap (stores caller rtas + rebuilds per-core HP-prefixes, NO RTA) but
-    // needs the rtas for THIS triple — fetch them via Evaluate against the SAME
-    // (dag_tasks_, pa, tl) being committed: that triple == the candidate the
-    // adopting eval just scored, so Evaluate short-circuits to FullReuse and
-    // returns the cached candidate_rta_ (near-zero cost, no extra RTA, no SP
-    // regression). Gated by rta_cache_active_ so the reopt path (shares this
-    // writer, can commit a >1 change) neither throws nor regresses. NOT yet
-    // read by the eval path — the oracle EvaluateSPWithPriorityVec is still
-    // live; this only keeps the cache warm for the 2b read-side swap.
+    // later serialized eval drifts to |diff|>1 and Evaluate throws.
+    // AdoptChampion is cheap (stores caller rtas + rebuilds per-core
+    // HP-prefixes, NO RTA) but needs the rtas for THIS triple — fetch them via
+    // Evaluate against the SAME (dag_tasks_, pa, tl) being committed: that
+    // triple == the candidate the adopting eval just scored, so Evaluate
+    // short-circuits to FullReuse and returns the cached candidate_rta_
+    // (near-zero cost, no extra RTA, no SP regression). Gated by
+    // rta_cache_active_ so the reopt path (shares this writer, can commit a >1
+    // change) neither throws nor regresses. NOT yet read by the eval path — the
+    // oracle EvaluateSPWithPriorityVec is still live; this only keeps the cache
+    // warm for the 2b read-side swap.
     if (rta_cache_active_) {
         const std::vector<FiniteDist>& rtas =
             rta_cache_.Evaluate(dag_tasks_, pa, tl);
@@ -783,10 +820,11 @@ void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
     // P1.12 increment 2a: a new interval's walk starts from a cold cache. The
     // champion triple the cache holds is for the PREVIOUS interval's env+TL;
     // carrying it forward would make the first serialized eval diff >1 (the
-    // env moved, dag_tasks_ re-seeded) → Evaluate would throw. Default-construct
-    // (no RTA_Cache.h change — RTACache has no Clear()). Clear the gate too, so
-    // the reopt path (which also calls ResetIncumbentBaseline(true)) keeps the
-    // cache off; PerformSerializedTaskQueueOptimization re-arms it for the walk.
+    // env moved, dag_tasks_ re-seeded) → Evaluate would throw.
+    // Default-construct (no RTA_Cache.h change — RTACache has no Clear()).
+    // Clear the gate too, so the reopt path (which also calls
+    // ResetIncumbentBaseline(true)) keeps the cache off;
+    // PerformSerializedTaskQueueOptimization re-arms it for the walk.
     rta_cache_ = RTACache();
     rta_cache_active_ = false;
     if (from_scratch) {

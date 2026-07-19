@@ -285,12 +285,8 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     ResourceOptResult res_opt_;
     // Single-champion RTA cache (P1.12). Mirrors res_opt_ — adopted at the same
     // commit point (CommitIncumbent), reset at the same baseline point
-    // (ResetIncumbentBaseline). As of increment 2a it is WRITTEN at
-    // CommitIncumbent (gated by rta_cache_active_) and reset at
-    // ResetIncumbentBaseline, but NOT yet read — the oracle
-    // EvaluateSPWithPriorityVec still answers all SP evals (so this change is
-    // behavior-preserving: all tests bit-identical). The read-side swap
-    // (Evaluate instead of EvaluateSPWithPriorityVec) lands in increment 2b.
+    // (ResetIncumbentBaseline). As of increment 2b, the read-side swap is active,
+    // routing the SubIncremental baseline re-score through the cache.
     RTACache rta_cache_;
     // Gating flag for rta_cache_ (P1.12 increment 2a). true ONLY while inside
     // PerformSerializedTaskQueueOptimization (the sole path where the P1.10
