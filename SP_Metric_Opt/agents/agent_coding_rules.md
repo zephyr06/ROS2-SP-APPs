@@ -42,3 +42,9 @@ Tasks and planning:
 
 Start new tasks:
 - follow examples in `agents/active_tasks` folder to create new task
+
+Work with users:
+- Give user complete context when asking users to make decisions, don't use abbrevation too much. Especially never make up new terminologies or new concepts or new abbrevations.
+
+Ask questions:
+don't ask questions to ask questions or for user confirmation. if you can make decisions, you can take it. othewise, provide enough context to users to decide.
