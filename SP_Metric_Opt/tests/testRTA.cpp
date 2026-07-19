@@ -440,6 +440,81 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     }
 }
 
+// P1.12 Phase 2 item 1a — the MISSING differential that localizes the :285
+// divergence. The existing Evaluate_PriorityMove_OneTaskPatch above swaps two
+// tasks on the SAME core (core0={t0,t1}); core0 → NoReuse (both recomputed),
+// core1 FullReuse tasks (t2,t3) keep their priority-positions (2,3) → no
+// scramble. That shape does NOT exercise the bug. THIS test moves a task on
+// core1 to the front (priority-position 0), making core1 the changed core
+// (NoReuse) and core0 the FullReuse core — but core0's tasks (t0,t1) now occupy
+// priority-positions 1,2 (were 0,1) in the candidate. The champion rta_ is
+// indexed by CHAMPION priority-position, so seeding candidate_rta_ = rta_ puts
+// t0's champion RTA in slot 1 (candidate priority-position of t1) and t1's in
+// slot 2 — a scramble. Expectation: cache.Evaluate MUST be bit-identical to the
+// oracle per-task (priority-position indexed). RED on the bug; GREEN after the
+// seeding reindex fix.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_PriorityMove_CrossCoreScramble_BitIdenticalToOracle) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Move task 2 (core1) to the front. Champion per-core order was
+    // core0={t0,t1}, core1={t2,t3}; candidate is core0={t0,t1}, core1={t2,t3}
+    // but task 2 now has the global highest priority. The changed core is core1
+    // (task 2 moved); core0 is FullReuse — and core0's tasks shift priority-
+    // positions (0,1 → 1,2), which is what trips the seeding scramble.
+    PriorityVec pa_cand = {2, 0, 1, 3};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, pa_cand, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, pa_cand, time_limits);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on cross-core-scramble Evaluate "
+            << "(champion priority-position indexing ≠ candidate's on FullReuse "
+            << "core0 tasks t0/t1)";
+    }
+}
+
+// P1.12 Phase 2 item 1a (SP-level pin) — the same scramble, asserted at the SP
+// level via ObtainSP_Full_From_NodeRTAs (the consumer the :285 seam uses) vs
+// EvaluateSPWithPriorityVec (the oracle). This is the direct primitive-level
+// analogue of the OptimizeWithOptimizationSpace gate failure.
+//
+// Uses a CHAIN-FREE local DAG (not the fixture's chained `dag_tasks`, which has
+// the chain t0→t2). The scramble PA `pa_cand = {2,0,1,3}` puts task 2 (the chain
+// sink) at a HIGHER priority than task 0 (the chain source) → an infeasible
+// cause-before-effect schedule → `GetFinishTime` aborts ("Schedule didn't find
+// job!") on BOTH the cache arm AND the oracle arm (verified: the oracle crashes
+// identically). The chain-free DAG removes that constraint so the scramble PA is
+// feasible and the SP-level bit-identity can be pinned. The per-task RTA test
+// above does NOT go through the schedule path (ProbabilisticRTA_TaskSet only),
+// so it stays on the chained fixture.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_PriorityMove_CrossCoreScramble_SP_BitIdenticalToOracle) {
+    // Chain-free DAG: same tasks/cores as the fixture, no cause-effect edges.
+    DAG_Model dag_chainfree(tasks, {}, {});
+    SP_Parameters sp(dag_chainfree);
+    RTACache cache;
+    cache.Initialize(dag_chainfree, priority_vec, time_limits);
+
+    // Move task 2 (core1) to the front: changed core = core1 (NoReuse for t2,t3),
+    // core0 (t0,t1) FullReuse and shifted to priority-positions 1,2 (were 0,1) —
+    // the shape that trips the seeding scramble when candidate PA != champion PA.
+    PriorityVec pa_cand = {2, 0, 1, 3};
+    double sp_oracle = EvaluateSPWithPriorityVec(dag_chainfree, sp, pa_cand);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_chainfree, pa_cand, time_limits);
+    double sp_cache = ObtainSP_Full_From_NodeRTAs(
+        dag_chainfree, sp, pa_cand, time_limits, rtas_eval);
+
+    EXPECT_DOUBLE_EQ(sp_oracle, sp_cache)
+        << "SP diverged on cross-core-scramble: cache Evaluate + "
+        << "ObtainSP_Full_From_NodeRTAs != oracle EvaluateSPWithPriorityVec";
+}
+
 // Evaluate with no champion → Initialize (full compute), bit-identical to the
 // oracle. The empty-cache fallback.
 TEST_F(TaskSetForTest_4tasks_2cores_cache, Evaluate_NoChampion_FallsBackToInit) {

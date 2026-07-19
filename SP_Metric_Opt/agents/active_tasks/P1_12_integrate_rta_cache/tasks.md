@@ -6,12 +6,13 @@
 
 ---
 
-## State (2026-07-19, post-2b-swap COMMITTED)
+## State (2026-07-19, Phase 1 COMPLETE + COMMITTED; Phase 2 item 1 DONE in working tree)
 
-HEAD = `5a172973` ("enable more rta cache"). The increments are ALL COMMITTED:
+HEAD = `c0e1bde0` ("add more tests"). The Phase 1 increments are ALL COMMITTED:
 - `71da8a45` = 2b blocker fix (`RTA_Cache.cpp` NoReuse bit-identity + `testRTA.cpp`).
 - `8e18c39b` = 2a write-side re-land (`OptimizeSP_TL_Incre.{h,cpp}` + task docs).
 - `5a172973` = 2b READ-SIDE SWAP (`OptimizeSP_TL_Incre.{h,cpp}`, +65/-31).
+- `c0e1bde0` = Phase 1 step 3 differential tests (`tests/testRTA.cpp` +83).
 
 So 2a (write-side), the 2b `Evaluate` fix, AND the 2b read-side swap are LIVE at
 HEAD. The `:247` baseline re-score in `EvaluateTimeLimitConfig_SubIncremental`
@@ -25,8 +26,16 @@ FullReuse). **17/17 ctest green** re-verified from clean build (18.51s);
 differential gate `OptimizeWithOptimizationSpace` passes (cache read-side
 bit-identical to oracle on the full serialized walk).
 
-`:249`/`:289` (`OptimizeIncre_SingleTask` full swap) still on the oracle —
-base-class `RTACache&` threading = Hazard A, deferred to Phase 2.
+**Phase 2 item 1 (`:285` flip) DONE 2026-07-19 in the working tree (NOT committed):**
+`EvaluateTimeLimitConfig_SubIncremental`'s `:285` call now passes
+`std::ref(rta_cache_)` into `OptimizeIncre_SingleTask` (3-arg → 4-arg), so the
+TL-walk's per-variation priority search shares the serialized champion's warm
+cache (was: throwaway local cache per call). Unblocked by the 1b reindex fix in
+`RTACache::Evaluate` (FullReuse seeding reindexed by task-id, not positional
+copy — fixes the PA-move scramble). `OptimizeWithOptimizationSpace` gate PASSES
+with the flip live; 17/17 ctest green (23.13s). `:249`/`:289` (the OTHER
+`OptimizeIncre_SingleTask` call sites in the TL path) — `:285` was THE hot-loop
+call; the remaining Phase 2 work is Loop A/B dispatch refinement + measurement.
 
 ### The 2b BLOCKER — RESOLVED 2026-07-19
 
@@ -129,11 +138,43 @@ dispatch + measurement) is NOT started.
 
 ## Phase 2 — Dispatch Cache in Hot Loops (Patching) + base-class threading
 
-- [ ] **Base-class `RTACache&` threading (Hazard A, the `:249`/`:287` swap)**:
-  thread the cache from `EvaluateTimeLimitConfig_SubIncremental` into the base
-  `OptimizePA_Incre::OptimizeIncre_SingleTask` so the per-variation walk uses the
-  cache. (P1.13 already wired `OptimizeIncre_SingleTask`'s cache branch on the
-  priority path; this threads the TL path into the same branch.)
+- [x] **1. `:285` cache dispatch (the `OptimizeIncre_SingleTask` call in
+  `EvaluateTimeLimitConfig_SubIncremental`)** — DONE 2026-07-19 (working tree,
+  NOT committed). NOT the one-liner the old "base-class threading" framing
+  implied. P1.13 already did the threading (the `RTACacheOpt` param + cache
+  branch in `OptimizeIncre_SingleTask` exist + are used at the `:428`
+  priority-path call). Item 1 = feed `std::ref(rta_cache_)` at `:285`
+  (3-arg → 4-arg). **ROOT CAUSE FOUND + FIXED 2026-07-19**: the divergence was
+  a **cache-INTERNAL bug in `RTACache::Evaluate` (`RTA_Cache.cpp:410-475`), NOT
+  the P1.12 integration**. `Evaluate` seeded `candidate_rta_ = rta_` (a positional
+  copy of champion RTAs indexed by CHAMPION priority-position) then overwrote
+  NoReuse slots using CANDIDATE priority-position indexing; when candidate PA ≠
+  champion PA (a 1D PA move — exactly what `:285` sends), the FullReuse slots
+  held the WRONG task's RTA → scramble. The existing `OptimizeIncre_Cache`
+  differentials missed this because they mutate `execution_time_dist` DIRECTLY
+  (candidate PA == champion PA → no reindex → no scramble). `:247` re-score was
+  bit-identical only because there PA == champion PA.
+  - [x] **1a. Write the missing primitive-level differential test** —
+    candidate PA = a 1D priority MOVE of the champion PA (NOT a direct
+    `execution_time_dist` mutation), cache-engaged vs oracle, asserting
+    `EXPECT_DOUBLE_EQ` per-task RTA + SP. Two tests in `tests/testRTA.cpp`:
+    `Evaluate_PriorityMove_CrossCoreScramble_BitIdenticalToOracle` (per-task
+    RTA, the load-bearing pin) + `Evaluate_PriorityMove_CrossCoreScramble_SP_*
+    BitIdenticalToOracle` (SP-level). Goes RED on `Evaluate` pre-fix.
+  - [x] **1b. Apply the fix** in `RTACache::Evaluate` (`RTA_Cache.cpp:425-459`):
+    when seeding `candidate_rta_`, reindex `rta_` from champion priority-
+    positions to candidate priority-positions (map by task-id:
+    `candidate_rta_[cand_pos(t)] = rta_[champ_pos(t)]` for every FullReuse task).
+    1a → GREEN. Fix is internal to `Evaluate` — no API change.
+  - [x] **1c. Re-flip `:285`** to `std::ref(rta_cache_)`;
+    `OptimizeWithOptimizationSpace` gate PASSES (cache/incre SP ≤ scratch SP,
+    adopted TL==400). 17/17 ctest green.
+
+- [ ] **Base-class `RTACache&` threading (Hazard A)** — DONE by P1.13 (the
+  `RTACacheOpt` param on `OptimizeIncre_SingleTask`/`OptimizeIncre`). The
+  stale "thread `RTACache&` into the base class" framing in `goal.md` is
+  superseded; the remaining work is the `:285` *call-site* fix (item 1), not
+  base-class threading.
 - [ ] **TL patch dispatch (Loop B)**:
   - Optimize the TL walk (`OptimizeSingleTaskTimeLimit`) to utilize
     `rta_cache_.Evaluate(...)` under the single-task change patch path.

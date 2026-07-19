@@ -283,7 +283,8 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
             baseline_rtas);
     }
     challenger.OptimizeIncre_SingleTask(
-        dag_tasks_cur, static_cast<int>(task_idx), et_increased);
+        dag_tasks_cur, static_cast<int>(task_idx), et_increased,
+        std::ref(rta_cache_));
     double current_sp = challenger.opt_sp_;
     UpdateRecords(challenger, time_limits);
     return current_sp;

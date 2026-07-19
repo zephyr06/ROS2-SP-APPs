@@ -682,3 +682,373 @@ into base `OptimizePA_Incre::OptimizeIncre_SingleTask` (Hazard A) so the
 `:249`/`:289` per-variation walk uses the cache; then Loop A (priority-move
 patch dispatch) + Loop B (TL patch dispatch) + end-to-end scalability
 measurement at N=6/10/16.
+
+---
+
+## 2026-07-19 — Phase 2 seam investigation (grounded, NO code edited)
+
+Re-anchored against the tree after compaction. HEAD advanced to `c0e1bde0`:
+`5a172973` "enable more rta cache" = the 2b READ-SIDE SWAP (committed; the prior
+session's "working tree, NOT committed" was stale), and `c0e1bde0` "add more
+tests" = the Phase 1 step-3 differential tests (committed). So **Phase 1 is
+fully COMPLETE + COMMITTED** at HEAD `c0e1bde0`; 17/17 ctest green (22.40s)
+re-verified from the build dir. Reconciled the stale `HEAD =` lines in
+`goal.md`/`tasks.md` + the MEMORY.md P1.12 index entry (was "staged, NOT
+committed"; now "COMMITTED at `c0e1bde0`").
+
+**KEY FINDING — the Phase 2 framing in `tasks.md` is partially WRONG:**
+"base-class `RTACache&` threading = Hazard A" is listed as remaining Phase 2
+work, but **P1.13 already did it.** `OptimizePA_Incre::OptimizeIncre_SingleTask`
+(`OptimizeSP_Incre.cpp:299-301`) already takes `RTACacheOpt rta_cache` and its
+per-variation walk already calls `Evaluate`+`ObtainSP_Full_From_NodeRTAs`+
+`AdoptChampion` (lines 322-341). P1.13 wired the cache branch on the PRIORITY
+path (caller `OptimizeIncre` at :348 threads a local cache at :360-363).
+
+**The ACTUAL remaining Phase 2 seam (TL path) is narrower + has a subtlety:**
+`EvaluateTimeLimitConfig_SubIncremental`'s call at `OptimizeSP_TL_Incre.cpp:285`
+`challenger.OptimizeIncre_SingleTask(dag_tasks_cur, task_idx, et_increased)`
+passes **NO cache arg** → `rta_cache` defaults to nullopt → a throwaway local
+cache is created per call (`OptimizeIncre`'s :360-363 pattern) → the TL-walk's
+per-variation evals do NOT share the serialized champion's warm cache. Passing
+`std::ref(rta_cache_)` there is the obvious fix.
+
+**THE SUBTLETY (must resolve before writing code):** the base-class cache branch
+hardcodes `no_tl` (all -1.0) at `OptimizeSP_Incre.cpp:318` for its `Evaluate`/
+`AdoptChampion`/`Initialize` calls, because P1.13 built it for the PRIORITY-only
+path where `dag_tasks_update` is TL-baked once and TLs don't vary within the
+walk. On the TL path, `time_limits` genuinely varies per candidate (that's what
+the TL walk explores). So naively passing `rta_cache_` + letting the base class
+use `no_tl` would make the per-variation cache evals treat the candidate as
+no-TL — DIVERGING from the `:247` baseline re-score (which uses the real
+`time_limits`). The TL-path per-variation walk needs the base class to use the
+REAL `time_limits`, not `no_tl`. Options under consideration (deferred to user
+review before implementing):
+  (a) Add an optional `tl` param to `OptimizeIncre_SingleTask` (default `no_tl`
+      to keep the priority path bit-identical) so the TL path passes its real
+      `time_limits`; OR
+  (b) Keep `no_tl` and TL-bake `dag_tasks_cur` once before the walk (it already
+      IS TL-baked at :194) — but then the per-variation EVAL still must score
+      under the SAME TL the `:247` baseline used, which `no_tl`+baked-DAG gives.
+      Need to verify whether the per-variation walk's `dag_tasks_update` is the
+      trial-TL-baked DAG (→ `no_tl` is correct, matches :247's double-bake) or
+      the committed-TL DAG (→ `no_tl` is WRONG, would score against stale TL).
+
+This is the load-bearing question. `dag_tasks_cur` at :194 =
+`UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits)` = trial-TL-baked; the
+`:247` re-score evaluates exactly that triple. If `OptimizeIncre_SingleTask`
+walks priority variations on that SAME `dag_tasks_cur` (trial TL baked in),
+then `no_tl` is correct (the bake already applied the trial TL) and the only
+fix needed is passing `std::ref(rta_cache_)` — a one-line, behavior-preserving
+change. CONFIRMING this is the next grounded step (read `:285`'s
+`dag_tasks_cur` provenance through to `OptimizeIncre_SingleTask`'s
+`dag_tasks_update` param). If confirmed, Phase 2's TL-path threading collapses
+to a one-liner + differential TDD; if not, option (a) is needed.
+
+### RESOLVED 2026-07-19 — Phase 2 TL-path threading is NOT a one-liner
+
+Traced the full provenance. `dag_tasks_cur` (:194, trial-TL-baked) IS the
+`dag_tasks_update` passed to `:285`'s `OptimizeIncre_SingleTask` → `no_tl` IS
+correct for the ET dimension (the trial TL is already baked in; the base-class
+`no_tl` passthrough matches the `:247` double-bake). So option (a) is NOT
+needed. BUT a SECOND, harder hazard surfaced: **the cache champion at `:285` is
+NOT aligned to the trial-TL candidate.**
+
+- `BuildChallengerFromIncumbent` (:796-804) builds `challenger` from
+  `dag_with_tl_prev` = `dag_tasks_` baked with `tl_prev` (the COMMITTED TL from
+  `res_opt_`), and sets `challenger.opt_pa_` = `res_opt_.priority_vec`
+  (committed PA). So `challenger.opt_pa_` is the COMMITTED PA.
+- The `:247` re-score calls `Evaluate(dag_tasks_cur, opt_pa_, time_limits)` —
+  candidate = (trial-TL DAG, committed PA, trial TL) vs the cache's adopted
+  champion = (committed-TL DAG, committed PA, committed TL). ET diff = the one
+  walked task → |diff|==1 (Type-L) or |diff|==0 (Type-E). INVARIANT HOLDS for
+  the `:247` re-score. But `Evaluate` does NOT advance the champion (only
+  `AdoptChampion`/`Initialize` do), so the cache champion STAYS on the
+  committed-TL + committed-PA triple.
+- `:285` `OptimizeIncre_SingleTask` then walks PRIORITY variations of `opt_pa_`
+  (committed PA) on `dag_tasks_cur` (trial-TL-baked), each variation moving ONE
+  task's priority position. Candidate = (trial-TL DAG, varied PA, no-TL). vs the
+  cache champion (committed-TL DAG, committed PA, committed TL). The diff is
+  TWO-FOLD: the TL moved (one task's ET) AND the PA moved (one task's position)
+  → `TryComputeSingleChange` sees |diff|>1 → `Evaluate` THROWS via
+  `ComputeTaskSetDifference`.
+
+So naively passing `std::ref(rta_cache_)` at `:285` would throw on the first
+priority variation after a Type-L step. The fix requires **adopting the
+trial-TL + committed-PA triple as the cache champion BEFORE the `:285` walk**,
+so the per-variation PA moves are |diff|==1 (PA only) vs that champion. This is
+the direct analog of `OptimizeIncre`'s baseline `Initialize` (:383) establishing
+the champion before the priority path's `OptimizeIncre_SingleTask` walk — BUT
+the TL path cannot `Initialize` (that's a full RTA + overwrites the champion);
+it needs `AdoptChampion` on the just-scored trial-TL candidate rtas (cheap: the
+`:247` re-score already produced them, `Evaluate` returned them, so
+`AdoptChampion(dag_tasks_cur, opt_pa_, time_limits, baseline_rtas)` reuses them
+— near-zero cost, no extra RTA). The `:247` swap currently discards
+`baseline_rtas` after the SP assembly; Phase 2 keeps them + feeds them to an
+`AdoptChampion` before `:285`. Then `:285` passes `std::ref(rta_cache_)`.
+
+**Design decision PENDING user review** (the docs' Phase 2 framing — "base-class
+threading = Hazard A, a one-liner" — is WRONG on two counts: P1.13 already did
+the threading, and the real work is the pre-`:285` champion alignment). Present
+to user before implementing.
+
+---
+
+## 2026-07-19 (later) — EMPIRICAL TEST of the `:285` flip: THREW-NO, DIVERGED-YES
+
+The entry above's "two-fold diff → `Evaluate` THROWS at `:285`" theory was
+**empirically REFUTED** by the user's challenge ("i don't see why |diff|>1, are
+there 2 tasks with different ET?"). Re-reading `TryComputeSingleChange`
+(`RTA_Cache.cpp:252`) confirmed the user was right: there is only ONE walked task
+(`task_idx`), and the combined ET+move on that SAME task is the designed
+ET-known branch (`:308-331`, comment "combined ET+move ⇒ single change") →
+|diff|==1, NOT >1. The "PA move + ET move = two changes" reasoning conflated
+"two attributes on one task" with "two tasks." **Retracted.**
+
+### The flip was tried anyway (TDD: let the differential gate decide)
+
+Made the one-line change at `OptimizeSP_TL_Incre.cpp:285` — fed
+`std::ref(rta_cache_)` as the 4th arg to `OptimizeIncre_SingleTask` (symmetric
+with the `:428` priority-path call). Champion already adopted at
+`CommitIncumbent:784` (gated by `rta_cache_active_`, re-armed `:438`); the cache
+branch inside `OptimizeIncre_SingleTask` already exists (P1.13). Built + ran the
+end-to-end differential gate `testIncreOpt_w_TL::OptimizeWithOptimizationSpace`.
+
+**Result: NOT a throw. A DIVERGENCE.** The cache path found a STRICTLY BETTER SP
+than the oracle path:
+- `testIncreOpt_w_TL.cpp:499` — `Expected: (res_scratch.sp_opt + 1e-6) >=
+  (res_incre.sp_opt), actual: 9.67111 vs 9.74149` → cache/incre path SP 9.74149
+  > scratch 9.67111.
+- `testIncreOpt_w_TL.cpp:496` — `Which is: 600` (adopted TL went to 600 instead
+  of the expected 400).
+
+Reverted the flip; rebuild restored 17/17 ctest green. The flip is a PROVEN
+HAZARD, not ready. The `:285` seam is NOT behavior-preserving today.
+
+### Root-cause analysis (in progress, narrowed)
+
+A cache path that finds a *better* SP (not a throw, not a worse SP) means the
+cache branch is taking a DIFFERENT optimization trajectory than the oracle —
+i.e., it is NOT bit-identical at `:285`, even though `:247` (same `Evaluate` +
+`ObtainSP_Full_From_NodeRTAs`) IS bit-identical to the oracle. The asymmetry
+between `:247` (bit-identical) and `:285` (diverges) isolates the cause to what
+is DIFFERENT at `:285`:
+
+1. **Hazard B (perf_coefficient) RULED OUT.** `ObtainSP_Full_From_NodeRTAs`
+   (`SP_Metric.cpp:181`) re-bakes via
+   `ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl)` at `:187`. With the
+   cache arm's `no_tl` (all -1) this is a NO-OP on the already-trial-baked
+   `dag_tasks_cur` → ETs preserved → `GetTaskPerfTerm` (keyed on the baked ET)
+   sees the same ET in both arms. So perf_coefficient matches.
+
+2. **Suspect: the mid-walk `AdoptChampion` stores `no_tl`, not the trial TL.**
+   Inside `OptimizeIncre_SingleTask`'s cache branch (`OptimizeSP_Incre.cpp:340`),
+   a strict-improve adoption calls `AdoptChampion(dag_tasks_update, varied_pa,
+   no_tl, rtas)` — adopting on `no_tl` (all -1), NOT on the trial TL vector. So
+   the stored `tl_champion_` after a mid-walk adoption is `no_tl`, not the trial
+   TL. The NEXT variation's `TryComputeSingleChange` then diffs champion (baked
+   with `no_tl` = `dag_tasks_cur`'s trial-baked ETs) vs candidate (same
+   `dag_tasks_cur`, varied PA, `no_tl`) → |diff|==0 on ET, |diff|==1 on PA →
+   still single-change, no throw. BUT the RTAs adopted were computed by `Evaluate`
+   on the `no_tl` triple — and the *champion RTA* now stored may differ
+   epsilon-wise from a fresh full recompute, which `ObtainSP_DAG_From_Dists`
+   propagates into an epsilon-different SP → the strict-`>` adoption test
+   (`sp_eval > opt_sp_`) flips differently than the oracle arm → cascading
+   divergence. (The `:428` priority path does NOT hit this because its
+   `ExpectCacheMatchesOracleOnMutation` tests mutate `execution_time_dist`
+   directly with a FIXED dist — the `no_tl` no-op is exact there — and those
+   tests pass; the TL-baked candidate at `:285` is the untested shape.)
+
+### What this means for the fix
+
+NOT the one-liner. The `:285` flip requires the cache arm's per-variation
+scoring to be bit-identical to `EvaluateSPWithPriorityVec` on a TL-baked
+candidate. Two candidate approaches (need a focused primitive-level repro test
+to decide — the `OptimizeWithOptimizationSpace` gate is end-to-end and doesn't
+localize):
+- **(A) Thread the trial TL into `OptimizeIncre_SingleTask`** (replace the
+  hard-coded `no_tl` at `OptimizeSP_Incre.cpp:318` with a `tl` param threaded
+  from `:285`'s `time_limits`), so the cache arm's `Evaluate` + `AdoptChampion`
+  use the real trial TL, matching the oracle's pre-baked `dag_tasks_cur` ETs
+  exactly. This is the analogue of how `:247` passes `time_limits` and is
+  bit-identical.
+- **(B) `AdoptChampion` the trial-TL + committed-PA triple before `:285`**
+  (the prior entry's proposal) — but this alone does NOT fix the `no_tl`
+  mismatch inside `OptimizeIncre_SingleTask`'s internal `Evaluate`/`AdoptChampion`
+  calls; the candidate is still scored with `no_tl`. Likely insufficient on its
+  own.
+
+**NEXT:** write a focused primitive-level differential test at the
+`OptimizeIncre_SingleTask` seam (a TL-baked `|diff|==1` candidate + TL-adopted
+champion, cache-engaged vs oracle, asserting bit-identity of returned
+`opt_pa_`/`opt_sp_`) — this is the test that SHOULD have guarded `:285` before
+the flip and is currently MISSING. It will localize whether the divergence is
+the `no_tl`-vs-trial-TL mismatch (→ fix A) or something in `Evaluate`'s patch
+RTAs themselves. THEN apply fix A (or B) and re-run the gate.
+
+### State
+
+- HEAD unchanged (`c0e1bde0`); the `:285` flip was reverted, 17/17 ctest green.
+- No source changes in the working tree for this increment (revert was clean).
+- The "two-fold diff → throw" theory in the prior entry is RETRACTED; the real
+  `:285` hazard is a bit-identity divergence (cache finds a better SP), root
+  cause narrowed to the `no_tl` mismatch at `OptimizeSP_Incre.cpp:318` (suspect)
+  pending the focused repro.
+
+---
+
+## 2026-07-19 (later still) — ROOT CAUSE FOUND: `RTACache::Evaluate` PA-move indexing bug
+
+The `no_tl`/TL-mismatch + `AdoptChampion:340` suspects in the prior entry were
+**WRONG**. The real root cause was found empirically by re-flipping `:285` and
+instrumenting `OptimizeIncre_SingleTask` (`OptimizeSP_Incre.cpp`) with a
+temporary probe comparing the cache arm's SP + per-task RTAs against
+`EvaluateSPWithPriorityVec` (and a correctly partitioned oracle RTA via
+`ExtractTaskSetPerProcessor` + per-core `ProbabilisticRTA_TaskSet_SingleCore`).
+The probe was reverted after; zero source diff landed.
+
+**Finding:** the divergence is a **cache-INTERNAL bug in `RTACache::Evaluate`
+itself** (`RTA_Cache.cpp:410-475`), the same class as the 2b blocker (a
+bit-identity failure on a shape the existing tests missed). NOT the P1.12
+integration.
+
+**Mechanism.** `RTACache::Initialize`/`AdoptChampion` store `rta_` =
+`ProbabilisticRTA_TaskSet(tasks_prioritized)` — indexed by **priority-position
+in the CHAMPION's `tasks_prioritized`** (the oracle `ProbabilisticRTA_TaskSet`,
+`RTA.cpp:130`, writes `rtas[task_id2index[...]]` where `task_id2index` is built
+from the priority-sorted `tasks`). `Evaluate` does `candidate_rta_ = rta_`
+(seed FullReuse slots with champion RTAs, `RTA_Cache.cpp:425`) then overwrites
+NoReuse slots using a `task_id2index` built from the **CANDIDATE's**
+`tasks_prioritized` (`:445-448`). The consumer `ObtainSP_Full_From_NodeRTAs`
+(`SP_Metric.cpp:181`) reads `node_rtas[k]` as candidate priority-position k.
+**When champion PA ≠ candidate PA, champion's priority-position-k ≠ candidate's
+priority-position-k**, so the seeded FullReuse slots hold the WRONG task's RTA.
+The NoReuse overwrite fixes only NoReuse tasks; FullReuse tasks stay scrambled.
+
+**Empirical signature** (the `OptimizeWithOptimizationSpace` gate, robotics_v19
+fixture, TSP ET pinned 1000, first PA variation `[3,1,2,0]` moving task 0 to
+lowest priority): core layout t3=core0, t1=core1, t2=core1, t0=core0. Verdict =
+core0 (tasks 0,3) NoReuse, core1 (tasks 1,2) FullReuse. Cache over-scored SP
+9.74149 vs oracle 9.67111 (+0.0704). Per-task RTA (indexed by candidate
+priority-position, then mapped back to task-id for the comparison): cache
+task0=2728.85 (oracle 2001), cache task3=2001 (oracle 2728.85) — **tasks 0 and 3
+SWAPPED** (champion priority-position indexing ≠ candidate's). Task 2
+(FullReuse, cross-core) also stale. `:247` re-score is bit-identical ONLY
+because there candidate PA == champion PA → no reindex → no scramble.
+
+**Why the existing `OptimizeIncre_Cache` differentials miss it:** they mutate
+`execution_time_dist` DIRECTLY (fixed TL → candidate PA == champion PA →
+indexing matches → no scramble). The TL-walk shape at `:285` sends a candidate
+whose PA is a 1D VARIATION of the champion PA → PA differs → scramble. The
+`:428` priority-path tests have the same gap (they also keep PA == champion PA
+on the cache-engaged arm via direct ET mutation).
+
+**Fix direction (TDD next).** 1a: write the missing primitive-level
+differential — candidate PA = a 1D priority MOVE of champion PA (not a direct
+ET mutation), cache-engaged vs oracle, `EXPECT_DOUBLE_EQ` per-task RTA + SP →
+RED on `Evaluate` today. 1b: fix `Evaluate`'s seeding (`RTA_Cache.cpp:425`) to
+reindex `rta_` from champion→candidate priority-positions (map by task-id:
+`candidate_rta_[cand_pos(t)] = rta_[champ_pos(t)]` for every FullReuse task), or
+seed FullReuse slots by task-id lookup rather than positional copy → GREEN. 1c:
+re-flip `:285` → `OptimizeWithOptimizationSpace` gate green. The fix is internal
+to `Evaluate` (P1.11's surface); per goal.md out-of-scope rule, file back to
+P1.11 only if the API itself needs change (not expected — the fix is in the
+seeding, no signature change).
+
+### State
+
+- HEAD unchanged (`c0e1bde0`); 17/17 ctest green; zero source diff in the
+  working tree (flip + probe both reverted clean).
+- The `no_tl`/TL-mismatch (`OptimizeSP_Incre.cpp:318`) and `AdoptChampion:340`
+  suspects are RETRACTED — both wrong (the `no_tl` arg is a genuine no-op bake
+  on the pre-baked `dag_tasks_cur`; the champion state was fine). The bug is
+  `Evaluate`'s FullReuse seeding under a PA move.
+
+---
+
+## 2026-07-19 (later) — Phase 2 item 1 COMPLETE: 1a test + 1b fix + 1c `:285` flip (working tree, NOT committed)
+
+User: "continue work on task p1_12 ... remember to update task records and
+memory file regularly." Re-anchored against the tree first. Found the working
+tree DIVERGES from the prior entry's "zero source diff" claim: `git diff --stat`
+showed `RTA_Cache.cpp` +45/-... and `tests/testRTA.cpp` +60. The 1a tests + 1b
+fix had been WRITTEN in a prior session but NEVER recorded in this log NOR
+build-tested. The prior "zero source diff" State block was stale.
+
+### The half-finished state found in the working tree
+
+- `RTA_Cache.cpp` — `Evaluate`'s FullReuse seeding rewritten to reindex by
+  task-id (the 1b fix), but with a **typo**: `UpdateTaskSetPrioritized` (no
+  trailing 's') at lines 439 + 451 — the real function is `UpdateTaskSetPriorities`
+  (with 's'). Non-existent symbol → **COMPILE ERROR** (`error: 'UpdateTaskSetPrioritized'
+  was not declared in this scope; did you mean 'UpdateTaskSetPriorities'?`). So
+  the prior session's 1b fix was never even built.
+- `tests/testRTA.cpp` — two new 1a tests (`Evaluate_PriorityMove_CrossCoreScramble_*
+  BitIdenticalToOracle`, per-task RTA + SP-level), well-formed.
+
+### What was done this session
+
+1. **Fixed the typo** (RTA_Cache.cpp:439, 451 → `UpdateTaskSetPriorities`). Built.
+2. **Ran the 1a tests.** Per-task RTA test PASSED immediately (RED→GREEN
+   confirmed — the 1b reindex fix makes `Evaluate`'s FullReuse seeding
+   bit-identical to the oracle on a PA-move candidate). The SP-level test
+   ABORTED with "Schedule didn't find job!" (`GetFinishTime`, JobScheduleInfo.h:99).
+3. **Traced the abort.** gdb backtrace: the crash is in `ObtainSP_Full_From_NodeRTAs`
+   → RTDA `GetRTDAFromAllChains` → `GetFinishTime` → `schedule.find(...) ==
+   schedule.end()`. NOT a cache bug: the test's `pa_cand = {2,0,1,3}` puts task 2
+   (the CHAIN SINK of the fixture's chain `t0→t2`) at a HIGHER priority than
+   task 0 (the chain source) → an infeasible cause-before-effect schedule →
+   `GetFinishTime` aborts on BOTH arms. Verified by swapping the test's call
+   order (oracle first): the ORACLE `EvaluateSPWithPriorityVec` crashes
+   identically. So the SP-level test's chosen PA is infeasible on the chained
+   fixture, independent of the cache.
+4. **Fixed the SP-level test** to build a local CHAIN-FREE DAG (`DAG_Model(tasks,
+   {}, {})`) — same tasks/cores, no cause-effect edges, so the scramble PA is
+   feasible. The per-task RTA test stays on the chained fixture (it uses
+   `ProbabilisticRTA_TaskSet` only, no schedule path). Both 1a tests now PASS.
+5. **17/17 ctest green** with the 1a+1b changes.
+6. **Applied 1c (the `:285` flip)** — `EvaluateTimeLimitConfig_SubIncremental`'s
+   `:285` call now passes `std::ref(rta_cache_)` as the 4th arg to
+   `OptimizeIncre_SingleTask` (was 3-arg, defaulted to nullopt → throwaway local
+   cache per call). The TL-walk's per-variation priority search now shares the
+   serialized champion's warm cache.
+7. **17/17 ctest green WITH the `:285` flip live** (23.13s). The
+   `OptimizeWithOptimizationSpace` gate (the one that FAILED at 9.74149 > 9.67111
+   / TL=600-not-400 before the 1b fix) now PASSES — `res_incre.sp_opt ≤
+   res_scratch.sp_opt`, adopted TL==400. The cache path is bit-identical to the
+   oracle on the full serialized TL walk, both `:247` (baseline re-score) AND
+   `:285` (per-variation `OptimizeIncre_SingleTask`).
+
+### Champion-alignment reasoning (why `:285` doesn't throw post-1b)
+
+At `:285`, the cache champion is the committed-TL triple (adopted at the prior
+`CommitIncumbent`); the `:247` re-score called `Evaluate` (read-only, does NOT
+advance the champion). So the first `:285` variation's candidate is
+(trial-TL-baked `dag_tasks_cur`, `opt_pa_` with `task_idx` moved, `no_tl`) vs
+champion (committed-TL `dag_tasks_`, `opt_pa_`, committed `tl`). ET diff =
+`task_idx`'s TL moved (1 task); PA diff = `task_idx` moved. `OptimizeIncre_SingleTask`'s
+`FindPriorityVec1D_Variations(opt_pa_, task_id, ...)` moves ONLY `task_id` (the
+ET-changed task) → combined ET+move on the SAME task → `TryComputeSingleChange`'s
+ET-known branch (`:308-331`) → |diff|==1, no throw. The 1b reindex maps
+FullReuse tasks' champion RTA by task-id into candidate priority-position slots;
+for FullReuse tasks (TL unchanged) committed-TL RTA == trial-TL RTA (same ET) →
+correct. The NoReuse task (`task_idx`, TL changed) is recomputed. Bit-identical.
+
+### Diffs (working tree, NOT committed; agents only `git add`)
+
+- `sources/Safety_Performance_Metric/RTA_Cache.cpp` — 1b fix (Evaluate FullReuse
+  seeding reindexed by task-id; +34/-8 vs HEAD, INCLUDING the typo fix).
+- `tests/testRTA.cpp` — 2 new 1a tests + the chain-free DAG in the SP test
+  (+60 vs HEAD).
+- `sources/Optimization/OptimizeSP_TL_Incre.cpp` — 1c `:285` flip (1 line:
+  `std::ref(rta_cache_)` 4th arg).
+
+### NEXT
+
+`git add` the 1a+1b+1c changes + record updates; await user review/commit. Then
+Phase 2 remainder: Loop A (priority-move patch dispatch) + Loop B (TL patch
+dispatch) refinement + end-to-end scalability measurement at N=6/10/16 (profiling
+a cache whose `Evaluate` is now bit-identical is meaningful). The `:285` flip was
+the load-bearing Phase 2 seam; Loop A/B dispatch may already be largely covered
+by `:285` + the `:428` priority-path call (both now cache-engaged) — needs a
+grounded read to confirm what's left.
+

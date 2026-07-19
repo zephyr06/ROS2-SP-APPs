@@ -422,7 +422,41 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     // rewrite of Evaluate.
     std::vector<RTAReusePerTask> verdict =
         ClassifyReusePerTask(dag_tasks, pa, tl);
-    candidate_rta_ = rta_;  // seed: every FullReuse task keeps champion RTA
+
+    // P1.12 Phase 2 item 1b — reindex the champion RTA by TASK ID, not by a
+    // positional copy. rta_ is indexed by CHAMPION priority-position (the oracle
+    // ProbabilisticRTA_TaskSet writes rtas[task_id2index[...]] over the priority-
+    // sorted tasks), but candidate_rta_ is consumed as CANDIDATE priority-
+    // position (ObtainSP_Full_From_NodeRTAs reads node_rtas[k] as the candidate's
+    // tasks_prioritized[k]). When champion PA != candidate PA the two priority-
+    // position orderings differ, so `candidate_rta_ = rta_` (a positional copy)
+    // would put each FullReuse task's champion RTA in the WRONG slot — a silent
+    // scramble (the :285 divergence, pinned by
+    // Evaluate_PriorityMove_CrossCoreScramble_BitIdenticalToOracle). Map each
+    // task's champion RTA into its CANDIDATE priority-position slot instead.
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
+    std::unordered_map<int, int> task_id2index;
+    for (size_t i = 0; i < tasks_prioritized.size(); i++) {
+        task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
+    }
+    candidate_rta_.assign(rta_.size(), FiniteDist({Value_Proba(0, 1.0)}));
+    {
+        // Champion priority-position -> task id, mirroring how rta_ was built
+        // (Initialize/AdoptChampion bake champion TL + apply champion PA).
+        TaskSet champ_baked =
+            ApplyTimeLimitsToTasksExecutionTime(dag_champion_.tasks, tl_champion_);
+        TaskSet champ_prioritized =
+            UpdateTaskSetPriorities(champ_baked, pa_champion_);
+        for (size_t k = 0; k < champ_prioritized.size() && k < rta_.size(); k++) {
+            int tid = champ_prioritized[k].id;
+            auto it = task_id2index.find(tid);
+            if (it != task_id2index.end()) {
+                candidate_rta_[it->second] = rta_[k];
+            }
+        }
+    }
 
     bool any_recompute = false;
     for (RTAReusePerTask v : verdict) {
@@ -432,20 +466,13 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
         }
     }
     if (!any_recompute)
-        return candidate_rta_;  // |diff|==0: pure reuse
+        return candidate_rta_;  // |diff|==0: pure reuse (reindexed by task id)
 
     // Recompute the NoReuse tasks. Walk each core in CANDIDATE priority order
     // so each recompute sees the correct candidate-ET HP set (the tasks above
     // it on the same core, accumulated as we walk). FullReuse tasks are skipped
     // (their seeded value stays) but still pushed to hp_tasks so a later
     // NoReuse task's HP set is complete.
-    TaskSet tasks_baked =
-        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
-    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
-    std::unordered_map<int, int> task_id2index;
-    for (size_t i = 0; i < tasks_prioritized.size(); i++) {
-        task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
-    }
     std::unordered_map<int, TaskSet> per_core =
         ExtractTaskSetPerProcessor(tasks_prioritized);
 
