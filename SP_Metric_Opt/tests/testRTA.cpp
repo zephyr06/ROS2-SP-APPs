@@ -456,6 +456,169 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache, Evaluate_NoChampion_FallsBackToInit) 
     EXPECT_TRUE(cache.HasChampion());
 }
 
+// P1.12 2b BLOCKER reproduction — 3 tasks on ONE core. With 2 tasks the NoReuse
+// lower-priority task has only ONE HP task, so the 2-arg path Compresses the
+// running RTA exactly once (== the oracle's single Compress) → bit-identical,
+// masking the bug. With 3 tasks the lowest-priority NoReuse task has TWO HP
+// tasks → the 2-arg path Compresses the running RTA TWICE (once per HP task)
+// while the oracle Compresses it ONCE → the lossy bucket-merge diverges once
+// the convolved support crosses Granularity. This is the minimal fixture that
+// reproduces the 2b divergence in isolation.
+class TaskSetForTest_3tasks_1core_wideET : public ::testing::Test {
+   public:
+    void SetUp() override {
+        GlobalVariables::Granularity = 10;
+        // Wide Gaussians truncated to [20,80] at granularity 5. Three tasks'
+        // ETs convolve to ≈[60,240] — well past Granularity=10, so the lossy
+        // bucket-merge in CompressDistributionWithOnlySize fires.
+        FiniteDist dist_wide0 =
+            FiniteDist(GaussianDist(50, 8), 20, 80, 5);
+        FiniteDist dist_wide1 =
+            FiniteDist(GaussianDist(55, 8), 20, 80, 5);
+        FiniteDist dist_wide2 =
+            FiniteDist(GaussianDist(60, 8), 20, 80, 5);
+        tasks.push_back(Task(0, dist_wide0, 200, 200, 0));
+        tasks.push_back(Task(1, dist_wide1, 400, 400, 1));
+        tasks.push_back(Task(2, dist_wide2, 800, 800, 2));
+        // All three on core 0 so the lowest-priority NoReuse task's HP set holds
+        // TWO wide-ET higher-priority tasks (the compress-count divergence).
+        tasks[0].processorId = 0;
+        tasks[1].processorId = 0;
+        tasks[2].processorId = 0;
+        priority_vec = {0, 1, 2};
+        time_limits = {-1, -1, -1};
+        dag_tasks = DAG_Model(tasks, {}, {1e9});
+    }
+    TaskSet tasks;
+    PriorityVec priority_vec;
+    std::vector<double> time_limits;
+    DAG_Model dag_tasks;
+};
+
+// P1.12 2b BLOCKER: RTACache::Evaluate's NoReuse recompute path must be
+// bit-identical to the oracle (ProbabilisticRTA_TaskSet) even when the convolved
+// ET support crosses Granularity with ≥2 HP tasks. On HEAD this FAILS: Evaluate's
+// NoReuse path (RTA_Cache.cpp:458) calls the 2-arg GetRTA_OneTask(task, hp_tasks),
+// which Compresses+Convolves PER HP task on the running RTA; the oracle
+// (RTA.cpp:88-113) Compresses the running RTA ONCE then Convolves against a
+// precomputed rolling HP-ET convolution. CompressDistributionWithOnlySize is
+// LOSSY, so the differing compress count (oracle=1, 2-arg=#HP-tasks) diverges
+// once the support grows past Granularity. This test reproduces that divergence
+// in isolation (vs the full testIncreOpt_w_TL integration that first surfaced it).
+TEST_F(TaskSetForTest_3tasks_1core_wideET,
+       Evaluate_NoReuseBitIdenticalToOracle_WhenSupportCrossesGranularity) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Candidate: task 2's TL moves -1 → 30 (point-mass ET via
+    // GetUnitExecutionTimeDist). The whole core-0 set is NoReuse; task 2's HP
+    // set is {task 0, task 1} with wide Gaussian ETs → the recompute convolves
+    // the running RTA past Granularity with TWO HP iterations, where the
+    // 2-arg compress-count divergence surfaces.
+    std::vector<double> tl_cand = {-1, -1, 30};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, tl_cand);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, tl_cand);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on wide-ET NoReuse Evaluate";
+    }
+}
+
+// P1.12 2b BLOCKER — the priority-MOVE shape (the actual integration form).
+// OptimizeIncre_SingleTask generates 1D priority-move candidates (one task's
+// priority position changes vs the champion) and scores each via Evaluate +
+// AdoptChampion on strict-improve. This mirrors that exact sequence on a single
+// shared cache: Initialize the champion, then Evaluate a priority-move candidate
+// (task 2 moved to the HIGHEST priority → {2,0,1}), adopt it, then Evaluate a
+// SECOND move from the new champion. The multi-step AdoptChampion→Evaluate
+// lifecycle (not the single isolated Evaluate above) is what the integration
+// exercised when it diverged. HEAD should FAIL here if the blocker reproduces.
+TEST_F(TaskSetForTest_3tasks_1core_wideET,
+       Evaluate_PriorityMoveSequence_BitIdenticalToOracle) {
+    RTACache cache;
+    // Champion = identity PA, wide Gaussians, no TL.
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Step 1: move task 2 to highest priority → {2, 0, 1}. Single priority
+    // move vs the champion → NoReuse on core 0 (the whole core's HP sets
+    // shift). Adopt the result so the next step patches vs the new champion.
+    PriorityVec pa_move1 = {2, 0, 1};
+    std::vector<FiniteDist> rtas_oracle_move1 =
+        OracleRtas(dag_tasks, pa_move1, time_limits);
+    const std::vector<FiniteDist>& rtas_eval_move1 =
+        cache.Evaluate(dag_tasks, pa_move1, time_limits);
+    for (size_t i = 0; i < rtas_oracle_move1.size(); i++) {
+        EXPECT_TRUE(rtas_oracle_move1[i] == rtas_eval_move1[i])
+            << "move1 rtas[" << i << "] diverged";
+    }
+    cache.AdoptChampion(dag_tasks, pa_move1, time_limits, rtas_eval_move1);
+
+    // Step 2: from the new champion {2,0,1}, move task 0 to lowest priority →
+    // {2, 1, 0}. Another single priority move → NoReuse on core 0.
+    PriorityVec pa_move2 = {2, 1, 0};
+    std::vector<FiniteDist> rtas_oracle_move2 =
+        OracleRtas(dag_tasks, pa_move2, time_limits);
+    const std::vector<FiniteDist>& rtas_eval_move2 =
+        cache.Evaluate(dag_tasks, pa_move2, time_limits);
+    for (size_t i = 0; i < rtas_oracle_move2.size(); i++) {
+        EXPECT_TRUE(rtas_oracle_move2[i] == rtas_eval_move2[i])
+            << "move2 rtas[" << i << "] diverged (post-AdoptChampion)";
+    }
+}
+
+// P1.12 2b ROOT-CAUSE REGRESSION GUARD — pins that the two GetRTA_OneTask
+// overloads are NOT equivalent on wide-ET multi-HP input, which is WHY
+// RTACache::Evaluate's NoReuse path must use the 3-arg form (the oracle's form)
+// and not the 2-arg form. The 2-arg form (RTA.cpp:32) Compresses+Convolves the
+// running RTA PER HP task; the 3-arg form (RTA.cpp:46) Compresses ONCE then
+// Convolves against a pre-built rolling HP-ET prefix. CompressDistributionWithOnlySize
+// is LOSSY once support > Granularity, so the differing compress count yields a
+// different FiniteDist. This test asserts the two forms DIFFER on a wide-ET 2-HP
+// input — it is the load-bearing reproduction of the 2b mechanism. If a future
+// refactor makes them equal again (e.g. Compress becomes lossless), this guard
+// flips and the NoReuse path's choice of overload no longer matters; until then,
+// Evaluate MUST call the 3-arg form to stay bit-identical to the oracle.
+TEST(GetRTA_OneTaskDifferential, TwoArgDivergesFromThreeArgOnWideEt) {
+    GlobalVariables::Granularity = 10;
+    // Three wide Gaussians, each truncated to [20,80] at granularity 5 -> each ET
+    // has 13 support points (> Granularity=10), so CompressDistributionWithOnlySize
+    // is genuinely lossy on every Convolve.
+    FiniteDist et_low = FiniteDist(GaussianDist(50, 8), 20, 80, 5);
+    FiniteDist et_mid = FiniteDist(GaussianDist(55, 8), 20, 80, 5);
+    FiniteDist et_high = FiniteDist(GaussianDist(60, 8), 20, 80, 5);
+    // task_high is the task under analysis; {task_low, task_mid} are its 2 HP
+    // tasks (priority order: low < mid < high). Wide ETs convolve well past
+    // Granularity across the 2 HP iterations.
+    Task task_low(0, et_low, 200, 200, 0);
+    Task task_mid(1, et_mid, 400, 400, 1);
+    Task task_high(2, et_high, 800, 800, 2);
+    TaskSet hp_tasks = {task_low, task_mid};
+
+    // 2-arg form (the DIVERGENT form Evaluate's NoReuse path must NOT use).
+    FiniteDist rta_two_arg = GetRTA_OneTask(task_high, hp_tasks);
+
+    // 3-arg form (the oracle's form): build the rolling HP-ET convolution exactly
+    // as ProbabilisticRTA_TaskSet_SingleCore does (RTA.cpp:87,110-112), then call.
+    FiniteDist hp_tasks_et_conv({Value_Proba(0, 1.0)});
+    hp_tasks_et_conv.CompressDistributionWithOnlySize(
+        GlobalVariables::Granularity * 1);
+    hp_tasks_et_conv.Convolve(task_low.execution_time_dist);
+    hp_tasks_et_conv.CompressDistributionWithOnlySize(
+        GlobalVariables::Granularity * 1);
+    hp_tasks_et_conv.Convolve(task_mid.execution_time_dist);
+    FiniteDist rta_three_arg =
+        GetRTA_OneTask(task_high, hp_tasks, hp_tasks_et_conv);
+
+    EXPECT_FALSE(rta_two_arg == rta_three_arg)
+        << "2-arg and 3-arg GetRTA_OneTask must diverge on wide-ET 2-HP input — "
+           "if they are equal, the 2b root-cause premise no longer holds and "
+           "Evaluate's NoReuse overload choice is no longer load-bearing.";
+}
+
 // AdoptChampion: after Evaluate produces a candidate RTA, AdoptChampion promotes
 // it to champion (rebuilds HP-prefixes by re-rolling ET-convolution). A
 // subsequent identity Evaluate on the adopted triple → FullReuse, bit-identical

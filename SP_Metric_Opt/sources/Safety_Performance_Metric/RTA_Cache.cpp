@@ -450,14 +450,25 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
         ExtractTaskSetPerProcessor(tasks_prioritized);
 
     for (const auto& [core, core_tasks] : per_core) {
-        // core_tasks is in candidate priority order
+        // core_tasks is in candidate priority order. Walk it exactly as
+        // ProbabilisticRTA_TaskSet_SingleCore (RTA.cpp:88-113) does: maintain a
+        // rolling hp_tasks_et_conv (= the ET convolution of every higher-priority
+        // task on this core so far, snapshotted BEFORE the current task is folded
+        // in) and call the 3-arg GetRTA_OneTask with it. The 3-arg form Compresses
+        // the running RTA ONCE then Convolves against this pre-built prefix —
+        // bit-identical to the oracle. (The 2-arg form Compresses+Convolves PER HP
+        // task on the running RTA; with >=2 HP tasks and convolved support past
+        // Granularity the differing lossy compress count can diverge from the
+        // oracle. See Evaluate_NoReuseWideEtTaskWithTwoWideHpTasks_BitIdenticalToOracle.)
         TaskSet hp_tasks;
+        FiniteDist hp_tasks_et_conv = IdentityPrefix();
         for (const Task& task_curr : core_tasks) {
             if (verdict[task_curr.id] == RTAReusePerTask::NoReuse) {
                 candidate_rta_[task_id2index.at(task_curr.id)] =
-                    GetRTA_OneTask(task_curr, hp_tasks);
+                    GetRTA_OneTask(task_curr, hp_tasks, hp_tasks_et_conv);
             }
             hp_tasks.push_back(task_curr);
+            RollPrefix(hp_tasks_et_conv, task_curr.execution_time_dist);
         }
     }
     return candidate_rta_;
