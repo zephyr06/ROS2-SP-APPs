@@ -55,6 +55,21 @@ bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
 }
 
 void PriorityPartialPath::UpdateSP(int task_id) {
+    // P1.14-mirror — the INCR beam search (OptimizeFromScratch) calls UpdateSP
+    // once per partial-path node, and each call runs a GetRTA_OneTask that does
+    // NOT flow through the guarded EvaluateSPWithPriorityVec. Without a poll
+    // here, a from-scratch descent (interval 0 / reopt) can spend the whole
+    // budget inside the beam search before the first EvaluateSPWithPriorityVec
+    // entry-check ever fires — so a zero TIME_LIMIT would still run the full
+    // N-level beam. Poll the shared budget at the top of each node: bailing
+    // early leaves sp_lost under-counted for the abandoned partial path, which
+    // only makes that path LOSE the beam's priority_queue comparison (it ranks
+    // as if it lost less SP than it really did — but a cancelled search is
+    // discarding the whole descent anyway, so the ranking is moot). Inert
+    // (returns false) outside a BFDLSharedBudget scope, i.e. for every non-INCR
+    // caller of OptimizeFromScratch and for in-budget INCR runs.
+    if (BFSharedBudgetCancelled())
+        return;
     TaskSet hp_tasks;
     hp_tasks.reserve(tasks_to_assign.size());
     for (int task_hp_id : tasks_to_assign) {

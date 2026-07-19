@@ -590,6 +590,24 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     const DAG_Model& dag_tasks_update, int K) {
+    // P1.14-mirror — install ONE shared TIME_LIMIT budget for this interval's
+    // INCR call (covers BOTH the incremental OptimizeIncre_w_TL and the
+    // re-optimize ReOptimizePeriodic branches, plus the disable_time_limit_opt
+    // bypass). The orchestrator constructs incr_optimizer_ once and reuses it
+    // across intervals (SimulationOrchestrator.cpp:300), so capture a FRESH
+    // TimerType here per call rather than the construction-time start_time_
+    // (which would bound the whole simulation, not one interval).
+    // BFSharedBudgetCancelled() is inert (returns false) outside this scope, so
+    // non-INCR callers of the shared SP-eval functions are unaffected — exactly
+    // the P1.14 BF shape (OptimizeSP_TL_BF.cpp:89 installs the same guard at
+    // EnumeratePA_with_TimeLimits entry), one level up. On cancel,
+    // EvaluateSPWithPriorityVec returns INT_MIN; the walk's strict-> adopt guard
+    // (IsBetterTimeLimitOption / UpdateRecords) treats that as "not better" and
+    // keeps the incumbent (compare-and-keep), so in-budget runs are
+    // byte-identical. The existing polls inside ObtainSP_DAG / ObtainSP_TaskSet
+    // / RTA.cpp / SP_Metric.cpp do the actual interruption.
+    BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
+
     // Modular reopt: every ReoptimizationPeriod-th call (count % period == 0)
     // takes the from-scratch compare-and-keep path; otherwise the warm-started
     // incremental path. count == 0 routes to ReOptimizePeriodic, which

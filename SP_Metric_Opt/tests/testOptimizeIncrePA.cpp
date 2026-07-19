@@ -4,6 +4,7 @@
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_Incre.h"
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
+#include "sources/Safety_Performance_Metric/RTA_Cache.h"
 #include "sources/Utils/Parameters.h"
 
 #include <unistd.h>  // access/F_OK for the optional-data guard in the N=10 probe
