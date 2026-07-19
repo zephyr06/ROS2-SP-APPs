@@ -6,26 +6,27 @@
 
 ---
 
-## State (working tree, 2026-07-19, post-2a-re-land; NOT committed)
+## State (2026-07-19, post-2b-swap COMMITTED)
 
-**Increment 2a RE-LANDED** (working tree, NOT committed — agents only `git add`).
-The 2a write-side scaffolding (`rta_cache_` member + `rta_cache_active_` gate +
-gated `AdoptChampion` in `CommitIncumbent` + reset in `ResetIncumbentBaseline`,
-on `OptimizePA_Incre_with_TimeLimits` in `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`)
-is back, re-landed by hand from `p1_12_increment_2a_backup.patch` (the patch's
-P1.14-mirror BF hunks were SKIPPED — already committed at HEAD `ecf0c597`+
-`d7de4ad1`). **Behavior-preserving:** the cache is WRITTEN at `CommitIncumbent`
-but NOT yet READ — the oracle `EvaluateSPWithPriorityVec` still answers every SP
-eval. **17/17 ctest green** (19.74s), all SP outputs bit-identical to HEAD.
+HEAD = `5a172973` ("enable more rta cache"). The increments are ALL COMMITTED:
+- `71da8a45` = 2b blocker fix (`RTA_Cache.cpp` NoReuse bit-identity + `testRTA.cpp`).
+- `8e18c39b` = 2a write-side re-land (`OptimizeSP_TL_Incre.{h,cpp}` + task docs).
+- `5a172973` = 2b READ-SIDE SWAP (`OptimizeSP_TL_Incre.{h,cpp}`, +65/-31).
 
-Cumulative uncommitted diffs vs HEAD `71da8a45`: the 2b fix
-(`sources/Safety_Performance_Metric/RTA_Cache.cpp` + `tests/testRTA.cpp`) +
-this 2a re-land (`sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`, +53/-0).
+So 2a (write-side), the 2b `Evaluate` fix, AND the 2b read-side swap are LIVE at
+HEAD. The `:247` baseline re-score in `EvaluateTimeLimitConfig_SubIncremental`
+now routes through `rta_cache_.Evaluate` + `ObtainSP_Full_From_NodeRTAs`
+(P1.13's helper, which mirrors the oracle body + handles perf_coefficient =
+Hazard B). Wrapped in `BFSharedBudgetCancelled()` checks to preserve the P1.14
+cancel contract (INT_MIN on cancel → discarded by the strict-> adopt guard).
+Double-bake is idempotent + `TryComputeSingleChange` bakes both sides before
+diffing → invariant holds (Type-L → |diff|==1 patch, Type-E → |diff|==0
+FullReuse). **17/17 ctest green** re-verified from clean build (18.51s);
+differential gate `OptimizeWithOptimizationSpace` passes (cache read-side
+bit-identical to oracle on the full serialized walk).
 
-**Still no live TL-path READ.** The serialized eval still calls the ORACLE
-`EvaluateSPWithPriorityVec` at `OptimizeSP_TL_Incre.cpp:247`. The 2a write-side
-keeps the cache warm (champion tracks `res_opt_`); the 2b read-side swap will
-consume it.
+`:249`/`:289` (`OptimizeIncre_SingleTask` full swap) still on the oracle —
+base-class `RTACache&` threading = Hazard A, deferred to Phase 2.
 
 ### The 2b BLOCKER — RESOLVED 2026-07-19
 
@@ -87,21 +88,42 @@ diverged. Fix: the NoReuse walk now mirrors the oracle's loop exactly (rolling
     `CommitIncumbent(...)`~~ (DONE in this 2a re-land; gated by
     `rta_cache_active_`).
 
-- [ ] **2. Replace evaluations inside the TL-walk re-score**:
-  - Swap `EvaluateSPWithPriorityVec` for `rta_cache_.Evaluate(...)` at the
+- [x] **2. Replace evaluations inside the TL-walk re-score** (COMMITTED `5a172973`):
+  - [x] Swap `EvaluateSPWithPriorityVec` for `rta_cache_.Evaluate(...)` at the
     `:247` baseline re-score in `EvaluateTimeLimitConfig_SubIncremental`.
-  - Hazard B (perf_coefficient) is already FIXED IN PLACE at HEAD by P1.13
-    (`ObtainSP_DAG_From_Dists` multiplies `perf_coefficient`); reuse that helper,
-    do NOT add a parallel `*_With_Perf_Coeff`. (The `implementation_plan.md`
-    note about needing a new helper is SUPERSEDED.)
-  - `:249`/`:287` (`OptimizeIncre_SingleTask` full swap) stay on the oracle this
-    phase — base-class threading is Hazard A, deferred to Phase 2.
+    Uses `ObtainSP_Full_From_NodeRTAs` (P1.13's helper) for the SP assembly.
+  - [x] Hazard B (perf_coefficient) — already FIXED IN PLACE at HEAD by P1.13
+    (`ObtainSP_DAG_From_Dists` multiplies `perf_coefficient`, called inside
+    `ObtainSP_Full_From_NodeRTAs`). Reused; did NOT add a parallel
+    `*_With_Perf_Coeff`. (The `implementation_plan.md` note about needing a new
+    helper is SUPERSEDED.)
+  - [x] P1.14 cancel contract preserved: `BFSharedBudgetCancelled()` checks at
+    entry + post-Evaluate → INT_MIN on cancel (mirrors oracle's cancel contract).
+  - [ ] `:249`/`:289` (`OptimizeIncre_SingleTask` full swap) stay on the oracle
+    this phase — base-class threading is Hazard A, deferred to Phase 2.
 
-- [ ] **3. Verification**:
-  - Differential test asserting cache-eval SP == oracle SP bit-identical on the
-    TL walk (the `testIncreOpt_w_TL::OptimizeWithOptimizationSpace` that surfaced
-    the blocker must go green).
-  - 16/16 ctest green in DEBUG.
+- [x] **3. Verification**:
+  - [x] `testIncreOpt_w_TL::OptimizeWithOptimizationSpace` (the differential
+    gate that surfaced the 2b blocker) PASSES — cache read-side bit-identical to
+    oracle on the full serialized walk (`res_incre.sp_opt <= res_scratch.sp_opt`,
+    TL[0]==400).
+  - [x] 17/17 ctest green in DEBUG, zero warnings.
+  - [x] Focused direct differential test: `rta_cache_.Evaluate`+
+    `ObtainSP_Full_From_NodeRTAs` == `EvaluateSPWithPriorityVec` bit-identical on
+    a TL-walk fixture. DONE 2026-07-19: 2 new tests in `tests/testRTA.cpp`
+    (`SP_Assembly_TypeLChange_BitIdenticalToOracle` pins the |diff|==1 Type-L
+    patch branch; `SP_Assembly_TypeE_NoChange_BitIdenticalToOracle` pins the
+    |diff|==0 Type-E FullReuse branch) + an `OracleSP` helper
+    (`UpdateExtDistBasedOnTimeLimit`→`EvaluateSPWithPriorityVec`). Both
+    `EXPECT_DOUBLE_EQ` (exact) against the oracle. 17/17 ctest green (18.59s).
+
+---
+
+**Phase 1 COMPLETE.** The cache is wired into the live serialized TL-walk
+read-side (2a write-side + 2b read-side swap + 2b blocker fix all committed;
+step-3 differential pins the bit-identity at the seam). Phase 2 (base-class
+`RTACache&` threading into `OptimizeIncre_SingleTask:289` = Hazard A + Loop A/B
+dispatch + measurement) is NOT started.
 
 ---
 

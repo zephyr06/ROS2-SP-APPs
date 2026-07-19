@@ -5,6 +5,9 @@
 #include "sources/Safety_Performance_Metric/RTA.h"
 #include "sources/Safety_Performance_Metric/RTA_Cache.h"  // PerCoreRTACache, ComputeRTA_FullAndCache, ClassifyReuse, RTAReuseClass (P1.9)
 #include "sources/Safety_Performance_Metric/PrioritySwitchAnalysis.h"  // RestEqualAfterRemoving, AnalyzePrioritySwitch(PerCore), PrioritySwitchStatus/Analysis (P1.9 priority-analysis utilities)
+#include "sources/Safety_Performance_Metric/SP_Metric.h"  // ObtainSP_Full_From_NodeRTAs (P1.12 2b SP-assembly differential)
+#include "sources/Optimization/OptimizeSP_Base.h"  // EvaluateSPWithPriorityVec (the oracle the 2b swap replaced)
+#include "sources/Optimization/OptimizeSP_TL_BF.h"  // UpdateExtDistBasedOnTimeLimit (TL-bake, mirrors :247 dag_tasks_cur)
 #include "sources/TaskModel/DAG_Model.h"
 #include "sources/Utils/Parameters.h"
 #include "sources/Utils/readwrite.h"
@@ -454,6 +457,86 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache, Evaluate_NoChampion_FallsBackToInit) 
             << "rtas[" << i << "] diverged on no-champion Evaluate";
     }
     EXPECT_TRUE(cache.HasChampion());
+}
+
+// P1.12 Phase 1 step 3 — SP-ASSEMBLY differential (TL-walk). The Evaluate_* tests
+// above pin that the cache's RTAS are bit-identical to the oracle; this pins that
+// the SP assembled ON TOP of those rtas — `ObtainSP_Full_From_NodeRTAs(dag, sp,
+// pa, tl, cache.Evaluate(...))` — is bit-identical to the oracle
+// `EvaluateSPWithPriorityVec(UpdateExtDistBasedOnTimeLimit(dag, tl), sp, pa)` it
+// replaced at the :247 baseline re-score (commit 5a172973). The end-to-end gate
+// `testIncreOpt_w_TL::OptimizeWithOptimizationSpace` covers this only indirectly
+// (through the full optimizer); these tests isolate the bit-identity at the
+// exact seam, on the two branches the serialized TL walk serves.
+//
+// Helper: the oracle SP for a (dag, pa, tl) triple = bake TLs into the dag, then
+// EvaluateSPWithPriorityVec. This is exactly what EvaluateTimeLimitConfig_
+// SubIncremental did BEFORE the 2b swap (dag_tasks_cur = UpdateExtDistBasedOn-
+// TimeLimit(dag_tasks_, time_limits); EvaluateSPWithPriorityVec(dag_tasks_cur,
+// sp_parameters_, pa)). The cache arm does NOT pre-bake (the cache bakes TLs
+// internally via ApplyTimeLimitsToTasksExecutionTime, and ObtainSP_Full_From_-
+// NodeRTAs re-derives the prioritized TL-baked form identically — SP_Metric.h
+// contract). Both must land on the same double.
+static double OracleSP(const DAG_Model& dag_tasks,
+                       const SP_Parameters& sp_parameters,
+                       const PriorityVec& priority_assignment,
+                       const std::vector<double>& time_limits) {
+    DAG_Model dag_with_tl =
+        UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limits);
+    return EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters,
+                                     priority_assignment);
+}
+
+// Type-L: the candidate differs from the champion by ONE task's TL. Task 2 has
+// timePerformancePairs {(2,1.0),(6,0.5)} → a TL on it moves BOTH its ET (Hazard
+// B surface: perf_coefficient != 1.0) and its RTA. This is the |diff|==1 patch
+// branch — the cache patches task 2's RTA, ObtainSP_Full_From_NodeRTAs assembles
+// the SP, and the result must equal the oracle's full recompute.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       SP_Assembly_TypeLChange_BitIdenticalToOracle) {
+    SP_Parameters sp(dag_tasks);
+    // Champion = no TLs anywhere. Candidate = task 2's TL moved to 6 (its other
+    // perf pair) → one task's TL changed vs the champion.
+    std::vector<double> tl_champion = {-1, -1, -1, -1};
+    std::vector<double> tl_candidate = {-1, -1, 6, -1};
+
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, tl_champion);
+
+    double sp_oracle = OracleSP(dag_tasks, sp, priority_vec, tl_candidate);
+    const std::vector<FiniteDist>& rtas =
+        cache.Evaluate(dag_tasks, priority_vec, tl_candidate);
+    double sp_cache = ObtainSP_Full_From_NodeRTAs(dag_tasks, sp, priority_vec,
+                                                  tl_candidate, rtas);
+
+    EXPECT_DOUBLE_EQ(sp_oracle, sp_cache)
+        << "Type-L SP assembly diverged: oracle=" << sp_oracle
+        << " cache=" << sp_cache;
+}
+
+// Type-E: the candidate == the champion (zero diff). The serialized walk hits
+// this on every Type-E env entry (trial TL == committed TL, env absorbed on
+// both diff sides) → |diff|==0 → Evaluate short-circuits to FullReuse. The SP
+// must still be bit-identical (the FullReuse rtas are the champion's, and the
+// assembly over them must match a fresh oracle recompute). Champion carries a
+// real TL so the rtas are TL-baked, not the no-TL passthrough.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       SP_Assembly_TypeE_NoChange_BitIdenticalToOracle) {
+    SP_Parameters sp(dag_tasks);
+    std::vector<double> tl = {-1, -1, 6, -1};  // task 2 TL'd on both sides
+
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, tl);
+
+    double sp_oracle = OracleSP(dag_tasks, sp, priority_vec, tl);
+    const std::vector<FiniteDist>& rtas =
+        cache.Evaluate(dag_tasks, priority_vec, tl);
+    double sp_cache = ObtainSP_Full_From_NodeRTAs(dag_tasks, sp, priority_vec,
+                                                  tl, rtas);
+
+    EXPECT_DOUBLE_EQ(sp_oracle, sp_cache)
+        << "Type-E SP assembly diverged: oracle=" << sp_oracle
+        << " cache=" << sp_cache;
 }
 
 // P1.12 2b BLOCKER reproduction — 3 tasks on ONE core. With 2 tasks the NoReuse

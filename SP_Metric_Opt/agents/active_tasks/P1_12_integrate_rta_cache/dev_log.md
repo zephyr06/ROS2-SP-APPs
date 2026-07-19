@@ -515,3 +515,170 @@ direct cache-eval-vs-oracle differential on the TL walk asserts bit-identity.
 `:249`/`:287` (`OptimizeIncre_SingleTask` full swap) stay on the oracle this
 increment (base-class threading = Hazard A, deferred to Phase 2). Awaits user
 review of THIS increment (the 2a re-land) first.
+
+## 2026-07-19 — Increment 2b READ-SIDE SWAP landed (working tree, NOT committed)
+
+User: "continue work on task p1_12." Re-anchored against the tree before touching
+anything: HEAD advanced to `8e18c39b` ("add rta cache to optimizeSP TL"). The two
+prior increments are now COMMITTED — `71da8a45` ("add hp_tasks_et_conv to
+RTA_Cache") = the 2b blocker fix (RTA_Cache.cpp + testRTA.cpp), `8e18c39b` =
+the 2a write-side re-land (OptimizeSP_TL_Incre.{h,cpp} + task docs). So the
+"working tree, NOT committed" framing in the prior NEXT is stale for 2a/2b-fix;
+only ONE source diff remains uncommitted vs HEAD.
+
+**That one diff IS the 2b read-side swap** (OptimizeSP_TL_Incre.cpp:247-287,
++41/-2) — it was written in a prior session but never recorded in this log nor
+committed. Verified its shape + correctness this session (no edit made):
+
+- Replaces the oracle `EvaluateSPWithPriorityVec(dag_tasks_cur, sp_parameters_,
+  challenger.opt_pa_)` baseline re-score with
+  `rta_cache_.Evaluate(dag_tasks_cur, challenger.opt_pa_, time_limits)` →
+  `ObtainSP_Full_From_NodeRTAs(dag_tasks_cur, sp_parameters_,
+  challenger.opt_pa_, time_limits, baseline_rtas)`.
+- Uses `ObtainSP_Full_From_NodeRTAs` (SP_Metric.cpp:181, P1.13's helper), NOT
+  the bare `ObtainSP_DAG_From_Dists` the prior NEXT suggested. This is the
+  BETTER choice: `ObtainSP_Full_From_NodeRTAs` mirrors the oracle
+  `EvaluateSPWithPriorityVec` body EXACTLY (bake TL → `UpdateTaskSetPriorities`
+  → `ObtainSP_DAG_From_Dists` with the caller-supplied node RTAs + chain
+  latencies). Hazard B (perf_coefficient) is handled inside
+  `ObtainSP_DAG_From_Dists` (P1.13 fixed it in place). Reusing P1.13's helper
+  also avoids a parallel code path — same fn the priority cache path already
+  calls at OptimizeSP_Incre.cpp:328,384.
+
+**Double-bake is idempotent (verified):** the candidate DAG passed to `Evaluate`
+is `dag_tasks_cur`, already TL-baked at :194 (`UpdateExtDistBasedOnTimeLimit`).
+`Evaluate` re-bakes internally (RTA_Cache.cpp:443
+`ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl)`).
+`ApplyTimeLimitsToTasksExecutionTime` (SP_Metric.cpp:76) replaces
+`execution_time_dist` with `GetUnitExecutionTimeDist(tl[i])` wherever
+`tl[i] != -1` — a deterministic replacement, so baking an already-baked DAG with
+the SAME `tl` is a no-op. The P1.13 priority path uses the OTHER convention
+(pass `no_tl` = all -1.0 against a baked DAG); both conventions yield the same
+baked result. No correctness issue.
+
+**Invariant comparison is apples-to-apples (verified):** `TryComputeSingleChange`
+(RTA_Cache.cpp:252) bakes BOTH the champion (`dag_champion_`+`tl_champion_`,
+:259) AND the candidate (`dag_tasks`+`tl`, :261) before `FindTaskWithDifferentEt`
+— so whether the candidate DAG was pre-baked is irrelevant; the diff is on the
+re-baked forms. Champion was adopted at `CommitIncumbent` on the committed
+triple (`dag_tasks_`, `opt_pa_`, committed `tl`); candidate is
+(`dag_tasks_cur`=`dag_tasks_` baked with trial `time_limits`, `opt_pa_`,
+`time_limits`). Type-L (trial TL != committed) → 1 ET diff → |diff|==1, Evaluate
+patches that one task; Type-E (trial TL == committed, env absorbed on both
+sides) → 0 ET diff → |diff|==0, Evaluate short-circuits to FullReuse. Matches
+the `AssertSingleChangeInvariant` the path already asserts at :233.
+
+**P1.14 cancel contract preserved (verified):** the swap wraps the Evaluate +
+assembly in `BFSharedBudgetCancelled()` checks at entry and post-Evaluate,
+mirroring the oracle's `INT_MIN`-on-cancel contract (the oracle returns INT_MIN
+on entry-cancel + post-ObtainSP_DAG cancel). A cancelled eval returns INT_MIN →
+discarded by `UpdateRecords`' strict-> adopt guard → no P1.14 time-limit
+regression. The adopt path (`CommitIncumbent`'s gated Evaluate+AdoptChampion)
+runs its OWN Evaluate on the committed triple and is unaffected (a cancelled
+candidate never reaches CommitIncumbent).
+
+**Verification:** `cmake --build build --target check.SP_OPT -j5` (DEBUG
+configured) → **17/17 ctest green** (19.79s), zero warnings on the touched TUs.
+Differential gate `testIncreOpt_w_TL::OptimizeWithOptimizationSpace` (the test
+that surfaced the 2b divergence at 10.2046 > 9.67111 / TL=600-not-400) PASSES —
+`res_incre.id2time_limit[0]==400` and `res_incre.sp_opt <= res_scratch.sp_opt`.
+That test runs the FULL serialized walk with the cache READ-SIDE active (every
+`:247` re-score now goes through `rta_cache_.Evaluate`), so a non-bit-identical
+Evaluate would move incremental SP off scratch SP and fail the `<=` guard. It
+holds → the cache read-side is bit-identical to the oracle on this path.
+
+**Phase 1 step 2 is DONE** (in the working tree). What remains for Phase 1:
+step 3 (a dedicated direct cache-eval-vs-oracle differential test on the TL walk
+— currently covered only indirectly via `OptimizeWithOptimizationSpace`; a
+focused unit test would pin bit-identity at the `Evaluate`-vs-`EvaluateSPWithPriorityVec`
+level on a TL-walk fixture, isolating it from the full optimizer). Phase 2
+(base-class `RTACache&` threading into `OptimizeIncre_SingleTask` at `:289` =
+Hazard A, then Loop A/B dispatch + scalability measurement) is NOT started.
+
+### NEXT
+
+Phase 1 step 3 = a focused differential test asserting
+`rta_cache_.Evaluate`+`ObtainSP_Full_From_NodeRTAs` ==
+`EvaluateSPWithPriorityVec` bit-identical on a TL-walk fixture (TDD: pin the
+bit-identity the `OptimizeWithOptimizationSpace` gate covers only end-to-end).
+Then Phase 2: base-class threading (Hazard A) + hot-loop dispatch + measurement.
+
+---
+
+## 2026-07-19 — 2b read-side swap is COMMITTED (records correction)
+
+The 2b read-side swap described above was committed at **`5a172973` "enable more
+rta cache"** (+65/-31 on `OptimizeSP_TL_Incre.{h,cpp}`), NOT left in the working
+tree as the prior entry stated. The prior "Awaits user review" NEXT block was
+overtaken by the commit landing; this entry corrects the record.
+
+**Re-verified from a clean DEBUG build** (`cmake --build build --target
+check.SP_OPT -j5`, `CMAKE_BUILD_TYPE=DEBUG` uppercase per the build rule):
+**17/17 ctest green** (18.51s), incl. `testIncreOpt_w_TL` (the differential gate
+that surfaced the 2b divergence — now passes with the cache read-side live) and
+`testRTA` (the cache-vs-oracle bit-identity tests). Zero warnings on touched TUs.
+
+**What is LIVE at HEAD now:** the `:247` baseline re-score in
+`EvaluateTimeLimitConfig_SubIncremental` calls `rta_cache_.Evaluate`+
+`ObtainSP_Full_From_NodeRTAs` (gated by `BFSharedBudgetCancelled()` for the P1.14
+contract) instead of the oracle `EvaluateSPWithPriorityVec`. `CommitIncumbent`'s
+gated `Evaluate`+`AdoptChampion` (2a write-side) keeps the cache-champion
+tracking `res_opt_`. The serialized TL walk is the only live cache-READ site;
+`:249`/`:289` (`OptimizeIncre_SingleTask`) still call the oracle (Hazard A —
+base-class `RTACache&` threading, deferred to Phase 2).
+
+**Note on the working tree:** the P1.12 task dir was committed into
+`finished_tasks/` (premature — Phase 1 step 3 + all of Phase 2 remain) and moved
+back to `active_tasks/` in the working tree (uncommitted move). The records now
+reflect that P1.12 is ACTIVE, not finished.
+
+---
+
+## 2026-07-19 — Phase 1 step 3 DONE (SP-assembly differential tests)
+
+Added 2 focused direct differential tests pinning the bit-identity the
+end-to-end `OptimizeWithOptimizationSpace` gate covers only indirectly, at the
+exact `:247` seam the 2b swap touched.
+
+**Files:** `tests/testRTA.cpp` (+3 includes, +1 helper, +2 tests).
+
+- `OracleSP(dag, sp, pa, tl)` helper = `UpdateExtDistBasedOnTimeLimit(dag, tl)`
+  → `EvaluateSPWithPriorityVec(dag_with_tl, sp, pa)` — exactly what the
+  `:247` baseline re-score did BEFORE the 2b swap (`dag_tasks_cur` bake +
+  oracle). The cache arm (`ObtainSP_Full_From_NodeRTAs(dag, sp, pa, tl,
+  cache.Evaluate(dag, pa, tl))`) does NOT pre-bake; both must land on the same
+  double.
+- `SP_Assembly_TypeLChange_BitIdenticalToOracle`: champion = no TLs, candidate =
+  task 2's TL moved to 6. Task 2 has `timePerformancePairs {(2,1.0),(6,0.5)}`
+  → the TL moves BOTH its ET (Hazard B surface: perf_coefficient != 1.0) AND its
+  RTA. |diff|==1 patch branch. `EXPECT_DOUBLE_EQ` oracle vs cache.
+- `SP_Assembly_TypeE_NoChange_BitIdenticalToOracle`: candidate == champion (task
+  2 TL'd on both sides). |diff|==0 → Evaluate short-circuits to FullReuse; the
+  assembly over the champion's rtas must match a fresh oracle recompute.
+  `EXPECT_DOUBLE_EQ`.
+
+Both PASS. **17/17 ctest green** (18.59s), zero warnings on the touched TU.
+
+**Why `EXPECT_DOUBLE_EQ` (exact), not a tolerance:** the cache arm and the oracle
+arm execute the SAME arithmetic (same `ApplyTimeLimitsToTasksExecutionTime` →
+`UpdateTaskSetPriorities` → `ProbabilisticRTA_TaskSet` → `ObtainSP_DAG`-shaped
+assembly); the 2b blocker fix made `Evaluate`'s NoReuse walk mirror the oracle's
+loop exactly (rolling `hp_tasks_et_conv` + 3-arg `GetRTA_OneTask`). So the two
+SPs are bit-identical, not merely close. A tolerance would mask a regression of
+the very property these tests exist to pin.
+
+**Phase 1 now COMPLETE.** 2a (write-side) + 2b blocker fix + 2b read-side swap
+all committed (`71da8a45`, `8e18c39b`, `5a172973`); step-3 differential pins the
+seam. `:249`/`:289` (`OptimizeIncre_SingleTask`) still call the oracle —
+base-class `RTACache&` threading = Hazard A, deferred to Phase 2. Phase 2 NOT
+started; awaits user go + the measurement run (per task plan, measurement runs
+AFTER integration lands, so after Phase 2's `:289` swap).
+
+### NEXT
+
+`git add` the test + record changes (agents don't commit); await user review.
+Then Phase 2: thread `RTACache&` from `EvaluateTimeLimitConfig_SubIncremental`
+into base `OptimizePA_Incre::OptimizeIncre_SingleTask` (Hazard A) so the
+`:249`/`:289` per-variation walk uses the cache; then Loop A (priority-move
+patch dispatch) + Loop B (TL patch dispatch) + end-to-end scalability
+measurement at N=6/10/16.
