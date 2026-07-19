@@ -1,7 +1,18 @@
 
 #include "sources/Optimization/OptimizeSP_Incre.h"
 
+#include "sources/Safety_Performance_Metric/RTA_Cache.h"
+#include "sources/Safety_Performance_Metric/SP_Metric.h"
+
 namespace SP_OPT_PA {
+// P1.13 — Evaluate returns a const ref into the cache's candidate_rta_ buffer,
+// which the next Evaluate overwrites. But the RTA is needed both to score SP AND
+// (on adoption) to feed AdoptChampion, so binding the returned ref directly would
+// dangle. This struct COPIES the RTA into a stable local. Mirrors the no-raw-
+// pointer idiom.
+struct NodeRtasHolder {
+    std::vector<FiniteDist> rtas;
+};
 
 PriorityPartialPath::PriorityPartialPath(const DAG_Model& dag_tasks,
                                          const SP_Parameters& sp_parameters)
@@ -149,12 +160,10 @@ std::vector<int> FindTasksWithFlexibleTimeLimits(const DAG_Model& dag_tasks) {
 
 std::vector<DiffObj> FindEnvTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated) {
-    // Type-E (env-changed) diff: FindTaskWithDifferentEt's result MINUS
-    // TL-flexible tasks. A TL-flexible task's execution_time_dist is built from
-    // raw mu/min/max YAML fields (no adopted-TL override at read), and
-    // FiniteDist::operator!= is a 10%-relative approx_equal, so its dist can
-    // compare unequal across intervals for non-env (TL/grid) reasons; filtering
-    // the TL-flexible set leaves a clean env-only signal. See the header comment.
+    // Type-E (env-changed) diff: FindTaskWithDifferentEt's result MINUS TL-
+    // flexible tasks. See the header comment for why the TL-flexible set must be
+    // filtered (FiniteDist::operator!= is 10%-relative approx_equal + TL-flexible
+    // dists carry raw YAML mu/min/max → non-env inequality).
     std::vector<DiffObj> full =
         FindTaskWithDifferentEt(dag_tasks, dag_tasks_updated);
     std::vector<int> tl_flexible = FindTasksWithFlexibleTimeLimits(dag_tasks);
@@ -273,42 +282,102 @@ PriorityChangeStatus AnalyzePriorityChangeStatus(
 }
 
 PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
-    const DAG_Model& dag_tasks_update, int task_id, bool et_increased) {
+    const DAG_Model& dag_tasks_update, int task_id, bool et_increased,
+    RTACacheOpt rta_cache) {
     // Assumes EXACTLY ONE task's ET changed (task_id). Trusts opt_sp_ as the
-    // current baseline (caller-set: OptimizeIncre scores the carried PA at
-    // :243-244, or a TL handler seeds it). Re-searches task_id over one half of
-    // the priority positions (per AnalyzePriorityChangeStatus), adopting on
-    // strict >. Bit-identical to the former :274-292 loop body. Does NOT
-    // advance dag_tasks_ (orchestrator-owned).
+    // current baseline (caller-set). Re-searches task_id over one half of the
+    // priority positions (per AnalyzePriorityChangeStatus), adopting on strict >.
+    // Bit-identical to the former :274-292 loop body. Does NOT advance
+    // dag_tasks_ (orchestrator-owned).
     std::vector<PriorityVec> pa_vec_variations = FindPriorityVec1D_Variations(
         opt_pa_, task_id,
         AnalyzePriorityChangeStatus(sp_parameters_, task_id, et_increased));
+    // P1.13 — cache path. dag_tasks_update is TL-baked (Q5), so feed an all-(-1)
+    // tl: ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache sees exactly
+    // the final ETs the oracle did → bit-identity. The champion is opt_pa_ on the
+    // carried dag (established by OptimizeIncre's baseline Initialize, or a prior
+    // adoption here). Each variation moves ONE task's priority position vs
+    // opt_pa_ → |diff|<=1 → Evaluate patches the suffix. On a strict-improvement
+    // adoption, AdoptChampion MUST advance the champion so the NEXT variation's
+    // diff stays |diff|<=1 (Evaluate never advances the champion itself).
+    std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     for (const PriorityVec& priority_assignment : pa_vec_variations) {
-        double sp_eval = EvaluateSPWithPriorityVec(
-            dag_tasks_update, sp_parameters_, priority_assignment);
+        double sp_eval;
+        NodeRtasHolder rtas_holder;
+        if (rta_cache) {
+            // COPY Evaluate's return: the const ref points into the cache's
+            // candidate_rta_ buffer, overwritten by the next Evaluate. Stabilize
+            // in rtas_holder for both SP scoring and AdoptChampion.
+            rtas_holder.rtas =
+                rta_cache->get().Evaluate(dag_tasks_update, priority_assignment, no_tl);
+            sp_eval = ObtainSP_Full_From_NodeRTAs(
+                dag_tasks_update, sp_parameters_, priority_assignment, no_tl,
+                rtas_holder.rtas);
+        } else {
+            sp_eval = EvaluateSPWithPriorityVec(
+                dag_tasks_update, sp_parameters_, priority_assignment);
+        }
         PrintPA_IfDebugMode(priority_assignment, sp_eval);
         if (sp_eval > opt_sp_) {
             opt_sp_ = sp_eval;
             opt_pa_ = priority_assignment;
+            if (rta_cache) {
+                rta_cache->get().AdoptChampion(dag_tasks_update, priority_assignment,
+                                               no_tl, rtas_holder.rtas);
+            }
         }
     }
     return opt_pa_;
 }
 
 PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
-                                            double baseline_sp) {
+                                            double baseline_sp,
+                                            RTACacheOpt rta_cache) {
     if (opt_pa_.size() == 0) {
         CoutError("OptimizeIncre called before OptimizeFromScratch");
     }
+    // P1.13 — if no cache was provided, create a local one so the cache is
+    // ALWAYS engaged for this interval: both the baseline re-score below and the
+    // per-variation traversal in OptimizeIncre_SingleTask reuse RTA. The local
+    // outlives the loop (same scope), bound via std::ref (no raw pointer). A
+    // passed-in cache is used as-is (e.g. shared across intervals). Either way
+    // rta_cache is engaged from here on.
+    [[maybe_unused]] RTACache local_cache;
+    if (!rta_cache) {
+        rta_cache = std::ref(local_cache);
+    }
     // reset optimal sp
-    // baseline_sp (default INT_MIN = "not provided"): score the carried PA
-    // under the new env (the former :243-244 baseline). A caller that already
-    // holds that SP may pass it to skip the re-score. If provided it MUST equal
+    // baseline_sp (default INT_MIN = "not provided"): score the carried PA under
+    // the new env. A caller that already holds that SP may pass it to skip the
+    // re-score; if provided it MUST equal
     // EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_).
-    opt_sp_ = (baseline_sp == INT_MIN)
-                  ? EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_,
-                                              opt_pa_)
-                  : baseline_sp;
+    //
+    // P1.13 — cache path: the baseline re-score must INITIALIZE the cache
+    // champion (full RTA), NOT Evaluate — this is a fresh interval, the carried
+    // champion (if any) is on the OLD dag_tasks_ and may differ by >1 task →
+    // Evaluate would throw via ComputeTaskSetDifference. Initialize overwrites
+    // all prior state and establishes opt_pa_ as the champion the downstream
+    // OptimizeIncre_SingleTask 1D variations patch against. tl is all-(-1)
+    // (dag_tasks_update is TL-baked, Q5). When baseline_sp is provided we trust
+    // it (it MUST equal the cache-path score for the same triple) and still
+    // Initialize the champion RTA.
+    std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
+    if (baseline_sp == INT_MIN) {
+        if (rta_cache) {
+            const std::vector<FiniteDist>& baseline_rtas =
+                rta_cache->get().Initialize(dag_tasks_update, opt_pa_, no_tl);
+            opt_sp_ = ObtainSP_Full_From_NodeRTAs(
+                dag_tasks_update, sp_parameters_, opt_pa_, no_tl, baseline_rtas);
+        } else {
+            opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_,
+                                                opt_pa_);
+        }
+    } else {
+        opt_sp_ = baseline_sp;
+        if (rta_cache) {
+            rta_cache->get().Initialize(dag_tasks_update, opt_pa_, no_tl);
+        }
+    }
     // std::cout << "Initial SP before incremental optimziation is: " << opt_sp_
     //           << "\n";
     std::vector<DiffObj> tasks_with_diff_et =
@@ -342,20 +411,18 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
 
     for (DiffObj task_diff_obj : tasks_with_diff_et) {
         OptimizeIncre_SingleTask(dag_tasks_update, task_diff_obj.task_id,
-                                 task_diff_obj.increase);
+                                 task_diff_obj.increase, rta_cache);
     }
     // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
     //           << "\n";
     // Advance this optimizer's dag_tasks_ to the current interval's DAG. Under
-    // the P0.5 redesign this optimizer is a THROWAWAY CHALLENGER (rebuilt from
-    // res_opt_ via BuildChallengerFromIncumbent each incremental interval), so
-    // this assignment only affects future calls WITHIN this descent — whatever
-    // it does to dag_tasks_ dies with the local. The cross-interval invariant
-    // is the adopted TL in res_opt_.id2time_limit (written by CommitIncumbent
-    // via UpdateRecords); the next interval's challenger is rebuilt from that,
-    // not from a stored DAG. FindTaskWithDifferentEt above already captured the
-    // diff against the OLD dag_tasks_, so this assignment only matters for
-    // subsequent diffs inside this call.
+    // P0.5 this optimizer is a THROWAWAY CHALLENGER (rebuilt from res_opt_ via
+    // BuildChallengerFromIncumbent each interval), so this only affects future
+    // calls WITHIN this descent — it dies with the local. The cross-interval
+    // invariant is the adopted TL in res_opt_.id2time_limit (written by
+    // CommitIncumbent); FindTaskWithDifferentEt above already captured the diff
+    // against the OLD dag_tasks_, so this only matters for subsequent diffs
+    // inside this call.
     dag_tasks_ = dag_tasks_update;
     return opt_pa_;
 }

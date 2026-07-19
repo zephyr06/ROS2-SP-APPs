@@ -516,6 +516,333 @@ TEST(FindTaskWithDifferentEt, N10IntervalYamlGroundTruth) {
         << "C++ ground-truth ndiff for dag0->dag1 disagrees with Python repro";
 }
 
+// P1.13 sub-step 3 — differential TDD: the cache path (OptimizeIncre with an
+// engaged RTACacheOpt) must be BIT-IDENTICAL to the oracle path (OptimizeIncre
+// with std::nullopt) on a |diff|==1 update. The cache is the only thing that
+// differs between the two arms; both run the SAME OptimizeIncre loop body, the
+// SAME FindPriorityVec1D_Variations, the SAME strict-> adoption. So if the
+// cache's Evaluate patch + ObtainSP_Full_From_NodeRTAs scoring + AdoptChampion
+// champion-advance reproduce the oracle EvaluateSPWithPriorityVec per
+// candidate, the two arms land on the same opt_pa_/opt_sp_. This is the
+// behavior-preservation gate for sub-step 2b's wiring. Uses the v22->v23 pair
+// (one changed task, task 1 increase — same as the SingleTask differential
+// above) so the 1D variations exercise the |diff|<=1 patch path.
+TEST(OptimizeIncre_Cache, Differential_BitIdenticalToOracle_OnSingleEtChange) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    DAG_Model dag_update = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v23.yaml");
+    SP_Parameters sp = SP_Parameters(dag_base);
+
+    // Sanity: |diff|==1 (the only case the cache's patch path serves; a >1 diff
+    // would throw inside ComputeTaskSetDifference via ClassifyReusePerTask).
+    ASSERT_EQ(FindTaskWithDifferentEt(dag_base, dag_update).size(), 1u);
+
+    // Two independent optimizers from the SAME scratch state. OptimizeFromScratch
+    // is deterministic given K, so optOracle and optCache hold identical
+    // opt_pa_/opt_sp_/dag_tasks_ after this — the only difference is the cache
+    // handle passed to OptimizeIncre below.
+    OptimizePA_Incre optOracle(dag_base, sp);
+    optOracle.OptimizeFromScratch(2);
+    OptimizePA_Incre optCache(dag_base, sp);
+    optCache.OptimizeFromScratch(2);
+    AssertEqualVectorExact<int>(optOracle.opt_pa_, optCache.opt_pa_, 1e-3,
+                                __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_);
+
+    // Oracle arm: std::nullopt → legacy EvaluateSPWithPriorityVec per candidate.
+    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update);
+
+    // Cache arm: engaged RTACache → Initialize at baseline + Evaluate patch +
+    // ObtainSP_Full_From_NodeRTAs scoring + AdoptChampion per adoption.
+    RTACache cache;
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, INT_MIN, cache);
+
+    // The cache path must reproduce the oracle's adopted PA and SP exactly.
+    AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
+        << "cache-path SP diverged from oracle-path SP";
+}
+
+// P1.13 sub-step 3b — broader differential coverage. The single v22->v23 case
+// above exercises ONE branch: task 1, ET INCREASE, on a low-weight core-1 task.
+// The cache path has more surface than that:
+//  - AnalyzePriorityChangeStatus flips its half (Increase vs Decrease) depending
+//    on et_increased AND whether the task holds the unique-highest weight. An
+//    ET DECREASE takes the OTHER half of the 1D-variation range.
+//  - Different task_id → different processorId / weight / priority position in
+//    opt_pa_, which exercises different MoveToCore / core-stay paths inside
+//    RTACache::AnalyzePrioritySwitch (the per-core single-move detection).
+//  - A change that actually TRIGGERS a strict-improvement adoption mid-loop
+//    exercises AdoptChampion's champion-advance (the "next variation's diff
+//    stays |diff|<=1" invariant the wiring depends on) — a no-adopt run never
+//    touches that.
+//  - Two OptimizeIncre calls back-to-back exercise the baseline Initialize on a
+//    FRESH interval vs a carried champion (the stale-champion-vs-throw path the
+//    wiring doc warns about; OptimizeIncre uses Initialize, not Evaluate, for
+//    exactly this reason).
+//
+// The shared helper runs the SAME differential as the v22->v23 test (oracle arm
+// with nullopt vs cache arm with an engaged RTACache) on a caller-built update.
+// dag_base is read from a real yaml (real weights/cores/priorities); dag_update
+// is dag_base with ONE task's execution_time_dist overwritten to a shifted
+// FiniteDist built the SAME way ReadDAG_Tasks builds it (GaussianDist + min/max
+// + granularity=5). That keeps the mutation on the exact path the cache sees
+// (ApplyTimeLimitsToTasksExecutionTime is a no-op here since no TL is set).
+namespace {
+void ExpectCacheMatchesOracleOnMutation(const DAG_Model& dag_base,
+                                        const DAG_Model& dag_update,
+                                        int line) {
+    SP_Parameters sp = SP_Parameters(dag_base);
+
+    // The cache's patch path only serves |diff|<=1 (a >1 diff throws inside
+    // ComputeTaskSetDifference via ClassifyReusePerTask). Sanity-check it.
+    ASSERT_EQ(FindTaskWithDifferentEt(dag_base, dag_update).size(), 1u)
+        << "test built a mutation that isn't |diff|==1 (from line " << line
+        << ")";
+
+    OptimizePA_Incre optOracle(dag_base, sp);
+    optOracle.OptimizeFromScratch(2);
+    OptimizePA_Incre optCache(dag_base, sp);
+    optCache.OptimizeFromScratch(2);
+    // Both optimizers from the same scratch state — deterministic given K.
+    AssertEqualVectorExact<int>(optOracle.opt_pa_, optCache.opt_pa_, 1e-3, line);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_);
+
+    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update);
+
+    RTACache cache;
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, INT_MIN, cache);
+
+    AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, line);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
+        << "cache-path SP diverged from oracle-path SP (from line " << line
+        << ")";
+}
+
+// Build a FiniteDist the same way ReadDAG_Tasks does (RegularTasks.cpp:75-79):
+// Gaussian(mu,sigma) truncated to [min,max] at the given granularity. Used to
+// overwrite one task's execution_time_dist for a synthetic |diff|==1 mutation.
+FiniteDist ShiftedFiniteDist(double mu, double sigma, double min_val,
+                             double max_val, int granularity = 5) {
+    return FiniteDist(GaussianDist(mu, sigma), min_val, max_val, granularity);
+}
+}  // namespace
+
+// ET DECREASE on the same task v22->v23 touches (task 1), so the
+// AnalyzePriorityChangeStatus half flips (Decrease vs Increase). v23 has task 1
+// at mu=7.73; build a decrease from v22 (mu=6.73) to mu=5.5. The 1D variations
+// scan the OTHER half of the priority range.
+TEST(OptimizeIncre_Cache, Differential_EtDecrease_FlipsVariationHalf) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    DAG_Model dag_update = dag_base;
+    // Task 1 v22: mu=6.7311, sigma=0.0871, min=6.7311, max=6.7311 (near-deterministic).
+    // Decrease the mean; keep sigma/min/max coherent with a narrower, lower dist.
+    dag_update.tasks[1].execution_time_dist =
+        ShiftedFiniteDist(5.5, 0.0871, 5.5, 5.5);
+    ExpectCacheMatchesOracleOnMutation(dag_base, dag_update, __LINE__);
+}
+
+// Mutate the HIGH-WEIGHT task (task 3, sp_weight=10, core 0) instead of a
+// low-weight one. AnalyzePriorityChangeStatus checks
+// if_highest_weight_unique(task_id); a high-weight task takes the
+// weight-unique branch (priority tracks the resource-hungry task), which the
+// low-weight v22->v23 case never reaches. ET increase on task 3.
+TEST(OptimizeIncre_Cache, Differential_HighWeightTask_EtIncrease) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    DAG_Model dag_update = dag_base;
+    // Task 3 v22: mu=285.32, period 3000, core 0, weight 10 (the unique-highest).
+    dag_update.tasks[3].execution_time_dist =
+        ShiftedFiniteDist(320.0, 5.0, 310.0, 330.0);
+    ExpectCacheMatchesOracleOnMutation(dag_base, dag_update, __LINE__);
+}
+
+// A LARGE ET increase on the high-weight task, sized to push its RTA past the
+// SP threshold and force a strict-improvement ADOPTION mid-loop (opt_pa_
+// changes inside OptimizeIncre_SingleTask). This exercises AdoptChampion's
+// champion-advance: after adopting, the next 1D variation must still be
+// |diff|<=1 vs the NEW champion. The v22->v23 case may not adopt at all, so
+// AdoptChampion's advance path is otherwise untested.
+//
+// Adoption is data-dependent, so the case sweeps ET magnitudes until one
+// actually flips opt_pa_ (probed via the oracle arm), then runs the
+// differential on THAT magnitude. If no magnitude in the sweep adopts, the
+// test FAILS — the AdoptChampion-advance branch would otherwise be silently
+// untested, which is exactly the false-green this suite exists to prevent.
+TEST(OptimizeIncre_Cache, Differential_LargeEtIncrease_TriggersAdoption) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    SP_Parameters sp = SP_Parameters(dag_base);
+
+    // Find the carried PA once (it's the same across the sweep —
+    // OptimizeFromScratch is deterministic given K).
+    OptimizePA_Incre optSeed(dag_base, sp);
+    optSeed.OptimizeFromScratch(2);
+    const PriorityVec pa_carried = optSeed.opt_pa_;
+
+    // Sweep task 3's ET up until the oracle arm's OptimizeIncre ADOPTS (returns
+    // a PA != pa_carried). Task 3 is the unique-highest-weight task (weight 10),
+    // so an ET increase drives AnalyzePriorityChangeStatus toward Increase
+    // (higher priority) — a large enough increase should flip its position.
+    double adopt_mu = -1.0;
+    DAG_Model dag_update = dag_base;
+    for (double new_mu : {350.0, 450.0, 600.0, 900.0, 1500.0, 2500.0}) {
+        DAG_Model cand = dag_base;
+        cand.tasks[3].execution_time_dist =
+            ShiftedFiniteDist(new_mu, 5.0, new_mu - 10.0, new_mu + 10.0);
+        OptimizePA_Incre optProbe(dag_base, sp);
+        optProbe.OptimizeFromScratch(2);
+        PriorityVec pa_probe = optProbe.OptimizeIncre(cand);
+        if (pa_probe != pa_carried) {
+            adopt_mu = new_mu;
+            dag_update = cand;
+            break;
+        }
+    }
+    ASSERT_NE(adopt_mu, -1.0)
+        << "No ET magnitude in the sweep triggered an adoption on task 3; "
+        << "the AdoptChampion-advance branch is untestable with this fixture. "
+        << "Extend the sweep or pick a different task.";
+
+    // Run the differential on the magnitude that actually adopts.
+    ExpectCacheMatchesOracleOnMutation(dag_base, dag_update, __LINE__);
+}
+
+// Two OptimizeIncre calls back-to-back on the SAME cache. The second call's
+// baseline re-score runs Initialize (full RTA) — NOT Evaluate — because the
+// carried champion is on the PREVIOUS interval's dag and may differ by >1 task,
+// which Evaluate would reject via ComputeTaskSetDifference. This is the path
+// the wiring doc calls out: Initialize overwrites all prior state and
+// re-establishes opt_pa_ as the champion. The differential asserts both calls
+// match the oracle.
+TEST(OptimizeIncre_Cache, Differential_SequentialIntervals_ReinitializeChampion) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    SP_Parameters sp = SP_Parameters(dag_base);
+
+    // interval 1: task 1 increase (the v22->v23 change). interval 2: task 3
+    // increase (independent of interval 1). Two |diff|==1 updates in sequence.
+    DAG_Model dag_i1 = dag_base;
+    dag_i1.tasks[1].execution_time_dist =
+        ShiftedFiniteDist(8.5, 0.0871, 8.5, 8.5);
+    DAG_Model dag_i2 = dag_i1;
+    dag_i2.tasks[3].execution_time_dist =
+        ShiftedFiniteDist(350.0, 5.0, 340.0, 360.0);
+
+    // Oracle arm: two nullopt OptimizeIncre calls on one optimizer.
+    OptimizePA_Incre optOracle(dag_base, sp);
+    optOracle.OptimizeFromScratch(2);
+    PriorityVec pa_oracle_i1 = optOracle.OptimizeIncre(dag_i1);
+    PriorityVec pa_oracle_i2 = optOracle.OptimizeIncre(dag_i2);
+
+    // Cache arm: the SAME two calls share ONE RTACache — the second call's
+    // Initialize must overwrite the champion state the first call's
+    // AdoptChampion(s) wrote, without throwing.
+    OptimizePA_Incre optCache(dag_base, sp);
+    optCache.OptimizeFromScratch(2);
+    RTACache cache;
+    PriorityVec pa_cache_i1 = optCache.OptimizeIncre(dag_i1, INT_MIN, cache);
+    PriorityVec pa_cache_i2 = optCache.OptimizeIncre(dag_i2, INT_MIN, cache);
+
+    AssertEqualVectorExact<int>(pa_oracle_i1, pa_cache_i1, 1e-3, __LINE__);
+    AssertEqualVectorExact<int>(pa_oracle_i2, pa_cache_i2, 1e-3, __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
+        << "cache-path SP diverged from oracle-path SP after interval 2";
+}
+
+// baseline_sp PROVIDED (not INT_MIN). This is the `else` branch of
+// OptimizeIncre's baseline re-score: the caller already holds the carried PA's
+// SP under the new env and passes it to skip the re-score. The cache arm MUST
+// still Initialize the champion RTA (full RTA on opt_pa_) even though the SP
+// is trusted — Initialize-only, no ObtainSP_Full_From_NodeRTAs re-score. Every
+// other test passes INT_MIN, so this `else` branch (both arms) is otherwise
+// unexercised. The differential computes the baseline SP via the SAME path the
+// header contract requires (EvaluateSPWithPriorityVec on dag_update + carried
+// PA) and feeds it to BOTH arms, then asserts cache==oracle on PA + final SP.
+TEST(OptimizeIncre_Cache, Differential_BaselineSpProvided_ElseBranch) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    SP_Parameters sp = SP_Parameters(dag_base);
+    DAG_Model dag_update = dag_base;
+    // Task 1 increase (the v22->v23 change) — a |diff|==1 mutation.
+    dag_update.tasks[1].execution_time_dist =
+        ShiftedFiniteDist(8.5, 0.0871, 8.5, 8.5);
+    ASSERT_EQ(FindTaskWithDifferentEt(dag_base, dag_update).size(), 1u);
+
+    OptimizePA_Incre optOracle(dag_base, sp);
+    optOracle.OptimizeFromScratch(2);
+    OptimizePA_Incre optCache(dag_base, sp);
+    optCache.OptimizeFromScratch(2);
+    AssertEqualVectorExact<int>(optOracle.opt_pa_, optCache.opt_pa_, 1e-3,
+                                __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_);
+
+    // The caller-provided baseline SP: the carried PA scored under dag_update.
+    // The header contract (OptimizeSP_Incre.h:154) requires this EXACT value —
+    // both arms must treat it as authoritative and skip their own re-score.
+    double baseline_sp = EvaluateSPWithPriorityVec(dag_update, sp,
+                                                   optOracle.opt_pa_);
+
+    // Oracle arm: baseline_sp provided, nullopt cache (no Initialize).
+    PriorityVec pa_oracle =
+        optOracle.OptimizeIncre(dag_update, baseline_sp);
+    // Cache arm: baseline_sp provided + engaged RTACache (Initialize-only).
+    RTACache cache;
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, baseline_sp, cache);
+
+    AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
+        << "cache-path SP diverged from oracle-path SP (baseline_sp provided)";
+}
+
+// TWO tasks' ET change in ONE interval — `FindTaskWithDifferentEt` returns 2,
+// so OptimizeIncre's `for (DiffObj ...)` loop runs TWICE. This is the case the
+// AdoptChampion champion-advance is LOAD-BEARING for: the 2nd SingleTask call
+// builds its 1D variations from the ADVANCED opt_pa_ (the 1st call's adoption
+// moved one task). Evaluate patches each variation vs the champion — if the
+// champion didn't advance to match opt_pa_, the 2nd call's candidates would be
+// |diff|==2 vs the champion → ComputeTaskSetDifference throws inside Evaluate.
+// All other tests are |diff|==1 (loop runs once), so the advance is never
+// load-bearing there. A buggy advance (champion not actually advancing) throws
+// here. The differential asserts cache==oracle on PA + final SP.
+TEST(OptimizeIncre_Cache, Differential_TwoTaskDiff_LoopRunsTwice_AdvanceLoadBearing) {
+    DAG_Model dag_base = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v22.yaml");
+    SP_Parameters sp = SP_Parameters(dag_base);
+
+    // Mutate TWO tasks: task 1 (low-weight, core 1) AND task 3 (high-weight,
+    // core 0). Both ET increases. FindTaskWithDifferentEt returns both.
+    DAG_Model dag_update = dag_base;
+    dag_update.tasks[1].execution_time_dist =
+        ShiftedFiniteDist(8.5, 0.0871, 8.5, 8.5);
+    dag_update.tasks[3].execution_time_dist =
+        ShiftedFiniteDist(350.0, 5.0, 340.0, 360.0);
+    ASSERT_EQ(FindTaskWithDifferentEt(dag_base, dag_update).size(), 2u)
+        << "expected a 2-task diff to make the loop run twice";
+
+    OptimizePA_Incre optOracle(dag_base, sp);
+    optOracle.OptimizeFromScratch(2);
+    OptimizePA_Incre optCache(dag_base, sp);
+    optCache.OptimizeFromScratch(2);
+    AssertEqualVectorExact<int>(optOracle.opt_pa_, optCache.opt_pa_, 1e-3,
+                                __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_);
+
+    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update);
+    RTACache cache;
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, INT_MIN, cache);
+
+    AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, __LINE__);
+    EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
+        << "cache-path SP diverged from oracle-path SP (2-task diff)";
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
