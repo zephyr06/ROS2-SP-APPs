@@ -5,7 +5,13 @@ namespace SP_OPT_PA {
 void OptimizePA_BF::IterateAllPAs(
     PriorityVec& priority_assignment,
     std::unordered_set<int>& tasks_assigned_priority, int start) {
-    if (ifTimeout(start_time_))
+    // P1.14 — poll the SHARED BF budget (installed by
+    // EnumeratePA_with_TimeLimits) rather than this object's own per-leaf
+    // start_time_ (which is captured fresh at every OptimizePA_BruteForce
+    // construction and therefore could not bound the AGGREGATE across
+    // leaves). BFSharedBudgetCancelled() returns false outside a BF search,
+    // so the legacy standalone OptimizePA_BF::Optimize() path is unaffected.
+    if (BFSharedBudgetCancelled())
         return;
     if (start == N) {
         // if(priority_assignment[0]!=1)

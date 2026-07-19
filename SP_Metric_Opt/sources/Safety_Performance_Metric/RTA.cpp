@@ -1,6 +1,7 @@
 
 #include <unordered_map>
 
+#include "sources/Optimization/OptimizeSP_Base.h"  // P1.14: BFSharedBudgetCancelled
 #include "sources/Safety_Performance_Metric/RTA.h"
 #include "sources/TaskModel/RegularTasks.h"
 namespace SP_OPT_PA {
@@ -85,6 +86,20 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     hp_tasks_et_conv_vec.assign(n, FiniteDist({Value_Proba(0, 1.0)}));
     FiniteDist hp_tasks_et_conv({Value_Proba(0, 1.0)});
     for (int i = 0; i < n; i++) {
+        // P1.14 — cooperative cancel: this per-task RTA loop is the hottest
+        // part of ObtainSP_DAG (the HP-ET convolution grows the distribution
+        // support combinatorially, so a single task's GetRTA_OneTask +
+        // Convolve can take seconds on wide ET distributions). Poll the BF
+        // shared budget between tasks so a runaway single
+        // EvaluateSPWithPriorityVec call can be interrupted in place rather
+        // than stranding the BF search past TIME_LIMIT. No-op outside a BF
+        // search (BFSharedBudgetCancelled() is false). On cancel we return
+        // the (partial, garbage) rtas built so far; the caller
+        // (ObtainSP_TaskSet -> ObtainSP_DAG -> EvaluateSPWithPriorityVec)
+        // discards the partial result via its post-call
+        // BFSharedBudgetCancelled() check, so the incomplete rtas never
+        // influences the BF incumbent.
+        if (BFSharedBudgetCancelled()) return rtas;
         hp_tasks_et_conv_vec[i] = hp_tasks_et_conv;
         FiniteDist rta_curr =
             GetRTA_OneTask(tasks[i], hp_tasks, hp_tasks_et_conv);

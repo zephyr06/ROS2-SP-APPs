@@ -35,7 +35,12 @@ std::vector<std::vector<double>> RecordTimeLimitOptions(
 
 void OptimizePA_with_TimeLimitsStatus::Optimize(
     uint trav_task_index, std::vector<double>& time_limit_for_task) {
-    if (ifTimeout(start_time_))
+    // P1.14 — poll the SHARED BF budget (installed by
+    // EnumeratePA_with_TimeLimits via BFDLSharedBudget) rather than this
+    // object's own start_time_. The per-leaf OptimizePA_BF does the same.
+    // BFSharedBudgetCancelled() is only true while a BFDLSharedBudget scope
+    // is active, so this guard is inert outside a BF search.
+    if (BFSharedBudgetCancelled())
         return;
     if (trav_task_index == time_limit_option_for_each_task.size()) {
         DAG_Model dag_tasks_cur =
@@ -64,7 +69,24 @@ void OptimizePA_with_TimeLimitsStatus::Optimize() {
 
 ResourceOptResult EnumeratePA_with_TimeLimits(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
+    // P1.14 — install ONE shared TIME_LIMIT budget for the entire BF search.
+    // `start_time_` was captured at this optimizer's construction
+    // (OptimizeSP_TL_BF.h:22), i.e. at entry to this function. The
+    // BFDLSharedBudget guard publishes it so that:
+    //   - the outer TL-combination recursion (Optimize above) polls it via
+    //     BFSharedBudgetCancelled();
+    //   - the inner per-leaf OptimizePA_BF (constructed fresh per leaf by
+    //     OptimizePA_BruteForce) polls the SAME shared budget instead of its
+    //     own per-leaf start_time_ (which previously reset every leaf and
+    //     could not bound the aggregate);
+    //   - ObtainSP_DAG / ObtainSP_TaskSet poll it between sub-computations so
+    //     a single runaway EvaluateSPWithPriorityVec call (wide RTA
+    //     convolutions) can be interrupted in place rather than stranding the
+    //     search past the cap.
+    // The guard restores the prior budget (nullptr) on destruction, so this
+    // is re-entrant and inert for any non-BF caller of ObtainSP_DAG.
     OptimizePA_with_TimeLimitsStatus optimizer(dag_tasks, sp_parameters);
+    BFDLSharedBudget shared_budget(optimizer.start_time_);
     optimizer.Optimize();
     return optimizer.res_opt;
 }

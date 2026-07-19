@@ -56,6 +56,11 @@ double ObtainSP_TaskSet(const TaskSet& tasks,
     std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
     double sp_overall = 0;
     for (int i = 0; i < tasks.size(); i++) {
+        // P1.14 — cooperative cancel: the per-task RTA above can be expensive
+        // (wide ET distributions -> large convolution support); poll the BF
+        // shared budget between tasks so a runaway eval is interruptible.
+        // No-op outside a BF search (BFSharedBudgetCancelled() is false).
+        if (BFSharedBudgetCancelled()) return sp_overall;
         int task_id = tasks[i].id;
         double ddl_miss_chance =
             GetDDL_MissProbability(rtas[i], tasks[i].deadline);
@@ -94,11 +99,27 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
     }
     double sp_overall = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 
+    // P1.14 — cooperative cancel: if the per-task RTA above (or the budget
+    // check inside ObtainSP_TaskSet) already saw the BF budget exhausted,
+    // skip the expensive per-chain RTDA convolution and return immediately.
+    // EvaluateSPWithPriorityVec discards the partial result via its own
+    // post-call BFSharedBudgetCancelled() check.
+    if (BFSharedBudgetCancelled()) {
+        if (GlobalVariables::debugMode == 1)
+            EndTimer("ObtainSP_DAG");
+        return sp_overall;
+    }
+
     std::vector<FiniteDist> reaction_time_dists =
         GetRTDA_Dist_AllChains<ObjReactionTime>(dag_tasks);
     std::vector<double> chains_ddl = GetChainsDDL(dag_tasks);
 
     for (int i = 0; i < reaction_time_dists.size(); i++) {
+        // P1.14 — poll between chains as well: GetRTDA_Dist_AllChains is
+        // computed eagerly above, but the per-chain ddl-miss probability
+        // loop is a natural cancellation point and keeps the cancel
+        // responsive if the chain list is long.
+        if (BFSharedBudgetCancelled()) break;
         int chain_id = i;
         double ddl_miss_chance =
             GetDDL_MissProbability(reaction_time_dists[i], chains_ddl[i]);

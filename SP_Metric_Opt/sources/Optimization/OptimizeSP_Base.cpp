@@ -15,6 +15,39 @@ bool ifTimeout(TimerType start_time) {
     return false;
 }
 
+// P1.14 — the active BF shared budget (or std::nullopt when no BF search is in
+// flight). File-scope (not thread_local): the BF search is single-threaded,
+// and the orchestrator runs one scheduler call per interval synchronously.
+// `optional<reference_wrapper<>>` (not a raw pointer): the registry only
+// BORROWS the currently-active scope guard (a stack-local object owned by
+// EnumeratePA_with_TimeLimits), matching the codebase's RTACacheOpt idiom.
+namespace {
+std::optional<std::reference_wrapper<BFDLSharedBudget>> g_active_bf_budget =
+    std::nullopt;
+}  // namespace
+
+BFDLSharedBudget::BFDLSharedBudget(TimerType start)
+    : start_(start), prev_(g_active_bf_budget) {
+    g_active_bf_budget = std::ref(*this);
+}
+
+BFDLSharedBudget::~BFDLSharedBudget() {
+    g_active_bf_budget = prev_;
+}
+
+bool BFSharedBudgetCancelled() {
+    if (!g_active_bf_budget) return false;
+    const BFDLSharedBudget& active = g_active_bf_budget->get();
+    auto curr_time = std::chrono::high_resolution_clock::now();
+    // Millisecond (not second) granularity so a single SP-eval that exceeds
+    // the cap is caught promptly rather than only after a full second. The
+    // legacy per-leaf `ifTimeout` keeps its seconds granularity for the
+    // non-BF paths that still call it.
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+               curr_time - active.start_)
+               .count() >= GlobalVariables::TIME_LIMIT * 1000;
+}
+
 PriorityVec GetPriorityAssignments(const TaskSet& tasks) {
     TaskSet tasks_copy = tasks;
     SortTasksByPriority(tasks_copy);
@@ -149,12 +182,30 @@ double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
                                  const SP_Parameters& sp_parameters,
                                  const PriorityVec& priority_assignment) {
 
+    // P1.14 — cooperative cancel: if the active BF shared budget is already
+    // exhausted when we ENTER this eval, skip the expensive ObtainSP_DAG and
+    // return the worst-possible sentinel. The BF enumeration node that called
+    // us will then fall through to its own ifTimeout check and unwind. This
+    // bounds the overshoot to (one in-flight ObtainSP_DAG) instead of (one
+    // full N! leaf). ObtainSP_DAG/ObtainSP_TaskSet poll BFSharedBudgetCancelled()
+    // between sub-computations so even a single runaway eval is interruptible.
+    if (BFSharedBudgetCancelled()) {
+        return INT_MIN;
+    }
+
     auto start_time = CurrentTimeInProfiler;
     TaskSet tasks_eval =
         UpdateTaskSetPriorities(dag_tasks.tasks, priority_assignment);
     DAG_Model dag_tasks_eval = dag_tasks;
     dag_tasks_eval.tasks = tasks_eval;
     auto res = ObtainSP_DAG(dag_tasks_eval, sp_parameters);
+
+    // P1.14 — if ObtainSP_DAG was interrupted mid-eval (a sub-computation saw
+    // the budget exhausted), its return value is partial/garbage; discard it
+    // by returning the sentinel so this permutation loses to the incumbent.
+    if (BFSharedBudgetCancelled()) {
+        return INT_MIN;
+    }
 
     auto finish_time = CurrentTimeInProfiler;
     if(GlobalVariables::debugMode == 1)
