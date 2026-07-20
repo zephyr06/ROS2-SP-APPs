@@ -28,6 +28,12 @@
 #                  config to scope the run -- e.g.:
 #                      CONFIG_JSON=simulation_experiments/configs/incr_et_8tasks_config.json \
 #                          ./run_end_to_end.sh
+#   RERUN_MODE   - reuse (default) | clear_all
+#                  'clear_all' wipes <run_root>/sim/ (generated tasksets +
+#                  per-scheduler results + sweep variants) before the stages
+#                  run, so everything regenerates from scratch. 'reuse' keeps
+#                  existing artifacts and lets each stage's own reuse/resume
+#                  guards decide.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
@@ -39,6 +45,7 @@ VERBOSE="${VERBOSE:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 PYTHON="${PYTHON:-python3}"
 CONFIG_JSON="${CONFIG_JSON:-}"
+RERUN_MODE="${RERUN_MODE:-reuse}"
 
 SIM_BIN="${PROJECT_ROOT}/${BIN_DIR}/tests/RunOrchestrator"
 
@@ -48,7 +55,20 @@ print_header "End-to-End Pipeline" \
     "Stages:       simulate -> sweep -> aggregate (fixed order)" \
     "Binary:       ${SIM_BIN}" \
     "Verbose:      ${VERBOSE}" \
+    "Rerun mode:   ${RERUN_MODE}" \
     "$( [[ "${DRY_RUN}" == "1" ]] && echo "Dry run:      YES (commands printed, nothing executed)" )"
+
+# --- Build the release binaries first (skip for dry-run) ---
+# Rebuilds the C++ binaries in ${BIN_DIR} so the pipeline runs against the
+# current source. Dry-run skips both the build and the binary check below.
+if [[ "${DRY_RUN}" != "1" ]]; then
+    print_header "Building ${BIN_DIR}/" "make -j6 in ${PROJECT_ROOT}/${BIN_DIR}"
+    cd "${PROJECT_ROOT}/${BIN_DIR}" && make -j6 || {
+        echo "ERROR: build failed in ${PROJECT_ROOT}/${BIN_DIR}" >&2
+        exit 1
+    }
+    cd "${PROJECT_ROOT}"
+fi
 
 # --- Validation (skip for dry-run, since nothing runs) ---
 if [[ "${DRY_RUN}" != "1" ]]; then
@@ -67,6 +87,9 @@ CMD=(
 
 if [[ -n "${CONFIG_JSON}" ]]; then
     CMD+=(--config_json "${CONFIG_JSON}")
+fi
+if [[ "${RERUN_MODE}" != "reuse" ]]; then
+    CMD+=(--rerun_mode "${RERUN_MODE}")
 fi
 if [[ "${DRY_RUN}" == "1" ]]; then
     CMD+=(--dry_run)

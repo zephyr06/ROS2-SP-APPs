@@ -50,6 +50,7 @@ Notes
 """
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -256,6 +257,59 @@ def run_command(cmd, dry_run):
     return True
 
 
+def apply_rerun_mode(rerun_mode, run_root, dry_run, verbose):
+    """Honor the ``--rerun_mode`` policy by clearing prior run artifacts.
+
+    The pipeline's reuse semantics are otherwise opt-in per stage
+    (``compare_optimizers`` reuses existing tasksets unless its config drifted;
+    ``--resume`` skips arms whose metrics already exist). ``--rerun_mode``
+    gives the orchestrator a single up-front knob to force a clean re-run
+    instead of fighting those per-stage guards.
+
+    Parameters
+    ----------
+    rerun_mode : str
+        One of the ``--rerun_mode`` choices. ``"reuse"`` is a no-op (the
+        default, current behavior). ``"clear_all"`` wipes the whole
+        ``<run_root>/sim/`` tree -- generated tasksets AND their per-scheduler
+        results AND the sweep variants -- so the simulate stage regenerates
+        everything from scratch. (A future ``"clear_results"`` will keep the
+        generated tasksets and wipe only the simulation outputs.)
+    run_root : str
+        Absolute path to this run's co-located root (``<output_parent>/runs/
+        <run_id>``). The sim tree lives at ``<run_root>/sim/``.
+    dry_run : bool
+        If True, report what would be removed without touching the filesystem.
+    verbose : int
+        Verbosity level; controls the "already absent" / "removed" log lines.
+
+    Returns
+    -------
+    bool
+        True always (clearing never aborts the pipeline; a missing dir is not
+        an error). Returned for symmetry with the stage functions.
+    """
+    if rerun_mode == "reuse":
+        return True
+    if rerun_mode != "clear_all":
+        # argparse choices prevent this, but guard defensively.
+        print(f"  WARNING: unknown rerun_mode '{rerun_mode}'; nothing cleared.")
+        return True
+
+    sim_dir = os.path.join(run_root, "sim")
+    if not os.path.isdir(sim_dir):
+        if verbose >= 1:
+            print(f"  [rerun_mode=clear_all] {sim_dir} not present; nothing to clear.")
+        return True
+    if dry_run:
+        print(f"  [dry-run] would remove: {sim_dir}")
+        return True
+    if verbose >= 1:
+        print(f"  [rerun_mode=clear_all] removing {sim_dir} (tasksets + results + sweep)")
+    shutil.rmtree(sim_dir)
+    return True
+
+
 def stage_simulate(cfg, output_parent, run_root, verbose, dry_run):
     """Run the per-task-count simulation stage."""
     task_counts = cfg.get("num_tasks_for_cross_task_comparison", [4, 6])
@@ -327,6 +381,14 @@ def main():
         "--dry_run", action="store_true",
         help="Print the commands that would run without executing them.",
     )
+    parser.add_argument(
+        "--rerun_mode", choices=["reuse", "clear_all"], default="reuse",
+        help="How to treat prior run artifacts before the stages run. "
+             "'reuse' (default) keeps existing tasksets + results and lets each "
+             "stage's own reuse/resume guards decide. 'clear_all' wipes the "
+             "whole <run_root>/sim/ tree (generated tasksets + per-scheduler "
+             "results + sweep variants) so everything regenerates from scratch.",
+    )
     args = parser.parse_args()
 
     cfg = load_experiment_config(mode=args.mode, config_path=args.config_json)
@@ -349,6 +411,12 @@ def main():
     # scans <run_root>/sim/ and writes Figs 1A-1F/3 under <run_root>/figures/.
     # Computed once here and threaded through so every stage agrees on the path.
     run_root = build_run_root(output_parent, cfg)
+
+    # Apply the rerun policy up front: --rerun_mode clear_all wipes
+    # <run_root>/sim/ before any stage runs, so the simulate stage regenerates
+    # tasksets + re-simulates + re-sweeps + re-aggregates instead of fighting
+    # each stage's own reuse/resume guards. 'reuse' (default) is a no-op.
+    apply_rerun_mode(args.rerun_mode, run_root, args.dry_run, args.verbose)
 
     # Pre-flight: validate the binary exists. The simulate and sweep stages
     # both invoke RunOrchestrator, and both always run (there is no
@@ -376,6 +444,8 @@ def main():
     print(f"  Output: {output_parent}")
     print(f"  Tasks:  {cfg.get('num_tasks_for_cross_task_comparison')}")
     print(f"  Sweep:  {cfg.get('interval_sweep_seconds_list')}")
+    if args.rerun_mode != "reuse":
+        print(f"  Rerun:  {args.rerun_mode}")
 
     # Stages always run together, in fixed order: simulate -> sweep ->
     # aggregate. They are dependent (aggregate reads what simulate wrote;
