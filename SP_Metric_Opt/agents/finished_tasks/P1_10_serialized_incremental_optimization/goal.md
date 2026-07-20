@@ -209,6 +209,16 @@ to env drift (a task that drifts right after being skipped sits stale for one cy
 **Implement AFTER** the core serialized loop lands + the single-change invariant is
 proven (Phase 3, `tasks.md`).
 
+> **ELEVATED 2026-07-17 to its own task — [[P1.11]]**
+> (`active_tasks/P1_11_partial_task_subset_optimization/`), with the user's
+> percentage-based parameterization: a single knob `IncrementalTaskOptimizationPercentage`
+> (X in (0,1], 1.0 = current prod behavior bit-identical), a weight-biased +
+> fair selection policy (stale-bucket force-include at `CoverageHorizon=⌈1/X⌉`
+> → every task re-optimized within `⌈1/X⌉+1` intervals), persistent
+> `intervals_since_last_optimized_` state, and a pure `SelectTaskSubset` free
+> fn for unit-testability. Full design + D1–D7 open questions in P1.11's
+> `goal.md`. The core serialized loop + invariant this builds on are DONE here.
+
 ---
 
 ## Open design questions (D1–D5) — for the user

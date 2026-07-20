@@ -169,14 +169,25 @@
       ZERO `rta_cache_`/`rta_cache_active_` references and 17 P1.14 markers.
       Handed to user for review + commit (agents only `git add`).
 
-## Phase 3 — Verify on the A/B
+## Phase 3 — Verify on the A/B (BLOCKED on P1.15)
+
+> **Status 2026-07-19: blocked.** The Phase 2 + 2b fixes are committed at HEAD
+> `bfbec7e5`, but the P25 A/B used to verify them is the *same* run where
+> P1.15 found the `INCR_Reopt_X>1` SIGABRT: the Reopt_5/10/30/60 arms abort
+> (exit 134) on the hard tasksets, the harness swallows the crash, and the
+> aggregate then compares schedulers over unequal taskset sets. Re-running
+> the A/B before P1.15 (harness loud-failure + crash fix) lands would just
+> reproduce the broken aggregate. Unblocks when P1.15 Phase 1+2 are done.
 
 - [ ] **Rebuild the release binary** (`release/tests/RunOrchestrator` is stale,
       pre-fix). The DEBUG `build/` is current (17/17 ctest green) but the A/B
       runs against the release binary. Must pick up BOTH the BF guard
-      (Phase 2) AND the INCR mirror (Phase 2b).
+      (Phase 2) AND the INCR mirror (Phase 2b) — both committed at HEAD, so a
+      clean rebuild picks them up. (Note: P1.15 Phase 2 may add a further
+      optimizer change to the INCR path; rebuild after that too.)
 - [ ] **Re-run the P25 period A/B** (or a focused BF-only re-run on the 10
-      tasksets at N=6). Confirm BF `Mean_Scheduler_Execution_Time_s` drops to
+      tasksets at N=6) on the **fixed harness** so any remaining crash is loud,
+      not silent. Confirm BF `Mean_Scheduler_Execution_Time_s` drops to
       ≤ ~10 s and the per-taskset totals in the `goal.md` table all come under
       the cap (plus bounded overshoot). The INCR arms are already ~0.2 s/interval
       (well under cap), so the mirror is a safety-net for pathological tasksets
@@ -185,7 +196,7 @@
       budget (tasksets 1, 4 at minimum; the ~10.1 s cluster may see a tiny SP
       change if a leaf is now cut off — document it).
 - [ ] **Update `dev_log.md`** with the before/after numbers + the final
-      attribution. Ask the user to review + commit.
+      attribution.
 
 ## Refactor follow-up (deferred; flag for user)
 

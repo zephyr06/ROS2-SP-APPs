@@ -1,9 +1,13 @@
 # P1.14 — BF Scheduler Execution Time Violates Its 10s `TIME_LIMIT` Cap
 
-> Filed 2026-07-19. **Phase 2 fix IMPLEMENTED + TDD-green in the working tree
-> (NOT committed) 2026-07-19.** Phase 3 (re-run the A/B on the release binary
-> to confirm BF mean drops to ≤ ~10 s) is the only remaining step before
-> review/commit. D1=(a) RESOLVED: `TIME_LIMIT` bounds the whole
+> Filed 2026-07-19. **Phase 2 BF fix + Phase 2b INCR mirror IMPLEMENTED +
+> TDD-green + COMMITTED at HEAD `bfbec7e5` (branch `clean_simulation`)
+> 2026-07-19.** Phase 3 (re-run the A/B on the release binary to confirm BF
+> mean drops to ≤ ~10 s) is **BLOCKED on P1.15**: the same A/B's `INCR_Reopt_X>1`
+> arms abort with SIGABRT (exit 134) on the hard tasksets — the harness
+> currently swallows the crash and aggregates over unequal taskset sets, so
+> the A/B cannot be trusted until P1.15 lands (harness loud-failure fix +
+> optimizer crash fix). D1=(a) RESOLVED: `TIME_LIMIT` bounds the whole
 > `EnumeratePA_with_TimeLimits` call per interval via a single shared budget.
 
 ---
