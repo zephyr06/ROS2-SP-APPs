@@ -106,7 +106,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     void ApplyWCETAblationIfRequired(DAG_Model& dag_tasks);
 
-    void UpdateRecords(const OptimizePA_Incre& optimizer,
+    bool UpdateRecords(const OptimizePA_Incre& optimizer,
                        const std::vector<double>& time_limits);
 
     // Evaluates one TL vector. When `from_scratch` is true a fresh

@@ -6,10 +6,10 @@
 
 namespace SP_OPT_PA {
 // P1.13 — Evaluate returns a const ref into the cache's candidate_rta_ buffer,
-// which the next Evaluate overwrites. But the RTA is needed both to score SP AND
-// (on adoption) to feed AdoptChampion, so binding the returned ref directly would
-// dangle. This struct COPIES the RTA into a stable local. Mirrors the no-raw-
-// pointer idiom.
+// which the next Evaluate overwrites. But the RTA is needed both to score SP
+// AND (on adoption) to feed AdoptChampion, so binding the returned ref directly
+// would dangle. This struct COPIES the RTA into a stable local. Mirrors the
+// no-raw- pointer idiom.
 struct NodeRtasHolder {
     std::vector<FiniteDist> rtas;
 };
@@ -176,9 +176,9 @@ std::vector<int> FindTasksWithFlexibleTimeLimits(const DAG_Model& dag_tasks) {
 std::vector<DiffObj> FindEnvTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated) {
     // Type-E (env-changed) diff: FindTaskWithDifferentEt's result MINUS TL-
-    // flexible tasks. See the header comment for why the TL-flexible set must be
-    // filtered (FiniteDist::operator!= is 10%-relative approx_equal + TL-flexible
-    // dists carry raw YAML mu/min/max → non-env inequality).
+    // flexible tasks. See the header comment for why the TL-flexible set must
+    // be filtered (FiniteDist::operator!= is 10%-relative approx_equal +
+    // TL-flexible dists carry raw YAML mu/min/max → non-env inequality).
     std::vector<DiffObj> full =
         FindTaskWithDifferentEt(dag_tasks, dag_tasks_updated);
     std::vector<int> tl_flexible = FindTasksWithFlexibleTimeLimits(dag_tasks);
@@ -234,6 +234,12 @@ int GetProrityIndex(const PriorityVec& pa_vec, int task_id) {
     CoutError("Task not found in GetProrityIndex");
     return -1;
 }
+
+// TODO (efficiency improvements): add a new task under agents/active_Tasks,
+// about FindPriorityVec1D_Variations in
+// sources/Optimization/OptimizeSP_Incre.cpp. high-level idea is that, if the
+// per-core priority assignment doesn't change after we obtain pa_vec_new, then
+// there is no need to perform such optimization
 std::vector<PriorityVec> FindPriorityVec1D_Variations(
     const PriorityVec& pa_vec, int task_id,
     PriorityChangeStatus priority_change, bool exclude_opt_pa) {
@@ -301,30 +307,31 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
     RTACacheOpt rta_cache) {
     // Assumes EXACTLY ONE task's ET changed (task_id). Trusts opt_sp_ as the
     // current baseline (caller-set). Re-searches task_id over one half of the
-    // priority positions (per AnalyzePriorityChangeStatus), adopting on strict >.
-    // Bit-identical to the former :274-292 loop body. Does NOT advance
+    // priority positions (per AnalyzePriorityChangeStatus), adopting on strict
+    // >. Bit-identical to the former :274-292 loop body. Does NOT advance
     // dag_tasks_ (orchestrator-owned).
     std::vector<PriorityVec> pa_vec_variations = FindPriorityVec1D_Variations(
         opt_pa_, task_id,
         AnalyzePriorityChangeStatus(sp_parameters_, task_id, et_increased));
-    // P1.13 — cache path. dag_tasks_update is TL-baked (Q5), so feed an all-(-1)
-    // tl: ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache sees exactly
-    // the final ETs the oracle did → bit-identity. The champion is opt_pa_ on the
-    // carried dag (established by OptimizeIncre's baseline Initialize, or a prior
-    // adoption here). Each variation moves ONE task's priority position vs
-    // opt_pa_ → |diff|<=1 → Evaluate patches the suffix. On a strict-improvement
-    // adoption, AdoptChampion MUST advance the champion so the NEXT variation's
-    // diff stays |diff|<=1 (Evaluate never advances the champion itself).
+    // P1.13 — cache path. dag_tasks_update is TL-baked (Q5), so feed an
+    // all-(-1) tl: ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache
+    // sees exactly the final ETs the oracle did → bit-identity. The champion is
+    // opt_pa_ on the carried dag (established by OptimizeIncre's baseline
+    // Initialize, or a prior adoption here). Each variation moves ONE task's
+    // priority position vs opt_pa_ → |diff|<=1 → Evaluate patches the suffix.
+    // On a strict-improvement adoption, AdoptChampion MUST advance the champion
+    // so the NEXT variation's diff stays |diff|<=1 (Evaluate never advances the
+    // champion itself).
     std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     for (const PriorityVec& priority_assignment : pa_vec_variations) {
         double sp_eval;
         NodeRtasHolder rtas_holder;
         if (rta_cache) {
             // COPY Evaluate's return: the const ref points into the cache's
-            // candidate_rta_ buffer, overwritten by the next Evaluate. Stabilize
-            // in rtas_holder for both SP scoring and AdoptChampion.
-            rtas_holder.rtas =
-                rta_cache->get().Evaluate(dag_tasks_update, priority_assignment, no_tl);
+            // candidate_rta_ buffer, overwritten by the next Evaluate.
+            // Stabilize in rtas_holder for both SP scoring and AdoptChampion.
+            rtas_holder.rtas = rta_cache->get().Evaluate(
+                dag_tasks_update, priority_assignment, no_tl);
             sp_eval = ObtainSP_Full_From_NodeRTAs(
                 dag_tasks_update, sp_parameters_, priority_assignment, no_tl,
                 rtas_holder.rtas);
@@ -337,8 +344,9 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
             opt_sp_ = sp_eval;
             opt_pa_ = priority_assignment;
             if (rta_cache) {
-                rta_cache->get().AdoptChampion(dag_tasks_update, priority_assignment,
-                                               no_tl, rtas_holder.rtas);
+                rta_cache->get().AdoptChampion(dag_tasks_update,
+                                               priority_assignment, no_tl,
+                                               rtas_holder.rtas);
             }
         }
     }
@@ -352,19 +360,19 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
         CoutError("OptimizeIncre called before OptimizeFromScratch");
     }
     // P1.13 — if no cache was provided, create a local one so the cache is
-    // ALWAYS engaged for this interval: both the baseline re-score below and the
-    // per-variation traversal in OptimizeIncre_SingleTask reuse RTA. The local
-    // outlives the loop (same scope), bound via std::ref (no raw pointer). A
-    // passed-in cache is used as-is (e.g. shared across intervals). Either way
-    // rta_cache is engaged from here on.
+    // ALWAYS engaged for this interval: both the baseline re-score below and
+    // the per-variation traversal in OptimizeIncre_SingleTask reuse RTA. The
+    // local outlives the loop (same scope), bound via std::ref (no raw
+    // pointer). A passed-in cache is used as-is (e.g. shared across intervals).
+    // Either way rta_cache is engaged from here on.
     [[maybe_unused]] RTACache local_cache;
     if (!rta_cache) {
         rta_cache = std::ref(local_cache);
     }
     // reset optimal sp
-    // baseline_sp (default INT_MIN = "not provided"): score the carried PA under
-    // the new env. A caller that already holds that SP may pass it to skip the
-    // re-score; if provided it MUST equal
+    // baseline_sp (default INT_MIN = "not provided"): score the carried PA
+    // under the new env. A caller that already holds that SP may pass it to
+    // skip the re-score; if provided it MUST equal
     // EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_).
     //
     // P1.13 — cache path: the baseline re-score must INITIALIZE the cache
@@ -381,11 +389,12 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
         if (rta_cache) {
             const std::vector<FiniteDist>& baseline_rtas =
                 rta_cache->get().Initialize(dag_tasks_update, opt_pa_, no_tl);
-            opt_sp_ = ObtainSP_Full_From_NodeRTAs(
-                dag_tasks_update, sp_parameters_, opt_pa_, no_tl, baseline_rtas);
+            opt_sp_ =
+                ObtainSP_Full_From_NodeRTAs(dag_tasks_update, sp_parameters_,
+                                            opt_pa_, no_tl, baseline_rtas);
         } else {
-            opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_,
-                                                opt_pa_);
+            opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_update,
+                                                sp_parameters_, opt_pa_);
         }
     } else {
         opt_sp_ = baseline_sp;

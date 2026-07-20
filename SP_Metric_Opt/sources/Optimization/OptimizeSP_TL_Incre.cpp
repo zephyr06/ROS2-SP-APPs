@@ -102,7 +102,7 @@ bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step) {
     return false;
 }
 
-void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
+bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = false;
     if (optimizer.opt_sp_ > opt_sp_ &&
@@ -137,6 +137,7 @@ void OptimizePA_Incre_with_TimeLimits::UpdateRecords(
                       << "opt_sp_ = " << opt_sp_ << std::endl;
         }
     }
+    return should_update;
 }
 
 double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
@@ -181,6 +182,11 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     eval_count_++;
     (void)K;  // unused: the primitive re-searches one task's 1D positions (no
               // beam)
+
+    // P1.16: Backup the RTA cache state before performing the 1D search / sub-incremental eval.
+    // If the trial configuration is rejected by UpdateRecords, we restore this backup to keep
+    // the cache champion in sync with res_opt_.
+    RTACache cache_backup = rta_cache_;
 
     // The per-eval DAG rebuild is required, not redundant: the cost-dominant
     // caller is the Type-L walk, which calls this once PER trial TL step with a
@@ -286,7 +292,10 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
         dag_tasks_cur, static_cast<int>(task_idx), et_increased,
         std::ref(rta_cache_));
     double current_sp = challenger.opt_sp_;
-    UpdateRecords(challenger, time_limits);
+    bool updated = UpdateRecords(challenger, time_limits);
+    if (!updated) {
+        rta_cache_ = cache_backup;
+    }
     return current_sp;
 }
 
