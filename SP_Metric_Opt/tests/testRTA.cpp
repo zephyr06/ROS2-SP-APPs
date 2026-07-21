@@ -473,7 +473,7 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
 }
 
 // P1.17 task 1a remainder — pin that champ_tasks_baked_ (the cached champion
-// TL-bake TryComputeSingleChange reads instead of re-baking) is REFRESHED on
+// TL-bake IsSingleTaskChange reads instead of re-baking) is REFRESHED on
 // AdoptChampion. The hazard this cache introduces: if champ_tasks_baked_ were
 // left holding the FIRST champion's baked tasks after a second AdoptChampion
 // with a different TL, FindTaskWithDifferentEt would compare the candidate
@@ -518,7 +518,7 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
 
 // P1.17 task 1b remainder — pin that the champion per-core order cached on
 // Initialize/AdoptChampion is REFRESHED on AdoptChampion. The hazard this cache
-// introduces: TryComputeSingleChange reads the cached champion per-core order to
+// introduces: IsSingleTaskChange reads the cached champion per-core order to
 // diff against the candidate; if it were left holding the FIRST champion's order
 // after a second AdoptChampion whose PA differs, AnalyzePrioritySwitch would
 // compare the candidate against the stale order → mis-locate the changed core /
@@ -945,12 +945,13 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
        ComputeTaskSetDifference_ClassesThreeCases) {
     RTACache cache;
     cache.Initialize(dag_tasks, priority_vec, time_limits);
+    TaskSetDifference ignored;  // out-param for the predicate form
 
     // |diff|==0: same triple → changed_task_id == -1.
     TaskSetDifference d0 =
         cache.ComputeTaskSetDifference(dag_tasks, priority_vec, time_limits);
     EXPECT_EQ(d0.changed_task_id, -1);
-    EXPECT_TRUE(cache.IsSingleTaskChange(dag_tasks, priority_vec, time_limits));
+    EXPECT_TRUE(cache.IsSingleTaskChange(dag_tasks, priority_vec, time_limits, ignored));
 
     // |diff|==1: one TL change on task 1 (core 0).
     std::vector<double> tl_cand = {-1, 3, -1, -1};
@@ -959,12 +960,12 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     EXPECT_EQ(d1.changed_task_id, 1);
     EXPECT_EQ(d1.core, 0);
     EXPECT_EQ(d1.old_pos, d1.new_pos);  // ET-only move: position unchanged
-    EXPECT_TRUE(cache.IsSingleTaskChange(dag_tasks, priority_vec, tl_cand));
+    EXPECT_TRUE(cache.IsSingleTaskChange(dag_tasks, priority_vec, tl_cand, ignored));
 
     // |diff|>1: two TL changes → IsSingleTaskChange false, and
     // ComputeTaskSetDifference throws (invariant violation).
     std::vector<double> tl_two = {-1, 3, 4, -1};
-    EXPECT_FALSE(cache.IsSingleTaskChange(dag_tasks, priority_vec, tl_two));
+    EXPECT_FALSE(cache.IsSingleTaskChange(dag_tasks, priority_vec, tl_two, ignored));
     EXPECT_THROW(
         cache.ComputeTaskSetDifference(dag_tasks, priority_vec, tl_two),
         std::runtime_error);
@@ -1014,7 +1015,8 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache, NoChampion_AllNoReuse) {
     TaskSetDifference d =
         cache.ComputeTaskSetDifference(dag_tasks, priority_vec, time_limits);
     EXPECT_EQ(d.changed_task_id, -1);
-    EXPECT_FALSE(cache.IsSingleTaskChange(dag_tasks, priority_vec, time_limits));
+    TaskSetDifference ignored;  // out-param for the predicate form
+    EXPECT_FALSE(cache.IsSingleTaskChange(dag_tasks, priority_vec, time_limits, ignored));
 }
 
 // ============================================================================

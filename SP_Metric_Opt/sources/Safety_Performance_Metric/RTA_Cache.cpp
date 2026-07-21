@@ -187,7 +187,7 @@ const std::vector<FiniteDist>& RTACache::Initialize(
     // into its cache member: champ_tasks_baked_ is the canonical-order TL-bake
     // (what FindTaskWithDifferentEt reads by index), champ_prioritized_ is the
     // pa-sorted form (what Evaluate's reindex + RebuildPrefixes read), and
-    // champ_per_core_ is the per-core order TryComputeSingleChange reads. All
+    // champ_per_core_ is the per-core order IsSingleTaskChange reads. All
     // helpers return-by-value + take const-ref, so they never mutate the member
     // we hand them.
     champ_tasks_baked_ =
@@ -242,22 +242,13 @@ void RTACache::RebuildPrefixes(const TaskSet& tasks_prioritized) {
     }
 }
 
-// Boolean predicate: does the candidate differ from the stored champion by AT
-// MOST one task? Thin non-throwing wrapper over TryComputeSingleChange.
-bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
-                                  const PriorityVec& pa,
-                                  const std::vector<double>& tl) const {
-    TaskSetDifference ignored;
-    return TryComputeSingleChange(dag_tasks, pa, tl, ignored);
-}
-
 // The single shared single-change analyzer. See the header doc for the
 // algorithm. Returns true + fills `out` iff |diff| <= 1; false otherwise.
 // Never throws; leaves `out` untouched on false. No-champion → false.
-bool RTACache::TryComputeSingleChange(const DAG_Model& dag_tasks,
-                                      const PriorityVec& pa,
-                                      const std::vector<double>& tl,
-                                      TaskSetDifference& out) const {
+bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
+                                  const PriorityVec& pa,
+                                  const std::vector<double>& tl,
+                                  TaskSetDifference& out) const {
     // Champion side reads champ_tasks_baked_ (cached canonical-order TL-bake);
     // only the candidate bake is per-call (its tl genuinely changes).
     // FindTaskWithDifferentEt walks .tasks[i] by index, so it needs canonical
@@ -352,7 +343,7 @@ TaskSetDifference RTACache::ComputeTaskSetDifference(
         return TaskSetDifference{-1, -1, -1, -1};
 
     TaskSetDifference diff;
-    if (!TryComputeSingleChange(dag_tasks, pa, tl, diff)) {
+    if (!IsSingleTaskChange(dag_tasks, pa, tl, diff)) {
         throw std::runtime_error(
             "RTACache::ComputeTaskSetDifference: candidate differs from "
             "champion by more than one task — violates the single-change "

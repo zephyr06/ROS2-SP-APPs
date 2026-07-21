@@ -109,12 +109,28 @@ class RTACache {
         const DAG_Model& dag_tasks, const PriorityVec& pa,
         const std::vector<double>& tl) const;
 
-    // Boolean predicate: does the candidate differ from the stored champion by
-    // AT MOST one task? true for |diff| in {0,1}, false for no champion or >1.
-    // The P1.10 single-change invariant as a query (not an assertion). Thin
-    // non-throwing wrapper over TryComputeSingleChange.
-    bool IsSingleTaskChange(const DAG_Model& dag_tasks, const PriorityVec& pa,
-                            const std::vector<double>& tl) const;
+    // The single shared single-change analyzer. Returns true + fills `out` iff
+    // the candidate differs from the champion by AT MOST one task (ET and/or
+    // per-core priority position); false otherwise. No-champion → false. NEVER
+    // throws — the throwing boundary is ComputeTaskSetDifference. Algorithm:
+    //   1. ET diff: FindTaskWithDifferentEt. >1 ET-changed task → false.
+    //   2. Per-core priority order: a core with differing sizes → false (task
+    //      migrated cores). At most ONE core may differ.
+    //   3. Remove-one-compare-rest:
+    //      - 1 ET-diff task X: remove X from both per-core orders; if the rest
+    //        still differs, a SEPARATE task also moved → false (X's own priority
+    //        move is absorbed: combined ET+move = single change).
+    //      - 0 ET-diff (pure priority move): at the first mismatch i, the moved
+    //        task is champ[i] or cand[i] — try removing each; if either makes
+    //        the rest match, that's the single move; if neither → false.
+    //      - 0 ET diff + every core identical → |diff|==0, out.changed_task_id
+    //        stays -1, returns true.
+    //   4. Cross-check: the priority-move core (if any) and the ET-diff task's
+    //      core must be the same single core, else >1 change → false.
+    bool IsSingleTaskChange(const DAG_Model& dag_tasks,
+                            const PriorityVec& pa,
+                            const std::vector<double>& tl,
+                            TaskSetDifference& out) const;
 
     // Per-task reuse view: result[i] = reuse extent for task i. DERIVED from
     // the locator set ComputeTaskSetDifference returns:
@@ -139,14 +155,14 @@ class RTACache {
     TaskSet champ_prioritized_;
     // Champion tasks TL-baked in CANONICAL (task-id) order (the `tasks_baked`
     // built before pa-sorting). Invariant across one champion lifetime, so
-    // TryComputeSingleChange reads this instead of re-baking every call
+    // IsSingleTaskChange reads this instead of re-baking every call
     // (FindTaskWithDifferentEt walks .tasks[i] by index → needs canonical, not
     // pa-sorted, order). Empty iff no champion.
     TaskSet champ_tasks_baked_;
     // Champion per-core priority order: per processorId, the task ids on that
     // core sorted ascending by priority value (the exact artifact
     // PerCoreOrderFromPa(dag_champion_, pa_champion_) produces). Invariant across
-    // one champion lifetime, so TryComputeSingleChange reads this instead of
+    // one champion lifetime, so IsSingleTaskChange reads this instead of
     // rebuilding the champion partition every call; only the CANDIDATE side is
     // rebuilt per call. Empty iff no champion.
     std::unordered_map<int, std::vector<int>> champ_per_core_;
@@ -179,29 +195,6 @@ class RTACache {
     // Rebuild hp_prefix_per_core_ from `tasks_prioritized` by re-rolling the
     // per-core ET-convolution. Shared by Initialize + AdoptChampion.
     void RebuildPrefixes(const TaskSet& tasks_prioritized);
-
-    // The single shared single-change analyzer. Returns true + fills `out` iff
-    // the candidate differs from the champion by AT MOST one task (ET and/or
-    // per-core priority position); false otherwise. No-champion → false. NEVER
-    // throws — the throwing boundary is ComputeTaskSetDifference. Algorithm:
-    //   1. ET diff: FindTaskWithDifferentEt. >1 ET-changed task → false.
-    //   2. Per-core priority order: a core with differing sizes → false (task
-    //      migrated cores). At most ONE core may differ.
-    //   3. Remove-one-compare-rest:
-    //      - 1 ET-diff task X: remove X from both per-core orders; if the rest
-    //        still differs, a SEPARATE task also moved → false (X's own priority
-    //        move is absorbed: combined ET+move = single change).
-    //      - 0 ET-diff (pure priority move): at the first mismatch i, the moved
-    //        task is champ[i] or cand[i] — try removing each; if either makes
-    //        the rest match, that's the single move; if neither → false.
-    //      - 0 ET diff + every core identical → |diff|==0, out.changed_task_id
-    //        stays -1, returns true.
-    //   4. Cross-check: the priority-move core (if any) and the ET-diff task's
-    //      core must be the same single core, else >1 change → false.
-    bool TryComputeSingleChange(const DAG_Model& dag_tasks,
-                                const PriorityVec& pa,
-                                const std::vector<double>& tl,
-                                TaskSetDifference& out) const;
 };
 
 }  // namespace SP_OPT_PA
