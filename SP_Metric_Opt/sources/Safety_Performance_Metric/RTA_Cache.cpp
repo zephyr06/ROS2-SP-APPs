@@ -162,12 +162,22 @@ std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
 
 // Per-core priority ORDER from (dag, pa): for each processorId, the task ids
 // on that core in ascending-priority order (lower pa position = higher
-// priority). Mirrors ProbabilisticRTA_TaskSet_SingleCore's sort applied AFTER
-// UpdateTaskSetPriorities sets priority=i.
+// priority). `pa` IS that ordering — UpdateTaskSetPriorities assigns
+// priority=i to pa[i], and SortTasksByPriority sorts by priority ascending
+// with distinct keys, yielding exactly pa[0], pa[1], ..., pa[N-1]. So walking
+// `pa` and bucketing by processorId is identical to the old
+// PerCoreOrderOfPrioritized(UpdateTaskSetPriorities(...)) — without the full
+// TaskSet copy + the O(N log N) sort. Relies on the same id==index invariant
+// every pa-as-index site relies on (UpdateTaskSetPriorities asserts it; every
+// YAML fixture numbers tasks 0,1,2,... from index 0). processorId is untouched
+// by the priority bake, so reading it from raw dag_tasks.tasks is sound.
 std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
     const DAG_Model& dag_tasks, const PriorityVec& pa) const {
-    TaskSet prioritized = UpdateTaskSetPriorities(dag_tasks.tasks, pa);
-    return PerCoreOrderOfPrioritized(prioritized);
+    std::unordered_map<int, std::vector<int>> order;
+    for (int tid : pa) {
+        order[dag_tasks.tasks[tid].processorId].push_back(tid);
+    }
+    return order;
 }
 
 // Full N-task RTA for (dag, pa, tl) + store the champion triple + flat rta_ +
