@@ -429,14 +429,14 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     // ClassifyReusePerTask): |diff|==0 → all FullReuse; |diff|==1 → tasks on
     // diff.core are NoReuse, every other core FullReuse.
     TaskSetDifference diff = ComputeTaskSetDifference(dag_tasks, pa, tl);
-    std::vector<RTAReusePerTask> verdict(dag_tasks.tasks.size(),
-                                         RTAReusePerTask::FullReuse);
+    std::vector<RTAReusePerTask> verdict_per_task(dag_tasks.tasks.size(),
+                                                   RTAReusePerTask::FullReuse);
     bool any_recompute = false;
     if (diff.changed_task_id != -1) {
         auto core_it = per_core.find(diff.core);
         if (core_it != per_core.end()) {
             for (const Task& t : core_it->second) {
-                verdict[t.id] = RTAReusePerTask::NoReuse;
+                verdict_per_task[t.id] = RTAReusePerTask::NoReuse;
             }
             any_recompute = true;
         }
@@ -478,7 +478,7 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
         TaskSet hp_tasks;
         FiniteDist hp_tasks_et_conv = IdentityPrefix();
         for (const Task& task_curr : core_tasks) {
-            if (verdict[task_curr.id] == RTAReusePerTask::NoReuse) {
+            if (verdict_per_task[task_curr.id] == RTAReusePerTask::NoReuse) {
                 candidate_rta_[task_id2index.at(task_curr.id)] =
                     GetRTA_OneTask(task_curr, hp_tasks, hp_tasks_et_conv);
             }
