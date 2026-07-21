@@ -196,13 +196,18 @@ std::vector<DiffObj> FindEnvTaskWithDifferentEt(
 
 std::vector<DiffObj> FindTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated) {
+    return FindTaskWithDifferentEt(dag_tasks.tasks, dag_tasks_updated.tasks);
+}
+
+std::vector<DiffObj> FindTaskWithDifferentEt(const TaskSet& tasks_base,
+                                             const TaskSet& tasks_updated) {
     std::vector<DiffObj> seq;
-    seq.reserve(dag_tasks.tasks.size());
-    for (int i = 0; i < dag_tasks.tasks.size(); i++) {
-        if (dag_tasks.tasks[i].execution_time_dist !=
-            dag_tasks_updated.tasks[i].execution_time_dist) {
-            if (dag_tasks.tasks[i].execution_time_dist.GetAvgValue() <
-                dag_tasks_updated.tasks[i].execution_time_dist.GetAvgValue()) {
+    seq.reserve(tasks_base.size());
+    for (int i = 0; i < tasks_base.size(); i++) {
+        if (tasks_base[i].execution_time_dist !=
+            tasks_updated[i].execution_time_dist) {
+            if (tasks_base[i].execution_time_dist.GetAvgValue() <
+                tasks_updated[i].execution_time_dist.GetAvgValue()) {
                 seq.push_back(DiffObj{i, true});
             } else
                 seq.push_back(DiffObj{i, false});

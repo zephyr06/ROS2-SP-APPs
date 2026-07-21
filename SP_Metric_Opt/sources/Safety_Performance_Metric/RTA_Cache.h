@@ -143,10 +143,15 @@ class RTACache {
         const std::vector<double>& tl) const;
 
    private:
-    // The champion triple:
-    DAG_Model dag_champion_;
-    PriorityVec pa_champion_;
-    std::vector<double> tl_champion_;
+    // The champion is carried ONLY in its baked forms (champ_prioritized_ /
+    // champ_tasks_baked_ / champ_per_core_) + rta_ + hp_prefix_per_core_. The
+    // raw (dag, pa, tl) triple is consumed at bake time and not stored: pa and
+    // tl are read once by the bake (UpdateTaskSetPriorities /
+    // ApplyTimeLimitsToTasksExecutionTime) and never again, and Evaluate /
+    // IsSingleTaskChange read the baked forms, not a stored pa/tl. A future
+    // caller that needs the champion's pa/tl back should add a const accessor
+    // rather than carry dead state here.
+
     // Champion tasks TL-baked + pa-sorted (the exact `tasks_prioritized`
     // Initialize/AdoptChampion built). Invariant across one champion lifetime,
     // so Evaluate's reindex reads this instead of re-baking the champion DAG
@@ -160,7 +165,7 @@ class RTACache {
     TaskSet champ_tasks_baked_;
     // Champion per-core priority order: per processorId, the task ids on that
     // core sorted ascending by priority value (the exact artifact
-    // PerCoreOrderFromPa(dag_champion_, pa_champion_) produces). Invariant across
+    // PerCoreOrderOfPrioritized(champ_prioritized_) produces). Invariant across
     // one champion lifetime, so IsSingleTaskChange reads this instead of
     // rebuilding the champion partition every call; only the CANDIDATE side is
     // rebuilt per call. Empty iff no champion.

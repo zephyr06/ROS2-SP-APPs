@@ -189,10 +189,6 @@ std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
 const std::vector<FiniteDist>& RTACache::Initialize(
     const DAG_Model& dag_tasks, const PriorityVec& pa,
     const std::vector<double>& tl) {
-    dag_champion_ = dag_tasks;
-    pa_champion_ = pa;
-    tl_champion_ = tl;
-
     // Bake TL → apply pa (sorts HP-first) → RTA, writing each artifact directly
     // into its cache member: champ_tasks_baked_ is the canonical-order TL-bake
     // (what FindTaskWithDifferentEt reads by index), champ_prioritized_ is the
@@ -217,9 +213,6 @@ const std::vector<FiniteDist>& RTACache::Initialize(
 void RTACache::AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
                              const std::vector<double>& tl,
                              const std::vector<FiniteDist>& rtas) {
-    dag_champion_ = dag_tasks;
-    pa_champion_ = pa;
-    tl_champion_ = tl;
     rta_ = rtas;
     candidate_rta_ = rtas;
 
@@ -262,14 +255,13 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
     // Champion side reads champ_tasks_baked_ (cached canonical-order TL-bake);
     // only the candidate bake is per-call (its tl genuinely changes).
     // FindTaskWithDifferentEt walks .tasks[i] by index, so it needs canonical
-    // (not pa-sorted) order on both sides.
-    DAG_Model cand_dag_baked = dag_tasks;
-    cand_dag_baked.tasks =
+    // (not pa-sorted) order on both sides. The TaskSet overload takes the two
+    // baked TaskSets directly, so no throwaway DAG_Model (graph + per-processor
+    // maps) is built just to overwrite .tasks.
+    TaskSet cand_tasks_baked =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
-    DAG_Model champ_dag_baked = dag_champion_;
-    champ_dag_baked.tasks = champ_tasks_baked_;
     std::vector<DiffObj> et_diff =
-        FindTaskWithDifferentEt(champ_dag_baked, cand_dag_baked);
+        FindTaskWithDifferentEt(champ_tasks_baked_, cand_tasks_baked);
 
     // (1) ET diff: >1 ET-changed task ⇒ not single.
     if (et_diff.size() > 1)

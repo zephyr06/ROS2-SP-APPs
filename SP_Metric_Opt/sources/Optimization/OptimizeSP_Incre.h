@@ -98,6 +98,18 @@ std::vector<DiffObj> FindEnvTaskWithDifferentEt(
 std::vector<DiffObj> FindTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated);
 
+// Same diff over two TaskSets directly. `FindTaskWithDifferentEt` only reads
+// `tasks[i].execution_time_dist` at matching indices, so the DAG_Model overload
+// above is exactly this body fed `dag.tasks` — and callers that already hold
+// baked TaskSets (notably RTACache::IsSingleTaskChange, which has the champion
+// bake cached in champ_tasks_baked_ and only bakes the candidate TaskSet per
+// call) can use this to skip constructing a throwaway DAG_Model (which would
+// copy the BGL graph + per-processor maps only to overwrite .tasks immediately).
+// Coexists with the DAG_Model overload (still used by OptimizeIncre + the TL
+// walk); callers with matching-size TaskSets only.
+std::vector<DiffObj> FindTaskWithDifferentEt(const TaskSet& tasks_base,
+                                             const TaskSet& tasks_updated);
+
 PriorityVec RemoveOneTask(const PriorityVec& pa_vec, int task_id);
 
 enum PriorityChangeStatus { Increase, Decrease, OpenToAll };
