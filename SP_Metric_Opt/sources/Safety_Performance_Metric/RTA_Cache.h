@@ -143,6 +143,13 @@ class RTACache {
     // (FindTaskWithDifferentEt walks .tasks[i] by index → needs canonical, not
     // pa-sorted, order). Empty iff no champion.
     TaskSet champ_tasks_baked_;
+    // Champion per-core priority order: per processorId, the task ids on that
+    // core sorted ascending by priority value (the exact artifact
+    // PerCoreOrderFromPa(dag_champion_, pa_champion_) produces). Invariant across
+    // one champion lifetime, so TryComputeSingleChange reads this instead of
+    // rebuilding the champion partition every call; only the CANDIDATE side is
+    // rebuilt per call. Empty iff no champion.
+    std::unordered_map<int, std::vector<int>> champ_per_core_;
     // The champion RTA, flat by task id (rta_[i] = RTA of task i).
     std::vector<FiniteDist> rta_;
     // Per-core HP-prefix checkpoints (the reuse primitive):
@@ -162,6 +169,12 @@ class RTACache {
     // Evaluate's patch branch (candidate order for the suffix recompute). Pure.
     std::unordered_map<int, std::vector<int>> PerCoreOrderFromPa(
         const DAG_Model& dag_tasks, const PriorityVec& pa) const;
+    // Per-core order from an ALREADY-prioritized TaskSet (no re-sort). Shared
+    // body of PerCoreOrderFromPa + the champion-order cache build
+    // (champ_prioritized_ is already pa-sorted, so re-sorting it would be
+    // redundant work). Pure.
+    std::unordered_map<int, std::vector<int>> PerCoreOrderOfPrioritized(
+        const TaskSet& prioritized) const;
 
     // Rebuild hp_prefix_per_core_ from `tasks_prioritized` by re-rolling the
     // per-core ET-convolution. Shared by Initialize + AdoptChampion.

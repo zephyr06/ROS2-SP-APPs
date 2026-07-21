@@ -147,6 +147,19 @@ PrioritySwitchAnalysis AnalyzePrioritySwitch(
     return result;
 }
 
+// Per-core priority ORDER from an ALREADY-prioritized TaskSet: for each
+// processorId, the task ids on that core in priority order (the order
+// `prioritized` already carries). The shared partition body of
+// PerCoreOrderFromPa + the champion-order cache build.
+std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
+    const TaskSet& prioritized) const {
+    std::unordered_map<int, std::vector<int>> order;
+    for (const Task& t : prioritized) {
+        order[t.processorId].push_back(t.id);
+    }
+    return order;
+}
+
 // Per-core priority ORDER from (dag, pa): for each processorId, the task ids
 // on that core in ascending-priority order (lower pa position = higher
 // priority). Mirrors ProbabilisticRTA_TaskSet_SingleCore's sort applied AFTER
@@ -154,11 +167,7 @@ PrioritySwitchAnalysis AnalyzePrioritySwitch(
 std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
     const DAG_Model& dag_tasks, const PriorityVec& pa) const {
     TaskSet prioritized = UpdateTaskSetPriorities(dag_tasks.tasks, pa);
-    std::unordered_map<int, std::vector<int>> order;
-    for (const Task& t : prioritized) {
-        order[t.processorId].push_back(t.id);
-    }
-    return order;
+    return PerCoreOrderOfPrioritized(prioritized);
 }
 
 // Full N-task RTA for (dag, pa, tl) + store the champion triple + flat rta_ +
@@ -175,14 +184,16 @@ const std::vector<FiniteDist>& RTACache::Initialize(
     tl_champion_ = tl;
 
     // Bake TL → apply pa (sorts HP-first) → RTA, writing each artifact directly
-    // into its cache member (no throwaway locals): champ_tasks_baked_ holds the
-    // canonical-order TL-bake (what FindTaskWithDifferentEt reads by index),
-    // champ_prioritized_ holds the pa-sorted form (what Evaluate's reindex +
-    // RebuildPrefixes read). All helpers return-by-value + take const-ref, so
-    // they never mutate the member we hand them.
+    // into its cache member: champ_tasks_baked_ is the canonical-order TL-bake
+    // (what FindTaskWithDifferentEt reads by index), champ_prioritized_ is the
+    // pa-sorted form (what Evaluate's reindex + RebuildPrefixes read), and
+    // champ_per_core_ is the per-core order TryComputeSingleChange reads. All
+    // helpers return-by-value + take const-ref, so they never mutate the member
+    // we hand them.
     champ_tasks_baked_ =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);
+    champ_per_core_ = PerCoreOrderOfPrioritized(champ_prioritized_);
     rta_ = ProbabilisticRTA_TaskSet(champ_prioritized_);
 
     RebuildPrefixes(champ_prioritized_);
@@ -207,6 +218,7 @@ void RTACache::AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
     champ_tasks_baked_ =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);
+    champ_per_core_ = PerCoreOrderOfPrioritized(champ_prioritized_);
     RebuildPrefixes(champ_prioritized_);
 }
 
@@ -264,15 +276,13 @@ bool RTACache::TryComputeSingleChange(const DAG_Model& dag_tasks,
 
     std::unordered_map<int, std::vector<int>> candidate_per_core =
         PerCoreOrderFromPa(dag_tasks, pa);
-    std::unordered_map<int, std::vector<int>> champion_per_core =
-        PerCoreOrderFromPa(dag_champion_, pa_champion_);
 
     // (2) Priority-order analysis on the two per-core maps. Returns the status
     // +, when single, the changed core + the moved task's locators for the
     // pure-priority-move case. The ET-known case re-runs the remove-and-compare
     // below with the known task id.
     PrioritySwitchAnalysis pa_switch =
-        AnalyzePrioritySwitch(candidate_per_core, champion_per_core);
+        AnalyzePrioritySwitch(candidate_per_core, champ_per_core_);
     if (pa_switch.status == PrioritySwitchStatus::NotSingle)
         return false;
 
@@ -304,7 +314,7 @@ bool RTACache::TryComputeSingleChange(const DAG_Model& dag_tasks,
         // change ⟺ old_pos == new_pos.
         const std::vector<int>& candidate_order =
             candidate_per_core.at(et_core);
-        const std::vector<int>& champion_order = champion_per_core.at(et_core);
+        const std::vector<int>& champion_order = champ_per_core_.at(et_core);
         moved_task_id = et_task_id;
         for (size_t i = 0; i < candidate_order.size(); i++)
             if (candidate_order[i] == et_task_id) {
@@ -345,10 +355,9 @@ TaskSetDifference RTACache::ComputeTaskSetDifference(
     if (!TryComputeSingleChange(dag_tasks, pa, tl, diff)) {
         throw std::runtime_error(
             "RTACache::ComputeTaskSetDifference: candidate differs from "
-            "champion "
-            "by more than one task — violates the P1.10 single-change "
-            "invariant. "
-            "Call IsSingleTaskChange to guard multi-change candidates.");
+            "champion by more than one task — violates the single-change "
+            "invariant. Call IsSingleTaskChange to guard multi-change "
+            "candidates.");
     }
     return diff;
 }

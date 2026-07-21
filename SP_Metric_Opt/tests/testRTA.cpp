@@ -516,6 +516,57 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     EXPECT_EQ(d.core, 0);
 }
 
+// P1.17 task 1b remainder — pin that the champion per-core order cached on
+// Initialize/AdoptChampion is REFRESHED on AdoptChampion. The hazard this cache
+// introduces: TryComputeSingleChange reads the cached champion per-core order to
+// diff against the candidate; if it were left holding the FIRST champion's order
+// after a second AdoptChampion whose PA differs, AnalyzePrioritySwitch would
+// compare the candidate against the stale order → mis-locate the changed core /
+// moved task, or a false |diff|>1 throw. So: adopt a 2nd champion whose PA swaps
+// two tasks on core 0, then Evaluate a candidate that differs from the 2nd by one
+// task's priority position on core 0. Bit-identical to the oracle AND the diff
+// must land on the right task + core.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_PriorityMove_AfterAdoptChampion_StalePerCoreOrderGuard) {
+    RTACache cache;
+    // 1st champion: PA {0,1,2,3} → core0 order {t0,t1}, core1 order {t2,t3}.
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // 2nd champion: swap tasks 0/1 on core 0 → PA {1,0,2,3}, so the champion
+    // core0 order is now {t1,t0}. AdoptChampion must refresh the cached champion
+    // per-core order to THIS order, not the 1st champion's {t0,t1}.
+    PriorityVec pa_champ2 = {1, 0, 2, 3};
+    std::vector<FiniteDist> rtas_champ2 =
+        OracleRtas(dag_tasks, pa_champ2, time_limits);
+    cache.AdoptChampion(dag_tasks, pa_champ2, time_limits, rtas_champ2);
+
+    // Candidate: PA {0,1,2,3} — vs the 2nd champion this is a single priority
+    // swap of t0/t1 on core 0 (champion order {t1,t0} → candidate order {t0,t1}).
+    // A stale champion per-core order ({t0,t1}, the 1st champion's) would see NO
+    // order diff on core 0 → wrongly classify |diff|==0 (or a throw if the ET
+    // cross-check disagrees) and Evaluate would return the 2nd champion's rta
+    // verbatim (bit-non-identical to the candidate's true rta). Expectation: a
+    // change IS detected on core 0 (the swap is symmetric, so the algorithm
+    // reports the candidate-side task at the first mismatch, task 0 — the exact
+    // id is not load-bearing, only that it is != -1 and on core 0).
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, time_limits);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged after AdoptChampion (stale per-core "
+            << "order?)";
+    }
+
+    TaskSetDifference d =
+        cache.ComputeTaskSetDifference(dag_tasks, priority_vec, time_limits);
+    EXPECT_NE(d.changed_task_id, -1);
+    EXPECT_EQ(d.core, 0);
+}
+
 // P1.12 Phase 2 item 1a — the MISSING differential that localizes the :285
 // divergence. The existing Evaluate_PriorityMove_OneTaskPatch above swaps two
 // tasks on the SAME core (core0={t0,t1}); core0 → NoReuse (both recomputed),
