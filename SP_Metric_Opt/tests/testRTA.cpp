@@ -373,6 +373,38 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     }
 }
 
+// P1.17 task 1c — pin that Evaluate fills EVERY candidate_rta_ slot from the
+// reindex + recompute loops alone, with no reliance on the prior zero-init.
+// Identity candidate is the strongest case: diff.changed_task_id == -1 so
+// any_recompute == false and the recompute loop is skipped ENTIRELY (the early
+// return at the |diff|==0 branch). Every slot must therefore be filled by the
+// reindex loop (champion RTA reindexed by task id) — a regression that left any
+// slot at the default-constructed FiniteDist would diverge from the oracle.
+// This is the case that catches "drop the assign but a FullReuse slot goes
+// unwritten".
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_IdentityCandidate_EverySlotFilled_NoZeroInit) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, time_limits);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    // A default-constructed FiniteDist is empty; an oracle entry is a real
+    // distribution. If a slot were left unwritten, this fails on emptiness OR
+    // value (the identity-zero FiniteDist({Value_Proba(0,1.0)}) the prior
+    // assign used would also fail against a non-degenerate oracle entry).
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_FALSE(rtas_eval[i].distribution.empty())
+            << "rtas[" << i << "] was left unwritten (default-constructed)";
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on identity Evaluate (no zero-init)";
+    }
+}
+
 // Evaluate on a candidate that differs by ONE task's TL (the Type-L serialized
 // step) → ReuseHpTasksEt: patches the changed task's suffix via the stored
 // HP-prefix, bit-identical to the oracle. Core 1 (untouched) reused verbatim.
@@ -438,6 +470,50 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
         EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
             << "rtas[" << i << "] diverged on combined TL+move Evaluate";
     }
+}
+
+// P1.17 task 1a remainder — pin that champ_tasks_baked_ (the cached champion
+// TL-bake TryComputeSingleChange reads instead of re-baking) is REFRESHED on
+// AdoptChampion. The hazard this cache introduces: if champ_tasks_baked_ were
+// left holding the FIRST champion's baked tasks after a second AdoptChampion
+// with a different TL, FindTaskWithDifferentEt would compare the candidate
+// against the stale bake → mis-classify the ET diff (wrong changed_task_id, or
+// a false |diff|>1 throw). So: adopt a 2nd champion whose TL differs from the
+// 1st, then Evaluate a candidate that differs from the 2nd by one task's ET.
+// Bit-identical to the oracle AND the diff must land on the right task.
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_TLChange_AfterAdoptChampion_StaleBakeGuard) {
+    RTACache cache;
+    // 1st champion: task 1 has no TL (-1).
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // 2nd champion: task 1's TL → 5. AdoptChampion must refresh champ_tasks_baked_
+    // to THIS bake, not the 1st champion's.
+    std::vector<double> tl_champ2 = {-1, 5, -1, -1};
+    std::vector<FiniteDist> rtas_champ2 =
+        OracleRtas(dag_tasks, priority_vec, tl_champ2);
+    cache.AdoptChampion(dag_tasks, priority_vec, tl_champ2, rtas_champ2);
+
+    // Candidate: task 1's TL → 3 (one ET change vs the 2nd champion, on core 0).
+    std::vector<double> tl_cand = {-1, 3, -1, -1};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, tl_cand);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, tl_cand);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged after AdoptChampion (stale bake?)";
+    }
+
+    // The single change must be located on task 1 (the only ET-changed task vs
+    // the 2nd champion). A stale champ_tasks_baked_ (still the 1st champion's
+    // -1 bake) would see task 1 as changed AND mis-locate, or throw.
+    TaskSetDifference d =
+        cache.ComputeTaskSetDifference(dag_tasks, priority_vec, tl_cand);
+    EXPECT_EQ(d.changed_task_id, 1);
+    EXPECT_EQ(d.core, 0);
 }
 
 // P1.12 Phase 2 item 1a — the MISSING differential that localizes the :285

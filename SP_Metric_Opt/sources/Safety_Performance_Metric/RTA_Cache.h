@@ -89,14 +89,16 @@ class RTACache {
     // Compute the candidate's full flat RTA for (dag, pa, tl), exploiting the
     // single-change invariant vs the stored champion. Does NOT mutate champion
     // state — writes the candidate RTA to `candidate_rta_` and returns it;
-    // commit via AdoptChampion. Verdict-driven dispatch: Evaluate calls
-    // ClassifyReusePerTask to get the per-task reuse verdict, seeds every task
-    // with the champion RTA (FullReuse tasks keep it), then recomputes the
-    // NoReuse tasks via GetRTA_OneTask in candidate priority order so each
-    // recompute sees the correct candidate-ET HP set. This keeps Evaluate a
-    // mechanical per-task dispatcher: a future same-core-suffix refinement
-    // only needs ClassifyReusePerTask to emit ReuseHpTasksEt + a branch here,
-    // not a rewrite of the dispatch loop.
+    // commit via AdoptChampion. Verdict-driven dispatch: Evaluate derives the
+    // per-task reuse verdict inline from ComputeTaskSetDifference's locators +
+    // the one per-core partition it builds anyway (P1.17 task 1b — mirrors
+    // ClassifyReusePerTask's derivation without its redundant PerCoreOrderFromPa
+    // call), seeds every task with the champion RTA (FullReuse tasks keep it),
+    // then recomputes the NoReuse tasks via GetRTA_OneTask in candidate priority
+    // order so each recompute sees the correct candidate-ET HP set. This keeps
+    // Evaluate a mechanical per-task dispatcher: a future same-core-suffix
+    // refinement only needs the verdict to gain a ReuseHpTasksEt value + a
+    // branch in the recompute loop, not a rewrite of the dispatch.
     //   • no champion → Initialize (full compute).
     // Returned ref is valid until the next Evaluate/Initialize/AdoptChampion.
     const std::vector<FiniteDist>& Evaluate(const DAG_Model& dag_tasks,
@@ -161,6 +163,22 @@ class RTACache {
     DAG_Model dag_champion_;
     PriorityVec pa_champion_;
     std::vector<double> tl_champion_;
+    // The champion tasks TL-baked + pa-sorted (i.e. the exact `tasks_prioritized`
+    // Initialize/AdoptChampion built and passed to RebuildPrefixes). Invariant
+    // across one champion lifetime (only the two champion writers mutate it), so
+    // Evaluate's reindex block reads this instead of re-baking the champion DAG
+    // every call (P1.17 task 1a — removes one ApplyTimeLimitsToTasksExecutionTime
+    // + one UpdateTaskSetPriorities per Evaluate). Empty iff no champion.
+    TaskSet champ_prioritized_;
+    // The champion tasks TL-baked in CANONICAL (task-id) order — i.e. the exact
+    // `tasks_baked` Initialize/AdoptChampion built before pa-sorting it into
+    // `champ_prioritized_`. Invariant across one champion lifetime, so
+    // TryComputeSingleChange reads this instead of re-baking the champion DAG
+    // every call (P1.17 task 1a remainder — removes one
+    // ApplyTimeLimitsToTasksExecutionTime per TryComputeSingleChange; only
+    // FindTaskWithDifferentEt reads it, which walks .tasks[i] by index so it
+    // needs canonical, not pa-sorted, order). Empty iff no champion.
+    TaskSet champ_tasks_baked_;
     // The champion RTA, flat by task id (rta_[i] = RTA of task i).
     std::vector<FiniteDist> rta_;
     // Per-core HP-prefix checkpoints (the reuse primitive):

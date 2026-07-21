@@ -178,12 +178,19 @@ const std::vector<FiniteDist>& RTACache::Initialize(
     pa_champion_ = pa;
     tl_champion_ = tl;
 
-    TaskSet tasks_baked =
+    // Bake TL → apply pa (sorts HP-first) → RTA, writing each artifact directly
+    // into its cache member (no throwaway locals): champ_tasks_baked_ holds the
+    // canonical-order TL-bake (what FindTaskWithDifferentEt reads by index),
+    // champ_prioritized_ holds the pa-sorted form (what Evaluate's reindex +
+    // RebuildPrefixes read). ApplyTimeLimitsToTasksExecutionTime +
+    // UpdateTaskSetPriorities both return-by-value and take const-ref, so they
+    // copy internally and never mutate the member we hand them.
+    champ_tasks_baked_ =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
-    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
-    rta_ = ProbabilisticRTA_TaskSet(tasks_prioritized);
+    champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);
+    rta_ = ProbabilisticRTA_TaskSet(champ_prioritized_);
 
-    RebuildPrefixes(tasks_prioritized);
+    RebuildPrefixes(champ_prioritized_);
     candidate_rta_ = rta_;
     return rta_;
 }
@@ -201,10 +208,12 @@ void RTACache::AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
     rta_ = rtas;
     candidate_rta_ = rtas;
 
-    TaskSet tasks_baked =
+    // Same direct-to-member bake as Initialize (see comment there); AdoptChampion
+    // takes caller-supplied rtas so it skips the ProbabilisticRTA_TaskSet call.
+    champ_tasks_baked_ =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
-    TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
-    RebuildPrefixes(tasks_prioritized);
+    champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);
+    RebuildPrefixes(champ_prioritized_);
 }
 
 // Rebuild hp_prefix_per_core_[core][i] = HP-ET convolution of the
@@ -253,16 +262,17 @@ bool RTACache::TryComputeSingleChange(const DAG_Model& dag_tasks,
                                       const PriorityVec& pa,
                                       const std::vector<double>& tl,
                                       TaskSetDifference& out) const {
-    // Dedup'd baked-DAG dance (was repeated in IsSingleTaskChange +
-    // ComputeTaskSetDifference before the merge).
-    TaskSet champ_baked =
-        ApplyTimeLimitsToTasksExecutionTime(dag_champion_.tasks, tl_champion_);
-    TaskSet cand_baked =
+    // P1.17: champion side reads champ_tasks_baked_ (cached canonical-order TL-
+    // bake, set by Initialize/AdoptChampion); only the candidate bake is per-
+    // call (its tl genuinely changes). No throwaway locals — write the candidate
+    // bake straight into cand_dag_baked.tasks. FindTaskWithDifferentEt walks
+    // .tasks[i] by index, so it needs canonical (not pa-sorted) order on both
+    // sides, which champ_tasks_baked_ + dag_tasks.tasks both are.
+    DAG_Model cand_dag_baked = dag_tasks;
+    cand_dag_baked.tasks =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     DAG_Model champ_dag_baked = dag_champion_;
-    champ_dag_baked.tasks = champ_baked;
-    DAG_Model cand_dag_baked = dag_tasks;
-    cand_dag_baked.tasks = cand_baked;
+    champ_dag_baked.tasks = champ_tasks_baked_;
     std::vector<DiffObj> et_diff =
         FindTaskWithDifferentEt(champ_dag_baked, cand_dag_baked);
 
@@ -414,14 +424,14 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
         return Initialize(dag_tasks, pa, tl);
     }
 
-    // Verdict-driven dispatch: ClassifyReusePerTask says per task whether to
-    // reuse the champion RTA (FullReuse) or recompute (NoReuse). Seed every
-    // task with the champion RTA, then overwrite only the NoReuse tasks. This
-    // is the generalization point — a future same-core-suffix refinement only
+    // Verdict-driven dispatch: per task, reuse the champion RTA (FullReuse) or
+    // recompute (NoReuse). P1.17 task 1b derives the verdict inline below from
+    // the diff locators + the per_core partition (built once), instead of calling
+    // ClassifyReusePerTask (which re-runs PerCoreOrderFromPa on the candidate).
+    // ClassifyReusePerTask stays as the public self-contained query; this is the
+    // hot-path inline. The generalization point — a future same-core-suffix refinement only
     // needs ClassifyReusePerTask to emit ReuseHpTasksEt + a branch here, not a
     // rewrite of Evaluate.
-    std::vector<RTAReusePerTask> verdict =
-        ClassifyReusePerTask(dag_tasks, pa, tl);
 
     // P1.12 Phase 2 item 1b — reindex the champion RTA by TASK ID, not by a
     // positional copy. rta_ is indexed by CHAMPION priority-position (the oracle
@@ -441,16 +451,56 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     for (size_t i = 0; i < tasks_prioritized.size(); i++) {
         task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
     }
-    candidate_rta_.assign(rta_.size(), FiniteDist({Value_Proba(0, 1.0)}));
+    // P1.17 task 1b — build the candidate per-core partition ONCE. It is reused
+    // two ways below: (1) deriving the per-task reuse verdict, (2) the recompute
+    // loop's per-core walk. It is the same partition ClassifyReusePerTask would
+    // rebuild via a SECOND PerCoreOrderFromPa call on the candidate; baking only
+    // changes ET, never processorId or priority order, so the task-id partition
+    // of tasks_prioritized == PerCoreOrderFromPa(dag_tasks, pa).
+    std::unordered_map<int, TaskSet> per_core =
+        ExtractTaskSetPerProcessor(tasks_prioritized);
+
+    // Derive the verdict inline from the diff locators + per_core (mirrors
+    // ClassifyReusePerTask exactly): |diff|==0 -> all FullReuse; |diff|==1 ->
+    // tasks on diff.core are NoReuse, every other core FullReuse.
+    TaskSetDifference diff = ComputeTaskSetDifference(dag_tasks, pa, tl);
+    std::vector<RTAReusePerTask> verdict(dag_tasks.tasks.size(),
+                                         RTAReusePerTask::FullReuse);
+    bool any_recompute = false;
+    if (diff.changed_task_id != -1) {
+        auto core_it = per_core.find(diff.core);
+        if (core_it != per_core.end()) {
+            for (const Task& t : core_it->second) {
+                verdict[t.id] = RTAReusePerTask::NoReuse;
+            }
+            any_recompute = true;
+        }
+    }
+
+    // P1.17 task 1c — size the candidate buffer once; every slot is written
+    // below before read. The reindex loop writes every champion task's RTA into
+    // its candidate priority-position slot (FullReuse); the recompute loop
+    // overwrites the NoReuse slots. Under the single-change invariant (the only
+    // path Evaluate serves — ComputeTaskSetDifference throws on |diff|>1), the
+    // candidate task set == champion task set, so EVERY candidate task id is a
+    // champion task id and is reached by the reindex loop; the NoReuse tasks
+    // (on diff.core) are then overwritten by the recompute loop. No slot is left
+    // at its default-constructed value, so the prior zero-init `assign` of an
+    // identity-zero FiniteDist per slot was redundant (every one was immediately
+    // overwritten). `resize` (not `assign`) makes the "filled below" intent
+    // explicit and is a no-op when Initialize/AdoptChampion already sized the
+    // member to N. Pinned by Evaluate_IdentityCandidate_EverySlotFilled_NoZeroInit
+    // (the |diff|==0 early-return path skips the recompute loop, so all slots
+    // must come from the reindex loop alone).
+    candidate_rta_.resize(rta_.size());
     {
-        // Champion priority-position -> task id, mirroring how rta_ was built
-        // (Initialize/AdoptChampion bake champion TL + apply champion PA).
-        TaskSet champ_baked =
-            ApplyTimeLimitsToTasksExecutionTime(dag_champion_.tasks, tl_champion_);
-        TaskSet champ_prioritized =
-            UpdateTaskSetPriorities(champ_baked, pa_champion_);
-        for (size_t k = 0; k < champ_prioritized.size() && k < rta_.size(); k++) {
-            int tid = champ_prioritized[k].id;
+        // Champion priority-position -> task id, mirroring how rta_ was built.
+        // P1.17 task 1a: champ_prioritized_ is cached on Initialize/AdoptChampion
+        // (invariant across one champion lifetime), so this reindex reads it
+        // directly instead of re-baking the champion TL + re-applying champion PA
+        // on every Evaluate call.
+        for (size_t k = 0; k < champ_prioritized_.size() && k < rta_.size(); k++) {
+            int tid = champ_prioritized_[k].id;
             auto it = task_id2index.find(tid);
             if (it != task_id2index.end()) {
                 candidate_rta_[it->second] = rta_[k];
@@ -458,13 +508,6 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
         }
     }
 
-    bool any_recompute = false;
-    for (RTAReusePerTask v : verdict) {
-        if (v == RTAReusePerTask::NoReuse) {
-            any_recompute = true;
-            break;
-        }
-    }
     if (!any_recompute)
         return candidate_rta_;  // |diff|==0: pure reuse (reindexed by task id)
 
@@ -473,9 +516,6 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     // it on the same core, accumulated as we walk). FullReuse tasks are skipped
     // (their seeded value stays) but still pushed to hp_tasks so a later
     // NoReuse task's HP set is complete.
-    std::unordered_map<int, TaskSet> per_core =
-        ExtractTaskSetPerProcessor(tasks_prioritized);
-
     for (const auto& [core, core_tasks] : per_core) {
         // core_tasks is in candidate priority order. Walk it exactly as
         // ProbabilisticRTA_TaskSet_SingleCore (RTA.cpp:88-113) does: maintain a
