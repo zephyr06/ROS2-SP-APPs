@@ -77,13 +77,12 @@ class RTACache {
     // Compute the candidate's full flat RTA for (dag, pa, tl), exploiting the
     // single-change invariant vs the stored champion. Does NOT mutate champion
     // state — writes the candidate RTA to `candidate_rta_` and returns it;
-    // commit via AdoptChampion. Verdict-driven: derives the per-task reuse
-    // verdict inline from the diff locators + the one per-core partition it
-    // builds anyway (mirrors ClassifyReusePerTask), seeds every task with the
-    // champion RTA (FullReuse tasks keep it), then recomputes the NoReuse tasks
-    // via GetRTA_OneTask in candidate priority order. A future same-core-suffix
-    // refinement only needs the verdict to gain a ReuseHpTasksEt value + a
-    // branch in the recompute loop.
+    // commit via AdoptChampion. Verdict-driven: the per-task reuse verdict is
+    // obtained from ClassifyReusePerTask (the single source of that decision),
+    // then Evaluate seeds every task with the champion RTA (FullReuse tasks keep
+    // it) and recomputes the NoReuse tasks via GetRTA_OneTask in candidate
+    // priority order. A future same-core-suffix refinement only needs the
+    // verdict to gain a ReuseHpTasksEt value + a branch in the recompute loop.
     //   • no champion → Initialize (full compute).
     // Returned ref is valid until the next Evaluate/Initialize/AdoptChampion.
     const std::vector<FiniteDist>& Evaluate(const DAG_Model& dag_tasks,

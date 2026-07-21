@@ -410,26 +410,23 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     for (size_t i = 0; i < tasks_prioritized.size(); i++) {
         task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
     }
-    // Build the candidate per-core partition ONCE; it serves both the verdict
-    // derivation and the recompute loop. (Baking only changes ET, never
-    // processorId or priority order, so this == PerCoreOrderFromPa(dag, pa).)
+    // Build the candidate per-core partition ONCE; it serves the recompute loop
+    // below. (Baking only changes ET, never processorId or priority order, so
+    // this == PerCoreOrderFromPa(dag, pa).)
     std::unordered_map<int, TaskSet> per_core =
         ExtractTaskSetPerProcessor(tasks_prioritized);
 
-    // Verdict inline from the diff locators + per_core (mirrors
-    // ClassifyReusePerTask): |diff|==0 → all FullReuse; |diff|==1 → tasks on
-    // diff.core are NoReuse, every other core FullReuse.
-    TaskSetDifference diff = ComputeTaskSetDifference(dag_tasks, pa, tl);
-    std::vector<RTAReusePerTask> verdict_per_task(dag_tasks.tasks.size(),
-                                                   RTAReusePerTask::FullReuse);
+    // Reuse verdict from the shared classifier (same logic Evaluate used to
+    // inline here): |diff|==0 → all FullReuse; |diff|==1 → tasks on diff.core
+    // are NoReuse, every other core FullReuse. any_recompute iff at least one
+    // NoReuse slot exists (i.e. |diff|==1 on a non-empty core).
+    std::vector<RTAReusePerTask> verdict_per_task =
+        ClassifyReusePerTask(dag_tasks, pa, tl);
     bool any_recompute = false;
-    if (diff.changed_task_id != -1) {
-        auto core_it = per_core.find(diff.core);
-        if (core_it != per_core.end()) {
-            for (const Task& t : core_it->second) {
-                verdict_per_task[t.id] = RTAReusePerTask::NoReuse;
-            }
+    for (RTAReusePerTask v : verdict_per_task) {
+        if (v == RTAReusePerTask::NoReuse) {
             any_recompute = true;
+            break;
         }
     }
 
