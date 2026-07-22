@@ -189,20 +189,11 @@ std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
 const std::vector<FiniteDist>& RTACache::Initialize(
     const DAG_Model& dag_tasks, const PriorityVec& pa,
     const std::vector<double>& tl) {
-    // Bake TL → apply pa (sorts HP-first) → RTA, writing each artifact directly
-    // into its cache member: champ_tasks_baked_ is the canonical-order TL-bake
-    // (what FindTaskWithDifferentEt reads by index), champ_prioritized_ is the
-    // pa-sorted form (what Evaluate's reindex + RebuildPrefixes read), and
-    // champ_per_core_ is the per-core order IsSingleTaskChange reads. All
-    // helpers return-by-value + take const-ref, so they never mutate the member
-    // we hand them.
-    champ_tasks_baked_ =
-        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
-    champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);
-    champ_per_core_ = PerCoreOrderOfPrioritized(champ_prioritized_);
+    // Bake the 4 champion baked-form members, then compute rta_ from the
+    // pa-sorted form (Initialize is the only caller that pays for the full RTA;
+    // AdoptChampion receives rta_ as a param and skips this).
+    BakeChampionForms(dag_tasks, pa, tl);
     rta_ = ProbabilisticRTA_TaskSet(champ_prioritized_);
-
-    RebuildPrefixes(champ_prioritized_);
     candidate_rta_ = rta_;
     return rta_;
 }
@@ -215,9 +206,16 @@ void RTACache::AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
                              const std::vector<FiniteDist>& rtas) {
     rta_ = rtas;
     candidate_rta_ = rtas;
+    // Same bake as Initialize; AdoptChampion takes caller-supplied rtas so it
+    // skips the ProbabilisticRTA_TaskSet call.
+    BakeChampionForms(dag_tasks, pa, tl);
+}
 
-    // Same direct-to-member bake as Initialize; AdoptChampion takes caller-
-    // supplied rtas so it skips the ProbabilisticRTA_TaskSet call.
+// Write the 4 champion baked-form members from (dag, pa, tl). See the header
+// doc for the per-member rationale + the extract-method safety note.
+void RTACache::BakeChampionForms(const DAG_Model& dag_tasks,
+                                 const PriorityVec& pa,
+                                 const std::vector<double>& tl) {
     champ_tasks_baked_ =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);

@@ -196,8 +196,25 @@ class RTACache {
     std::unordered_map<int, std::vector<int>> PerCoreOrderOfPrioritized(
         const TaskSet& prioritized) const;
 
+    // Write the 4 champion baked-form members from (dag, pa, tl): the canonical-
+    // order TL-bake (champ_tasks_baked_, what FindTaskWithDifferentEt reads by
+    // index), the pa-sorted form (champ_prioritized_, what Evaluate's reindex +
+    // RebuildPrefixes read), the per-core order (champ_per_core_, what
+    // IsSingleTaskChange reads), and the HP-prefix checkpoints
+    // (hp_prefix_per_core_). Shared by Initialize (which then computes rta_ from
+    // champ_prioritized_) and AdoptChampion (which takes rtas as a param).
+    // rta_/candidate_rta_ stay the caller's job — the two differ on WHERE rta_
+    // comes from (Initialize computes it; AdoptChampion receives it), which is
+    // exactly what each caller owns. Pure extract-method; the only reorder vs the
+    // original inline sequence is RebuildPrefixes preceding the rta_ compute in
+    // Initialize, which is safe (both read only champ_prioritized_; neither reads
+    // the other's output).
+    void BakeChampionForms(const DAG_Model& dag_tasks, const PriorityVec& pa,
+                           const std::vector<double>& tl);
+
     // Rebuild hp_prefix_per_core_ from `tasks_prioritized` by re-rolling the
-    // per-core ET-convolution. Shared by Initialize + AdoptChampion.
+    // per-core ET-convolution. Shared by Initialize + AdoptChampion (via
+    // BakeChampionForms).
     void RebuildPrefixes(const TaskSet& tasks_prioritized);
 };
 
