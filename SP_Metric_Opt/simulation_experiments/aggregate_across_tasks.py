@@ -84,11 +84,12 @@ try:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from matplotlib.ticker import FuncFormatter
+    from matplotlib.ticker import FuncFormatter, LogLocator
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
     FuncFormatter = None
+    LogLocator = None
 
 # ---------------------------------------------------------------------------
 # Path constants
@@ -474,9 +475,12 @@ def build_line_chart(
         If ``True``, set the y-axis to log scale. Use for metrics that span
         orders of magnitude across schedulers (e.g. execution time, where the
         optimizer search cost dwarfs fast baselines). A ``FuncFormatter`` labels
-        only the major (decade) ticks as plain numbers (``0.001`` not ``10^-3``
-        and not a fixed-decimal ``0.00``); the minor sub-decade ticks carry
-        gridlines but no labels.
+        the major (decade) ticks as plain numbers (``0.001`` not ``10^-3`` and
+        not a fixed-decimal ``0.00``). When the data spans fewer than ~2
+        decades the sub-decade (minor) ticks are also labelled, so a narrow
+        range (e.g. 0.044..0.56s) does not collapse to a single ``0.1`` label;
+        when it spans >=2 decades the minor ticks carry gridlines only, to
+        avoid a wall of numbers.
     """
     if not MATPLOTLIB_AVAILABLE:
         print("matplotlib not available; skipping figure generation.")
@@ -528,16 +532,45 @@ def build_line_chart(
 
     if log_y:
         ax.set_yscale("log")
-        # Label only the major (decade) ticks as plain numbers via %g.
-        # ScalarFormatter is avoided because it picks one fixed decimal place
-        # for the whole axis, so small decades collapse to "0.00" when the
-        # range also includes large values -- producing a stack of identical
-        # "0.00" labels. %g formats each decade tick on its own scale
-        # (0.0001, 0.001, 0.01, 0.1, 1). Minor (sub-decade) ticks get
-        # gridlines but NO labels, otherwise every 2x..9x position prints a
-        # number and the axis becomes an unreadable wall.
+        # Label major (decade) ticks as plain numbers via %g. ScalarFormatter
+        # is avoided because it picks one fixed decimal place for the whole
+        # axis, so small decades collapse to "0.00" when the range also
+        # includes large values -- producing a stack of identical "0.00"
+        # labels. %g formats each tick on its own scale (0.0001, 0.001, 0.01,
+        # 0.1, 1).
         if FuncFormatter is not None:
             ax.yaxis.set_major_formatter(
+                FuncFormatter(lambda val, pos=None: f"{val:g}")
+            )
+
+        # Whether the data spans a wide (>~2 decades) or narrow range decides
+        # how the MINOR (sub-decade: 2x..9x) ticks are treated. With a wide
+        # range there are many decades, so labelling every sub-decade position
+        # prints an unreadable wall of numbers -- minor ticks get gridlines
+        # only. With a NARROW range (<~2 decades, e.g. 0.044..0.56s = ~1.1
+        # decades) the only major tick in range may be a single decade (e.g.
+        # "0.1"), so the ET values for different N collapse onto one label and
+        # the figure is unreadable. In that case promote the minor ticks to
+        # labelled ticks so each value can be read.
+        finite_means = [
+            data[nt][sched]["metric"]
+            for nt in num_tasks_set
+            for sched in scheduler_list
+            if data[nt][sched]["metric"] is not None
+            and data[nt][sched]["metric"] > 0
+        ]
+        y_min = min(finite_means) if finite_means else 0.0
+        y_max = max(finite_means) if finite_means else 0.0
+        spans_many_decades = (
+            y_min > 0 and y_max > 0 and (np.log10(y_max) - np.log10(y_min)) >= 2.0
+        )
+        if LogLocator is not None and not spans_many_decades:
+            # Narrow range: place a labelled minor tick at every 1x..9x within
+            # each in-range decade so the per-N ET can be read off the axis.
+            ax.yaxis.set_minor_locator(
+                LogLocator(base=10.0, subs=np.arange(2, 10) * 0.1, numticks=12)
+            )
+            ax.yaxis.set_minor_formatter(
                 FuncFormatter(lambda val, pos=None: f"{val:g}")
             )
         ax.grid(which="minor", axis="y", linestyle=":", alpha=0.3)
