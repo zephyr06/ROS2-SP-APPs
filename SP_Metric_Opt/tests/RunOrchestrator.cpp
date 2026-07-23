@@ -156,12 +156,17 @@ int main(int argc, char** argv) {
 
         auto end_time = std::chrono::high_resolution_clock::now();
         double exec_seconds = std::chrono::duration<double>(end_time - start_time).count();
-        std::cout << "ExecutionTime_s: " << exec_seconds << "\n";
+        // exec_seconds is the TOTAL RunSimulation() wall-time (taskset I/O +
+        // scheduler + RTDA rollout + SP-metric + export) — printed for reference
+        // only, unparsed. scheduler_execution_time.txt gets the scheduler-only
+        // sum (DeterminePrioritiesAndBudgets; 0.0 for CFS, which has none).
+        std::cout << "TotalProcessTime_s: " << exec_seconds << "\n";
+        std::cout << "SchedulerExecutionTime_s: " << orchestrator.GetSchedulerExecutionTime() << "\n";
 
         std::string exec_time_path = output_folder + "/" + mode + "/scheduler_execution_time.txt";
         std::ofstream exec_time_file(exec_time_path);
         if (exec_time_file.is_open()) {
-            exec_time_file << exec_seconds << "\n";
+            exec_time_file << orchestrator.GetSchedulerExecutionTime() << "\n";
             exec_time_file.close();
         }
 
@@ -191,12 +196,18 @@ int main(int argc, char** argv) {
 
     auto end_time = std::chrono::high_resolution_clock::now();
     double exec_seconds = std::chrono::duration<double>(end_time - start_time).count();
-    std::cout << "ExecutionTime_s: " << exec_seconds << "\n";
+    // exec_seconds is the TOTAL RunSimulation() wall-time (taskset I/O +
+    // scheduler + RTDA rollout + SP-metric + export) — printed for reference
+    // only, unparsed. scheduler_execution_time.txt gets the scheduler-only
+    // sum (DeterminePrioritiesAndBudgets, where the RTA cache + Transaction
+    // live; excludes RTDA rollout / SP-metric / I/O).
+    std::cout << "TotalProcessTime_s: " << exec_seconds << "\n";
+    std::cout << "SchedulerExecutionTime_s: " << orchestrator.GetSchedulerExecutionTime() << "\n";
 
     std::string exec_time_path = output_folder + "/" + mode + "/scheduler_execution_time.txt";
     std::ofstream exec_time_file(exec_time_path);
     if (exec_time_file.is_open()) {
-        exec_time_file << exec_seconds << "\n";
+        exec_time_file << orchestrator.GetSchedulerExecutionTime() << "\n";
         exec_time_file.close();
     }
 

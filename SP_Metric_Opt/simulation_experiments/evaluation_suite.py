@@ -45,10 +45,11 @@ subject now read ``INCR_Reopt_10``: Q1 (BF-vs-INCR gap), Q2 (INCR>=BF), Q3
   SP(INCR_Reopt_30) >= SP(INCR_Reopt_60), at every conducted N.
   More frequent reopt (small period) keeps TL configs fresher, so the
   smallest period carries the highest SP. (Earlier this gate read
-  per-activation ET, but the recorded ``mean_sched_time`` is a whole-``RunSimulation``
-  wall-clock averaged over intervals and tasksets -- dominated by OS/IO
-  contention noise, not the reopt-period signal -- so it read SP instead, the
-  metric the gate actually cares about. See ``p25-incr-et-grows-with-period``.)
+  per-activation ET, but the recorded ``mean_sched_time`` is a
+  scheduler-only (``DeterminePrioritiesAndBudgets``) wall-clock summed over
+  intervals and averaged over tasksets -- dominated by OS/IO contention noise,
+  not the reopt-period signal -- so it read SP instead, the metric the gate
+  actually cares about. See ``p25-incr-et-grows-with-period``.)
 
 P2.5 removed the ``INCR_SCRATCH`` ablation arm and the E2 gate (its only
 subject pair was INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone, and the
@@ -58,8 +59,9 @@ Normalized SP = ``raw_SP / ideal_SP`` (the P12 fix; ``ideal_SP`` from
 :func:`aggregate_across_tasks.compute_sp_upper_bound`), so the ratio is in
 [0, 1] with 1.0 = "all deadlines met perfectly" and is independent of any
 scheduler's realized value. Overhead = ``Mean_Scheduler_Execution_Time_s /
-scheduler_trigger_interval_seconds`` (the CSV column is already per-interval --
-see ``run_sim_experiments.py``).
+scheduler_trigger_interval_seconds`` (scheduler-only: the CSV column is the
+per-interval ``DeterminePrioritiesAndBudgets`` time -- excludes RTDA rollout /
+SP-metric / I/O; see ``run_sim_experiments.py``).
 
 Usage
 -----

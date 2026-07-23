@@ -313,6 +313,13 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
 ResourceOptResult
 FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
+    // Bracket ONLY the scheduler decision (this whole function body) and
+    // accumulate into scheduler_exec_time_s_, which
+    // RunOrchestrator writes to scheduler_execution_time.txt. Everything else
+    // per interval — RTDA rollout, SP-metric, I/O — runs in SimulateInterval
+    // OUTSIDE this function and is deliberately excluded. Captures every mode
+    // (INCR / BF / INCR_NO_TL / INCR_WCET / RM / RM_FAST / RM_SLOW) uniformly.
+    auto sched_start = std::chrono::high_resolution_clock::now();
     ResourceOptResult res;
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_)) {
         incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
@@ -390,6 +397,9 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
             }
         }
     }
+    auto sched_end = std::chrono::high_resolution_clock::now();
+    scheduler_exec_time_s_ +=
+        std::chrono::duration<double>(sched_end - sched_start).count();
     return res;
 }
 

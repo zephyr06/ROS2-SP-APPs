@@ -30,19 +30,32 @@ public:
     const std::vector<JobRecord>& GetJobHistory() const { return job_history_; }
     const std::vector<double>& GetIntervalSPMetrics() const { return interval_sp_metrics_; }
 
+    // Sum of per-interval scheduler (DeterminePrioritiesAndBudgets) wall-time
+    // ONLY — the optimizer decision, where the RTA cache + Transaction live.
+    // Deliberately EXCLUDES RTDA rollout, SP-metric computation, I/O, export:
+    // those are simulation, not scheduling. FTP accumulates per interval; CFS
+    // never increments (stays 0.0, matching the Python CFS hardcode). Written
+    // to scheduler_execution_time.txt; the total RunSimulation() wall-time is
+    // printed to stdout separately as a reference number.
+    double GetSchedulerExecutionTime() const { return scheduler_exec_time_s_; }
+
     void PrintHyperperiodSchedule(LLint start_time, LLint end_time) const;
 
 protected:
     std::string input_folder_;
     std::string output_folder_;
     LLint interval_duration_ms_;
-    
+
     std::vector<DAG_Model> dag_tasks_vecs_;
     std::vector<TaskSetInfoDerived> tasks_info_vecs_;
     std::vector<SP_Parameters> sp_parameters_vecs_;
 
     std::vector<JobRecord> job_history_;
     std::vector<double> interval_sp_metrics_;
+
+    // Accumulator for GetSchedulerExecutionTime(); incremented inside
+    // DeterminePrioritiesAndBudgets. See that accessor's comment.
+    double scheduler_exec_time_s_ = 0.0;
 
     void LoadIntervalConfigs();
     std::vector<float> LoadJobExecutionTraces(int task_id, int path_idx, int inst_idx);

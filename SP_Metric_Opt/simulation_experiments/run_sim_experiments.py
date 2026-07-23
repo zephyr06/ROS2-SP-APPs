@@ -109,8 +109,10 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
                 )
 
     # Read scheduler execution time if available.
-    # C++ writes total process duration; we convert to per-scheduler-call average
-    # by dividing by the number of intervals (taskset_characteristics_interval_*.yaml).
+    # C++ writes the SUM of per-interval scheduler (DeterminePrioritiesAndBudgets)
+    # wall-time — the optimizer decision only, excluding RTDA rollout / SP-metric
+    # / I/O. We convert to per-scheduler-call average by dividing by the number of
+    # intervals (taskset_characteristics_interval_*.yaml).
     exec_time_file = os.path.join(sched_dir, "scheduler_execution_time.txt")
     total_exec_time = 0.0
     if os.path.exists(exec_time_file):
