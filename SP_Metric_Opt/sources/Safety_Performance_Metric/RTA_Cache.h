@@ -9,6 +9,7 @@
 // cache signature takes PriorityVec (OptimizeSP_Base.h → SP_Metric.h → RTA.h),
 // so RTA.h cannot depend back on these decls.
 
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -22,15 +23,16 @@ namespace SP_OPT_PA {
 // verdict — that's a per-task analyst's job). `Evaluate` dispatches on the same
 // derivation. Kept as an enum so the per-task vector has a name.
 enum class RTAReusePerTask {
-    NoReuse,        // Full recompute. No champion; or |diff|>1 (off-path); or,
-                    // on the serialized path, every task on the SAME core as the
-                    // single change (its HP set shifts).
-    FullReuse,      // Return champion rta_[task] verbatim. |diff|==0; or, under
-                    // |diff|==1, every task on a DIFFERENT core than the change
-                    // (untouched core → identical HP set → identical RTA).
-    ReuseHpTasksEt, // RESERVED for the future same-core-suffix refinement (reuse
-                    // the champion HP-ET prefix, recompute only the suffix). NOT
-                    // emitted by v1, which recomputes the whole changed core.
+    NoReuse,    // Full recompute. No champion; or |diff|>1 (off-path); or,
+                // on the serialized path, every task on the SAME core as the
+                // single change (its HP set shifts).
+    FullReuse,  // Return champion rta_[task] verbatim. |diff|==0; or, under
+                // |diff|==1, every task on a DIFFERENT core than the change
+                // (untouched core → identical HP set → identical RTA).
+    ReuseHpTasksEt,  // RESERVED for the future same-core-suffix refinement
+                     // (reuse the champion HP-ET prefix, recompute only the
+                     // suffix). NOT emitted by v1, which recomputes the whole
+                     // changed core.
 };
 
 // The single whole-taskset diff `ComputeTaskSetDifference` returns — a set of
@@ -40,9 +42,27 @@ enum class RTAReusePerTask {
 // these locators, not a field on the struct.
 struct TaskSetDifference {
     int changed_task_id;  // the one moved/ET-changed task; -1 iff |diff|==0
-    int core;     // processorId of the changed task; -1 iff |diff|==0
+    int core;             // processorId of the changed task; -1 iff |diff|==0
     int old_pos;  // changed task's position in the CHAMPION's per-core order
     int new_pos;  // changed task's position in the CANDIDATE's per-core order
+};
+
+// The full-champion state: the 5 members AdoptChampion/Initialize overwrite.
+// This is BOTH the cache's live storage type (RTACache::champion_) AND the
+// Memento the Transaction snapshots — so capture/restore are a single struct
+// copy/move, and a future 6th champion member cannot drift between live state
+// and the snapshot (the Memento IS the state). `candidate_rta_` is DELIBERATELY
+// NOT a member of this struct: it is a scratch buffer fully overwritten before
+// read on every Evaluate (reindex fills FullReuse slots, recompute overwrites
+// NoReuse slots), so it never needs rollback — excluding it removes one of the
+// three heavy vector<FiniteDist> copies from the snapshot. See
+// RTACache::Transaction.
+struct ChampionState {
+    std::vector<FiniteDist> rta;
+    TaskSet champ_prioritized;
+    TaskSet champ_tasks_baked;
+    std::unordered_map<int, std::vector<int>> champ_per_core;
+    std::unordered_map<int, std::vector<FiniteDist>> hp_prefix_per_core;
 };
 
 // Memoized RTA output (no PA-search state) bundled to ONE champion. Stores the
@@ -66,10 +86,11 @@ class RTACache {
                                               const std::vector<double>& tl);
 
     // Cheap commit: promote the candidate (dag, pa, tl, rtas) the caller just
-    // evaluated to champion, with NO full RTA. `rtas` MUST be the vector a prior
-    // Evaluate/Initialize returned for this same triple; the cache stores it as
-    // `rta_` then rebuilds `hp_prefix_per_core_` by re-rolling the per-core
-    // ET-convolution from (dag, pa, tl) — O(N) convolves, no RTA work.
+    // evaluated to champion, with NO full RTA. `rtas` MUST be the vector a
+    // prior Evaluate/Initialize returned for this same triple; the cache stores
+    // it as `champion_.rta` then rebuilds `champion_.hp_prefix_per_core` by
+    // re-rolling the per-core ET-convolution from (dag, pa, tl) — O(N)
+    // convolves, no RTA work.
     void AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
                        const std::vector<double>& tl,
                        const std::vector<FiniteDist>& rtas);
@@ -79,8 +100,8 @@ class RTACache {
     // state — writes the candidate RTA to `candidate_rta_` and returns it;
     // commit via AdoptChampion. Verdict-driven: the per-task reuse verdict is
     // obtained from ClassifyReusePerTask (the single source of that decision),
-    // then Evaluate seeds every task with the champion RTA (FullReuse tasks keep
-    // it) and recomputes the NoReuse tasks via GetRTA_OneTask in candidate
+    // then Evaluate seeds every task with the champion RTA (FullReuse tasks
+    // keep it) and recomputes the NoReuse tasks via GetRTA_OneTask in candidate
     // priority order. A future same-core-suffix refinement only needs the
     // verdict to gain a ReuseHpTasksEt value + a branch in the recompute loop.
     //   • no champion → Initialize (full compute).
@@ -90,8 +111,60 @@ class RTACache {
                                             const std::vector<double>& tl);
 
     // --- read accessors (const) ------------------------------------------
-    bool HasChampion() const { return !rta_.empty(); }
-    const std::vector<FiniteDist>& Rta() const { return rta_; }
+    bool HasChampion() const { return !champion_.rta.empty(); }
+    const std::vector<FiniteDist>& Rta() const { return champion_.rta; }
+
+    // --- transactions (lazy copy-on-write) ------------------------------
+    // A scoped RAII guard for the speculative serialized walk
+    // (EvaluateTimeLimitConfig_SubIncremental). In-walk AdoptChampion calls
+    // advance the champion SPECULATIVELY; if UpdateRecords rejects the trial
+    // config they must roll back so the cache champion stays in sync with
+    // res_opt_. Opening a Transaction lets the caller attempt those adopts and
+    // either keep them (Commit) or undo them (~Transaction on scope exit).
+    //
+    // LAZY copy-on-write: the pre-tx champion snapshot is captured on the FIRST
+    // champion mutation in scope (the common reject-without-adopt path pays
+    // ZERO copy — snapshot stays null and ~Transaction is a no-op). The capture
+    // fires from RTACache's own mutators via SnapshotPreMutationStateIfOpen()
+    // — see that method for why the hook lives on the cache side.
+    //
+    // The Transaction class itself is a THIN RAII wrapper: it holds no state
+    // except `committed_` and calls RTACache's public Begin/Commit/Rollback
+    // API. No friend, no back-pointer on the wrapper. No nesting (Begin asserts
+    // none is open). Non-copyable, non-movable.
+    void BeginTransaction();
+    void CommitTransaction();
+    void RollbackTransaction();
+    bool InTransaction() const { return in_transaction_; }
+
+    class Transaction {
+       public:
+        explicit Transaction(RTACache& cache) : cache_(cache) {
+            cache_.BeginTransaction();
+        }
+        // The dtor is the SINGLE resolution point: it dispatches to
+        // CommitTransaction (keep mutations) or RollbackTransaction (undo),
+        // either of which closes the tx on the cache. This guarantees the
+        // cache-side state is cleaned up exactly once even if Commit() ran
+        // and an exception then fires before scope exit.
+        ~Transaction() {
+            if (committed_)
+                cache_.CommitTransaction();
+            else
+                cache_.RollbackTransaction();
+        }
+        Transaction(const Transaction&) = delete;
+        Transaction& operator=(const Transaction&) = delete;
+        // Mark the transaction as accepted: ~Transaction will call
+        // CommitTransaction (keep) instead of RollbackTransaction (undo).
+        // noexcept + idempotent (a second call is a no-op); the real cleanup
+        // is deferred to the dtor so it is exception-safe.
+        void Commit() noexcept { committed_ = true; }
+
+       private:
+        RTACache& cache_;
+        bool committed_ = false;
+    };
 
     // The difference between the candidate (dag, pa, tl) and the stored
     // champion, WITHOUT computing any RTA. The pure query half of Evaluate.
@@ -100,8 +173,9 @@ class RTACache {
     // changed task + its core + its old/new per-core priority positions.
     //   • no champion → {changed_task_id:-1, ...}
     //   • |diff|==0   → {changed_task_id:-1, ...}
-    //   • |diff|==1   → locators filled in (old_pos==new_pos for an ET-only move)
-    //   • |diff|>1    → THROWS (violates the P1.10 single-change invariant; the
+    //   • |diff|==1   → locators filled in (old_pos==new_pos for an ET-only
+    //   move) • |diff|>1    → THROWS (violates the P1.10 single-change
+    //   invariant; the
     //     cache only serves |diff|<=1). Use IsSingleTaskChange to ask first.
     // Pure; may be called on a cache with no champion (returns {-1,...}).
     TaskSetDifference ComputeTaskSetDifference(
@@ -117,8 +191,8 @@ class RTACache {
     //      migrated cores). At most ONE core may differ.
     //   3. Remove-one-compare-rest:
     //      - 1 ET-diff task X: remove X from both per-core orders; if the rest
-    //        still differs, a SEPARATE task also moved → false (X's own priority
-    //        move is absorbed: combined ET+move = single change).
+    //        still differs, a SEPARATE task also moved → false (X's own
+    //        priority move is absorbed: combined ET+move = single change).
     //      - 0 ET-diff (pure priority move): at the first mismatch i, the moved
     //        task is champ[i] or cand[i] — try removing each; if either makes
     //        the rest match, that's the single move; if neither → false.
@@ -126,8 +200,7 @@ class RTACache {
     //        stays -1, returns true.
     //   4. Cross-check: the priority-move core (if any) and the ET-diff task's
     //      core must be the same single core, else >1 change → false.
-    bool IsSingleTaskChange(const DAG_Model& dag_tasks,
-                            const PriorityVec& pa,
+    bool IsSingleTaskChange(const DAG_Model& dag_tasks, const PriorityVec& pa,
                             const std::vector<double>& tl,
                             TaskSetDifference& out) const;
 
@@ -143,43 +216,23 @@ class RTACache {
         const std::vector<double>& tl) const;
 
    private:
-    // The champion is carried ONLY in its baked forms (champ_prioritized_ /
-    // champ_tasks_baked_ / champ_per_core_) + rta_ + hp_prefix_per_core_. The
-    // raw (dag, pa, tl) triple is consumed at bake time and not stored: pa and
-    // tl are read once by the bake (UpdateTaskSetPriorities /
-    // ApplyTimeLimitsToTasksExecutionTime) and never again, and Evaluate /
-    // IsSingleTaskChange read the baked forms, not a stored pa/tl. A future
-    // caller that needs the champion's pa/tl back should add a const accessor
-    // rather than carry dead state here.
+    // The champion is carried ONLY in `champion_` (its 5 baked-form / RTA /
+    // prefix members — see ChampionState). The raw (dag, pa, tl) triple is
+    // consumed at bake time and not stored: pa and tl are read once by the bake
+    // (UpdateTaskSetPriorities / ApplyTimeLimitsToTasksExecutionTime) and never
+    // again, and Evaluate / IsSingleTaskChange read the baked forms, not a
+    // stored pa/tl. A future caller that needs the champion's pa/tl back should
+    // add a const accessor rather than carry dead state here.
+    //
+    // `champion_` is the ChampionState struct itself (NOT 5 loose members): it
+    // is both the live state and the Transaction's Memento type, so capture is
+    // `ChampionState(champion_)` and restore is `champion_ = move(snapshot)`.
+    // This makes drift impossible — a future 6th champion member added to
+    // ChampionState is automatically snapshot+restored, whereas 5 loose members
+    // + a hand-written Memento could silently forget one.
+    ChampionState champion_;
 
-    // Champion tasks TL-baked + pa-sorted (the exact `tasks_prioritized`
-    // Initialize/AdoptChampion built). Invariant across one champion lifetime,
-    // so Evaluate's reindex reads this instead of re-baking the champion DAG
-    // every call. Empty iff no champion.
-    TaskSet champ_prioritized_;
-    // Champion tasks TL-baked in CANONICAL (task-id) order (the `tasks_baked`
-    // built before pa-sorting). Invariant across one champion lifetime, so
-    // IsSingleTaskChange reads this instead of re-baking every call
-    // (FindTaskWithDifferentEt walks .tasks[i] by index → needs canonical, not
-    // pa-sorted, order). Empty iff no champion.
-    TaskSet champ_tasks_baked_;
-    // Champion per-core priority order: per processorId, the task ids on that
-    // core sorted ascending by priority value (the exact artifact
-    // PerCoreOrderOfPrioritized(champ_prioritized_) produces). Invariant across
-    // one champion lifetime, so IsSingleTaskChange reads this instead of
-    // rebuilding the champion partition every call; only the CANDIDATE side is
-    // rebuilt per call. Empty iff no champion.
-    std::unordered_map<int, std::vector<int>> champ_per_core_;
-    // The champion RTA, flat by task id (rta_[i] = RTA of task i).
-    std::vector<FiniteDist> rta_;
-    // Per-core HP-prefix checkpoints (the reuse primitive):
-    // hp_prefix_per_core_[processorId][i] = HP-ET convolution of the tasks
-    // sorted above position i on that core = exactly what 3-arg GetRTA_OneTask
-    // consumes. Built by Initialize, consumed by Evaluate's patch branch,
-    // rolled forward by AdoptChampion.
-    std::unordered_map<int, std::vector<FiniteDist>> hp_prefix_per_core_;
-
-    // Candidate RTA buffer (Evaluate's output; champion rta_ untouched until
+    // Candidate RTA buffer (Evaluate's output; champion_.rta untouched until
     // AdoptChampion). AdoptChampion's `rtas` arg is a vector returned here.
     std::vector<FiniteDist> candidate_rta_;
 
@@ -191,31 +244,70 @@ class RTACache {
         const DAG_Model& dag_tasks, const PriorityVec& pa) const;
     // Per-core order from an ALREADY-prioritized TaskSet (no re-sort). Shared
     // body of PerCoreOrderFromPa + the champion-order cache build
-    // (champ_prioritized_ is already pa-sorted, so re-sorting it would be
-    // redundant work). Pure.
+    // (champion_.champ_prioritized is already pa-sorted, so re-sorting it would
+    // be redundant work). Pure.
     std::unordered_map<int, std::vector<int>> PerCoreOrderOfPrioritized(
         const TaskSet& prioritized) const;
 
-    // Write the 4 champion baked-form members from (dag, pa, tl): the canonical-
-    // order TL-bake (champ_tasks_baked_, what FindTaskWithDifferentEt reads by
-    // index), the pa-sorted form (champ_prioritized_, what Evaluate's reindex +
-    // RebuildPrefixes read), the per-core order (champ_per_core_, what
+    // Write the 4 champion baked-form members of `champion_` from (dag, pa,
+    // tl): the canonical-order TL-bake (champion_.champ_tasks_baked, what
+    // FindTaskWithDifferentEt reads by index), the pa-sorted form
+    // (champion_.champ_prioritized, what Evaluate's reindex + RebuildPrefixes
+    // read), the per-core order (champion_.champ_per_core, what
     // IsSingleTaskChange reads), and the HP-prefix checkpoints
-    // (hp_prefix_per_core_). Shared by Initialize (which then computes rta_ from
-    // champ_prioritized_) and AdoptChampion (which takes rtas as a param).
-    // rta_/candidate_rta_ stay the caller's job — the two differ on WHERE rta_
-    // comes from (Initialize computes it; AdoptChampion receives it), which is
-    // exactly what each caller owns. Pure extract-method; the only reorder vs the
-    // original inline sequence is RebuildPrefixes preceding the rta_ compute in
-    // Initialize, which is safe (both read only champ_prioritized_; neither reads
-    // the other's output).
+    // (champion_.hp_prefix_per_core). Shared by Initialize (which then computes
+    // champion_.rta from champion_.champ_prioritized) and AdoptChampion (which
+    // takes rtas as a param). champion_.rta / candidate_rta_ stay the caller's
+    // job — the two differ on WHERE champion_.rta comes from (Initialize
+    // computes it; AdoptChampion receives it), which is exactly what each
+    // caller owns. Pure extract-method; the only reorder vs the original inline
+    // sequence is RebuildPrefixes preceding the champion_.rta compute in
+    // Initialize, which is safe (both read only champion_.champ_prioritized;
+    // neither reads the other's output).
     void BakeChampionForms(const DAG_Model& dag_tasks, const PriorityVec& pa,
                            const std::vector<double>& tl);
 
-    // Rebuild hp_prefix_per_core_ from `tasks_prioritized` by re-rolling the
-    // per-core ET-convolution. Shared by Initialize + AdoptChampion (via
-    // BakeChampionForms).
+    // Rebuild champion_.hp_prefix_per_core from `tasks_prioritized` by
+    // re-rolling the per-core ET-convolution. Shared by Initialize +
+    // AdoptChampion (via BakeChampionForms).
     void RebuildPrefixes(const TaskSet& tasks_prioritized);
+
+    // --- transaction internals (lazy copy-on-write) ---------------------
+    // Why the snapshot trigger lives on the cache, not on Transaction: lazy
+    // capture means "snapshot the champion the instant BEFORE the first
+    // mutation in scope" — and the mutation happens deep inside the cache's
+    // own mutators (AdoptChampion/Initialize, invoked from
+    // OptimizeIncre_SingleTask far below the tx scope). Only the mutator knows
+    // that moment. So each full-champion overwrite calls
+    // SnapshotPreMutationStateIfOpen() at its TOP, before writing any member.
+    // This is the ONE coupling point lazy COW requires; it is honest-named
+    // (a verb describing exactly what it does) and cheap (one branch). The
+    // alternative — eager capture at tx-open — removes the hook but pays a
+    // full 5-member copy on every walk step; rejected under the
+    // "champion updates rare, give-ups common" premise.
+    //
+    // in_transaction_ : true between BeginTransaction and Commit/Rollback.
+    // snapshot_       : the pre-FIRST-mutation champion, or null. Null ⟺ no
+    //                   mutation has fired in scope yet (the zero-copy path).
+    //                   The bool is redundant with the null check; one source
+    //                   of truth.
+    bool in_transaction_ = false;
+    std::unique_ptr<ChampionState> snapshot_;
+
+    // Called at the top of every full-champion overwrite (AdoptChampion +
+    // Initialize), BEFORE any member write. If a tx is open and the snapshot
+    // is still null, captures the CURRENT (pre-mutation) champion — so the tx
+    // can restore it on rejection. First-capture-only: a no-op on the 2nd+
+    // mutation in the same tx (the snapshot already holds the pre-tx state).
+    // No-op when no tx is open (the common case outside the serialized walk).
+    // No-op on the no-champion → first-Initialize path: capturing an empty
+    // champion is pointless (a restore would restore empty state), and skipping
+    // it keeps the zero-copy invariant pure.
+    void SnapshotPreMutationStateIfOpen();
+    // Copy the 5 champion members into a Memento (excludes candidate_rta_).
+    ChampionState CaptureChampionState() const;
+    // Move-assign the 5 champion members back out of a Memento.
+    void RestoreChampionState(ChampionState&& state);
 };
 
 }  // namespace SP_OPT_PA

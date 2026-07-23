@@ -183,10 +183,23 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     (void)K;  // unused: the primitive re-searches one task's 1D positions (no
               // beam)
 
-    // P1.16: Backup the RTA cache state before performing the 1D search / sub-incremental eval.
-    // If the trial configuration is rejected by UpdateRecords, we restore this backup to keep
-    // the cache champion in sync with res_opt_.
-    RTACache cache_backup = rta_cache_;
+    // P1.21: guard the speculative 1D search / sub-incremental eval with a
+    // lazy copy-on-write Transaction. The in-walk AdoptChampion calls
+    // (OptimizeIncre_SingleTask's strict-improvement adopts) advance the cache
+    // champion SPECULATIVELY; if UpdateRecords rejects this trial config they
+    // must roll back so the cache champion stays in sync with res_opt_.
+    // Opening the tx is zero-copy — the pre-tx champion snapshot is captured
+    // LAZILY on the FIRST champion mutation in scope, so the common
+    // reject-without-adopt path (no strict-improvement found) pays nothing.
+    // ~Transaction restores on reject (RollbackTransaction); tx.Commit() after
+    // a successful UpdateRecords keeps the accepts (CommitTransaction), incl.
+    // CommitIncumbent's accept-path AdoptChampion, which fires inside
+    // UpdateRecords while the tx is still open — first-capture-only makes its
+    // SnapshotPreMutationStateIfOpen a no-op, then Commit retains it. Replaces
+    // the former eager `RTACache cache_backup = rta_cache_;` full-copy (P1.16)
+    // which paid a deep copy of all champion vectors/maps every walk step
+    // regardless of outcome.
+    RTACache::Transaction tx(rta_cache_);
 
     // The per-eval DAG rebuild is required, not redundant: the cost-dominant
     // caller is the Type-L walk, which calls this once PER trial TL step with a
@@ -288,14 +301,21 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
             dag_tasks_cur, sp_parameters_, challenger.opt_pa_, time_limits,
             baseline_rtas);
     }
-    challenger.OptimizeIncre_SingleTask(
-        dag_tasks_cur, static_cast<int>(task_idx), et_increased,
-        std::ref(rta_cache_));
+    challenger.OptimizeIncre_SingleTask(dag_tasks_cur,
+                                        static_cast<int>(task_idx),
+                                        et_increased, std::ref(rta_cache_));
     double current_sp = challenger.opt_sp_;
     bool updated = UpdateRecords(challenger, time_limits);
-    if (!updated) {
-        rta_cache_ = cache_backup;
+    if (updated) {
+        // Accept: keep the in-tx champion adopts (the speculative
+        // OptimizeIncre_SingleTask adopts + CommitIncumbent's accept-path
+        // adopt inside UpdateRecords). tx.Commit() marks the tx accepted; ~tx
+        // then calls CommitTransaction (keep, no restore).
+        tx.Commit();
     }
+    // Reject: ~tx calls RollbackTransaction, restoring the pre-tx champion (or
+    // no-op if no mutation fired in scope — the zero-copy reject-without-adopt
+    // path).
     return current_sp;
 }
 
@@ -778,19 +798,14 @@ void OptimizePA_Incre_with_TimeLimits::CommitIncumbent(
     // cache's Evaluate does NOT advance the champion (only AdoptChampion/
     // Initialize do); if the champion stays frozen at an earlier triple, a
     // later serialized eval drifts to |diff|>1 and Evaluate throws.
-    // AdoptChampion is cheap (stores caller rtas + rebuilds per-core
-    // HP-prefixes, NO RTA) but needs the rtas for THIS triple — fetch them via
-    // Evaluate against the SAME (dag_tasks_, pa, tl) being committed: that
-    // triple == the candidate the adopting eval just scored, so Evaluate
-    // short-circuits to FullReuse and returns the cached candidate_rta_
-    // (near-zero cost, no extra RTA, no SP regression). Gated by
-    // rta_cache_active_ so the reopt path (shares this writer, can commit a >1
-    // change) neither throws nor regresses. NOT yet read by the eval path — the
-    // oracle EvaluateSPWithPriorityVec is still live; this only keeps the cache
-    // warm for the 2b read-side swap.
+    // CommitIncumbent adopts the SAME (dag_tasks_, pa, tl) it just scored, so
+    // Evaluate hits the |diff|==0 FullReuse path — returns the cached
+    // candidate_rta_ with NO RTA recompute (no "duplicate RTA": the refetch is
+    // a zero-cost reuse, then AdoptChampion stores it as the new champion).
+    // Gated by rta_cache_active_ so the reopt path (shares this writer, can
+    // commit a >1 change) neither throws nor regresses.
     if (rta_cache_active_) {
-        const std::vector<FiniteDist>& rtas =
-            rta_cache_.Evaluate(dag_tasks_, pa, tl);
+        const auto& rtas = rta_cache_.Evaluate(dag_tasks_, pa, tl);
         rta_cache_.AdoptChampion(dag_tasks_, pa, tl, rtas);
     }
 }
