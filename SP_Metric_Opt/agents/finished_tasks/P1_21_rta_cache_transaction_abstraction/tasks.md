@@ -1,5 +1,14 @@
 # P1.21 — Tasks (working checklist)
 
+> **STATUS: CLOSED 2026-07-23 → moved to `finished_tasks/`.** All code committed
+> at HEAD (`4d7d14b6` "add rta cache transaction" — the full Phases 1–6 redesign,
+> incl. Phase 5's `ChampionState champion_` storage-type refactor + Phase 6's
+> `AdoptEvaluatedCandidate` removal, all landed together in the committed
+> `RTA_Cache.h`). 17/17 ctest green (23.55s from a clean `check.SP_OPT` build);
+> bit-identical SP gate held through every phase. Last open item — 3b (perf
+> measurement) — is an explicitly-deferred NON-gate; its subject (the
+> Transaction's measured cost) is delegated to open task P1.22.
+
 > Refactor + perf. Bit-identical SP output is the only acceptance gate.
 > Scoped RAII transaction abstraction to replace upfront full-cache copy.
 > Per the agent rule: `git add` only; the user commits.
@@ -34,8 +43,14 @@
 - [x] **3a. Full gate green**
   - 17/17 ctest green from fresh `-DCMAKE_BUILD_TYPE=DEBUG` build (21.11s) AFTER 2b integration.
   - testRTA 56/56 (incl. 3 new Transaction pins); testIncreOpt_w_TL + testOptimizeIncrePA (the sub-incremental + cache path exercisers) GREEN → bit-identical SP confirmed.
-- [ ] **3b. Document performance impact**
-  - Compare execution times of walk steps with and without lazy copy-on-write transaction pattern. (Deferred — perf measurement, NOT a correctness gate.)
+- [x] **3b. Document performance impact** — DEFERRED-TO-P1.22 (2026-07-23).
+  - Compare execution times of walk steps with and without lazy copy-on-write
+    transaction pattern. NOT a correctness gate; closed as a P1.21 item because
+    the measured-cost question is the entire subject of open task P1.22
+    (investigate the Transaction's slowdown: high-frequency mid-walk
+    `AdoptChampion`, `make_unique<ChampionState>` heap churn, redundant
+    `RebuildPrefixes`, pointer indirection). P1.21 = refactor+gate; the
+    copy-count table in dev_log already proves lazy ≤ eager per outcome.
 - [x] **3c. Update overall tasks and logs**
   - dev_log + tasks updated; memory file + MEMORY.md updated.
 

@@ -1,156 +1,75 @@
-# Evaluation Log: Compression Algorithm Iterations (2026-06-28)
+## P1.22 — Capture vs commit, and the lazy-copy framing (2026-07-23)
 
----
+**Question raised:** the snapshot captures on ~40% of opened transactions but only ~8% commit. Why copy on mutation rather than only before commit? Isn't that backwards?
 
-## Round 1: Block-Compression Algorithm (Gemini's initial proposal)
+**Correction first — the current design IS lazy copy, by definition.** Copy-on-write / lazy copy means: do NOT copy at the logical backup point; defer the copy until a write (mutation) actually happens, because only then do you need a private copy to keep the original intact. The P1.21 `SnapshotPreMutationStateIfOpen` does exactly this:
+- `BeginTransaction` = the logical "I may want to undo this scope" point. The eager P1.16 design deep-copied the whole cache HERE → 100% of transactions paid.
+- Lazy design: no copy at `BeginTransaction`. The copy fires only on the FIRST mutation (`AdoptChampion`/`Initialize`), first-capture-only.
+- 60% of transactions never mutate → never copy → zero cost. That 60% skip is the laziness paying off.
+- 40% mutate → copy fires, correctly, because the original is about to be overwritten and rollback needs it.
 
-**Status:** Implemented, tested, integrated. Gemini correctly identified that the old monotonic compression was buggy and that block-compression produced more accurate SP metrics.
+So the three positions, correctly labeled:
+1. **Eager** (P1.16): copy at BeginTransaction, 100% of tx. Not lazy.
+2. **Lazy COW** (P1.21, current): copy on first mutation, 40% of tx. ← this IS lazy copy.
+3. **"Copy before commit"** (the original intuition): ill-defined for rollback. At commit time the pre-transaction original is already destroyed by the in-walk mutations, so a copy made at commit cannot restore the original on rollback. If the intuition is really "don't touch the shared cache speculatively; write only at commit" — that's deferring the WRITE (a scratch-buffer restructure), not deferring the copy. Different axis.
 
-**Result:** Integration tests needed update from `3.89222` → `3.95822`. ✅
+**Capture vs commit, plainly:**
+- Capture = save the pre-mutation original into `snapshot_` so rollback can restore it. Must precede the overwrite.
+- Commit = keep the mutated result; just `snapshot_.reset()`, no copy.
+- Rollback = `champion_ = move(*snapshot_)`; needs the pre-mutation capture.
 
----
+**The real tension the 80%-wasted finding exposes** is NOT that lazy copy is wrong (it correctly skips the 60%). It's that COW pays a copy on EVERY write regardless of whether the transaction ultimately commits: of the 40% of tx that write (and thus copy), ~80% roll back, so that copy+restore served no kept result. This is inherent to copy-on-write-with-rollback — the copy must precede the write because at write-time you cannot know whether the tx will commit, so speculative writes that later roll back always pay the copy. Avoiding THAT requires not mutating the shared cache speculatively at all (scratch champion, swap-in at commit) — which is exactly the hypothesis-3 / candidate-(a) restructure, gated on whether in-walk `AdoptChampion`→`BakeChampionForms`→`RebuildPrefixes` is load-bearing for the next `Evaluate` in the same walk.
 
-## Round 2: Single-Pass Buffer-Based Algorithm (User directive)
+**Net:** the current capture-on-first-mutation is the laziest CORRECT design for in-place mutation — not a bug, not a mis-timed copy. The P1.22 cost question reduces to "can the in-walk search run against scratch so commit is the only write," not "is the lazy copy wrong." Pending: A/B/C decision (is P1.22 still live given P1.23's finding that the apparent slowdown was a timer-scoping artifact?).
 
-User requested a single-pass algorithm (at most 2 iterations) for performance. Gemini proposed a buffer-based single-pass algorithm in `gemini.md`.
+## P1.25 — Resolution: remove the transaction layer (2026-07-23)
 
-### Initial Implementation (weighted average)
-I implemented the algorithm using **weighted average** (`buf_weighted_val / buf_prob`) for merged buckets:
-- `CompressDistribution`: single pass, builds new vector, O(n)
-- Test values updated to match weighted-average outputs
+**Outcome:** the capture-vs-commit / lazy-copy debate above is now MOOT.
+User directive: *"i'm tired of arguing on the transaction. let's add a new
+active task p1_25 to remove all the rta cache transaction,etc, only keep rta
+cache."* New task [`active_tasks/P1_25_remove_rta_cache_transaction/`] filed.
+The transaction layer (P1.21 lazy CoW) will be deleted; the `RTACache` itself
+stays.
 
-**Integration SP metric:** shifted to `4.0` (weighted average absorbed the tiny tail completely).
+**Why removal is justified by the evidence already gathered:**
+- P1.22 Phase 1a: of 1632 opened tx, only 8% commit; ~40% capture a snapshot;
+  **80.3% of those captures (530/660) are thrown away by rollback** — paid
+  capture AND restore, discarded. The lazy design wins on the 60% zero-copy
+  path but, on the 40% that mutate, pays capture on 100% and an extra restore
+  on 80%.
+- P1.23: the original "+5.02%@N=10 transaction slowdown" P1.22 was filed to
+  chase was likely a timer-scoping artifact (old timer bracketed all of
+  `RunSimulation`, washing the optimizer delta in RTDA+I/O noise); under the
+  corrected timer the cache arm was ~36% *faster*, not slower. So the
+  transaction's *premise of a regression to fix* is in doubt.
 
-**Tests passing:** `testProbability` 25/25, `testScheduleSimulate` 34/34.
+**The one correctness constraint the discussion did NOT settle (and P1.25
+must):** the transaction is the ONLY mechanism that reverts the cache
+champion on a REJECTED sub-incremental walk step. The ACCEPT path is already
+covered without it — `CommitIncumbent` (`OptimizeSP_TL_Incre.cpp:807-810`)
+re-adopts the committed triple via `Evaluate`+`AdoptChampion` on every commit.
+So deleting the transaction + adding nothing ⇒ a rejected walk leaves the
+champion advanced to a trial PA that `res_opt_` never committed ⇒ the next
+`Evaluate` sees `|diff|>1` ⇒ `ComputeTaskSetDifference` THROWS (the
+P1.15/P1.16 crash class returns). P1.25 Decision D1 picks the replacement
+revert: (a) re-seed champion from `res_opt_` at sub-incremental entry
+[recommended], (b) eager save/restore on the reject branch, or (c) stop
+speculative in-walk adopts entirely.
 
----
+**D1 DECIDED = (b) eager save/restore scoped to the reject branch** (2026-07-23).
+User: *"i didn't read your question carefully, just take references from the
+previous commit, like ecbed89697016ee429ef8c9b72b52e46463cb0da, unless you have
+better ideas to discuss."* `ecbed896` is the pre-transaction parent of `4d7d14b6`
+("add rta cache transaction"); it had the cache but NO tx, and its reject path
+was exactly `RTACache cache_backup = rta_cache_;` at entry + `if (!updated)
+{ rta_cache_ = cache_backup; }` on reject — proven-correct by git history.
+Overrides the earlier (a) re-seed-at-entry recommendation. Trade-off: (b)
+re-introduces the per-step deep copy P1.21 removed, but the tx's perf premise
+was a timer artifact (P1.23) and (b) is known-good vs (a)'s fresh correctness
+check. (a) remains the deferred upgrade path.
 
-## Round 3: Safety/Correctness Fix (Gemini's critique)
-
-**Gemini's critical finding:** Weighted average is **optimistic** for real-time analysis.
-
-- In RTA/scheduling analysis, compression must be **conservative (pessimistic)** — never underestimate execution/response times.
-- Weighted average `35` for a bucket containing `[30, 40]` is optimistic compared to the true maximum `40`.
-- The original `CompressDistribution_v2` test expected max values (`5`, `7`) — confirming the prior codebase intended conservative semantics.
-
-**User decision:** Chose **Conservative (max)** over weighted average.
-
-### Fix Applied
-- Removed `buf_weighted_val` entirely.
-- Bucket value = `item.value` (last/max value in the bucket, since distribution is sorted ascending).
-- Trailing buffer merged with `distribution.back().value`.
-
-### Updated Values
-| Test | Weighted Avg | Conservative (max) |
-|------|-------------|-------------------|
-| `CompressDistribution_v2` | `[4.2,0.5],[6.6,0.5]` | `[5,0.5],[7,0.5]` |
-| `UnimodalTail` | `[1.98,0.406],[3.19,0.594]` | `[2,0.406],[7,0.594]` |
-| `MultimodalValley` | `[0.998,0.551],[3.99,0.449]` | `[1,0.551],[5,0.449]` |
-| SP metric (integration) | `4.0` | `3.90119` |
-
-**Tests passing:** `testProbability` 25/25, `testScheduleSimulate` 34/34.
-
----
-
-## Round 4: Test Expectation Updates (Gemini's follow-up)
-
-**Gemini's finding:** The more accurate compression changes optimizer behavior in incremental time-limit tests (`testIncreOpt_w_TL`). Tighter deadline-miss assessments now allow larger time limits, so four hardcoded expectations needed updating:
-
-- `OptimizeFromScratch_w_TL` (v19): `400` → `800`
-- `optimize_incremental` (v19): `400` → `800`
-- `OptimizeWithOptimizationSpace` (v19): `400` → `800`
-- `OptimizeFromScratch_w_TL` (v19_2): `400` → `1000`
-
-**Action taken:** Source file `tests/testIncreOpt_w_TL.cpp` already contained the updated expectations. Rebuilt the stale `testIncreOpt_w_TL` binary in `build/`.
-
-**Result:** All 13/13 tests in `testIncreOpt_w_TL` pass. Full suite green.
-
----
-
-## Round 5: Flat Vector Sort-Coalesce Convolve (Item C from improve_efficiency.md)
-
-### Concerns Raised & Answered
-
-**Proposed implementation in `improve_efficiency.md` used epsilon-based coalescence** (`std::abs(a - b) < 1e-9`). This would change semantics from the current `std::unordered_map<double, double>` code, which relies on **exact double equality**. Guard kept exact `==`.
-
-### Implementation Applied
-- Replaced `std::unordered_map<double, double> m_v2p` with flat pre-allocated `std::vector<Value_Proba> convolved`.
-- `reserve(distribution.size() * other.distribution.size())` — single allocation.
-- Nested loop populates the flat vector.
-- `std::sort` on flat vector for cache-local ordering.
-- Single-pass exact coalesce (`merged.back().value == item.value`) matching prior `unordered_map` semantics.
-- Handles empty distribution edge case (clears and returns early).
-
-### Benefits
-1. **Cache locality:** contiguous vector memory instead of hash bucket pointer chasing.
-2. **No per-element malloc heap:** one `reserve` instead of node allocations per unique `value`.
-3. **Predicable memory:** `O(N*M)` pre-allocated instead of `O(K)` where K is number of distinct sums.
-
-### Test Results (Full Suite)
-- `testProbability`: 25/25 ✅
-- `testScheduleSimulate`: 34/34 ✅
-- `testIncreOpt_w_TL`: 13/13 ✅
-- `testOptimizePA`: 9/9 ✅
-
-**Status:** Item C implemented successfully, all tests passing.
-
----
-
----
-
-## Round 6: Code Review — Strict Equality vs. Epsilon-Compare in Convolve Coalesce
-
-**Gemini's Review (`gemini.md`):**
-Proposed replacing `==` with epsilon comparison (`std::abs(a - b) < 1e-9`) to guard against floating-point drift during addition (`element_this.value + element_other.value`).
-
-**Kimi's Evaluation & Response:**
-
-### 1. Exact `==` Matches the Old Semantics
-The original implementation used `std::unordered_map<double, double>`. The hash/equality for `double` keys is **bitwise exact**. Two sums differing by `1e-15` would hash to different buckets and were **not** coalesced. Using `==` in the flat-vector rewrite is a faithful preservation of that behavior, not a bug.
-
-### 2. Epsilon Merge is Unsafe Without Conservative Max Value
-If we adopted epsilon merger naïvely:
-```cpp
-if (!merged.empty() && std::abs(merged.back().value - item.value) < 1e-9)
-    merged.back().probability += item.probability;  // keeps BACK value (smaller)
-```
-...this is **optimistic**. In conservative RTA, we must never underestimate execution/response time. To be safe, epsilon merge would require:
-```cpp
-merged.back().value = std::max(merged.back().value, item.value);  // conservative
-merged.back().probability += item.probability;
-```
-
-### 3. Risk of Over-Merging
-A fixed `1e-9` threshold could silently merge genuinely distinct execution times that happen to be close, altering deadline-miss probabilities. The existing codebase uses integer and Gaussian-derived values where exact sums are naturally exact or reproducible. Introducing epsilon is a **safety regression risk** for marginal safety gain.
-
-### 4. Regression Guard Already in Place
-The new test `Convolve_CoalesceMultiple` uses exact values and will break if someone switches to epsilon without reviewing the conservative-max-value implication, serving as a conscious-decision barrier.
-
----
-
-## Joint Conclusion (Kimi + Gemini)
-
-We **agree to keep exact `==` coalescence** in `Convolve`. The reasoning:
-1. **No behavioral regression:** Matches prior `unordered_map<double, double>` semantics exactly.
-2. **Conservative by default:** Avoids any risk of optimistic value approximation in RTA.
-3. **Transparent and auditable:** Exact comparison is easy to reason about; epsilon thresholds introduce hidden policy.
-
-Future epsilon-based merging is **not rejected** as an idea, but if pursued it must:
-- Use a **conservative max-value rule**, and
-- Be validated against the full integration test suite (SP metrics, optimizer, schedulability).
-
----
-
-## Final Overall Conclusion
-
-| Item | Status |
-|------|--------|
-| Block-compression (old monotonic bug fix) | ✅ Implemented & verified |
-| Single-pass conservative `CompressDistribution` | ✅ Implemented & verified |
-| Removed dead `Dist_compress_threshold` config | ✅ Implemented & verified |
-| Flat vector sort-coalesce `Convolve` | ✅ Implemented & verified |
-| Strict equality coalescence (`==`) | ✅ **Agreed: kept as-is** |
-
-**Full test suite:** 84/84 passing (28 + 34 + 13 + 9).
-
-All efficiency improvements from `improve_efficiency.md` Item C are complete. Next items (A, B) remain in the backlog for future work.
+**Task status:** P1.25 filed, D1=(b) decided, implementation TDD-first
+(beginning Phase 0 cleanup). P1.22 to be closed as superseded-by-P1.25; P1.21
+to move to `finished_tasks/` once P1.25 lands. The P1.22 temporary
+`TransactionCounters` instrumentation in `RTA_Cache.cpp` + the throwaway
+`p1_22_counter_probe.json` revert as P1.25 cleanup steps 0b/0c.

@@ -62,12 +62,16 @@
   loop) produce overlapping data; compute once, reuse. Differential GREEN.
   - DONE 2026-07-19 (Evaluate-side): `Evaluate` builds `per_core` once and
     derives the verdict inline (no `ClassifyReusePerTask` call). 17/17 green.
-    `ComputeTaskSetDifference`/`TryComputeSingleChange`'s OWN two
-    `PerCoreOrderFromPa` calls remain (deeper; needs const-API threading).
-- [ ] **1b. Collapse the per-core partition to one compute per `Evaluate`.**
-  `PerCoreOrderFromPa` (candidate side, used by `ComputeTaskSetDifference` +
-  `ClassifyReusePerTask`) and `ExtractTaskSetPerProcessor` (used by the recompute
-  loop) produce overlapping data; compute once, reuse. Differential GREEN.
+  - DONE 2026-07-20 (1b remainder — champion side): `TryComputeSingleChange`
+    reads the cached `champ_per_core_` member (built in `Initialize`/
+    `AdoptChampion` via the new `PerCoreOrderOfPrioritized` helper) instead of
+    rebuilding `PerCoreOrderFromPa(dag_champion_, pa_champion_)` every call. New
+    pin `Evaluate_PriorityMove_AfterAdoptChampion_StalePerCoreOrderGuard`
+    (multi-champion PA-swap staleness). 17/17 ctest + 56/56 testRTA green. The
+    CANDIDATE-side `PerCoreOrderFromPa` call remains (per-call `pa` genuinely
+    changes; threading `Evaluate`'s already-built partition through the `const`
+    `ComputeTaskSetDifference → TryComputeSingleChange` API is a deeper, separate
+    increment).
 - [~] **1c. Drop the redundant `candidate_rta_.assign(...)` zero-init** when
   every slot is provably written (prove via the reindex loop covering all
   FullReuse tasks + the recompute loop covering all NoReuse tasks). If a slot
@@ -88,6 +92,24 @@
   `Evaluate`, `ComputeTaskSetDifference`, `ClassifyReusePerTask` into a private
   helper returning a small struct (the baked tasks, the per-core order, the
   id→index map). Pure refactor; differential GREEN.
+  - NOTE 2026-07-20: the candidate-side bake is duplicated across `Evaluate`
+    (`:408-410`) and `IsSingleTaskChange` (`:261-262`) only in the single
+    `ApplyTimeLimitsToTasksExecutionTime` call — they diverge after it (Evaluate
+    sorts; IsSingleTaskChange uses `PerCoreOrderFromPa`, no sort), so a one-line
+    wrapper is not a clean win. The deeper waste here is that `Evaluate`'s call
+    to `ClassifyReusePerTask` (`:426`) → `ComputeTaskSetDifference` →
+    `IsSingleTaskChange` RE-BAKES the same candidate `Evaluate` already baked
+    (`:409` vs `:262`); fixing it = threading the baked form through the `const`
+    query API, which is the real 1d increment.
+- [x] **1e. Dedup the champion-bake block between `Initialize` and
+  `AdoptChampion`.** The same 4-line sequence (`champ_tasks_baked_` →
+  `champ_prioritized_` → `champ_per_core_` → `RebuildPrefixes`) was duplicated
+  verbatim (Initialize `:199-205`, AdoptChampion `:221-225`). Extracted into
+  `BakeChampionForms(dag, pa, tl)`; each caller keeps its own `rta_`/
+  `candidate_rta_` logic (no optional arg). Pure extract-method; the only
+  reorder is `RebuildPrefixes` preceding the `rta_` compute in `Initialize`
+  (safe — independent reads of `champ_prioritized_`). Differential GREEN.
+  - DONE 2026-07-20: 17/17 ctest DEBUG PASS (20.82s). See dev_log 2026-07-20.
 
 ## Phase 2 — Optimizer-path redundancies (OptimizeSP_TL_Incre / OptimizeSP_Incre)
 

@@ -1,4 +1,4 @@
-# P1.1 — Efficiency Optimizations — Dev Log
+# P3.1 Efficiency Optimizations — Dev Log
 > Detailed working log for this task. Append chronological entries below.
 > On task completion, append a one-line milestone to the **top-level**
 > `agents/dev_log.md` (the canonical narrative).
@@ -27,10 +27,7 @@
 
 ## 2026-07-12
 - Re-evaluated tasks. Confirmed that "Incremental HP-task convolution" is already fully implemented in `ProbabilisticRTA_TaskSet_SingleCore` via the 3-argument `GetRTA_OneTask` overload, and verified active/correct by unit tests. Moved it to the historical/implemented section in `goal.md` and removed it from `tasks.md`.
-- Formulated and appended 4 new efficiency optimization RTA-level ideas to `goal.md` (Memoized/Incremental RTA, RTA Short-Circuiting for guaranteed misses, Sorted-Merge Convolution, and Low-Probability Tail Pruning).
-- Brainstormed and appended 4 new iteration-reduction ideas to `goal.md`.
-- Received user feedback on the proposals: marked Idea 2 (RTA Short-Circuiting) as Rejected/Dangerous, marked Idea 3 (Sorted-Merge) as Deferred (unclear impact), and removed Idea 8 (Beam Width $K$) as `OptimizeIncre` does not use beam search. Added the approved/candidate tasks (Idea 1, Delta-Thresholding, Tail Pruning, and CD Early Stopping) to `tasks.md`.
-- Brainstormed and appended 4 new coordinate descent walk speedup ideas to `goal.md` (Binary/Exponential Search on TL Options, Bottleneck Gating / Processor Pruning, Deterministic RTA Pre-Filtering, and 1D Priority Re-Search Skipping on stable walks).
+- Formulated and appended 4 new efficiency optimization ideas to `goal.md` (Memoized/Incremental RTA, RTA Short-Circuiting for guaranteed misses, Sorted-Merge Convolution, and Low-Probability Tail Pruning).
 
 ## 2026-07-12 (brainstorm + evaluation pass)
 - Read the live hot path end-to-end to calibrate impact estimates:

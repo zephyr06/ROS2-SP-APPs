@@ -386,3 +386,33 @@ bit-identical SP.
 Phase 6 DONE in the working tree (NOT committed). `git add`'d
 (`RTA_Cache.h`, `RTA_Cache.cpp`, `OptimizeSP_TL_Incre.cpp`). Ready for user
 review + `git commit`.
+
+## 2026-07-23 — CLOSURE → `finished_tasks/`
+
+**P1.21 CLOSED.** All code is COMMITTED at HEAD (`4d7d14b6` "add rta cache
+transaction") — the full Phases 1–6 redesign landed together in the committed
+`RTA_Cache.h` (verified: `struct ChampionState`, `class Transaction`,
+`BeginTransaction`/`CommitTransaction`/`RollbackTransaction`/`InTransaction()`,
+`SnapshotPreMutationStateIfOpen()`, the Phase-5 `ChampionState champion_`
+storage-type refactor, and the Phase-6 removal of `AdoptEvaluatedCandidate` are
+all present at HEAD; `git status --short` is clean for `RTA_Cache.{h,cpp}` and
+`OptimizeSP_TL_Incre.cpp`).
+
+The per-phase "working tree, NOT committed" / "Ready for user review + `git
+commit`" notes above are **STALE** — written while the work was staged but
+uncommitted; the work was subsequently committed in `4d7d14b6`. Kept as-is as the
+phase narrative; superseded by this closure entry.
+
+**Last open item closed:** 3b (perf measurement) — marked done-as-deferred. It
+was always a NON-correctness gate (the per-outcome copy table already proves
+lazy ≤ eager). Its actual subject — the Transaction's *measured* cost — is the
+entire remit of the open task **P1.22** (investigate the RTA-cache Transaction
+slowdown: high-frequency mid-walk `AdoptChampion`, `make_unique<ChampionState>`
+heap churn, redundant `RebuildPrefixes`, pointer indirection). So 3b is not a
+gap in P1.21; it is delegated to P1.22.
+
+**Gate at closure:** 17/17 ctest DEBUG green (23.55s, clean `check.SP_OPT`
+build); bit-identical SP held through every phase. Folder moved
+`active_tasks/` → `finished_tasks/`; memory file `p121-rta-cache-transaction-raii.md`
++ `MEMORY.md` index updated to reflect CLOSED + committed status. `git add`'d
+for user review + `git commit`.

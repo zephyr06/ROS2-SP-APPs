@@ -305,3 +305,126 @@ consumer mutating its input), these would trip.
 
 **Bit-identity gate:** 17/17 ctest DEBUG PASS (22.59s); 55/55 testRTA.
 
+### 1b remainder — DONE (hoist champion per-core order out of TryComputeSingleChange)
+
+**Redundancy removed:** `TryComputeSingleChange` rebuilt the champion per-core
+order (`PerCoreOrderFromPa(dag_champion_, pa_champion_)`, `RTA_Cache.cpp:267-268`)
+on EVERY call — once per `Evaluate` via `ComputeTaskSetDifference →
+TryComputeSingleChange`. The champion per-core order is invariant across one
+champion lifetime (only `Initialize`/`AdoptChampion` mutate the champion triple),
+so it is cacheable — symmetric to `champ_prioritized_` + `champ_tasks_baked_`.
+
+**Why a dedicated member, not derived from `champ_prioritized_` inline:** the
+partition (per-`processorId` vector of task ids) IS derivable from
+`champ_prioritized_` at zero sort cost (it is already pa-sorted). But computing
+it inline in `TryComputeSingleChange` would still pay the `unordered_map` build
+(per-core `push_back`) every call. Caching the partition itself as
+`champ_per_core_` removes that per-call partition work entirely; the champion side
+becomes a single `const`-ref read.
+
+**Change:**
+- `RTA_Cache.h`: added `champ_per_core_` member (+ invariant doc); added private
+  `PerCoreOrderOfPrioritized(const TaskSet&)` helper (the shared partition body).
+- `RTA_Cache.cpp::PerCoreOrderFromPa`: now delegates to
+  `PerCoreOrderOfPrioritized` after the one `UpdateTaskSetPriorities` sort (no
+  behavior change — the partition logic is identical, just factored out so the
+  cache build reuses it WITHOUT re-sorting `champ_prioritized_`).
+- `RTA_Cache.cpp::Initialize` (`:189`) + `AdoptChampion` (`:213`): store
+  `PerCoreOrderOfPrioritized(champ_prioritized_)` into `champ_per_core_` (no
+  extra work — `champ_prioritized_` already existed; the partition is the one
+  artifact `TryComputeSingleChange` needs).
+- `RTA_Cache.cpp::TryComputeSingleChange` (`:267-269`): dropped the champion
+  `PerCoreOrderFromPa(dag_champion_, pa_champion_)` call; `champion_per_core` is
+  now a `const`-ref to `champ_per_core_`. The candidate `PerCoreOrderFromPa(
+  dag_tasks, pa)` call stays — the candidate `pa` genuinely changes per call.
+  `AnalyzePrioritySwitch` + the ET-known branch (`candidate_per_core.at(et_core)`
+  vs `champion_per_core.at(et_core)`) read the cached map by const-ref unchanged.
+
+**Net per `TryComputeSingleChange` (with a live champion):** −1
+`UpdateTaskSetPriorities` (the champion re-sort) + −1 champion partition build.
+Candidate-side bake + `PerCoreOrderFromPa` + the `DAG_Model champ_dag_baked`
+struct-copy remain — the latter two are deeper increments (the copy needs
+`FindTaskWithDifferentEt`'s signature changed in another module; the candidate
+partition could be threaded from `Evaluate`'s already-built `per_core` but needs
+const-API threading through `ComputeTaskSetDifference → TryComputeSingleChange`).
+
+**TDD pin:** `Evaluate_PriorityMove_AfterAdoptChampion_StalePerCoreOrderGuard` —
+adopts a 2nd champion whose PA swaps t0/t1 on core 0 (champion core0 order
+{t0,t1} → {t1,t0}), then Evals a candidate that swaps them back. The exact
+hazard the cache introduces: if `champ_per_core_` were left holding the 1st
+champion's {t0,t1} after the 2nd `AdoptChampion`, `AnalyzePrioritySwitch` would
+see NO order diff on core 0 → wrongly classify |diff|==0 → Evaluate returns the
+2nd champion's rta verbatim (bit-non-identical to the candidate's true rta). The
+pin asserts both bit-identity AND `changed_task_id != -1` + `core == 0` (the swap
+is symmetric, so the algorithm reports the candidate-side task at the first
+mismatch — task 0 — the exact id is not load-bearing, only that a change IS
+detected on core 0). The existing `Evaluate_TLChange_AfterAdoptChampion_StaleBakeGuard`
++ `Evaluate_PriorityMove_CrossCoreScramble_BitIdenticalToOracle` cover the
+non-stale paths.
+
+**Bit-identity gate:** 17/17 ctest DEBUG PASS (21.35s); 56/56 testRTA.
+
+## 2026-07-20 — Champion-bake dedup (Initialize/AdoptChampion)
+
+User flagged a note asking whether the duplicated champion-bake block between
+`Initialize` and `AdoptChampion` was outdated. Re-read both bodies: NOT
+outdated. The same 4-line sequence appeared verbatim in both:
+
+```
+champ_tasks_baked_ = ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+champ_prioritized_ = UpdateTaskSetPriorities(champ_tasks_baked_, pa);
+champ_per_core_    = PerCoreOrderOfPrioritized(champ_prioritized_);
+RebuildPrefixes(champ_prioritized_);
+```
+
+(Initialize `:199-205`, AdoptChampion `:221-225`.) `RebuildPrefixes` was
+already a shared helper for the 4th line — the remaining duplication was the 3
+champion-baked-form writes.
+
+**Survey of the other candidate-side bake sites** (asked by the user — "check
+if such duplication exist in other functions"):
+
+- `Evaluate` (`:408-410`): `ApplyTimeLimitsToTasksExecutionTime` +
+  `UpdateTaskSetPriorities` — needs the pa-sorted form for the reindex + the
+  per-core partition.
+- `IsSingleTaskChange` (`:261-262`): `ApplyTimeLimitsToTasksExecutionTime`
+  only — then uses `PerCoreOrderFromPa(dag, pa)` (a cheaper route that reads
+  `processorId` by index, no sort). The bake is used solely for
+  `FindTaskWithDifferentEt`'s index-walk.
+
+These two share only the single `ApplyTimeLimitsToTasksExecutionTime` call. A
+one-line wrapper would add indirection for no readability win, so NOT extracted
+in isolation.
+
+**Real waste found but NOT fixed here:** `Evaluate` calls
+`ClassifyReusePerTask` (`:426`) → `ComputeTaskSetDifference` →
+`IsSingleTaskChange`, which RE-BAKES the same candidate (`:262`) `Evaluate`
+already baked (`:409`). Two bakes of the identical `(dag, pa, tl)` per
+`Evaluate`. Fixing it means threading the baked form through the `const`
+query API — that is P1.17 task 1d (`[ ]`), a deeper separate increment.
+Surfaced, not done.
+
+**Refactor done — `BakeChampionForms(dag, pa, tl)`:** new private member
+helper writes the 4 champion baked-form members; `Initialize` and
+`AdoptChampion` each call it and keep their own `rta_`/`candidate_rta_` logic
+(the two differ on WHERE `rta_` comes from — Initialize computes it,
+AdoptChampion receives it — which is exactly what each caller owns; no
+optional arg, per the coding rule). Name reuses the established vocabulary
+(header already says "champion is carried ONLY in its baked forms"; `champ_`/
+`bake`/`RebuildPrefixes` are the existing terms).
+
+**Extract-method safety:** the only reorder vs the original inline sequence is
+`RebuildPrefixes` now precedes `rta_ = ProbabilisticRTA_TaskSet(...)` in
+`Initialize` (was after). Safe — `RebuildPrefixes` writes
+`hp_prefix_per_core_` from `champ_prioritized_`; the RTA compute reads
+`champ_prioritized_` and writes `rta_`; neither reads the other's output.
+`AdoptChampion`'s order is unchanged. Pure extract-method → bit-identical.
+
+**Bit-identity gate:** 17/17 ctest DEBUG PASS (20.82s). No new TDD pin added —
+the existing `Evaluate_*` / `SP_Assembly_*` differential pins in `testRTA.cpp`
++ `testIncreOpt_w_TL::OptimizeWithOptimizationSpace` exercise both
+`Initialize` (fresh-cache path) and `AdoptChampion` (every champion promotion
+in the TL walk) and would catch any reordering divergence; an
+extract-method with no semantic change adds no new behavior to pin.
+
+
