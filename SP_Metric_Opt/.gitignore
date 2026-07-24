@@ -49,6 +49,7 @@ temp_run/
 *.pdf
 *.png
 *.csv
+*.pyc
 
 agents/gemini.md
 agents/kimi.md
