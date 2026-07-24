@@ -4,6 +4,14 @@
 > must stay in sync with `res_opt_` on rejected walk steps WITHOUT the
 > transaction. Gate = bit-identical SP to HEAD.
 
+> **CLOSED 2026-07-23 — COMMITTED `0448db9c`.** Transaction layer deleted from
+> `RTA_Cache.h/.cpp`; D1=(b) eager backup restored in
+> `EvaluateTimeLimitConfig_SubIncremental` (`1217d227` shape). Phase 3 verify
+> GREEN: 17/17 ctest + bit-identical SP to HEAD (stdout diff = 0 lines). P1.22
+> closed as superseded; P1.21 reverted. Moved to `finished_tasks/`. See
+> [[p125-remove-rta-cache-transaction]], [[p122-investigate-rta-cache-transaction-slowdown]],
+> [[p121-rta-cache-transaction-raii]].
+
 ## Phase 0 — Decisions & cleanup (before any code)
 
 - [x] **0a. User decides D1** = **(b) eager save/restore scoped to the reject
@@ -120,10 +128,13 @@ proceed on the git-history proof (option I). See dev_log 2026-07-23.
 
 ## Phase 4 — Bookkeeping
 
-- [ ] **4a.** `git add` (agent stages; user commits). Only P1.25 changes in
-  the commit.
-- [ ] **4b.** Move P1.21 to `finished_tasks/` (transaction reverted; lesson
-  stands).
-- [ ] **4c.** Close P1.22 as superseded-by-P1.25; update
-  `agents/overall_tasks.md` + memory `p122-...`.
-- [ ] **4d.** Update `agents/overall_tasks.md` P1 table with the P1.25 row.
+- [x] **4a.** `git add` (agent stages; user commits). Only P1.25 changes in
+  the commit. DONE 2026-07-23 — committed by user in `0448db9c`.
+- [x] **4b.** P1.21 already in `finished_tasks/` (transaction reverted; lesson
+  stands). DONE.
+- [x] **4c.** Close P1.22 as superseded-by-P1.25; update
+  `agents/overall_tasks.md` + memory `p122-...`. DONE 2026-07-23 — P1.22
+  moved to `finished_tasks/`, memory `p122-` updated.
+- [x] **4d.** Update `agents/overall_tasks.md` P1 table with the P1.25 row.
+  DONE 2026-07-23.
+- [x] **4e.** (added) Move P1.25 to `finished_tasks/`. DONE 2026-07-23.
