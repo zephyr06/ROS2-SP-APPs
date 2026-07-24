@@ -120,7 +120,10 @@ class DAG_Model {
     indexVertexMap indexesBGL_;
     std::vector<std::vector<int>> chains_;
     std::vector<double> chains_deadlines_;
-    std::unordered_map<int, TaskSet> processor2taskset_;
+    // P1.20: flat per-core partition indexed directly by processorId (dense
+    // 0-based, validated by ValidateProcessorIds). Replaces the old
+    // unordered_map<int, TaskSet> hash lookup with O(1) direct indexing.
+    std::vector<TaskSet> processor2taskset_;
     std::unordered_map<int, int> task_id2position_;
 };
 

@@ -171,3 +171,30 @@ affects NOSPEC yamls (all-default → all core 0 = same single-core semantics);
 **Staged (agent `git add`):** `RegularTasks.h`, `DAG_Model.h`, `DAG_Model.cpp`,
 `testIO.cpp`, `test_robotics_v8.yaml`, `test_robotics_v27.yaml`. Awaiting user commit.
 
+---
+
+## 2026-07-23 — Commit 2 LANDED (staged, awaiting user commit)
+
+**Blast-radius recheck (pre-edit):** `grep -rn processor2taskset_` over `sources/`
++ `tests/` = 5 hits, ALL inside `CategorizeTaskSet()` (1 decl in `.h`, 4 in `.cpp`
+write side). NO external readers — `GetProcessorIds` (ScheduleSimulation.cpp:40)
+reads `dag_tasks.tasks` directly, not the member. So the member type change is
+purely internal: no API impact, no caller breaks.
+
+**Edits:**
+- `DAG_Model.h:123`: `std::unordered_map<int, TaskSet> processor2taskset_` →
+  `std::vector<TaskSet> processor2taskset_` (+ comment noting P1.20 + dense-0-based
+  invariant, validated upstream).
+- `DAG_Model.cpp CategorizeTaskSet()`: dropped the `find`/insert-or-append map
+  dance; now compute `max_p` (single pass), `processor2taskset_.assign(max_p+1,
+  TaskSet{})`, then `processor2taskset_[t.processorId].push_back(t)`. `ValidateProcessorIds`
+  already ran at the top (unchanged) so `max_p >= 0` is guaranteed when non-empty.
+
+**Build/gate:** `cmake --build build_test --target check.SP_OPT --clean-first -j5`
+(header member type changed → `--clean-first` per stale-`.o` rule) → **17/17 ctest**.
+Direct run of the 8 `*Differential*`/`BitIdentical*` probes in testOptimizeIncrePA =
+8/8 PASS. Pure storage change (map→vector, same partition contents, same iteration
+order within a core) → SP provably neutral, confirmed by the in-binary oracle probes.
+
+**Staged (agent `git add`):** `DAG_Model.h`, `DAG_Model.cpp`. Awaiting user commit.
+

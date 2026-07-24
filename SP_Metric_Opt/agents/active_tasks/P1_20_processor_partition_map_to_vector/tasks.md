@@ -21,9 +21,9 @@
 - [x] **1g. `git add`** the 6 files (user commits).
 
 ## Commit 2 — DAG_Model: vectorize `processor2taskset_` [internal-only]
-- [ ] **2a.** `processor2taskset_`: `unordered_map<int,TaskSet>` → `vector<TaskSet>` (sized `max+1`).
-- [ ] **2b.** `CategorizeTaskSet()` indexed loop.
-- [ ] **2c.** Gate — 17/17 ctest + bit-identical SP.
+- [x] **2a.** `processor2taskset_`: `unordered_map<int,TaskSet>` → `vector<TaskSet>` (sized `max+1`).
+- [x] **2b.** `CategorizeTaskSet()` indexed loop.
+- [x] **2c.** Gate — 17/17 ctest + bit-identical SP (8/8 `*Differential*`/`*BitIdentical*` probes).
 
 ## Commit 3 — RTA layer: vectorize `ExtractTaskSetPerProcessor` + RTA_Cache + PrioritySwitchAnalysis (folded C3+C4)
 - [ ] **3a.** `ExtractTaskSetPerProcessor` (RTA.h/.cpp) return `vector<TaskSet>`; `ProbabilisticRTA_TaskSet` indexed loop.

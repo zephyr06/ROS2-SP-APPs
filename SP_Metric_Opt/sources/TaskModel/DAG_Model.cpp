@@ -181,14 +181,14 @@ void DAG_Model::ValidateProcessorIds() const {
 
 void DAG_Model::CategorizeTaskSet() {
     ValidateProcessorIds();
-    for (uint i = 0; i < tasks.size(); i++) {
-        int p_id = tasks[i].processorId;
-        auto itr = processor2taskset_.find(p_id);
-        if (itr == processor2taskset_.end()) {
-            processor2taskset_[p_id] = {tasks[i]};
-        } else {
-            processor2taskset_[p_id].push_back(tasks[i]);
-        }
+    if (tasks.empty()) return;
+    int max_p = -1;
+    for (const Task& t : tasks) {
+        if (t.processorId > max_p) max_p = t.processorId;
+    }
+    processor2taskset_.assign(max_p + 1, TaskSet{});
+    for (const Task& t : tasks) {
+        processor2taskset_[t.processorId].push_back(t);
     }
 }
 void DAG_Model::RecordTaskPosition() {
