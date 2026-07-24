@@ -114,14 +114,13 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet_SingleCore(
     return rtas;
 }
 // TODO: remove ProcessorTaskSet struct and methods
-std::unordered_map<int, TaskSet> ExtractTaskSetPerProcessor(
-    const TaskSet& tasks) {
-    std::unordered_map<int, TaskSet> processor_task_set;
+std::vector<TaskSet> ExtractTaskSetPerProcessor(const TaskSet& tasks) {
+    int max_p = -1;
     for (const Task& task : tasks) {
-        if (processor_task_set.find(task.processorId) ==
-            processor_task_set.end()) {
-            processor_task_set[task.processorId] = TaskSet();
-        }
+        if (task.processorId > max_p) max_p = task.processorId;
+    }
+    std::vector<TaskSet> processor_task_set(max_p + 1);
+    for (const Task& task : tasks) {
         processor_task_set[task.processorId].push_back(task);
     }
     return processor_task_set;
@@ -131,18 +130,17 @@ std::vector<FiniteDist> ProbabilisticRTA_TaskSet(const TaskSet& tasks) {
     std::unordered_map<int, int> task_id2index;
     for (uint i = 0; i < tasks.size(); i++) task_id2index[tasks[i].id] = i;
 
-    std::unordered_map<int, TaskSet> processor_task_set =
-        ExtractTaskSetPerProcessor(tasks);
+    std::vector<TaskSet> processor_task_set = ExtractTaskSetPerProcessor(tasks);
 
     std::vector<FiniteDist> rtas(tasks.size());
-    // analyze RTA for each task set individually
-    for (auto itr = processor_task_set.begin(); itr != processor_task_set.end();
-         itr++) {
-        const TaskSet& tasks = itr->second;
+    // analyze RTA for each task set individually. Per-core results are written
+    // into `rtas` scattered by task id, so core iteration order is irrelevant.
+    for (const TaskSet& tasks_curr : processor_task_set) {
+        if (tasks_curr.empty()) continue;
         std::vector<FiniteDist> rtas_curr =
-            ProbabilisticRTA_TaskSet_SingleCore(tasks);
-        for (uint i = 0; i < tasks.size(); i++) {
-            rtas[task_id2index[tasks[i].id]] = rtas_curr[i];
+            ProbabilisticRTA_TaskSet_SingleCore(tasks_curr);
+        for (uint i = 0; i < tasks_curr.size(); i++) {
+            rtas[task_id2index[tasks_curr[i].id]] = rtas_curr[i];
         }
     }
     return rtas;

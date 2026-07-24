@@ -7,7 +7,6 @@
 // Leaf header (not RTA.h) to avoid a cycle: the cache takes PriorityVec
 // (OptimizeSP_Base.h -> SP_Metric.h -> RTA.h), so RTA.h can't depend back here.
 
-#include <unordered_map>
 #include <vector>
 
 #include "sources/Optimization/OptimizeSP_Base.h"  // PriorityVec
@@ -46,8 +45,11 @@ struct ChampionState {
     std::vector<FiniteDist> rta;
     TaskSet champ_prioritized;
     TaskSet champ_tasks_baked;
-    std::unordered_map<int, std::vector<int>> champ_per_core;
-    std::unordered_map<int, std::vector<FiniteDist>> hp_prefix_per_core;
+    // P1.20: flat per-core vectors indexed by processorId (dense 0-based). Both
+    // stay copyable, so the P1.25 D1=(b) reject-path whole-cache backup still
+    // deep-copies the champion correctly.
+    std::vector<std::vector<int>> champ_per_core;
+    std::vector<std::vector<FiniteDist>> hp_prefix_per_core;
 };
 
 // Memoized RTA output bundled to ONE champion: the (dag, pa, tl) triple + flat
@@ -146,13 +148,13 @@ class RTACache {
     // Per-core priority ORDER from (dag, pa): for each processorId, task ids on
     // that core sorted ascending by priority value (lower = higher priority).
     // Shared by ComputeTaskSetDifference (candidate side) and Evaluate's patch
-    // branch. Pure.
-    std::unordered_map<int, std::vector<int>> PerCoreOrderFromPa(
+    // branch. Pure. P1.20: flat vector indexed by processorId (dense 0-based).
+    std::vector<std::vector<int>> PerCoreOrderFromPa(
         const DAG_Model& dag_tasks, const PriorityVec& pa) const;
     // Per-core order from an ALREADY-prioritized TaskSet (no re-sort). Shared
     // body of PerCoreOrderFromPa + the champion-order cache build
     // (champ_prioritized is already pa-sorted). Pure.
-    std::unordered_map<int, std::vector<int>> PerCoreOrderOfPrioritized(
+    std::vector<std::vector<int>> PerCoreOrderOfPrioritized(
         const TaskSet& prioritized) const;
 
     // Write the 4 champion baked-form members of champion_ from (dag, pa, tl):

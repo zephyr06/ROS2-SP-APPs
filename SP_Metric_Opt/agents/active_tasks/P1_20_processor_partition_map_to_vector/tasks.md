@@ -26,13 +26,13 @@
 - [x] **2c.** Gate — 17/17 ctest + bit-identical SP (8/8 `*Differential*`/`*BitIdentical*` probes).
 
 ## Commit 3 — RTA layer: vectorize `ExtractTaskSetPerProcessor` + RTA_Cache + PrioritySwitchAnalysis (folded C3+C4)
-- [ ] **3a.** `ExtractTaskSetPerProcessor` (RTA.h/.cpp) return `vector<TaskSet>`; `ProbabilisticRTA_TaskSet` indexed loop.
-- [ ] **3b.** `ChampionState::champ_per_core`/`hp_prefix_per_core` → `vector<vector<int>>`/`vector<vector<FiniteDist>>`.
-- [ ] **3c.** `PerCoreOrderFromPa`/`PerCoreOrderOfPrioritized` → `vector<vector<int>>`.
-- [ ] **3d.** `RebuildPrefixes`/`Evaluate`/`IsSingleTaskChange`/`ClassifyReusePerTask`: `.at(core)`→`vec[core]`, range-for→indexed.
-- [ ] **3e.** `PrioritySwitchAnalysis.h`: `FindCoreOfTask`/`AnalyzePrioritySwitch` take `vector<vector<int>>`.
-- [ ] **3f.** `testRTA.cpp` fixtures → `vector<vector<int>>`; refresh "default-(-1)" comments → "default-0".
-- [ ] **3g.** Gate — 17/17 ctest + bit-identical SP.
+- [x] **3a.** `ExtractTaskSetPerProcessor` (RTA.h/.cpp) return `vector<TaskSet>`; `ProbabilisticRTA_TaskSet` indexed loop.
+- [x] **3b.** `ChampionState::champ_per_core`/`hp_prefix_per_core` → `vector<vector<int>>`/`vector<vector<FiniteDist>>`.
+- [x] **3c.** `PerCoreOrderFromPa`/`PerCoreOrderOfPrioritized` → `vector<vector<int>>`.
+- [x] **3d.** `RebuildPrefixes`/`Evaluate`/`IsSingleTaskChange`/`ClassifyReusePerTask`: `.at(core)`→`vec[core]`, range-for→indexed.
+- [x] **3e.** `PrioritySwitchAnalysis.h`: `FindCoreOfTask`/`AnalyzePrioritySwitch` take `vector<vector<int>>`.
+- [x] **3f.** `testRTA.cpp` fixtures → `vector<vector<int>>`; refresh "default-(-1)" comments → "default-0".
+- [x] **3g.** Gate — 17/17 ctest + bit-identical SP (8/8 `*Differential*`/`*BitIdentical*` probes).
 
 ## Commit 4 — Remaining fixtures + final bit-identical gate
 - [ ] **4a.** `testOptimizeIncrePA.cpp` hand-built per-core map fixtures (if any).

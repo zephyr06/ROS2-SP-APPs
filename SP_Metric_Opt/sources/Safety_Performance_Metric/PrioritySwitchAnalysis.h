@@ -4,14 +4,13 @@
 //
 // These helpers factor the "is the candidate's per-core priority order a single
 // task's relocation away from the champion's?" question out of
-// RTACache::TryComputeSingleChange (RTA_Cache.cpp). They depend only on
+// RTACache::IsSingleTaskChange (RTA_Cache.cpp). They depend only on
 // <vector>/<unordered_map>/int — no SP/RTA/DAG types — so this is a true leaf
 // header (no header cycle, unlike RTA_Cache.h which documents one). Lives in a
 // dedicated header so the test suite can target the two-pointer walk +
 // remove-and-compare edge cases directly with hand-built vector<int> inputs,
 // rather than only indirectly through the DAG/PA/TL pipeline.
 
-#include <unordered_map>
 #include <vector>
 
 namespace SP_OPT_PA {
@@ -36,8 +35,9 @@ bool RestEqualAfterRemoving(const std::vector<int>& candidate_order,
                             int task_id);
 
 // Locate which core `task_id` sits on in `per_core` (the processorId → task-id
-// order map), or -1 if absent. Used to place the ET-changed task's core.
-int FindCoreOfTask(const std::unordered_map<int, std::vector<int>>& per_core,
+// order vector, indexed by core), or -1 if absent. Used to place the ET-changed
+// task's core. P1.20: takes a flat vector<vector<int>> (dense 0-based cores).
+int FindCoreOfTask(const std::vector<std::vector<int>>& per_core,
                    int task_id);
 
 // Outcome of comparing the candidate's per-core priority orders against the
@@ -83,11 +83,14 @@ PrioritySwitchStatus AnalyzePrioritySwitchPerCore(
 //      delegate the per-core remove-and-compare to
 //      AnalyzePrioritySwitchPerCore; ≥2 → NotSingle.
 // This handles the pure-priority-move case (0 ET diff). The ET-known case (the
-// moved task is the ET-changed task) is handled in TryComputeSingleChange,
+// moved task is the ET-changed task) is handled in IsSingleTaskChange,
 // which calls this for the size/changed-core check then does its own
 // remove-and-compare with the known task id.
+// P1.20: takes flat vector<vector<int>> (dense 0-based cores). An absent core
+// and an empty core are indistinguishable here — both mean "zero tasks" — which
+// matches the old map semantics where a missing key fell back to an empty vec.
 PrioritySwitchAnalysis AnalyzePrioritySwitch(
-    const std::unordered_map<int, std::vector<int>>& candidate_per_core,
-    const std::unordered_map<int, std::vector<int>>& champion_per_core);
+    const std::vector<std::vector<int>>& candidate_per_core,
+    const std::vector<std::vector<int>>& champion_per_core);
 
 }  // namespace SP_OPT_PA

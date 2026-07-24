@@ -249,7 +249,7 @@ TEST_F(TaskSetForTest_3tasks_prefix, TwoArgOverload_SameRtasAsOneArg) {
 // three. processorId is set on the tasks BEFORE DAG_Model construction (DAG_Model
 // records task positions / categories at ctor time); DAG_Model(tasks, {}, {})
 // builds an edge-free DAG (no cause-effect chains — fine for RTA-only tests).
-// Task(id, exec, period, deadline, priority) — processorId is a default-(-1)
+// Task(id, exec, period, deadline, priority) — processorId is a default-0
 // member set post-construction, matching how the existing fixtures set up tasks.
 class TaskSetForTest_4tasks_2cores_cache : public ::testing::Test {
    public:
@@ -267,7 +267,7 @@ class TaskSetForTest_4tasks_2cores_cache : public ::testing::Test {
         tasks.push_back(Task(1, d1, 12, 12, 1));
         tasks.push_back(Task(2, d2, 20, 20, 2));
         tasks.push_back(Task(3, d3, 30, 30, 3));
-        // processorId is a default-(-1) member set post-construction (see the
+        // processorId is a default-0 member set post-construction (see the
         // Task ctor in RegularTasks.h). {0,1} on core 0; {2,3} on core 1.
         tasks[0].processorId = 0;
         tasks[1].processorId = 0;
@@ -1034,10 +1034,10 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache, NoChampion_AllNoReuse) {
 // ============================================================================
 // Direct unit tests for the P1.9 priority-analysis utilities
 // (PrioritySwitchAnalysis.h). These are pure functions on hand-built
-// vector<int> / unordered_map<int, vector<int>> inputs — no DAG/Task setup —
-// pinning the two-pointer-walk + remove-and-compare edge cases that the
-// DAG-level RTACache tests above exercise only indirectly. The functions live
-// in namespace SP_OPT_PA (in effect via `using namespace SP_OPT_PA;` above).
+// vector<int> / vector<vector<int>> inputs — no DAG/Task setup — pinning the
+// two-pointer-walk + remove-and-compare edge cases that the DAG-level RTACache
+// tests above exercise only indirectly. The functions live in namespace
+// SP_OPT_PA (in effect via `using namespace SP_OPT_PA;` above).
 // ============================================================================
 
 // RestEqualAfterRemoving: the two-pointer "remove one task from both vectors,
@@ -1201,20 +1201,18 @@ TEST(AnalyzePrioritySwitchPerCoreTest, IdenticalSingleElement_AllIdentical) {
 }
 
 // AnalyzePrioritySwitch: whole-map size check + find-the-one-changed-core +
-// delegate. Builds unordered_map<int, vector<int>> inline.
+// delegate. Builds vector<vector<int>> inline (P1.20: flat per-core vector
+// indexed by core; an absent core and an empty core both mean "zero tasks").
 TEST(AnalyzePrioritySwitchTest, AllCoresIdentical_AllIdentical) {
-    std::unordered_map<int, std::vector<int>> per_core = {
-        {0, {0, 1}}, {1, {2, 3}}};
+    std::vector<std::vector<int>> per_core = {{0, 1}, {2, 3}};
     EXPECT_EQ(AnalyzePrioritySwitch(per_core, per_core).status,
               PrioritySwitchStatus::AllIdentical);
 }
 
 TEST(AnalyzePrioritySwitchTest, OneCoreSingleMove_SingleChange) {
     // One genuine single move on core 0: task 1 relocated to the front.
-    std::unordered_map<int, std::vector<int>> cand = {
-        {0, {1, 0, 2}}, {1, {3, 4}}};
-    std::unordered_map<int, std::vector<int>> champ = {
-        {0, {0, 1, 2}}, {1, {3, 4}}};
+    std::vector<std::vector<int>> cand = {{1, 0, 2}, {3, 4}};
+    std::vector<std::vector<int>> champ = {{0, 1, 2}, {3, 4}};
     PrioritySwitchAnalysis r = AnalyzePrioritySwitch(cand, champ);
     EXPECT_EQ(r.status, PrioritySwitchStatus::SingleChange);
     EXPECT_EQ(r.changed_core, 0);
@@ -1222,10 +1220,8 @@ TEST(AnalyzePrioritySwitchTest, OneCoreSingleMove_SingleChange) {
 }
 
 TEST(AnalyzePrioritySwitchTest, OneCoreTwoMove_NotSingle) {
-    std::unordered_map<int, std::vector<int>> cand = {
-        {0, {1, 0, 3, 2}}, {1, {4, 5}}};  // core 0: two swaps
-    std::unordered_map<int, std::vector<int>> champ = {
-        {0, {0, 1, 2, 3}}, {1, {4, 5}}};
+    std::vector<std::vector<int>> cand = {{1, 0, 3, 2}, {4, 5}};  // core 0: two swaps
+    std::vector<std::vector<int>> champ = {{0, 1, 2, 3}, {4, 5}};
     EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
               PrioritySwitchStatus::NotSingle);
 }
@@ -1233,29 +1229,27 @@ TEST(AnalyzePrioritySwitchTest, OneCoreTwoMove_NotSingle) {
 TEST(AnalyzePrioritySwitchTest, TwoCoresEachSingleMove_NotSingle) {
     // Each core has one genuine single move (task 2 → front on core 0; task 4
     // → front on core 1); two changed cores ⇒ NotSingle via the 2nd-core check.
-    std::unordered_map<int, std::vector<int>> cand = {
-        {0, {2, 0, 1}}, {1, {4, 3}}};
-    std::unordered_map<int, std::vector<int>> champ = {
-        {0, {0, 1, 2}}, {1, {3, 4}}};
+    std::vector<std::vector<int>> cand = {{2, 0, 1}, {4, 3}};
+    std::vector<std::vector<int>> champ = {{0, 1, 2}, {3, 4}};
     EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
               PrioritySwitchStatus::NotSingle);
 }
 
 TEST(AnalyzePrioritySwitchTest, SizeMismatchOnOneCore_NotSingle) {
     // Core 0 grew by one (core migration) ⇒ NotSingle via the size check.
-    std::unordered_map<int, std::vector<int>> cand = {
-        {0, {0, 1, 2}}, {1, {3, 4}}};
-    std::unordered_map<int, std::vector<int>> champ = {
-        {0, {0, 1}}, {1, {3, 4}}};
+    std::vector<std::vector<int>> cand = {{0, 1, 2}, {3, 4}};
+    std::vector<std::vector<int>> champ = {{0, 1}, {3, 4}};
     EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
               PrioritySwitchStatus::NotSingle);
 }
 
 TEST(AnalyzePrioritySwitchTest, ChampionCoreEmptied_NotSingle) {
     // Champion has core 2 (non-empty) that the candidate lacks ⇒ migration.
-    std::unordered_map<int, std::vector<int>> cand = {{0, {0, 1}}};
-    std::unordered_map<int, std::vector<int>> champ = {
-        {0, {0, 1}}, {2, {2, 3}}};
+    // cand covers cores {0,1} (core 0 non-empty, core 1 empty); champ covers
+    // {0,1,2} (core 0 non-empty, core 1 empty, core 2 non-empty) ⇒ size
+    // mismatch on core 2.
+    std::vector<std::vector<int>> cand = {{0, 1}, {}};
+    std::vector<std::vector<int>> champ = {{0, 1}, {}, {2, 3}};
     EXPECT_EQ(AnalyzePrioritySwitch(cand, champ).status,
               PrioritySwitchStatus::NotSingle);
 }

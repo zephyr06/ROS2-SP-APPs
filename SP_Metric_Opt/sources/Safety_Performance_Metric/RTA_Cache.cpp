@@ -26,6 +26,11 @@ void RollPrefix(FiniteDist& hp_tasks_et_conv, const FiniteDist& et) {
     hp_tasks_et_conv.Convolve(et);
 }
 
+// Empty per-core order sentinel for AnalyzePrioritySwitch: a core index beyond
+// one operand's length is treated as "no tasks on that core" (the old map's
+// missing-key → empty-vec fallback). Function-local static so it's stable.
+const std::vector<int> AnalyzePrioritySwitch_empty_vec;
+
 }  // namespace
 
 // Priority-analysis utilities (declared in PrioritySwitchAnalysis.h).
@@ -47,12 +52,12 @@ bool RestEqualAfterRemoving(const std::vector<int>& candidate_order,
     return i == candidate_order.size() && j == champion_order.size();
 }
 
-int FindCoreOfTask(const std::unordered_map<int, std::vector<int>>& per_core,
+int FindCoreOfTask(const std::vector<std::vector<int>>& per_core,
                    int task_id) {
-    for (const auto& [core, order] : per_core) {
-        for (int tid : order)
+    for (size_t core = 0; core < per_core.size(); core++) {
+        for (int tid : per_core[core])
             if (tid == task_id)
-                return core;
+                return static_cast<int>(core);
     }
     return -1;
 }
@@ -97,33 +102,39 @@ PrioritySwitchStatus AnalyzePrioritySwitchPerCore(
 }
 
 PrioritySwitchAnalysis AnalyzePrioritySwitch(
-    const std::unordered_map<int, std::vector<int>>& candidate_per_core,
-    const std::unordered_map<int, std::vector<int>>& champion_per_core) {
-    static const std::vector<int> empty_vec;
+    const std::vector<std::vector<int>>& candidate_per_core,
+    const std::vector<std::vector<int>>& champion_per_core) {
     PrioritySwitchAnalysis result;
 
-    // (1) Per-core size check.
-    for (const auto& [core, candidate_order] : candidate_per_core) {
-        auto champ_it = champion_per_core.find(core);
+    // An absent core and an empty core are the same under the flat-vector
+    // representation (both mean "zero tasks"), matching the old map semantics
+    // where a missing key fell back to an empty vec. So the size check + the
+    // "champion core emptied/migrated" check collapse into one pass: for every
+    // core index present in either operand, a size mismatch (one side empty,
+    // the other non-empty, or two non-empty of different length) ⇒ NotSingle.
+    const size_t n_cores =
+        std::max(candidate_per_core.size(), champion_per_core.size());
+    for (size_t core = 0; core < n_cores; core++) {
+        const std::vector<int>& candidate_order =
+            core < candidate_per_core.size() ? candidate_per_core[core]
+                                             : AnalyzePrioritySwitch_empty_vec;
         const std::vector<int>& champion_order =
-            champ_it != champion_per_core.end() ? champ_it->second : empty_vec;
+            core < champion_per_core.size() ? champion_per_core[core]
+                                            : AnalyzePrioritySwitch_empty_vec;
         if (candidate_order.size() != champion_order.size())
             return result;
-    }
-    for (const auto& [core, champion_order] : champion_per_core) {
-        if (candidate_per_core.find(core) != candidate_per_core.end())
-            continue;
-        if (!champion_order.empty())
-            return result;  // champ core emptied/migrated
     }
 
     // (2) Find the one core (if any) whose order differs, then delegate the
     // per-core remove-and-compare to AnalyzePrioritySwitchPerCore.
     int changed_core = -1;
-    for (const auto& [core, candidate_order] : candidate_per_core) {
-        auto champ_it = champion_per_core.find(core);
+    for (size_t core = 0; core < n_cores; core++) {
+        const std::vector<int>& candidate_order =
+            core < candidate_per_core.size() ? candidate_per_core[core]
+                                             : AnalyzePrioritySwitch_empty_vec;
         const std::vector<int>& champion_order =
-            champ_it != champion_per_core.end() ? champ_it->second : empty_vec;
+            core < champion_per_core.size() ? champion_per_core[core]
+                                            : AnalyzePrioritySwitch_empty_vec;
         const PrioritySwitchStatus per_core_status =
             AnalyzePrioritySwitchPerCore(candidate_order, champion_order,
                                          result);
@@ -132,7 +143,7 @@ PrioritySwitchAnalysis AnalyzePrioritySwitch(
                 return result;  // 2nd changed core ⇒ >1
             if (per_core_status == PrioritySwitchStatus::NotSingle)
                 return result;
-            changed_core = core;
+            changed_core = static_cast<int>(core);
         }
     }
 
@@ -148,10 +159,15 @@ PrioritySwitchAnalysis AnalyzePrioritySwitch(
 }
 
 // Shared partition body of PerCoreOrderFromPa + the champion-order cache build.
-// `prioritized` is already in priority order, so this just buckets by processorId.
-std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
+// `prioritized` is already in priority order, so this just buckets by processorId
+// into a flat vector indexed by core (dense 0-based, P1.20).
+std::vector<std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
     const TaskSet& prioritized) const {
-    std::unordered_map<int, std::vector<int>> order;
+    int max_p = -1;
+    for (const Task& t : prioritized) {
+        if (t.processorId > max_p) max_p = t.processorId;
+    }
+    std::vector<std::vector<int>> order(max_p + 1);
     for (const Task& t : prioritized) {
         order[t.processorId].push_back(t.id);
     }
@@ -163,9 +179,14 @@ std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
 // so this is identical to PerCoreOrderOfPrioritized(UpdateTaskSetPriorities(...))
 // without the TaskSet copy + O(N log N) sort. Same id==index invariant every
 // pa-as-index site relies on; processorId is untouched by the priority bake.
-std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
+std::vector<std::vector<int>> RTACache::PerCoreOrderFromPa(
     const DAG_Model& dag_tasks, const PriorityVec& pa) const {
-    std::unordered_map<int, std::vector<int>> order;
+    int max_p = -1;
+    for (int tid : pa) {
+        int p = dag_tasks.tasks[tid].processorId;
+        if (p > max_p) max_p = p;
+    }
+    std::vector<std::vector<int>> order(max_p + 1);
     for (int tid : pa) {
         order[dag_tasks.tasks[tid].processorId].push_back(tid);
     }
@@ -218,11 +239,11 @@ void RTACache::BakeChampionForms(const DAG_Model& dag_tasks,
 // rolled forward in priority order. Reproduces the prefixes
 // ProbabilisticRTA_TaskSet_SingleCore emits (same bake, same sort).
 void RTACache::RebuildPrefixes(const TaskSet& tasks_prioritized) {
-    std::unordered_map<int, TaskSet> per_core =
+    std::vector<TaskSet> per_core =
         ExtractTaskSetPerProcessor(tasks_prioritized);
-    champion_.hp_prefix_per_core.clear();
-    for (const auto& [core, core_tasks] : per_core) {
-        // core_tasks is priority-sorted
+    champion_.hp_prefix_per_core.assign(per_core.size(), {});
+    for (size_t core = 0; core < per_core.size(); core++) {
+        const TaskSet& core_tasks = per_core[core];  // priority-sorted
         std::vector<FiniteDist>& prefixes = champion_.hp_prefix_per_core[core];
         prefixes.assign(core_tasks.size(), IdentityPrefix());
         FiniteDist hp_tasks_et_conv = IdentityPrefix();
@@ -261,13 +282,13 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
     if (et_diff.size() > 1)
         return false;
 
-    std::unordered_map<int, std::vector<int>> candidate_per_core =
+    std::vector<std::vector<int>> candidate_per_core =
         PerCoreOrderFromPa(dag_tasks, pa);
 
-    // (2) Priority-order analysis on the two per-core maps. Returns the status
-    // +, when single, the changed core + the moved task's locators for the
-    // pure-priority-move case. The ET-known case re-runs the remove-and-compare
-    // below with the known task id.
+    // (2) Priority-order analysis on the two per-core order vectors. Returns the
+    // status +, when single, the changed core + the moved task's locators for
+    // the pure-priority-move case. The ET-known case re-runs the
+    // remove-and-compare below with the known task id.
     PrioritySwitchAnalysis pa_switch =
         AnalyzePrioritySwitch(candidate_per_core, champion_.champ_per_core);
     if (pa_switch.status == PrioritySwitchStatus::NotSingle)
@@ -300,8 +321,8 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
         // (combined ET+move = single change). changed_core == -1 here iff
         // ET-only change iff old_pos == new_pos.
         const std::vector<int>& candidate_order =
-            candidate_per_core.at(et_core);
-        const std::vector<int>& champion_order = champion_.champ_per_core.at(et_core);
+            candidate_per_core[et_core];
+        const std::vector<int>& champion_order = champion_.champ_per_core[et_core];
         moved_task_id = et_task_id;
         for (size_t i = 0; i < candidate_order.size(); i++)
             if (candidate_order[i] == et_task_id) {
@@ -364,9 +385,9 @@ std::vector<RTAReusePerTask> RTACache::ClassifyReusePerTask(
     }
     // |diff|==1: same-core (diff.core) -> NoReuse, cross-core -> FullReuse.
     std::fill(result.begin(), result.end(), RTAReusePerTask::FullReuse);
-    std::unordered_map<int, std::vector<int>> cand_order =
+    std::vector<std::vector<int>> cand_order =
         PerCoreOrderFromPa(dag_tasks, pa);
-    const std::vector<int>& changed_core_tasks = cand_order.at(diff.core);
+    const std::vector<int>& changed_core_tasks = cand_order[diff.core];
     for (int tid : changed_core_tasks) {
         result[tid] = RTAReusePerTask::NoReuse;
     }
@@ -404,8 +425,8 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     }
     // Candidate per-core partition, built once for the recompute loop below.
     // (Baking only changes ET, never processorId or priority order, so this ==
-    // PerCoreOrderFromPa(dag, pa).)
-    std::unordered_map<int, TaskSet> per_core =
+    // PerCoreOrderFromPa(dag, pa).) P1.20: flat vector indexed by core.
+    std::vector<TaskSet> per_core =
         ExtractTaskSetPerProcessor(tasks_prioritized);
 
     // Reuse verdict from the shared classifier: |diff|==0 -> all FullReuse;
@@ -446,7 +467,8 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     // each recompute sees the correct candidate-ET HP set. FullReuse tasks are
     // skipped (their seeded value stays) but still folded into the rolling HP
     // prefix so a later NoReuse task's HP set is complete.
-    for (const auto& [core, core_tasks] : per_core) {
+    for (const TaskSet& core_tasks : per_core) {
+        if (core_tasks.empty()) continue;
         // Mirror ProbabilisticRTA_TaskSet_SingleCore: maintain a rolling
         // hp_tasks_et_conv (ET convolution of every higher-priority task on this
         // core so far, snapshotted BEFORE the current task is folded in) and call

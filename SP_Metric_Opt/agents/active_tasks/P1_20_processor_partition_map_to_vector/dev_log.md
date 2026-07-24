@@ -198,3 +198,68 @@ order within a core) → SP provably neutral, confirmed by the in-binary oracle 
 
 **Staged (agent `git add`):** `DAG_Model.h`, `DAG_Model.cpp`. Awaiting user commit.
 
+---
+
+## 2026-07-23 — Commit 3 LANDED (staged, awaiting user commit)
+
+**Blast-radius recheck (pre-edit):** `grep -rn ExtractTaskSetPerProcessor` = 4
+hits: decl RTA.h:27, impl RTA.cpp:117, + 2 RTA_Cache.cpp call sites (222
+`RebuildPrefixes`, 409 `Evaluate`), + the RTA.cpp:135 `ProbabilisticRTA_TaskSet`
+caller. `grep -rn unordered_map<int,` over the RTA layer = the
+`ChampionState` 2 members + `PerCoreOrder*` 2 decls/impls +
+`FindCoreOfTask`/`AnalyzePrioritySwitch` (PrioritySwitchAnalysis.h, leaf, unit-
+tested directly) + the `AnalyzePrioritySwitch` test fixtures (testRTA.cpp).
+NO callers outside RTA_Cache.cpp + tests (testOptimizeIncrePA.cpp:577 is a stale
+COMMENT referencing `RTACache::AnalyzePrioritySwitch`, a pre-existing doc
+inaccuracy — not a call). Commit 4 4a (testOptimizeIncrePA hand-built per-core
+maps) confirmed EMPTY.
+
+**Correctness analysis — iteration order (the one real risk):**
+`ProbabilisticRTA_TaskSet`, `RebuildPrefixes`, and `Evaluate` all iterate per-
+core but write into their output (`rtas`/`candidate_rta_`) **scattered by task
+id** (`rtas[task_id2index[tasks[i].id]]`), and read
+`champion_.hp_prefix_per_core[core]` **by core index**. Per-core results are
+INDEPENDENT (each core's RTA depends only on that core's tasks; no cross-core
+accumulation) → core iteration order is irrelevant to the output. So switching
+map→vector (ascending core order) is safe; the 8 in-binary oracle probes confirm.
+
+**The gapped-core representation (test fixtures only):** the
+`AnalyzePrioritySwitch` fixtures use gapped core ids (e.g. `ChampionCoreEmptied`
+cand `{0}` vs champ `{0,2}`). Under `vector<vector<int>>`, an absent core and an
+empty core are indistinguishable (both = "zero tasks") — matching the old map
+semantics where a missing key fell back to `empty_vec`. The size check collapses
+to: for each core index in `max(a,b)` operands, a size mismatch (one empty /
+one non-empty, or two non-empty of different length) ⇒ NotSingle. Same verdicts
+as the map version (verified: `ChampionCoreEmptied` → cand `{{0,1},{}}` vs champ
+`{{0,1},{},{2,3}}` → core 2 size mismatch → NotSingle).
+
+**Edits (6 files):**
+- `RTA.h`: return type `unordered_map<int,TaskSet>`→`vector<TaskSet>`; `<unordered_map>`→`<vector>` include.
+- `RTA.cpp`: `ExtractTaskSetPerProcessor` body (compute `max_p`, size vector, indexed
+  bucket); `ProbabilisticRTA_TaskSet` range-for over `vector<TaskSet>` (skip empty cores).
+- `RTA_Cache.h`: `ChampionState::champ_per_core`/`hp_prefix_per_core`→`vector<vector<int>>`/
+  `vector<vector<FiniteDist>>`; `PerCoreOrderFromPa`/`PerCoreOrderOfPrioritized`→
+  `vector<vector<int>>`; dropped `<unordered_map>` include (no longer used).
+- `RTA_Cache.cpp`: `FindCoreOfTask` + `AnalyzePrioritySwitch` take `vector<vector<int>>`
+  (added `AnalyzePrioritySwitch_empty_vec` file-local sentinel for the absent-core
+  fallback; single size-check pass over `max(a,b)` cores); `PerCoreOrder*` build flat
+  vectors sized to `max_p+1`; `RebuildPrefixes` `.clear()`→`.assign(size,{})`+indexed;
+  `IsSingleTaskChange`/`ClassifyReusePerTask` `.at(core)`→`[core]`; `Evaluate` range-for
+  → indexed loop over `vector<TaskSet>` (skip empty). `task_id2index` (task_id-keyed, D4)
+  left as `unordered_map` — out of scope.
+- `PrioritySwitchAnalysis.h`: `FindCoreOfTask`/`AnalyzePrioritySwitch` take
+  `vector<vector<int>>`; dropped `<unordered_map>` include.
+- `testRTA.cpp`: 6 `AnalyzePrioritySwitch` fixtures → `vector<vector<int>>`
+  (`ChampionCoreEmptied` now `{{0,1},{}}` vs `{{0,1},{},{2,3}}`); refreshed 2 "default-
+  (-1)" comments → "default-0" + the 1037 "unordered_map<int, vector<int>>" comment.
+
+**Build/gate:** `cmake --build build_test --target check.SP_OPT --clean-first -j5`
+(header layout changed in RTA.h/RTA_Cache.h/PrioritySwitchAnalysis.h → `--clean-first`
+per stale-`.o` rule) → **17/17 ctest** (23.22 sec). Direct run of the 8
+`*Differential*`/`*BitIdentical*` probes in testOptimizeIncrePA = **8/8 PASS**.
+Pure storage change (map→vector, same partition contents, per-core-independence
+proven) → SP provably neutral.
+
+**Staged (agent `git add`):** `RTA.h`, `RTA.cpp`, `RTA_Cache.h`, `RTA_Cache.cpp`,
+`PrioritySwitchAnalysis.h`, `testRTA.cpp`. Awaiting user commit.
+
