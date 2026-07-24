@@ -50,9 +50,35 @@ def run_single_simulation(sim_bin_path, taskset_dir, sched_dir,
     if verbose >= 1:
         print(f"  [Sim] Starting {scheduler} instance {inst}...")
 
-    stdout_dest = None if verbose >= 2 else subprocess.DEVNULL
-    stderr_dest = None if verbose >= 2 else subprocess.DEVNULL
-    subprocess.run(sim_cmd, check=True, stdout=stdout_dest, stderr=stderr_dest)
+    # P1.15 (layer A): ALWAYS capture the binary's stdout+stderr to a per-arm
+    # ``run.log`` so the C++ throw text (e.g. the ``std::runtime_error`` from
+    # RTA_Cache.cpp:357) survives a crash for the Phase 2 investigation, even
+    # when the harness would otherwise discard it. The previous
+    # ``stdout=DEVNULL`` made a SIGABRT text-silent: the only signal was the
+    # exit code, which ``concurrent.futures.wait`` then discarded too.
+    # At verbose>=2 the user wants the binary's output on the console as well,
+    # so it is teed: captured to run.log AND printed to the terminal. Below
+    # that, it is captured to run.log only (console stays quiet).
+    run_log_path = os.path.join(sched_dir, "run.log")
+    os.makedirs(sched_dir, exist_ok=True)
+    with open(run_log_path, "w") as run_log:
+        if verbose >= 2:
+            # Tee: capture combined output, write to run.log AND the console.
+            proc = subprocess.run(
+                sim_cmd, check=False, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True,
+            )
+            output = proc.stdout or ""
+            run_log.write(output)
+            print(output, end="")
+            if proc.returncode != 0:
+                raise subprocess.CalledProcessError(
+                    proc.returncode, sim_cmd, output=output,
+                )
+        else:
+            subprocess.run(
+                sim_cmd, check=True, stdout=run_log, stderr=subprocess.STDOUT,
+            )
 
     if verbose >= 1:
         print(f"  [Sim] Finished {scheduler} instance {inst}.")
@@ -77,22 +103,44 @@ def analyze_single_instance(taskset_dir, scheduler, inst, task_deadlines,
     sp_values_run = []
     run_intervals_data = []
 
-    if os.path.exists(sp_metrics_file):
-        with open(sp_metrics_file, "r") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                parts = line.split(",")
-                if len(parts) < 2:
-                    continue
-                try:
-                    interval = int(parts[0])
-                    sp_val = float(parts[1])
-                    sp_values_run.append(sp_val)
-                    run_intervals_data.append((interval, sp_val))
-                except ValueError:
-                    continue
+    # P1.15 (layer A, A3): a missing or empty interval_sp_metrics.txt is a hard
+    # error, NOT a silent "0 SP values + miss_rate=0". The previous silent-zero
+    # path is exactly what let a crashed optimizer arm (the binary aborted
+    # before writing metrics) read as a "perfect 0.000000 miss rate" row in the
+    # aggregate, manufacturing BF's apparent loss. A crash leaves either no
+    # file at all, a 0-byte file, or a header-only file (a half-written
+    # abort); all three must surface as a loud failure rather than a silent
+    # zero contribution.
+    if not os.path.exists(sp_metrics_file):
+        raise FileNotFoundError(
+            f"interval_sp_metrics.txt not found at {sp_metrics_file} for "
+            f"scheduler '{scheduler}' instance {inst}. The optimizer binary "
+            f"did not produce SP metrics — this usually means it crashed "
+            f"(check run.log). A missing metrics file must not be treated as "
+            f"a silent zero."
+        )
+    with open(sp_metrics_file, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            parts = line.split(",")
+            if len(parts) < 2:
+                continue
+            try:
+                interval = int(parts[0])
+                sp_val = float(parts[1])
+                sp_values_run.append(sp_val)
+                run_intervals_data.append((interval, sp_val))
+            except ValueError:
+                continue
+    if not sp_values_run:
+        raise ValueError(
+            f"interval_sp_metrics.txt at {sp_metrics_file} for scheduler "
+            f"'{scheduler}' instance {inst} contains no parseable SP data "
+            f"rows (0-byte or header-only). A half-written abort is not a "
+            f"complete run — this must not be treated as a silent zero."
+        )
 
     miss_rate = compute_miss_rate(sched_dir, task_deadlines)
 

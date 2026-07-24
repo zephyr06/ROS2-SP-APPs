@@ -191,8 +191,48 @@ def parse_interval_sp_metrics(metrics_path):
 
 def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs,
                             horizon_granularity=10, verbose=1):
-    """Write consolidated CSV summary and generate comparison plots."""
+    """Write consolidated CSV summary and generate comparison plots.
+
+    P1.15 (layer A, A4): the aggregate must be comparable across schedulers.
+    Two rules replace the old "mean over whatever SP values survived" behaviour
+    that manufactured BF's apparent loss:
+
+    1. **An empty arm surfaces as NaN, never as a silent 0.0.** A scheduler with
+       no SP values (e.g. its binary crashed before writing metrics) writes
+       ``nan`` in every metric column of its row, so it can never be mistaken
+       for a "perfect 0.000000 miss rate" result. (Previously
+       ``np.mean([]) -> 0.0`` produced exactly that fake-perfect row.)
+    2. **Unequal N across schedulers fails loudly.** If two or more schedulers
+       each have data but over different numbers of values (one crashed on a
+       taskset the other completed), the comparison is apples-to-oranges and
+       the call raises instead of writing a silently-incomparable summary. A
+       genuinely-empty arm (zero values) is NOT counted as a participant in
+       this check — it simply becomes a NaN row — so a single crashed arm does
+       not by itself trip the unequal-N guard; only two *partial* arms with
+       mismatched nonzero counts do.
+    """
     summary_csv_path = os.path.join(output_dir_abs, "comparison_summary.csv")
+
+    # Unequal-N guard: among schedulers that actually produced data, the count
+    # of SP values must agree. A crashed arm (count 0) is excluded from this
+    # check — it is rendered as NaN below, not treated as a "different N".
+    nonzero_counts = {
+        s: len(results_by_scheduler[s].get("sp_values", []))
+        for s in schedulers
+        if len(results_by_scheduler[s].get("sp_values", [])) > 0
+    }
+    distinct_nonzero_counts = set(nonzero_counts.values())
+    if len(distinct_nonzero_counts) > 1:
+        offenders = sorted(nonzero_counts.items(), key=lambda kv: kv[1])
+        raise ValueError(
+            f"Unequal N across schedulers with data — cannot aggregate an "
+            f"apples-to-oranges comparison. SP-value counts: "
+            f"{', '.join(f'{s}={n}' for s, n in offenders)}. A scheduler with "
+            f"fewer values likely crashed on a taskset the others completed; "
+            f"re-run with the crash fixed so every scheduler is scored on the "
+            f"same taskset set."
+        )
+
     if verbose >= 1:
         print(f"Writing summary statistics to: {summary_csv_path}")
     with open(summary_csv_path, "w") as csv_file:
@@ -209,13 +249,17 @@ def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs,
             imp_arr = np.array(s_data.get("important_miss_rates", []))
             non_imp_arr = np.array(s_data.get("non_important_miss_rates", []))
 
-            mean_sp = np.mean(sp_arr) if len(sp_arr) > 0 else 0.0
-            std_sp = np.std(sp_arr) if len(sp_arr) > 0 else 0.0
-            mean_miss = np.mean(miss_arr) if len(miss_arr) > 0 else 0.0
-            std_miss = np.std(miss_arr) if len(miss_arr) > 0 else 0.0
-            mean_sched = np.mean(sched_arr) if len(sched_arr) > 0 else 0.0
-            mean_imp = np.mean(imp_arr) if len(imp_arr) > 0 else 0.0
-            mean_non_imp = np.mean(non_imp_arr) if len(non_imp_arr) > 0 else 0.0
+            # Empty arm -> NaN (not 0.0). np.mean/std of an empty array would
+            # otherwise emit a RuntimeWarning + nan, but the previous code
+            # short-circuited to 0.0; we now deliberately keep NaN so a crashed
+            # arm is visible as a gap, never a silent perfect-zero.
+            mean_sp = float(np.mean(sp_arr)) if len(sp_arr) > 0 else float("nan")
+            std_sp = float(np.std(sp_arr)) if len(sp_arr) > 0 else float("nan")
+            mean_miss = float(np.mean(miss_arr)) if len(miss_arr) > 0 else float("nan")
+            std_miss = float(np.std(miss_arr)) if len(miss_arr) > 0 else float("nan")
+            mean_sched = float(np.mean(sched_arr)) if len(sched_arr) > 0 else float("nan")
+            mean_imp = float(np.mean(imp_arr)) if len(imp_arr) > 0 else float("nan")
+            mean_non_imp = float(np.mean(non_imp_arr)) if len(non_imp_arr) > 0 else float("nan")
 
             csv_file.write(
                 f"{scheduler},{mean_sp:.6f},{std_sp:.6f},"
@@ -240,8 +284,15 @@ def write_summary_and_plots(results_by_scheduler, schedulers, output_dir_abs,
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    sp_boxplot_data = [results_by_scheduler[s]["sp_values"] for s in schedulers]
-    ax1.boxplot(sp_boxplot_data, labels=schedulers)
+    # P1.15 (layer A, A4): a crashed arm has empty sp_values. matplotlib's
+    # boxplot emits a warning (and on some versions raises) on an empty list,
+    # so only schedulers that actually produced data are plotted; a crashed
+    # arm is already represented as a NaN row in the CSV and a ❌ in the
+    # status map, so omitting it from the boxplot loses no signal.
+    plotted = [(s, results_by_scheduler[s]["sp_values"]) for s in schedulers
+               if len(results_by_scheduler[s].get("sp_values", [])) > 0]
+    if plotted:
+        ax1.boxplot([d for _, d in plotted], labels=[s for s, _ in plotted])
     ax1.set_ylabel("SP-Metric Value")
     ax1.set_title("Safety-Performance Metric Distribution")
     ax1.grid(True, linestyle="--", alpha=0.5)
