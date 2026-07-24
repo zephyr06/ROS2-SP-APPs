@@ -1,18 +1,38 @@
 # P1.12 — Tasks (working checklist)
 
+> **STATUS: CLOSED 2026-07-23 → moved to `finished_tasks/`.** All code committed
+> (`77effccb` chain; 17/17 ctest green). Last open item — the cache on/off
+> scalability measurement at N=6/10/16 — satisfied by P1.23's A/B at N=10:
+> ~36% speedup (NEW/OLD=0.638), SP bit-identical on 10/10 tasksets. N=10 was
+> decisive → N=6/16 sweep not run. See
+> `finished_tasks/P1_23_ab_rta_cache_speedup/dev_log.md` for the per-taskset
+> table.
+
 > See `goal.md` for scope and design.
 > One small sub-task at a time, review + commit after each.
 > Split out of P1.11's former Phase 1 + Phase 2 on 2026-07-18.
 
 ---
 
-## State (2026-07-19, Phase 1 COMPLETE + COMMITTED; Phase 2 item 1 DONE in working tree)
+## State (2026-07-19, Phase 1 + Phase 2 item 1 + P1.16 cache_backup ALL COMMITTED)
 
-HEAD = `c0e1bde0` ("add more tests"). The Phase 1 increments are ALL COMMITTED:
+HEAD = `77effccb`. The full P1.12 + P1.16 increment chain is COMMITTED:
 - `71da8a45` = 2b blocker fix (`RTA_Cache.cpp` NoReuse bit-identity + `testRTA.cpp`).
 - `8e18c39b` = 2a write-side re-land (`OptimizeSP_TL_Incre.{h,cpp}` + task docs).
 - `5a172973` = 2b READ-SIDE SWAP (`OptimizeSP_TL_Incre.{h,cpp}`, +65/-31).
 - `c0e1bde0` = Phase 1 step 3 differential tests (`tests/testRTA.cpp` +83).
+- `bfbec7e5` = **Phase 2 item 1 (the `:285` flip + 1a tests + 1b Evaluate reindex
+  fix)** — `EvaluateTimeLimitConfig_SubIncremental`'s `:285` call passes
+  `std::ref(rta_cache_)` into `OptimizeIncre_SingleTask` (3-arg → 4-arg) so the
+  TL-walk's per-variation priority search shares the serialized champion's warm
+  cache. The 1b fix in `RTACache::Evaluate` (`RTA_Cache.cpp:426-459`) reindexes
+  the FullReuse seeding by task-id (not a positional copy) → fixes the PA-move
+  scramble that the 1a tests pin. `OptimizeWithOptimizationSpace` gate PASSES.
+- `1217d227` = **P1.16 cache_backup on rejected walks** — `UpdateRecords` returns
+  `bool`; `EvaluateTimeLimitConfig_SubIncremental` backs up `rta_cache_` and
+  restores it when the candidate is NOT adopted, keeping the cache champion in
+  sync with `res_opt_` (closes the Reopt_X>1 SIGABRT desync). P1.16 moved to
+  `finished_tasks/`.
 
 So 2a (write-side), the 2b `Evaluate` fix, AND the 2b read-side swap are LIVE at
 HEAD. The `:247` baseline re-score in `EvaluateTimeLimitConfig_SubIncremental`
@@ -22,20 +42,14 @@ Hazard B). Wrapped in `BFSharedBudgetCancelled()` checks to preserve the P1.14
 cancel contract (INT_MIN on cancel → discarded by the strict-> adopt guard).
 Double-bake is idempotent + `TryComputeSingleChange` bakes both sides before
 diffing → invariant holds (Type-L → |diff|==1 patch, Type-E → |diff|==0
-FullReuse). **17/17 ctest green** re-verified from clean build (18.51s);
-differential gate `OptimizeWithOptimizationSpace` passes (cache read-side
-bit-identical to oracle on the full serialized walk).
+FullReuse). **17/17 ctest green** re-verified 2026-07-19 from a fresh
+`-DCMAKE_BUILD_TYPE=DEBUG` (uppercase — the `tests/CMakeLists.txt:1` gate is
+case-sensitive; mixed-case `Debug` silently skips test registration) build
+(20.37s); differential gate `OptimizeWithOptimizationSpace` passes (cache
+read-side bit-identical to oracle on the full serialized walk).
 
-**Phase 2 item 1 (`:285` flip) DONE 2026-07-19 in the working tree (NOT committed):**
-`EvaluateTimeLimitConfig_SubIncremental`'s `:285` call now passes
-`std::ref(rta_cache_)` into `OptimizeIncre_SingleTask` (3-arg → 4-arg), so the
-TL-walk's per-variation priority search shares the serialized champion's warm
-cache (was: throwaway local cache per call). Unblocked by the 1b reindex fix in
-`RTACache::Evaluate` (FullReuse seeding reindexed by task-id, not positional
-copy — fixes the PA-move scramble). `OptimizeWithOptimizationSpace` gate PASSES
-with the flip live; 17/17 ctest green (23.13s). `:249`/`:289` (the OTHER
-`OptimizeIncre_SingleTask` call sites in the TL path) — `:285` was THE hot-loop
-call; the remaining Phase 2 work is Loop A/B dispatch refinement + measurement.
+**Working tree has NO P1.12 source changes** — the prior dev_log/tasks entries
+that claimed "1a/1b/1c NOT committed" were STALE (they landed in `bfbec7e5`).
 
 ### The 2b BLOCKER — RESOLVED 2026-07-19
 
@@ -139,8 +153,8 @@ dispatch + measurement) is NOT started.
 ## Phase 2 — Dispatch Cache in Hot Loops (Patching) + base-class threading
 
 - [x] **1. `:285` cache dispatch (the `OptimizeIncre_SingleTask` call in
-  `EvaluateTimeLimitConfig_SubIncremental`)** — DONE 2026-07-19 (working tree,
-  NOT committed). NOT the one-liner the old "base-class threading" framing
+  `EvaluateTimeLimitConfig_SubIncremental`)** — DONE + COMMITTED `bfbec7e5`
+  (2026-07-19). NOT the one-liner the old "base-class threading" framing
   implied. P1.13 already did the threading (the `RTACacheOpt` param + cache
   branch in `OptimizeIncre_SingleTask` exist + are used at the `:428`
   priority-path call). Item 1 = feed `std::ref(rta_cache_)` at `:285`
@@ -170,19 +184,41 @@ dispatch + measurement) is NOT started.
     `OptimizeWithOptimizationSpace` gate PASSES (cache/incre SP ≤ scratch SP,
     adopted TL==400). 17/17 ctest green.
 
-- [ ] **Base-class `RTACache&` threading (Hazard A)** — DONE by P1.13 (the
+- [x] **Base-class `RTACache&` threading (Hazard A)** — DONE by P1.13 (the
   `RTACacheOpt` param on `OptimizeIncre_SingleTask`/`OptimizeIncre`). The
   stale "thread `RTACache&` into the base class" framing in `goal.md` is
-  superseded; the remaining work is the `:285` *call-site* fix (item 1), not
-  base-class threading.
-- [ ] **TL patch dispatch (Loop B)**:
-  - Optimize the TL walk (`OptimizeSingleTaskTimeLimit`) to utilize
-    `rta_cache_.Evaluate(...)` under the single-task change patch path.
-  - Verify via differential tests vs the full recompute.
-- [ ] **Priority-move patch dispatch (Loop A)**:
-  - Optimize the 1D priority walk to utilize `Evaluate(...)` patch path.
-  - Verify via differential tests.
-- [ ] **End-to-end scalability measurement**:
+  superseded; the remaining work is the `:285` *call-site* fix (item 1, DONE),
+  not base-class threading.
+- [x] **TL patch dispatch (Loop B)** — CONFIRMED COVERED 2026-07-19 (no code
+  change needed). The TL walk (`PerformCoordinateDescentForTaskConfigOpt` →
+  `EvaluateTimeLimitConfig_SubIncremental` per trial TL) already routes through
+  `rta_cache_.Evaluate`+`ObtainSP_Full_From_NodeRTAs` at `:247` (baseline
+  re-score) AND `:285` (`OptimizeIncre_SingleTask(..., std::ref(rta_cache_))`),
+  both on the SHARED `rta_cache_`. Verified via the production call graph
+  (`Optimize_w_TL_ScratchOrIncre` → `OptimizeIncre_w_TL` →
+  `PerformSerializedTaskQueueOptimization` → `EvaluateTimeLimitConfig_SubIncremental`).
+- [x] **Priority-move patch dispatch (Loop A)** — CONFIRMED COVERED 2026-07-19.
+  The 1D priority walk (`OptimizeIncre_SingleTask`'s `pa_vec_variations` loop)
+  takes the `if (rta_cache)` cache branch at `OptimizeSP_Incre.cpp:333` whenever
+  a cache is passed. The serialized path's `:285` call passes `std::ref(rta_cache_)`;
+  the `OptimizeIncre` full path's `:437` call forwards `rta_cache`, which
+  `OptimizeIncre` forces engaged at `:369-371` (local cache if nullopt). The
+  `:339`/`:396` oracle arms are dead defensive branches (header
+  `OptimizeSP_Incre.h:158` confirms "NO oracle arm inside `OptimizeIncre`").
+- [x] **End-to-end scalability measurement** (the ONLY remaining P1.12 work):
   - Profile the candidate evaluation time at N=6/10/16 with and without the
-    cache.
-  - Document the speedup.
+    cache. Requires a release binary + profiling run (NOT a code change).
+  - Document the speedup. Gated on P1.15 Phase 3 (re-run P25 A/B on the fixed
+    binary+harness) OR a standalone cache on/off micro-profile.
+  - **DONE via P1.23** (2026-07-23). P1.23's no-cache-vs-cache A/B at N=10 is
+    this measurement: OLD (no cache) mean scheduler time 1.318 s, NEW (cache)
+    0.842 s → **~36% speedup**, SP bit-identical on 10/10 tasksets. N=10 is
+    decisive so the N=6/16 sweep was not run. See
+    `P1_23_ab_rta_cache_speedup/dev_log.md` for the full per-taskset table.
+
+### P1.16 — cache_backup on rejected walks (CLOSED, in `finished_tasks/`)
+
+- [x] `UpdateRecords` returns `bool`; `EvaluateTimeLimitConfig_SubIncremental`
+  backs up `rta_cache_` + restores on rejected candidate. COMMITTED `1217d227`.
+  Closes the Reopt_X>1 SIGABRT desync (cache champion ≠ `res_opt_` after a
+  rejected walk). Supersedes the old "P1.16 mirror" sub-items.

@@ -1052,3 +1052,260 @@ the load-bearing Phase 2 seam; Loop A/B dispatch may already be largely covered
 by `:285` + the `:428` priority-path call (both now cache-engaged) — needs a
 grounded read to confirm what's left.
 
+---
+
+## 2026-07-19 (later still) — Reconciliation: prior "NOT committed" was STALE; 1a/1b/1c + P1.16 ARE committed
+
+User: "continue work on task p1_12 ... remember to update task records and memory
+file regularly." Re-anchored against the tree and found the prior dev_log entry's
+"working tree, NOT committed" framing was **wrong / stale**:
+
+- `git diff --stat` on the three P1.12 source files (`RTA_Cache.cpp`,
+  `OptimizeSP_TL_Incre.cpp`, `tests/testRTA.cpp`) showed **NO working-tree
+  changes** — the 1a tests + 1b fix + 1c `:285` flip described in the prior entry
+  had ALREADY been committed (in `bfbec7e5` "initialize candidate_rta from
+  champion rta", +533/-19, dated 2026-07-19 14:48 — AFTER the prior entry was
+  written). The prior entry's "git add the 1a+1b+1c changes" NEXT was already
+  done by the user.
+- A SECOND commit had landed since: `1217d227` "add cache_backup in
+  EvaluateTimeLimitConfig_SubIncremental" (P1.16) — `UpdateRecords` returns
+  `bool`; `EvaluateTimeLimitConfig_SubIncremental` backs up `rta_cache_` and
+  restores it when the candidate is NOT adopted. Closes the Reopt_X>1 SIGABRT
+  desync (cache champion ≠ `res_opt_` after a rejected walk). P1.16 moved to
+  `finished_tasks/P1_16_rta_cache_desync_fix/`.
+
+### Confirmed committed code state (HEAD = `77effccb`)
+
+- `OptimizeSP_TL_Incre.cpp:291-298` — the `:285` `OptimizeIncre_SingleTask` call
+  passes `std::ref(rta_cache_)` (4-arg); `UpdateRecords` returns `bool`;
+  `if (!updated) rta_cache_ = cache_backup;` restores on reject.
+- `RTA_Cache.cpp:410-502` — `Evaluate` reindexes the FullReuse seeding by
+  task-id (`candidate_rta_[cand_pos(tid)] = rta_[champ_pos(tid)]`), not the
+  positional copy that scrambled under a PA move.
+
+### Build/test baseline re-established
+
+The `build/` dir was configured `CMAKE_BUILD_TYPE=Debug` (mixed case). Per the
+[[sp-opt-test-build-debug-config]] memory, `tests/CMakeLists.txt:1` gates test
+registration on `STREQUAL "DEBUG"` (UPPERCASE) → mixed-case `Debug` SILENTLY
+SKIPS the `gtsamAddTestsGlob` registration, so the test binaries present can be
+stale while "passing". Reconfigured `cmake -DCMAKE_BUILD_TYPE=DEBUG ..` then
+`cmake --build . --target check.SP_OPT -j5` → **17/17 ctest green (20.37s)**,
+freshly compiled. This is the true baseline.
+
+### Records updated (this session, no source change)
+
+- `tasks.md` State block + Phase 2 item 1 checkbox + 1c sub-item + base-class
+  threading item flipped to COMMITTED; added a P1.16 "cache_backup on rejected
+  walks (CLOSED)" sub-section.
+- `goal.md` Current state + NEXT updated to HEAD `77effccb` + the `bfbec7e5` /
+  `1217d227` commits.
+- Memory file `MEMORY.md` P1.12 line + `p19-cache-redesign-single-champion.md`
+  to be updated next (1a/1b/1c + P1.16 are committed, not "working tree").
+
+### NEXT (real)
+
+Phase 2 remainder, in priority order:
+1. **Grounded read** of `OptimizeIncre_SingleTask` (`OptimizeSP_Incre.cpp`) +
+   the TL walk (`OptimizeSingleTaskTimeLimit`) to confirm whether Loop A / Loop B
+   dispatch is ALREADY covered by the `:285` + `:428` cache-engaged calls, or
+   whether more eval sites still call the oracle `EvaluateSPWithPriorityVec`.
+   The dev_log's prior "may already be largely covered" guess needs code proof.
+2. If gaps remain → TDD a differential for each remaining oracle-call site, then
+   flip it to `rta_cache_.Evaluate` + `ObtainSP_Full_From_NodeRTAs`.
+3. End-to-end scalability measurement at N=6/10/16 (cache on vs off).
+
+Will do step 1 (the grounded read) next, scoped tight to avoid the 131072-token
+context ceiling.
+
+---
+
+## 2026-07-19 (later still) — Grounded read DONE: Loop A/B dispatch is ALREADY fully covered; remaining oracle sites are one-shot baselines or dead defensive arms
+
+Step 1 of the NEXT above. Read each remaining `EvaluateSPWithPriorityVec` site in
+the incremental+TL optimizer (grep: `OptimizeSP_TL_Incre.cpp:460,846,856`;
+`OptimizeSP_Incre.cpp:162,339,396`) + traced the callers. Conclusion: **no Loop
+A / Loop B dispatch work remains** — the hot loops are already cache-engaged. The
+remaining oracle sites are either (a) one-shot baselines where the cache is
+intentionally cold/off, or (b) dead defensive arms. Detail:
+
+### Site-by-site
+
+1. **`OptimizeSP_TL_Incre.cpp:460`** — `EvaluateSPWithPriorityVec(dag_baseline,
+   sp_parameters_, opt_pa_)`. Enclosing fn = `PerformSerializedTaskQueueOptimization`
+   (~:420-...), the "Dedicated RE-SCORE (#6)" that seeds `opt_sp_` for the queue
+   walk under the new env DAG. **One-shot per interval, NOT a hot loop.** Candidate
+   == champion PA (env re-baked only) → |diff|==0, cache COULD apply (FullReuse
+   short-circuit). BUT the cache champion here is the PREVIOUS interval's
+   (env moved → `dag_tasks_` re-seeded → diff >1 → `Evaluate` would throw), which
+   is exactly why `ResetIncumbentBaseline` default-constructs the cache cold at
+   :838 and `rta_cache_active_` is re-armed only AFTER this baseline at :448. So
+   the cache is empty/off here on purpose. Engaging it would need an `Initialize`
+   (one full RTA) = no savings vs the oracle. **Leave on oracle.** (Same shape as
+   `:247` but `:247` runs per-trial-TL inside the walk AFTER the champion is warm;
+   `:460` runs once before the walk with a cold cache.)
+
+2. **`OptimizeSP_TL_Incre.cpp:846`** — `EvaluateSPWithPriorityVec(
+   dag_new_with_tl_prev, sp_parameters_, pa_prev)`. Enclosing fn =
+   `ResetIncumbentBaseline(from_scratch=true)` (the REOPT branch, :828-863).
+   One-shot reopt baseline. The cache was JUST default-constructed cold at :838
+   three lines above → `Evaluate` would `Initialize` (full RTA), no savings.
+   Reopt path keeps the cache off by design (`rta_cache_active_=false` here).
+   **Leave on oracle.**
+
+3. **`OptimizeSP_TL_Incre.cpp:856`** — `EvaluateSPWithPriorityVec(dag_with_tl_min,
+   sp_parameters_, pa_rm)`. Same fn `ResetIncumbentBaseline`, the interval-0
+   synthetic RM+min-TL baseline (else branch, no incumbent yet). Cache cold/empty.
+   **Leave on oracle.**
+
+4. **`OptimizeSP_Incre.cpp:162`** — `opt_sp_ = EvaluateSPWithPriorityVec(
+   dag_tasks_, sp_parameters_, opt_pa_)`. Enclosing fn = `OptimizeFromScratch`
+   (:100-164, the beam search's final SP score of the chosen PA). **Full from-
+   scratch descent, NOT a single-change site** → cache cannot apply (no champion
+   to diff against; the descent mutates many tasks). **Leave on oracle.**
+
+5. **`OptimizeSP_Incre.cpp:339`** — `sp_eval = EvaluateSPWithPriorityVec(
+   dag_tasks_update, sp_parameters_, priority_assignment)`. Enclosing fn =
+   `OptimizeIncre_SingleTask` (:305-354). This is the `else` of `if (rta_cache)`
+   at :329. **Reachable ONLY when `rta_cache` is disengaged.** The sole live
+   callers are `OptimizeSP_TL_Incre.cpp:291` (the `:285` site, passes
+   `std::ref(rta_cache_)` → takes the `if` cache branch at :333, NOT this `else`)
+   and `OptimizeSP_Incre.cpp:437` (inside `OptimizeIncre` full, passes `rta_cache`
+   through — and `OptimizeIncre` FORCES `rta_cache` engaged at :369-371 via a
+   local cache when nullopt). So `:339` is **dead on the live path** — defensive
+   only. Header comment at `OptimizeSP_Incre.h:158` confirms: "there is NO oracle
+   arm inside `OptimizeIncre` anymore — the cache path is the [only path]."
+
+6. **`OptimizeSP_Incre.cpp:396`** — `opt_sp_ = EvaluateSPWithPriorityVec(
+   dag_tasks_update, sp_parameters_, opt_pa_)`. Enclosing fn = `OptimizeIncre`
+   full (:356-452), the baseline re-score `else` of `if (rta_cache)` at :389.
+   Same story as `:339`: `OptimizeIncre` forces `rta_cache` engaged at :369-371
+   (local cache when nullopt) → the `if (rta_cache)` branch at :390
+   (`Initialize`+`ObtainSP_Full_From_NodeRTAs`) is always taken, NOT this `else`.
+   **Dead on the live path.**
+
+### The `:428`/`:437` priority-path call (Loop A)
+
+My prior notes' "`:428` priority-path call" is stale — the actual line is
+**`OptimizeSP_Incre.cpp:437`**: `OptimizeIncre_SingleTask(dag_tasks_update,
+task_diff_obj.task_id, task_diff_obj.increase, rta_cache)` inside `OptimizeIncre`
+full's `for (DiffObj task_diff_obj : tasks_with_diff_et)` loop. This is **Loop A**
+(the 1D priority-move walk over each env-changed task). It PASSES `rta_cache`
+through, and `OptimizeIncre` guarantees `rta_cache` engaged (local cache if
+nullopt) → every `:437` call takes the cache branch at `OptimizeIncre_SingleTask`
+:333. **Loop A is already cache-engaged.** BUT note: when called from
+`OptimizeSP_TL_Incre.cpp:163` (`EvaluateTimeLimitConfig_ScratchOrIncre`
+incremental path, `optimizer.OptimizeIncre(dag_tasks_cur)` — NO cache arg), the
+cache used is a **per-call LOCAL cache** (created at `OptimizeIncre` :368), NOT
+the shared `rta_cache_`. So Loop A via the `:163` path is cache-engaged but with
+a THROWAWAY cache (no cross-call reuse). The `:285` path (the serialized
+sub-incremental walk) uses the SHARED `rta_cache_`. This is a perf gap, not a
+correctness gap — see NEXT.
+
+### Loop B (TL walk)
+
+`OptimizeSingleTaskTimeLimit` (the TL coordinate descent) calls
+`EvaluateTimeLimitConfig_SubIncremental` per trial TL, which:
+- `:247` re-scores the baseline via `rta_cache_.Evaluate`+`ObtainSP_Full_From_NodeRTAs`
+  (cache-engaged, shared `rta_cache_`). ✅
+- `:285` calls `OptimizeIncre_SingleTask(..., std::ref(rta_cache_))` (cache-engaged,
+  shared `rta_cache_`). ✅
+So **Loop B is already cache-engaged** on the shared `rta_cache_`.
+
+### Verdict
+
+**Phase 2 "Loop A / Loop B dispatch" is DONE** — both loops already route through
+`rta_cache_.Evaluate`+`ObtainSP_Full_From_NodeRTAs` (Loop B at `:247`+`:285` on
+the shared cache; Loop A at `:437` via `OptimizeIncre`'s local-cache-if-nullopt).
+The remaining oracle sites (1-4 above) are correctly on the oracle (one-shot
+baselines with a cold cache, or full from-scratch descents where the cache can't
+apply). Sites 5-6 are dead defensive arms.
+
+### The one real gap (perf, not correctness)
+
+`EvaluateTimeLimitConfig_ScratchOrIncre:163` calls `OptimizeIncre(dag_tasks_cur)`
+with NO cache arg → `OptimizeIncre` builds a throwaway LOCAL cache per call. This
+is the non-serialized incremental path (used when `from_scratch=false` but NOT via
+the serialized queue). It's cache-engaged but doesn't reuse `rta_cache_` across
+calls. Whether this path is even on the hot loop in production (vs the serialized
+`PerformSerializedTaskQueueOptimization` path) needs confirming before deciding
+to thread `rta_cache_` into it. **This is a candidate Phase 2 perf refinement,
+NOT a correctness gap** — and it may be moot if production uses only the
+serialized path.
+
+### NEXT (revised)
+
+1. Confirm whether `EvaluateTimeLimitConfig_ScratchOrIncre` (`:163` caller) is on
+   a production hot path or only the serialized `PerformSerializedTaskQueueOptimization`
+   path is used. If `:163` is hot → thread `rta_cache_` into it (small change:
+   pass `std::ref(rta_cache_)` at `:163`, mirroring `:285`). If cold → leave it.
+2. Then **end-to-end scalability measurement at N=6/10/16** (cache on vs off) —
+   the integration is functionally complete; this is the payoff measurement.
+3. (Optional, P1.17 sibling) prune the dead `:339`/`:396` oracle arms + the
+   `ifTimeout` dead code noted in P1.14 — but that's P1.17's refactor scope, not
+   P1.12.
+
+---
+
+## 2026-07-19 (final) — Production-path map DONE: `:163` throwaway-cache path is the REOPT path, NOT incremental hot path; Phase 2 dispatch CONFIRMED COMPLETE
+
+Resolved item 1 of the NEXT (revised) above by tracing the production call graph
+(`sources/RTDA/ImplicitCommunication/SimulationOrchestrator.cpp:318/327/335` →
+`incr_optimizer_.Optimize_w_TL_ScratchOrIncre` → the `:670` reopt/incremental
+dispatch):
+
+- **Incremental production path (hot):** `Optimize_w_TL_ScratchOrIncre` →
+  `OptimizeIncre_w_TL` (`:674`, the non-reopt branch) →
+  `PerformSerializedTaskQueueOptimization` (`:720`) →
+  `EvaluateTimeLimitConfig_SubIncremental` (`:247` re-score + `:285`
+  `OptimizeIncre_SingleTask`, BOTH cache-engaged on the SHARED `rta_cache_`).
+  ✅ Loop A (`:437` inside `OptimizeIncre`) + Loop B (`:247`+`:285`) both hit the
+  shared cache on this path.
+- **Reopt path (cold by design):** `Optimize_w_TL_ScratchOrIncre` →
+  `ReOptimizePeriodic` (`:672`, the `trigger_reopt` branch) →
+  `PerformCoordinateDescentForTaskConfigOpt` (`:896`) →
+  `EvaluateTimeLimitConfig_ScratchOrIncre` (`:621` baseline + per-task-TL walk) →
+  `OptimizeIncre(dag_tasks_cur)` at `:163` with NO cache arg → `OptimizeIncre`
+  builds a THROWAWAY local cache (`OptimizeSP_Incre.cpp:368`). Reopt is
+  memoryless from-scratch; `ResetIncumbentBaseline(true)` (`:838`) keeps
+  `rta_cache_active_=false`, so the shared `rta_cache_` is intentionally cold
+  here. The local cache gives within-call reuse for the multi-task `OptimizeIncre`
+  loop — a reasonable choice, NOT a gap.
+- **TL-opt-disabled path:** `OptimizeIncre_w_TL` →
+  `OptimizeWithTimeLimitOptDisabled` (`:710`, when `disable_time_limit_opt`) →
+  `EvaluateTimeLimitConfig_ScratchOrIncre` (`:686`). Diagnostic/ablation path,
+  not production-hot.
+
+**Verdict: the `:163` throwaway-local-cache path is the REOPT descent, NOT the
+incremental hot path.** No `rta_cache_` threading needed there — reopt keeps the
+cache cold by design, and the local cache already provides within-call reuse.
+**Phase 2 "Loop A / Loop B dispatch" is CONFIRMED COMPLETE** — the production
+incremental path fully routes through the shared `rta_cache_` at `:247`+`:285`,
+and Loop A (`:437`) reuses it via `OptimizeIncre`'s engaged-cache forward.
+
+### P1.12 functional integration = COMPLETE
+
+All correctness work landed + committed:
+- Phase 1 (`:247` read-side swap + 2b blocker fix + step-3 differentials):
+  `71da8a45`+`8e18c39b`+`5a172973`+`c0e1bde0`.
+- Phase 2 item 1 (`:285` flip + 1a/1b/1c): `bfbec7e5`.
+- P1.16 cache_backup on rejected walks: `1217d227`.
+- Loop A/B dispatch: already covered by `:247`+`:285`+`:437` (confirmed this
+  session, no code change needed).
+
+**17/17 ctest green** from a fresh `-DCMAKE_BUILD_TYPE=DEBUG` build (20.37s).
+
+### NEXT (final)
+
+The ONLY remaining P1.12 work is **end-to-end scalability measurement at
+N=6/10/16** (cache on vs off) — the payoff profile. This requires a release
+binary + a profiling run, NOT a code change. It is also gated on P1.15 Phase 3
+(re-run P25 A/B on the fixed binary+harness for the true BF-vs-INCR verdict)
+since the same A/B harness drives the measurement. Recommend: stage the
+measurement as a follow-up after P1.15 Phase 3, OR run a standalone cache
+on/off micro-profile at N=6/10/16 directly on `testOptimizeIncrePA`-style
+fixtures. Will ask the user which they prefer before running anything expensive.
+
+The dead `:339`/`:396` oracle arms + `ifTimeout` pruning are P1.17's refactor
+scope (sibling task, not P1.12).
+
