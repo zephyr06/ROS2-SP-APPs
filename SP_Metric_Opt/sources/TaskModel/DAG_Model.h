@@ -98,6 +98,11 @@ class DAG_Model {
     void CategorizeTaskSet();
     void RecordTaskPosition();
 
+    // Fail-fast input guard (P1.20): every task's processorId must be >= 0 and
+    // the set of used cores dense 0-based {0..max}. Called at the top of
+    // CategorizeTaskSet so a stray yaml aborts at load, not mid-RTA.
+    void ValidateProcessorIds() const;
+
     inline const TaskSet &GetTaskSet() const { return tasks; }
 
     inline int GetTaskIndex(int task_id) const {
@@ -116,7 +121,6 @@ class DAG_Model {
     std::vector<std::vector<int>> chains_;
     std::vector<double> chains_deadlines_;
     std::unordered_map<int, TaskSet> processor2taskset_;
-    std::unordered_map<int, uint> task_id2task_index_within_processor_;
     std::unordered_map<int, int> task_id2position_;
 };
 

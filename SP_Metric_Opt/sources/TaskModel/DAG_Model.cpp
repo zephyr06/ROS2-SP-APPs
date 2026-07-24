@@ -158,9 +158,30 @@ std::vector<std::vector<int>> DAG_Model::GetRandomChains(int numOfChains,
     return chains;
 }
 
+void DAG_Model::ValidateProcessorIds() const {
+    if (tasks.empty()) return;
+    int max_p = -1;
+    for (const Task& t : tasks) {
+        if (t.processorId < 0) {
+            CoutError("Invalid processorId " + std::to_string(t.processorId) +
+                      " (must be >= 0) on task " + std::to_string(t.id));
+        }
+        if (t.processorId > max_p) max_p = t.processorId;
+    }
+    std::vector<char> seen(max_p + 1, 0);
+    for (const Task& t : tasks) seen[t.processorId] = 1;
+    for (int p = 0; p <= max_p; p++) {
+        if (!seen[p]) {
+            CoutError("Non-dense processorId set: core " +
+                      std::to_string(p) +
+                      " has no tasks (must be dense 0-based {0..max}).");
+        }
+    }
+}
+
 void DAG_Model::CategorizeTaskSet() {
+    ValidateProcessorIds();
     for (uint i = 0; i < tasks.size(); i++) {
-        int task_id = tasks[i].id;
         int p_id = tasks[i].processorId;
         auto itr = processor2taskset_.find(p_id);
         if (itr == processor2taskset_.end()) {
@@ -168,8 +189,6 @@ void DAG_Model::CategorizeTaskSet() {
         } else {
             processor2taskset_[p_id].push_back(tasks[i]);
         }
-        task_id2task_index_within_processor_[task_id] =
-            processor2taskset_[p_id].size() - 1;
     }
 }
 void DAG_Model::RecordTaskPosition() {

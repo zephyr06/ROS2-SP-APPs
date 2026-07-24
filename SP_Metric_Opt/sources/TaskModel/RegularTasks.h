@@ -96,8 +96,10 @@ class Task {
     double deadline;
     double priority;       // smaller value mean higher priority
     std::string name;      // optional
-    int processorId = -1;  // -1 means not assigned to any processor, or all
-                           // assigned to one single processor by default
+    int processorId = 0;  // 0 = default single-core (every task on one core).
+                          // Must be >= 0 and dense 0-based (validated in
+                          // DAG_Model::ValidateProcessorIds); partitioning keys
+                          // off this field directly.
     double total_running_time;
     std::vector<TimePerfPair> timePerformancePairs;
 
