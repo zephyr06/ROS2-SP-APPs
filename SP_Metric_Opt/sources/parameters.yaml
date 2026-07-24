@@ -42,7 +42,13 @@ EXPORT_DETAIL_LEVEL: 0
 METRIC_SAMPLE_INTERVAL_SECONDS: 0
 
 # ************** for debug purposes
-debugMode: 1
+# debugMode=1 makes the BF enumerator emit one stdout line per priority
+# permutation (OptimizeSP_Base.cpp PrintPA_IfDebugMode + the per-eval timing
+# line) -- at N! permutations x 60 intervals x N tasksets that is tens of
+# millions of lines and tens of GB of run.log per BF arm. Keep it OFF for
+# simulation sweeps; the aggregated metrics (interval_sp_metrics.txt, SP
+# summaries) are NOT gated on debugMode, so turning this off loses no data.
+debugMode: 0
 printRTA: 0
 
 
