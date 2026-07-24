@@ -567,164 +567,17 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     EXPECT_EQ(d.core, 0);
 }
 
-// P1.21 — RTACache::Transaction (lazy copy-on-write). Three pins covering the
-// three walk-step outcomes the dev_log table enumerates. The Transaction is a
-// nested RAII guard: it lazily snapshots the champion on the FIRST
-// AdoptChampion/Initialize in scope, and ~Transaction restores it unless
-// Commit() ran.
-//
-// IMPORTANT — these pins inspect the CHAMPION directly via cache.Rta(), NOT via
-// cache.Evaluate(...). Evaluate always returns a correct CANDIDATE RTA as long
-// as |diff|<=1 holds vs whatever champion happens to be stored, so an Evaluate-
-// based check would pass even with a wrong (un-rolled-back) champion — a
-// vacuous pin. The contract the Transaction upholds is about the stored
-// CHAMPION state (rta_), which is what the next walk step's |diff| is measured
-// against. So every pin compares cache.Rta() to the expected champion RTA.
-
-// Outcome 1 — ACCEPT: an in-tx AdoptChampion must survive when Commit() ran.
-// Models the accept path where OptimizeIncre_SingleTask adopts a strict-
-// improvement PA, then the outer UpdateRecords accepts and the caller commits.
-// After ~Transaction the stored champion MUST be the adopted 2nd one (NOT the
-// pre-tx 1st). Hazards: (a) ~Transaction restoring despite Commit, (b) the
-// lazy snapshot capturing AFTER the adopt (so "restoring" is a no-op that
-// keeps the adopted state — masks a missing restore elsewhere; caught because
-// the snapshot would then equal the post-adopt state, and a later broken
-// restore path would not be exercised).
-TEST_F(TaskSetForTest_4tasks_2cores_cache, Transaction_Commit_KeepsInTxAdopt) {
-    RTACache cache;
-    // Pre-tx champion: PA {0,1,2,3}, no TLs.
-    cache.Initialize(dag_tasks, priority_vec, time_limits);
-    std::vector<FiniteDist> rtas_champ1 =
-        OracleRtas(dag_tasks, priority_vec, time_limits);
-
-    // 2nd champion adopted INSIDE the tx: swap t0/t1 on core 0 → changes core
-    // 0's suffix RTA, so the two champion RTA vectors genuinely differ (the
-    // pin's "differs_from_pre" sanity would catch a vacuous adopt).
-    PriorityVec pa_in_tx = {1, 0, 2, 3};
-    std::vector<FiniteDist> rtas_in_tx =
-        OracleRtas(dag_tasks, pa_in_tx, time_limits);
-    {
-        RTACache::Transaction tx(cache);
-        cache.AdoptChampion(dag_tasks, pa_in_tx, time_limits, rtas_in_tx);
-        tx.Commit();
-    }  // ~Transaction: committed → no restore.
-
-    // Stored champion MUST be the in-tx (2nd) one. Compare cache.Rta() (the
-    // stored champion RTA) directly — not Evaluate (which would hide a wrong
-    // champion). A ~Transaction that wrongly restored would put rtas_champ1
-    // back → divergence on core 0's suffix task.
-    const std::vector<FiniteDist>& rtas_after = cache.Rta();
-    ASSERT_EQ(rtas_in_tx.size(), rtas_after.size());
-    for (size_t i = 0; i < rtas_in_tx.size(); i++) {
-        EXPECT_TRUE(rtas_in_tx[i] == rtas_after[i])
-            << "champion rtas[" << i << "] was rolled back despite Commit()";
-    }
-    // Sanity: the in-tx adopt actually changed the champion (else vacuous).
-    bool differs_from_pre = false;
-    for (size_t i = 0; i < rtas_champ1.size(); i++) {
-        if (!(rtas_champ1[i] == rtas_after[i])) {
-            differs_from_pre = true;
-            break;
-        }
-    }
-    EXPECT_TRUE(differs_from_pre)
-        << "in-tx adopt produced no change vs pre-tx champion (pin is vacuous)";
-}
-
-// Outcome 2 — REJECT WITH INNER ADOPT: an in-tx AdoptChampion must be ROLLED
-// BACK when Commit() did NOT run. Models the reject-with-adopt path:
-// OptimizeIncre_SingleTask adopts a strict-improvement PA mid-walk, but the
-// outer UpdateRecords rejects (the improvement didn't beat the incumbent), so
-// the caller does NOT commit. ~Transaction MUST restore the pre-tx champion.
-// This is THE core hazard the task exists to fix. Hazards: (a) no restore at
-// all (the adopt leaks → the next walk step's |diff| is measured against the
-// wrong champion), (b) restore from a snapshot captured AFTER the adopt
-// (restores to the adopted state, not pre-tx). Both caught by comparing the
-// stored champion RTA to the pre-tx one.
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       Transaction_NoCommit_RollsBackInTxAdopt) {
-    RTACache cache;
-    // Pre-tx champion: PA {0,1,2,3}, no TLs.
-    cache.Initialize(dag_tasks, priority_vec, time_limits);
-    std::vector<FiniteDist> rtas_pre_tx =
-        OracleRtas(dag_tasks, priority_vec, time_limits);
-
-    // 2nd champion adopted INSIDE the tx (would-be strict improvement).
-    PriorityVec pa_in_tx = {1, 0, 2, 3};
-    std::vector<FiniteDist> rtas_in_tx =
-        OracleRtas(dag_tasks, pa_in_tx, time_limits);
-    {
-        RTACache::Transaction tx(cache);
-        cache.AdoptChampion(dag_tasks, pa_in_tx, time_limits, rtas_in_tx);
-        // No tx.Commit() — simulate rejection.
-    }  // ~Transaction: uncommitted → restore pre-tx champion.
-
-    // Stored champion MUST be the PRE-tx one. Compare cache.Rta() directly. If
-    // the adopt leaked (no restore) the stored champion is rtas_in_tx →
-    // divergence on core 0's suffix task. If the snapshot was captured AFTER
-    // the adopt, "restoring" puts rtas_in_tx back → same divergence.
-    const std::vector<FiniteDist>& rtas_after = cache.Rta();
-    ASSERT_EQ(rtas_pre_tx.size(), rtas_after.size());
-    for (size_t i = 0; i < rtas_pre_tx.size(); i++) {
-        EXPECT_TRUE(rtas_pre_tx[i] == rtas_after[i])
-            << "champion rtas[" << i
-            << "] was NOT rolled back (in-tx adopt leaked)";
-    }
-    // Cross-check via the identity Evaluate too: with the pre-tx champion
-    // restored, Evaluate on the pre-tx triple is |diff|==0 FullReuse and must
-    // match the pre-tx RTA verbatim. (This is a SECONDARY check; Rta() above is
-    // the load-bearing one. It catches a restore that put back the right rta_
-    // but left champ_* bakes stale — Evaluate would diverge or throw.)
-    const std::vector<FiniteDist>& rtas_eval =
-        cache.Evaluate(dag_tasks, priority_vec, time_limits);
-    ASSERT_EQ(rtas_pre_tx.size(), rtas_eval.size());
-    for (size_t i = 0; i < rtas_pre_tx.size(); i++) {
-        EXPECT_TRUE(rtas_pre_tx[i] == rtas_eval[i])
-            << "Evaluate rtas[" << i
-            << "] diverged post-restore (stale champ_* bakes?)";
-    }
-}
-
-// Outcome 3 — REJECT WITH NO INNER ADOPT: when no AdoptChampion/Initialize
-// fires in scope, ~Transaction is a no-op (the lazy snapshot was never
-// captured). Models the reject-without-adopt path (the dominant case under the
-// "champion updates rare" premise): Evaluate only wrote the scratch
-// candidate_rta_, the champion was never touched, ~Transaction must NOT
-// disturb it. Hazards: (a) ~Transaction restoring from a null/empty snapshot
-// (clearing the champion), (b) the constructor itself mutating the cache.
-// This is also the zero-copy case — no snapshot is taken, so nothing to
-// restore, but the stored champion must come out byte-identical to pre-tx.
-TEST_F(TaskSetForTest_4tasks_2cores_cache,
-       Transaction_NoAdopt_NoCommit_ChampionUntouched) {
-    RTACache cache;
-    cache.Initialize(dag_tasks, priority_vec, time_limits);
-    std::vector<FiniteDist> rtas_pre_tx =
-        OracleRtas(dag_tasks, priority_vec, time_limits);
-
-    {
-        RTACache::Transaction tx(cache);
-        // Evaluate only (scratch-buffer write; champion untouched). Use a
-        // candidate that differs by one task's TL so Evaluate does real work
-        // (exercises the NoReuse recompute path, writing candidate_rta_), but
-        // NOT AdoptChampion — the champion stays put.
-        std::vector<double> tl_cand = {-1, 3, -1, -1};
-        cache.Evaluate(dag_tasks, priority_vec, tl_cand);
-        // No tx.Commit().
-    }  // ~Transaction: no snapshot captured → no-op restore.
-
-    // Stored champion MUST be byte-identical to pre-tx. Compare cache.Rta()
-    // directly. A null-snapshot restore or a ctor side-effect would
-    // clear/corrupt the champion → divergence.
-    const std::vector<FiniteDist>& rtas_after = cache.Rta();
-    ASSERT_EQ(rtas_pre_tx.size(), rtas_after.size());
-    for (size_t i = 0; i < rtas_pre_tx.size(); i++) {
-        EXPECT_TRUE(rtas_pre_tx[i] == rtas_after[i])
-            << "champion rtas[" << i
-            << "] was disturbed by a no-adopt transaction";
-    }
-    EXPECT_TRUE(cache.HasChampion())
-        << "champion was cleared by ~Transaction on the no-adopt path";
-}
+// P1.25 — the P1.21 RTACache::Transaction (lazy copy-on-write) layer has been
+// REMOVED. Its three former unit pins (Transaction_Commit_KeepsInTxAdopt /
+// Transaction_NoCommit_RollsBackInTxAdopt /
+// Transaction_NoAdopt_NoCommit_ChampionUntouched) tested the RAII guard's
+// snapshot/commit/rollback machinery directly, so they cannot exist without the
+// Transaction class. The load-bearing contract they protected — "a rejected
+// sub-incremental walk step must NOT leave the cache champion desynced from
+// res_opt_" — is now covered at the WALK level by the two P1.25 pins in
+// tests/testIncreOpt_w_TL.cpp (SubIncrementalReject_RevertKeepsChampionOn
+// CommittedTriple + SubIncrementalAccept_ChampionTracksCommittedTriple), which
+// exercise the D1=(b) eager save/restore that replaces the transaction.
 
 // P1.12 Phase 2 item 1a — the MISSING differential that localizes the :285
 // divergence. The existing Evaluate_PriorityMove_OneTaskPatch above swaps two

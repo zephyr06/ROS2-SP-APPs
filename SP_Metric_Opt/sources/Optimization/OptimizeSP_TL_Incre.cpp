@@ -183,23 +183,26 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     (void)K;  // unused: the primitive re-searches one task's 1D positions (no
               // beam)
 
-    // P1.21: guard the speculative 1D search / sub-incremental eval with a
-    // lazy copy-on-write Transaction. The in-walk AdoptChampion calls
-    // (OptimizeIncre_SingleTask's strict-improvement adopts) advance the cache
-    // champion SPECULATIVELY; if UpdateRecords rejects this trial config they
-    // must roll back so the cache champion stays in sync with res_opt_.
-    // Opening the tx is zero-copy — the pre-tx champion snapshot is captured
-    // LAZILY on the FIRST champion mutation in scope, so the common
-    // reject-without-adopt path (no strict-improvement found) pays nothing.
-    // ~Transaction restores on reject (RollbackTransaction); tx.Commit() after
-    // a successful UpdateRecords keeps the accepts (CommitTransaction), incl.
-    // CommitIncumbent's accept-path AdoptChampion, which fires inside
-    // UpdateRecords while the tx is still open — first-capture-only makes its
-    // SnapshotPreMutationStateIfOpen a no-op, then Commit retains it. Replaces
-    // the former eager `RTACache cache_backup = rta_cache_;` full-copy (P1.16)
-    // which paid a deep copy of all champion vectors/maps every walk step
-    // regardless of outcome.
-    RTACache::Transaction tx(rta_cache_);
+    // P1.25 D1=(b): the P1.21 RTACache::Transaction (lazy copy-on-write) is
+    // GONE. The in-walk AdoptChampion calls (OptimizeIncre_SingleTask's strict-
+    // improvement adopts) advance the cache champion SPECULATIVELY to trial PAs
+    // the walk may not commit. On a REJECT by UpdateRecords (trial lost to the
+    // global incumbent) the champion must be reverted, else a later serialized
+    // eval diffs the committed-PA vs a drifted champion (|diff|>1 → throw, or
+    // ≤1 → silent wrong-RTA). The ACCEPT path is already covered —
+    // CommitIncumbent re-adopts the committed triple via Evaluate+AdoptChampion
+    // (gated by rta_cache_active_) on every commit, resyncing the champion
+    // regardless of in-walk drift. So only the REJECT branch needs a revert.
+    // This is the eager save/restore from `1217d227` (the pre-transaction P1.16
+    // shape): snapshot the whole cache at entry, restore it only on reject.
+    // Full copy (not lazy) — ChampionState's 5 members are all copyable
+    // (candidate_rta_ is scratch, rebuilt before read, never needs copying), so
+    // struct-copy deep-copies the champion drift-proof. The per-step copy is the
+    // cost P1.21 removed, but P1.23 showed P1.21's perf premise was a timer
+    // artifact (corrected timer → cache 36% faster, not slower), so the copy's
+    // cost is not worth the transaction's complexity. (a) re-seed-at-entry
+    // remains the deferred upgrade path if a later profiler flags this copy.
+    RTACache cache_backup = rta_cache_;
 
     // The per-eval DAG rebuild is required, not redundant: the cost-dominant
     // caller is the Type-L walk, which calls this once PER trial TL step with a
@@ -306,16 +309,9 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
                                         et_increased, std::ref(rta_cache_));
     double current_sp = challenger.opt_sp_;
     bool updated = UpdateRecords(challenger, time_limits);
-    if (updated) {
-        // Accept: keep the in-tx champion adopts (the speculative
-        // OptimizeIncre_SingleTask adopts + CommitIncumbent's accept-path
-        // adopt inside UpdateRecords). tx.Commit() marks the tx accepted; ~tx
-        // then calls CommitTransaction (keep, no restore).
-        tx.Commit();
+    if (!updated) {
+        rta_cache_ = cache_backup;
     }
-    // Reject: ~tx calls RollbackTransaction, restoring the pre-tx champion (or
-    // no-op if no mutation fired in scope — the zero-copy reject-without-adopt
-    // path).
     return current_sp;
 }
 

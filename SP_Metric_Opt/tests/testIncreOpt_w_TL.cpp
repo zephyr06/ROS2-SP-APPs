@@ -323,6 +323,117 @@ TEST_F(TaskSetForTest_robotics_v19, SerializedIncremental_SingleChangeInvariant)
     EXPECT_GT(res.sp_opt, 0.0);
 }
 
+// P1.25 — walk-level pins for the reject-path revert contract. P1.21's
+// RTACache::Transaction (lazy CoW) has been REMOVED; its only load-bearing job
+// was reverting the cache champion when a sub-incremental walk step is
+// REJECTED by UpdateRecords. The ACCEPT path is tx-independent
+// (CommitIncumbent re-adopts the committed triple, OptimizeSP_TL_Incre.cpp
+// :791-793), so only the REJECT path needs a replacement revert (P1.25 D1=(b):
+// eager `RTACache cache_backup = rta_cache_;` at entry + restore on reject,
+// the pre-transaction shape from `1217d227`).
+//
+// Honest TDD status: 1a/1b are NO-REGRESSION GUARDS, not a red-then-green pin.
+// The intended red arc — "naive delete (no backup) makes 1a FAIL" — did NOT
+// materialize on the v19→v21 fixture (2c-RED finding): the walk's single reject
+// had NO in-walk adopt, so no champion drift survived for 1a's final-state
+// assertion to observe. The reject-after-adopt drift that the (b) backup guards
+// is mechanically real but not exercised by these fixtures. The backup's
+// necessity rests on git history (`1217d227` introduced it explicitly "to
+// reduce rta_cache_ becoming outdated") + the mechanism, NOT on a live red.
+// Both pins PASS against the (b) backup (champion RTA == committed oracle RTA);
+// they guard against future regressions of the revert + the accept re-adopt.
+//
+// Test subclass: OptimizePA_Incre_with_TimeLimits keeps rta_cache_ + dag_tasks_
+// public, so a thin subclass exposes them for the pin.
+
+class RtaCacheExposingOptimizer : public OptimizePA_Incre_with_TimeLimits {
+   public:
+    using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
+    const RTACache& RtaCache() const { return rta_cache_; }
+    const DAG_Model& DagTasks() const { return dag_tasks_; }
+};
+
+// P1.25 1a (no-regression guard): after a full INCREMENTAL walk (v19→v21,
+// which exercises both Type-E env + Type-L TL steps and necessarily REJECTS
+// some trial configs — most trial TLs do not beat the running incumbent), the
+// cache champion MUST track the COMMITTED incumbent triple (res_opt_), NOT some
+// rejected trial PA. The champion RTA must be byte-identical to the committed
+// triple's oracle RTA. See the header for why this is a guard, not a red pin:
+// the v19→v21 reject had no in-walk adopt, so the drift the (b) backup guards
+// is not exercised here; the pin nonetheless locks the final-state contract
+// against future regressions of the reject-path revert.
+TEST_F(TaskSetForTest_robotics_v19,
+       SubIncrementalReject_RevertKeepsChampionOnCommittedTriple) {
+    DAG_Model dag_tasks_updated = ReadDAG_Tasks(
+        GlobalVariables::PROJECT_PATH +
+        "TaskData/test_robotics_v21.yaml");  // moves TSP (TL-flexible) + SLAM (env)
+
+    RtaCacheExposingOptimizer opt(dag_tasks, sp_parameters);
+    opt.ReOptimizePeriodic(dag_tasks, 2);  // bootstrap the incumbent
+    opt.OptimizeIncre_w_TL(dag_tasks_updated, 2);
+    ResourceOptResult res = opt.CollectResults();
+
+    // The committed triple: the updated DAG (OptimizeIncre_w_TL absorbed it
+    // into dag_tasks_ at :717), the committed priority_vec, and the committed
+    // TL vector. Reconstruct the oracle RTA the SAME way RTACache::Initialize
+    // does (apply TLs -> apply pa -> ProbabilisticRTA_TaskSet) and require the
+    // stored champion to be byte-identical to it.
+    std::vector<double> committed_tl = opt.ReconstructTimeLimitVecFromResOpt();
+    TaskSet tasks_with_tl = ApplyTimeLimitsToTasksExecutionTime(
+        opt.DagTasks().tasks, committed_tl);
+    TaskSet tasks_prioritized =
+        UpdateTaskSetPriorities(tasks_with_tl, res.priority_vec);
+    std::vector<FiniteDist> oracle_rtas = ProbabilisticRTA_TaskSet(tasks_prioritized);
+
+    ASSERT_TRUE(opt.RtaCache().HasChampion())
+        << "champion missing after walk — cache was not engaged on this path";
+    const std::vector<FiniteDist>& champion_rtas = opt.RtaCache().Rta();
+    ASSERT_EQ(oracle_rtas.size(), champion_rtas.size());
+    for (size_t i = 0; i < oracle_rtas.size(); i++) {
+        EXPECT_TRUE(oracle_rtas[i] == champion_rtas[i])
+            << "champion rtas[" << i
+            << "] != committed-triple oracle RTA — a rejected trial PA leaked "
+               "into the champion (reject-path revert missing/broken)";
+    }
+}
+
+// P1.25 1b (accept-path guard): the ACCEPT path keeps the champion tracking
+// the committed triple via the tx-INDEPENDENT CommitIncumbent re-adopt
+// (OptimizeSP_TL_Incre.cpp:791-793), with NO reject machinery involved.
+// Bootstrap with ReOptimizePeriodic (cache off), then run OptimizeIncre_w_TL on
+// the SAME DAG (v19→v19, no env/TL move) —
+// PerformSerializedTaskQueueOptimization arms rta_cache_active_ (:468) and the
+// baseline CommitIncumbent (:481) adopts the champion unconditionally, even if
+// the merged queue is empty. So the champion is populated purely by the
+// accept-path writer, with no reject ever firing. Pins that the deletion does
+// not break the accept-path writer.
+TEST_F(TaskSetForTest_robotics_v19,
+       SubIncrementalAccept_ChampionTracksCommittedTriple) {
+    RtaCacheExposingOptimizer opt(dag_tasks, sp_parameters);
+    opt.ReOptimizePeriodic(dag_tasks, 2);  // bootstrap (cache off)
+    opt.OptimizeIncre_w_TL(dag_tasks, 2);  // same DAG: arms cache + baseline adopt
+    ResourceOptResult res = opt.CollectResults();
+
+    std::vector<double> committed_tl = opt.ReconstructTimeLimitVecFromResOpt();
+    TaskSet tasks_with_tl = ApplyTimeLimitsToTasksExecutionTime(
+        opt.DagTasks().tasks, committed_tl);
+    TaskSet tasks_prioritized =
+        UpdateTaskSetPriorities(tasks_with_tl, res.priority_vec);
+    std::vector<FiniteDist> oracle_rtas = ProbabilisticRTA_TaskSet(tasks_prioritized);
+
+    ASSERT_TRUE(opt.RtaCache().HasChampion())
+        << "champion missing — OptimizeIncre_w_TL did not arm the cache + adopt "
+           "the baseline via CommitIncumbent";
+    const std::vector<FiniteDist>& champion_rtas = opt.RtaCache().Rta();
+    ASSERT_EQ(oracle_rtas.size(), champion_rtas.size());
+    for (size_t i = 0; i < oracle_rtas.size(); i++) {
+        EXPECT_TRUE(oracle_rtas[i] == champion_rtas[i])
+            << "champion rtas[" << i
+            << "] != committed-triple oracle RTA on the accept path "
+               "(CommitIncumbent re-adopt broken)";
+    }
+}
+
 TEST_F(TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions) {
     printf(
         "\n-------- TaskSetForTest_robotics_v19_2, RecordCloseTimeLimitOptions "

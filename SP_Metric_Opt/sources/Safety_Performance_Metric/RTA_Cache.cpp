@@ -1,6 +1,5 @@
 #include "sources/Safety_Performance_Metric/RTA_Cache.h"
 
-#include <cassert>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -181,10 +180,6 @@ std::unordered_map<int, std::vector<int>> RTACache::PerCoreOrderFromPa(
 const std::vector<FiniteDist>& RTACache::Initialize(
     const DAG_Model& dag_tasks, const PriorityVec& pa,
     const std::vector<double>& tl) {
-    // Snapshot the pre-mutation champion for an open Transaction BEFORE
-    // BakeChampionForms/champion_.rta overwrite it. First-capture-only; no-op
-    // when no tx is open.
-    SnapshotPreMutationStateIfOpen();
     // Bake the 4 baked-form members, then compute champion_.rta from the
     // pa-sorted form (the only caller that pays for the full RTA; AdoptChampion
     // receives champion_.rta as a param).
@@ -198,8 +193,6 @@ const std::vector<FiniteDist>& RTACache::Initialize(
 void RTACache::AdoptChampion(const DAG_Model& dag_tasks, const PriorityVec& pa,
                              const std::vector<double>& tl,
                              const std::vector<FiniteDist>& rtas) {
-    // Snapshot before overwrite; see Initialize.
-    SnapshotPreMutationStateIfOpen();
     champion_.rta = rtas;
     candidate_rta_ = rtas;
     // Same bake as Initialize; takes caller-supplied rtas, so no
@@ -237,61 +230,6 @@ void RTACache::RebuildPrefixes(const TaskSet& tasks_prioritized) {
             prefixes[i] = hp_tasks_et_conv;
             RollPrefix(hp_tasks_et_conv, core_tasks[i].execution_time_dist);
         }
-    }
-}
-
-// --- transactions (lazy copy-on-write) -------------------------------------
-// See RTA_Cache.h for the contract. RollbackTransaction restores the pre-tx
-// champion; CommitTransaction drops the snapshot and keeps the mutations. The
-// snapshot is taken lazily (first mutation in scope), so the common
-// reject-without-adopt path pays zero copy.
-
-// At the top of every full-champion overwrite (AdoptChampion + Initialize).
-// First-capture-only: if a tx is open and the snapshot is still null, capture
-// the current (pre-mutation) champion. No-op otherwise.
-void RTACache::SnapshotPreMutationStateIfOpen() {
-    if (!in_transaction_ || snapshot_ != nullptr) {
-        return;
-    }
-    snapshot_ = std::make_unique<ChampionState>(CaptureChampionState());
-}
-
-// candidate_rta_ is excluded by construction (not a member of ChampionState).
-ChampionState RTACache::CaptureChampionState() const {
-    return champion_;
-}
-
-// candidate_rta_ is left as-is (scratch; the next Evaluate overwrites it fully
-// before read).
-void RTACache::RestoreChampionState(ChampionState&& state) {
-    champion_ = std::move(state);
-}
-
-// Open a transaction. O(1) zero-copy: flips the flag; the snapshot is captured
-// lazily on the first in-scope mutation. No nesting (a second open would shadow
-// the first's snapshot and corrupt the restore).
-void RTACache::BeginTransaction() {
-    assert(!in_transaction_ &&
-           "RTACache::BeginTransaction: an open transaction already exists on "
-           "this cache (nesting is not supported).");
-    in_transaction_ = true;
-    snapshot_.reset();
-}
-
-// Accept: keep all in-tx mutations, drop the snapshot. Idempotent.
-void RTACache::CommitTransaction() {
-    in_transaction_ = false;
-    snapshot_.reset();
-}
-
-// Reject: restore the pre-FIRST-mutation champion if a snapshot was captured;
-// otherwise no-op (the zero-copy reject-without-adopt path). Either way, ends
-// the tx.
-void RTACache::RollbackTransaction() {
-    in_transaction_ = false;
-    if (snapshot_ != nullptr) {
-        RestoreChampionState(std::move(*snapshot_));
-        snapshot_.reset();
     }
 }
 
