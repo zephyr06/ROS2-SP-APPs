@@ -33,6 +33,10 @@ struct TaskSetDifference {
     int core;             // processorId of the changed task; -1 iff |diff|==0
     int old_pos;  // changed task's position in the CHAMPION's per-core order
     int new_pos;  // changed task's position in the CANDIDATE's per-core order
+    bool has_et_diff;  // the changed task's ET differs from the champion (Rule A);
+                       // false iff pure priority move (Rule B). false iff |diff|==0.
+                       // Populated by IsSingleTaskChange (which already computes the
+                       // ET diff); a locator-class fact, not a verdict.
 };
 
 // Full-champion state: the 5 members AdoptChampion/Initialize overwrite. The
@@ -99,7 +103,8 @@ class RTACache {
     // old/new per-core priority positions.
     //   - no champion -> {changed_task_id:-1, ...}
     //   - |diff|==0   -> {changed_task_id:-1, ...}
-    //   - |diff|==1   -> locators filled (old_pos==new_pos for an ET-only move)
+    //   - |diff|==1   -> locators filled (old_pos==new_pos for an ET-only move;
+    //     has_et_diff flags Rule A vs Rule B).
     //   - |diff|>1    -> THROWS (violates the single-change invariant; the cache
     //     only serves |diff|<=1). Guard with IsSingleTaskChange first.
     // Pure; may be called with no champion (returns {-1,...}).
@@ -122,7 +127,13 @@ class RTACache {
     //   - no champion             -> every task NoReuse
     //   - changed_task_id == -1   -> every task FullReuse (|diff|==0)
     //   - changed_task_id >= 0    -> DIFFERENT core than diff.core is FullReuse;
-    //                                SAME core is NoReuse (its HP set shifted).
+    //   on the SAME core as the change, narrowed by the master rules:
+    //     Rule A (diff.has_et_diff): pos < p_min -> FullReuse, pos >= p_min -> NoReuse.
+    //       (ET changed: every task at/above the changed task's min position has an
+    //       altered HP-ET convolution; tasks above reuse verbatim.)
+    //     Rule B (pure priority move): pos < p_min OR pos > p_max -> FullReuse,
+    //       p_min <= pos <= p_max -> NoReuse.
+    //       (Priority move: only the shift window's HP sets change.)
     // Pure; may be called with no champion (returns all-NoReuse).
     std::vector<RTAReusePerTask> ClassifyReusePerTask(
         const DAG_Model& dag_tasks, const PriorityVec& pa,

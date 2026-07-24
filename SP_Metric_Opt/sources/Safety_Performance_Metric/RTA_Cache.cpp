@@ -1,5 +1,6 @@
 #include "sources/Safety_Performance_Metric/RTA_Cache.h"
 
+#include <algorithm>  // std::min, std::max
 #include <stdexcept>
 #include <unordered_set>
 
@@ -300,7 +301,7 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
 
     // (3) No ET diff + no order diff -> |diff|==0 (identity).
     if (et_diff.empty() && changed_core == -1) {
-        out = TaskSetDifference{-1, -1, -1, -1};
+        out = TaskSetDifference{-1, -1, -1, -1, /*has_et_diff=*/false};
         return true;
     }
 
@@ -346,7 +347,10 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
         new_pos = pa_switch.new_pos;
     }
 
-    out = TaskSetDifference{moved_task_id, changed_core, old_pos, new_pos};
+    // has_et_diff distinguishes Rule A (ET changed, incl. combined ET+move) from
+    // Rule B (pure priority move). ClassifyReusePerTask/Evaluate dispatch on it.
+    out = TaskSetDifference{moved_task_id, changed_core, old_pos, new_pos,
+                            /*has_et_diff=*/et_task_id != -1};
     return true;
 }
 
@@ -355,7 +359,7 @@ TaskSetDifference RTACache::ComputeTaskSetDifference(
     const DAG_Model& dag_tasks, const PriorityVec& pa,
     const std::vector<double>& tl) const {
     if (!HasChampion())
-        return TaskSetDifference{-1, -1, -1, -1};
+        return TaskSetDifference{-1, -1, -1, -1, /*has_et_diff=*/false};
 
     TaskSetDifference diff;
     if (!IsSingleTaskChange(dag_tasks, pa, tl, diff)) {
@@ -383,11 +387,35 @@ std::vector<RTAReusePerTask> RTACache::ClassifyReusePerTask(
         std::fill(result.begin(), result.end(), RTAReusePerTask::FullReuse);
         return result;
     }
-    // |diff|==1: same-core (diff.core) -> NoReuse, cross-core -> FullReuse.
+    // |diff|==1: cross-core -> FullReuse; on the SAME core, narrow by the master
+    // rules. p_min/p_max bracket the change window: every task strictly above p_min
+    // has the SAME HP set (membership, order, ET) in champion and candidate -> its
+    // champion RTA is bit-identical to the oracle -> FullReuse.
     std::fill(result.begin(), result.end(), RTAReusePerTask::FullReuse);
     std::vector<std::vector<int>> cand_order =
         PerCoreOrderFromPa(dag_tasks, pa);
     const std::vector<int>& changed_core_tasks = cand_order[diff.core];
+    int p_min = std::min(diff.old_pos, diff.new_pos);
+    int p_max = std::max(diff.old_pos, diff.new_pos);
+
+    // Rule A (Task ET Changed): the changed task's ET moved (possibly with a
+    // priority move). Every task at pos >= p_min has an altered HP-ET convolution
+    // (the changed task is in its HP set, or it IS the changed task) -> NoReuse;
+    // tasks at pos < p_min reuse verbatim.
+    if (diff.has_et_diff) {
+        for (int pos = 0; pos < static_cast<int>(changed_core_tasks.size()); pos++) {
+            int tid = changed_core_tasks[pos];
+            result[tid] = pos < p_min ? RTAReusePerTask::FullReuse
+                                      : RTAReusePerTask::NoReuse;
+        }
+        return result;
+    }
+
+    // Rule B (Pure Priority Move): v1-safe fallback — recompute the whole changed
+    // core. The fine-grained [p_min, p_max] window + bottom reuse is refined in
+    // Phase 2 (gated on a lossy-Compress differential test: Compress is NOT
+    // order-invariant once convolved support > Granularity, so bottom reuse can
+    // diverge from the oracle; defaulting to NoReuse is the correctness-safe path).
     for (int tid : changed_core_tasks) {
         result[tid] = RTAReusePerTask::NoReuse;
     }

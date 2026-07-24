@@ -999,17 +999,70 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
         EXPECT_EQ(r0[i], RTAReusePerTask::FullReuse);
     }
 
-    // |diff|==1: task 1 TL change (core 0). v1: every task on core 0 {t0,t1}
-    // is recompute (the changed task's HP set shifts on its whole core); every
-    // task on the untouched core 1 {t2,t3} is FullReuse.
+    // |diff|==1: task 1 TL change (core 0). Under P1.18 Rule A (Task ET Changed):
+    // task 1 is at candidate priority position 1 on core 0, and old_pos == new_pos
+    // == 1 (ET-only change, no move), so p_min == 1. Tasks at pos < p_min reuse
+    // verbatim (their HP set is untouched), tasks at pos >= p_min recompute.
+    //   core 0 order {t0(pos0), t1(pos1)}: t0 pos 0 < p_min 1 -> FullReuse;
+    //   t1 pos 1 >= p_min -> NoReuse (the changed task).
+    //   core 1 {t2,t3}: different core -> FullReuse (untouched HP set).
     std::vector<double> tl_cand = {-1, 3, -1, -1};
     std::vector<RTAReusePerTask> r1 =
         cache.ClassifyReusePerTask(dag_tasks, priority_vec, tl_cand);
     ASSERT_EQ(r1.size(), tasks.size());
-    EXPECT_EQ(r1[0], RTAReusePerTask::NoReuse);   // t0: same core as change
-    EXPECT_EQ(r1[1], RTAReusePerTask::NoReuse);   // t1: changed task
+    EXPECT_EQ(r1[0], RTAReusePerTask::FullReuse);  // t0: pos 0 < p_min 1 (Rule A)
+    EXPECT_EQ(r1[1], RTAReusePerTask::NoReuse);    // t1: changed task, pos >= p_min
     EXPECT_EQ(r1[2], RTAReusePerTask::FullReuse);  // t2: core 1 untouched
     EXPECT_EQ(r1[3], RTAReusePerTask::FullReuse);  // t3: core 1 untouched
+}
+
+// P1.18 Rule A (TDD, RED) — ClassifyReusePerTask must narrow the recompute to
+// the changed task's suffix instead of the whole changed core. Wide-ET 3-task
+// single-core fixture: champion pa {0,1,2}, candidate changes the MIDDLE task's
+// TL (task 1 at pos 1, ET-only so old_pos == new_pos == 1, p_min == 1). Rule A:
+// t0 (pos 0 < p_min) -> FullReuse (its HP set is empty + its ET is unchanged, so
+// its champion RTA is bit-identical to the oracle); t1, t2 (pos >= p_min) ->
+// NoReuse. This is the case v1 got WRONG (v1 marked all three NoReuse). Pinned
+// RED before implementing the verdict change.
+TEST_F(TaskSetForTest_3tasks_1core_wideET,
+       ClassifyReusePerTask_TLChangeMiddle_PrefixFullReuseSuffixNoReuse) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    // Candidate: task 1's TL moves -1 -> 30 (point-mass ET). ET-only change on
+    // the middle task (pos 1). old_pos == new_pos == 1 -> p_min == 1.
+    std::vector<double> tl_cand = {-1, 30, -1};
+    std::vector<RTAReusePerTask> r =
+        cache.ClassifyReusePerTask(dag_tasks, priority_vec, tl_cand);
+    ASSERT_EQ(r.size(), tasks.size());
+    EXPECT_EQ(r[0], RTAReusePerTask::FullReuse);  // t0: pos 0 < p_min 1
+    EXPECT_EQ(r[1], RTAReusePerTask::NoReuse);    // t1: changed task, pos 1 >= p_min
+    EXPECT_EQ(r[2], RTAReusePerTask::NoReuse);    // t2: pos 2 >= p_min (HP set shifted)
+}
+
+// P1.18 Rule A (TDD, RED) — Evaluate must stay bit-identical to the oracle when
+// Rule A narrows NoReuse to the suffix. Same wide-ET middle-task TL change as the
+// classifier test above; the FullReuse prefix task (t0) keeps its champion RTA
+// while t1, t2 recompute against the rolling prefix. The wide-ET fixture pushes
+// the convolved support past Granularity, so this also guards that the prefix
+// fold (which re-rolls t0's wide ET into hp_tasks_et_conv before t1's recompute)
+// reproduces the oracle's prefix bit-for-bit.
+TEST_F(TaskSetForTest_3tasks_1core_wideET,
+       Evaluate_TLChangeMiddle_BitIdenticalToOracle_RuleA) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+
+    std::vector<double> tl_cand = {-1, 30, -1};
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, priority_vec, tl_cand);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, priority_vec, tl_cand);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
+            << "rtas[" << i << "] diverged on Rule A middle-task TL change";
+    }
 }
 
 // No champion → ClassifyReusePerTask returns all-NoReuse; ComputeTaskSetDifference
