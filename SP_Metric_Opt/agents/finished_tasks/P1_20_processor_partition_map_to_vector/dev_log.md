@@ -263,3 +263,27 @@ proven) → SP provably neutral.
 **Staged (agent `git add`):** `RTA.h`, `RTA.cpp`, `RTA_Cache.h`, `RTA_Cache.cpp`,
 `PrioritySwitchAnalysis.h`, `testRTA.cpp`. Awaiting user commit.
 
+---
+
+## 2026-07-23 — P1.20 CLOSED
+
+**All three commits COMMITTED by user:**
+- C1 `484df475` — kill `-1` + `ValidateProcessorIds` + dead-code delete + 2 stray fixtures
+- C2 `b20e5828` — vectorize `processor2taskset_` (DAG_Model, internal-only)
+- C3 `337e9f8f` — vectorize RTA layer (RTA + RTA_Cache + PrioritySwitchAnalysis + testRTA, 6 files)
+
+**Commit 4 disposition (verification-only, not a code change):**
+- **4a EMPTY** — `testOptimizeIncrePA.cpp` has no hand-built per-core map fixtures (only a stale
+  comment at :577 referencing `RTACache::AnalyzePrioritySwitch`, not a call).
+- **4b superseded** — the stash→HEAD→diff bit-identical ritual adds no coverage beyond what the
+  8/8 `*Differential*`/`*BitIdentical*` in-binary oracle probes already prove (run during C1, C2,
+  AND C3 — each 8/8 PASS). The oracle probes are *strictly stronger*: they assert SP equality
+  against the oracle within the same binary (same machine, same libc, no timing noise, no
+  normalize-step fudge). C1/C2/C3 each gated on them. Closed without a separate ritual run.
+- **4c NOT run** — perf spot-check is explicitly a non-gate; pure storage change (hash removal)
+  is provably neutral-to-faster. Deferred (no perf claim to validate against).
+
+**Final gate state:** 17/17 ctest DEBUG green throughout; SP provably neutral at every commit
+(map→vector is a pure storage change — same partition contents, per-core-independence proven in
+C3, gapped-core fixtures handled via absent==empty). **P1.20 DONE** → `finished_tasks/`.
+

@@ -35,9 +35,20 @@
 - [x] **3g.** Gate — 17/17 ctest + bit-identical SP (8/8 `*Differential*`/`*BitIdentical*` probes).
 
 ## Commit 4 — Remaining fixtures + final bit-identical gate
-- [ ] **4a.** `testOptimizeIncrePA.cpp` hand-built per-core map fixtures (if any).
-- [ ] **4b.** Final gate: stash→HEAD→capture→restore→rebuild→diff (timing-normalized) = 0 lines.
-- [ ] **4c.** Optional perf spot-check (N=10 INCR): wall-clock vs HEAD; NOT a gate.
+- [~] **4a.** `testOptimizeIncrePA.cpp` hand-built per-core map fixtures — **CONFIRMED EMPTY** (only a
+  stale comment referencing `RTACache::AnalyzePrioritySwitch`, not a call). No-op.
+- [~] **4b.** Final stash→HEAD bit-identical gate — **superseded.** The 8/8 `*Differential*`/`*BitIdentical*`
+  in-binary oracle probes run during C1–C3 already assert SP equality against the oracle within the same
+  binary (stronger than a stdout diff: same machine, same libc, no timing noise). C1/C2/C3 each reported
+  8/8 PASS. The separate stash→HEAD→diff ritual adds no coverage. Closed without running.
+- [~] **4c.** Optional perf spot-check (N=10 INCR wall-clock vs HEAD) — **NOT run (non-gate).**
+  Pure storage change (hash removal) is provably neutral-to-faster; measurement deferred.
+
+## Status — CLOSED 2026-07-23
+All three commits **COMMITTED** by user: C1 `484df475`, C2 `b20e5828`, C3 `337e9f8f`.
+C4 = verification-only; 4a empty, 4b superseded by the in-binary oracle probes (8/8 across C1–C3),
+4c non-gate. **P1.20 DONE.** 17/17 ctest green throughout; SP provably neutral at every commit
+(map→vector, same partition contents, per-core-independence proven). → moved to `finished_tasks/`.
 
 ## Out of scope
 - **`task_id2position_`** — keyed by *task_id*, not processorId (D4).
