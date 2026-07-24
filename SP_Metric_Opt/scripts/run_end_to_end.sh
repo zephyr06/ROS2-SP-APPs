@@ -28,12 +28,15 @@
 #                  config to scope the run -- e.g.:
 #                      CONFIG_JSON=simulation_experiments/configs/incr_et_8tasks_config.json \
 #                          ./run_end_to_end.sh
-#   RERUN_MODE   - reuse (default) | clear_all
+#   RERUN_MODE   - reuse (default) | clear_all | clear_results
 #                  'clear_all' wipes <run_root>/sim/ (generated tasksets +
 #                  per-scheduler results + sweep variants) before the stages
 #                  run, so everything regenerates from scratch. 'reuse' keeps
 #                  existing artifacts and lets each stage's own reuse/resume
-#                  guards decide.
+#                  guards decide. 'clear_results' keeps the generated tasksets
+#                  and wipes ONLY the per-scheduler result subdirs, so a fresh
+#                  simulate re-runs the binary against the reused tasksets
+#                  (A/B two binaries on identical tasksets without regeneration).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh

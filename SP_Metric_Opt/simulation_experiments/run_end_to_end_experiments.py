@@ -49,6 +49,7 @@ Notes
   sweep stages invoke it; validation is delegated to each subprocess).
 """
 import argparse
+import glob
 import os
 import shutil
 import subprocess
@@ -273,8 +274,13 @@ def apply_rerun_mode(rerun_mode, run_root, dry_run, verbose):
         default, current behavior). ``"clear_all"`` wipes the whole
         ``<run_root>/sim/`` tree -- generated tasksets AND their per-scheduler
         results AND the sweep variants -- so the simulate stage regenerates
-        everything from scratch. (A future ``"clear_results"`` will keep the
-        generated tasksets and wipe only the simulation outputs.)
+        everything from scratch. ``"clear_results"`` keeps the generated
+        tasksets (``generator_config.json``, ``path_Et_task_*.txt``,
+        ``taskset_characteristics_*.yaml``, ``taskset_param.yaml``) and wipes
+        ONLY the per-scheduler result subdirs (``taskset_<i>/<scheduler>/``),
+        so a fresh simulate re-runs the binary against the reused tasksets.
+        Useful for A/B-ing two binaries on identical tasksets without paying
+        taskset regeneration.
     run_root : str
         Absolute path to this run's co-located root (``<output_parent>/runs/
         <run_id>``). The sim tree lives at ``<run_root>/sim/``.
@@ -291,7 +297,7 @@ def apply_rerun_mode(rerun_mode, run_root, dry_run, verbose):
     """
     if rerun_mode == "reuse":
         return True
-    if rerun_mode != "clear_all":
+    if rerun_mode not in ("clear_all", "clear_results"):
         # argparse choices prevent this, but guard defensively.
         print(f"  WARNING: unknown rerun_mode '{rerun_mode}'; nothing cleared.")
         return True
@@ -299,14 +305,58 @@ def apply_rerun_mode(rerun_mode, run_root, dry_run, verbose):
     sim_dir = os.path.join(run_root, "sim")
     if not os.path.isdir(sim_dir):
         if verbose >= 1:
-            print(f"  [rerun_mode=clear_all] {sim_dir} not present; nothing to clear.")
+            print(f"  [rerun_mode={rerun_mode}] {sim_dir} not present; nothing to clear.")
         return True
-    if dry_run:
-        print(f"  [dry-run] would remove: {sim_dir}")
+
+    if rerun_mode == "clear_all":
+        if dry_run:
+            print(f"  [dry-run] would remove: {sim_dir}")
+            return True
+        if verbose >= 1:
+            print(f"  [rerun_mode=clear_all] removing {sim_dir} (tasksets + results + sweep)")
+        shutil.rmtree(sim_dir)
         return True
+
+    # rerun_mode == "clear_results": keep tasksets, wipe per-scheduler results.
+    # Each simulate dir is tasks<N>_dur<D>_interval<I>_seed<S>/ holding
+    # taskset_<i>/ dirs. Inside a taskset dir, the taskset ARTIFACTS are flat
+    # files (generator_config.json, path_Et_task_*.txt, *.yaml, *.png) while
+    # the per-scheduler RESULTS are subdirs named <scheduler> (e.g.
+    # INCR_Reopt_10/) -- and it is <taskset>/<scheduler>/<scheduler>/
+    # interval_sp_metrics.txt that the --resume guard keys on. So removing
+    # every subdir of every taskset_*/ dir clears results and keeps tasksets.
+    simulate_dir_glob = os.path.join(sim_dir, "tasks*_dur*_interval*_seed*")
+    simulate_dirs = sorted(glob.glob(simulate_dir_glob))
+    if not simulate_dirs:
+        if verbose >= 1:
+            print(f"  [rerun_mode=clear_results] no simulate dirs under {sim_dir}; nothing to clear.")
+        return True
+
+    removed = 0
+    kept_tasksets = 0
+    for simulate_dir in simulate_dirs:
+        for taskset_dir in sorted(glob.glob(os.path.join(simulate_dir, "taskset_*"))):
+            if not os.path.isdir(taskset_dir):
+                continue
+            kept_tasksets += 1
+            # Remove every SUBDIR of the taskset dir (= per-scheduler result
+            # dirs); leave the flat taskset artifact files in place.
+            for entry in os.listdir(taskset_dir):
+                entry_path = os.path.join(taskset_dir, entry)
+                if not os.path.isdir(entry_path):
+                    continue
+                if dry_run:
+                    print(f"  [dry-run] would remove: {entry_path}")
+                else:
+                    shutil.rmtree(entry_path)
+                removed += 1
     if verbose >= 1:
-        print(f"  [rerun_mode=clear_all] removing {sim_dir} (tasksets + results + sweep)")
-    shutil.rmtree(sim_dir)
+        action = "would remove" if dry_run else "removed"
+        print(
+            f"  [rerun_mode=clear_results] {action} {removed} per-scheduler result "
+            f"subdir(s) across {kept_tasksets} taskset(s) "
+            f"(tasksets kept) under {sim_dir}"
+        )
     return True
 
 
@@ -382,12 +432,17 @@ def main():
         help="Print the commands that would run without executing them.",
     )
     parser.add_argument(
-        "--rerun_mode", choices=["reuse", "clear_all"], default="reuse",
+        "--rerun_mode", choices=["reuse", "clear_all", "clear_results"],
+        default="reuse",
         help="How to treat prior run artifacts before the stages run. "
              "'reuse' (default) keeps existing tasksets + results and lets each "
              "stage's own reuse/resume guards decide. 'clear_all' wipes the "
              "whole <run_root>/sim/ tree (generated tasksets + per-scheduler "
-             "results + sweep variants) so everything regenerates from scratch.",
+             "results + sweep variants) so everything regenerates from scratch. "
+             "'clear_results' keeps the generated tasksets and wipes ONLY the "
+             "per-scheduler result subdirs, so a fresh simulate re-runs the "
+             "binary against the reused tasksets (for A/B-ing two binaries on "
+             "identical tasksets without paying taskset regeneration).",
     )
     args = parser.parse_args()
 
