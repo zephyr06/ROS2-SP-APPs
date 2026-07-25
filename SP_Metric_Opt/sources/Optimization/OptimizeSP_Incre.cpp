@@ -5,11 +5,11 @@
 #include "sources/Safety_Performance_Metric/SP_Metric.h"
 
 namespace SP_OPT_PA {
-// P1.13 — Evaluate returns a const ref into the cache's candidate_rta_ buffer,
-// which the next Evaluate overwrites. But the RTA is needed both to score SP
-// AND (on adoption) to feed AdoptChampion, so binding the returned ref directly
-// would dangle. This struct COPIES the RTA into a stable local. Mirrors the
-// no-raw- pointer idiom.
+// Evaluate returns a const ref into the cache's candidate_rta_ buffer, which
+// the next Evaluate overwrites. But the RTA is needed both to score SP AND (on
+// adoption) to feed AdoptChampion, so binding the returned ref directly would
+// dangle. This struct COPIES the RTA into a stable local. Mirrors the no-raw-
+// pointer idiom.
 struct NodeRtasHolder {
     std::vector<FiniteDist> rtas;
 };
@@ -55,8 +55,8 @@ bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
 }
 
 void PriorityPartialPath::UpdateSP(int task_id) {
-    // P1.14-mirror — the INCR beam search (OptimizeFromScratch) calls UpdateSP
-    // once per partial-path node, and each call runs a GetRTA_OneTask that does
+    // The INCR beam search (OptimizeFromScratch) calls UpdateSP once per
+    // partial-path node, and each call runs a GetRTA_OneTask that does
     // NOT flow through the guarded EvaluateSPWithPriorityVec. Without a poll
     // here, a from-scratch descent (interval 0 / reopt) can spend the whole
     // budget inside the beam search before the first EvaluateSPWithPriorityVec
@@ -318,15 +318,14 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
     std::vector<PriorityVec> pa_vec_variations = FindPriorityVec1D_Variations(
         opt_pa_, task_id,
         AnalyzePriorityChangeStatus(sp_parameters_, task_id, et_increased));
-    // P1.13 — cache path. dag_tasks_update is TL-baked (Q5), so feed an
-    // all-(-1) tl: ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache
-    // sees exactly the final ETs the oracle did → bit-identity. The champion is
-    // opt_pa_ on the carried dag (established by OptimizeIncre's baseline
-    // Initialize, or a prior adoption here). Each variation moves ONE task's
-    // priority position vs opt_pa_ → |diff|<=1 → Evaluate patches the suffix.
-    // On a strict-improvement adoption, AdoptChampion MUST advance the champion
-    // so the NEXT variation's diff stays |diff|<=1 (Evaluate never advances the
-    // champion itself).
+    // Cache path. dag_tasks_update is TL-baked, so feed an all-(-1) tl:
+    // ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache sees exactly the
+    // final ETs the oracle did → bit-identity. The champion is opt_pa_ on the
+    // carried dag (established by OptimizeIncre's baseline Initialize, or a
+    // prior adoption here). Each variation moves ONE task's priority position vs
+    // opt_pa_ → |diff|<=1 → Evaluate patches the suffix. On a strict-improvement
+    // adoption, AdoptChampion MUST advance the champion so the NEXT variation's
+    // diff stays |diff|<=1 (Evaluate never advances the champion itself).
     std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     for (const PriorityVec& priority_assignment : pa_vec_variations) {
         double sp_eval;
@@ -364,12 +363,12 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
     if (opt_pa_.size() == 0) {
         CoutError("OptimizeIncre called before OptimizeFromScratch");
     }
-    // P1.13 — if no cache was provided, create a local one so the cache is
-    // ALWAYS engaged for this interval: both the baseline re-score below and
-    // the per-variation traversal in OptimizeIncre_SingleTask reuse RTA. The
-    // local outlives the loop (same scope), bound via std::ref (no raw
-    // pointer). A passed-in cache is used as-is (e.g. shared across intervals).
-    // Either way rta_cache is engaged from here on.
+    // If no cache was provided, create a local one so the cache is ALWAYS
+    // engaged for this interval: both the baseline re-score below and the
+    // per-variation traversal in OptimizeIncre_SingleTask reuse RTA. The local
+    // outlives the loop (same scope), bound via std::ref (no raw pointer). A
+    // passed-in cache is used as-is (e.g. shared across intervals). Either way
+    // rta_cache is engaged from here on.
     [[maybe_unused]] RTACache local_cache;
     if (!rta_cache) {
         rta_cache = std::ref(local_cache);
@@ -380,14 +379,14 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
     // skip the re-score; if provided it MUST equal
     // EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_).
     //
-    // P1.13 — cache path: the baseline re-score must INITIALIZE the cache
-    // champion (full RTA), NOT Evaluate — this is a fresh interval, the carried
-    // champion (if any) is on the OLD dag_tasks_ and may differ by >1 task →
-    // Evaluate would throw via ComputeTaskSetDifference. Initialize overwrites
-    // all prior state and establishes opt_pa_ as the champion the downstream
+    // Cache path: the baseline re-score must INITIALIZE the cache champion
+    // (full RTA), NOT Evaluate — this is a fresh interval, the carried champion
+    // (if any) is on the OLD dag_tasks_ and may differ by >1 task → Evaluate
+    // would throw via ComputeTaskSetDifference. Initialize overwrites all prior
+    // state and establishes opt_pa_ as the champion the downstream
     // OptimizeIncre_SingleTask 1D variations patch against. tl is all-(-1)
-    // (dag_tasks_update is TL-baked, Q5). When baseline_sp is provided we trust
-    // it (it MUST equal the cache-path score for the same triple) and still
+    // (dag_tasks_update is TL-baked). When baseline_sp is provided we trust it
+    // (it MUST equal the cache-path score for the same triple) and still
     // Initialize the champion RTA.
     std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     if (baseline_sp == INT_MIN) {
@@ -413,10 +412,9 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
         FindTaskWithDifferentEt(dag_tasks_, dag_tasks_update);
 
     // Debug seam (debugMode==1, inert in production): emit the changed-task
-    // count (ndiff) for this incremental call. Originally added for the P1.1
-    // INCR_Reopt_10 probe (then named INCR_P10) that confirmed the descent-
-    // start-TL fix collapses the perf-pair false positives (ndiff 5 -> 0).
-    // Kept as a reusable invariant check — re-run the probe if the
+    // count (ndiff) for this incremental call. A reusable invariant check —
+    // the descent-start-TL should collapse perf-pair false positives (ndiff
+    // drops to the genuine env-changed count); re-check if the
     // FindTaskWithDifferentEt baseline logic is touched.
     if (GlobalVariables::debugMode == 1) {
         static int probe_call_idx = 0;

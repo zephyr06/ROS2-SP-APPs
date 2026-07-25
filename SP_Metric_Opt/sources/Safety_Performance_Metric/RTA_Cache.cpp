@@ -27,9 +27,8 @@ void RollPrefix(FiniteDist& hp_tasks_et_conv, const FiniteDist& et) {
     hp_tasks_et_conv.Convolve(et);
 }
 
-// Empty per-core order sentinel for AnalyzePrioritySwitch: a core index beyond
-// one operand's length is treated as "no tasks on that core" (the old map's
-// missing-key → empty-vec fallback). Function-local static so it's stable.
+// Empty per-core order sentinel: a core index beyond one operand's length is
+// "no tasks on that core". Function-local static so it's stable.
 const std::vector<int> AnalyzePrioritySwitch_empty_vec;
 
 }  // namespace
@@ -107,12 +106,9 @@ PrioritySwitchAnalysis AnalyzePrioritySwitch(
     const std::vector<std::vector<int>>& champion_per_core) {
     PrioritySwitchAnalysis result;
 
-    // An absent core and an empty core are the same under the flat-vector
-    // representation (both mean "zero tasks"), matching the old map semantics
-    // where a missing key fell back to an empty vec. So the size check + the
-    // "champion core emptied/migrated" check collapse into one pass: for every
-    // core index present in either operand, a size mismatch (one side empty,
-    // the other non-empty, or two non-empty of different length) ⇒ NotSingle.
+    // Absent core == empty core under the flat-vector representation, so the
+    // size check collapses the missing-core and emptied-core cases into one
+    // pass: any size mismatch across the shared core range ⇒ NotSingle.
     const size_t n_cores =
         std::max(candidate_per_core.size(), champion_per_core.size());
     for (size_t core = 0; core < n_cores; core++) {
@@ -161,7 +157,7 @@ PrioritySwitchAnalysis AnalyzePrioritySwitch(
 
 // Shared partition body of PerCoreOrderFromPa + the champion-order cache build.
 // `prioritized` is already in priority order, so this just buckets by processorId
-// into a flat vector indexed by core (dense 0-based, P1.20).
+// into a flat vector indexed by core (dense 0-based).
 std::vector<std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
     const TaskSet& prioritized) const {
     int max_p = -1;
@@ -177,9 +173,8 @@ std::vector<std::vector<int>> RTACache::PerCoreOrderOfPrioritized(
 
 // Per-core order from (dag, pa): bucket pa's task ids by processorId. `pa` IS
 // the priority ordering (UpdateTaskSetPriorities assigns priority=i to pa[i]),
-// so this is identical to PerCoreOrderOfPrioritized(UpdateTaskSetPriorities(...))
-// without the TaskSet copy + O(N log N) sort. Same id==index invariant every
-// pa-as-index site relies on; processorId is untouched by the priority bake.
+// so this is PerCoreOrderOfPrioritized(UpdateTaskSetPriorities(...)) without the
+// TaskSet copy + O(N log N) sort. processorId is untouched by the priority bake.
 std::vector<std::vector<int>> RTACache::PerCoreOrderFromPa(
     const DAG_Model& dag_tasks, const PriorityVec& pa) const {
     int max_p = -1;
@@ -194,11 +189,10 @@ std::vector<std::vector<int>> RTACache::PerCoreOrderFromPa(
     return order;
 }
 
-// See header. Bake TL → apply pa (sorts HP-first) → ProbabilisticRTA_TaskSet
-// (partitions by processorId internally). The HP-prefix checkpoints are
-// re-rolled separately (efficiency TODO: ProbabilisticRTA_TaskSet could emit
-// them, avoiding a second per-core ET-convolution pass — deferred until the
-// cache is wired hot).
+// See header. Bake TL → apply pa (sorts HP-first) → ProbabilisticRTA_TaskSet.
+// The HP-prefix checkpoints are re-rolled separately (efficiency TODO:
+// ProbabilisticRTA_TaskSet could emit them, avoiding a second per-core ET-
+// convolution pass — deferred until the cache is wired hot).
 const std::vector<FiniteDist>& RTACache::Initialize(
     const DAG_Model& dag_tasks, const PriorityVec& pa,
     const std::vector<double>& tl) {
@@ -263,17 +257,16 @@ void RTACache::RebuildPrefixes(const TaskSet& tasks_prioritized) {
 //      migrated cores); at most ONE core may differ. Remove-one-compare-rest
 //      on that core to find the single move.
 //   3. No ET diff + no order diff -> |diff|==0.
-//   4. Cross-check: an ET diff and a priority move must be on the SAME core
-//      (the moved task IS the ET-changed task) -> one merged change; else 2.
+//   4. ET diff + priority move must be on the SAME core (the moved task IS
+//      the ET-changed task) -> one merged change; else 2.
 bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
                                   const PriorityVec& pa,
                                   const std::vector<double>& tl,
                                   TaskSetDifference& out) const {
     // Champion side reads the cached canonical-order TL-bake; only the candidate
-    // bake is per-call (its tl genuinely changes). FindTaskWithDifferentEt walks
-    // .tasks[i] by index, so it needs canonical (not pa-sorted) order on both
-    // sides; the TaskSet overload takes the two baked TaskSets directly, so no
-    // throwaway DAG_Model is built just to overwrite .tasks.
+    // bake is per-call. FindTaskWithDifferentEt walks .tasks[i] by index, so it
+    // needs canonical (not pa-sorted) order on both sides; the TaskSet overload
+    // takes the two baked TaskSets directly, avoiding a throwaway DAG_Model.
     TaskSet cand_tasks_baked =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     std::vector<DiffObj> et_diff =
@@ -286,10 +279,9 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
     std::vector<std::vector<int>> candidate_per_core =
         PerCoreOrderFromPa(dag_tasks, pa);
 
-    // (2) Priority-order analysis on the two per-core order vectors. Returns the
-    // status +, when single, the changed core + the moved task's locators for
-    // the pure-priority-move case. The ET-known case re-runs the
-    // remove-and-compare below with the known task id.
+    // (2) Priority-order analysis. Returns status +, when single, the changed
+    // core and the moved task's locators (pure-priority-move case). The ET-known
+    // case re-runs the remove-and-compare below with the known task id.
     PrioritySwitchAnalysis pa_switch =
         AnalyzePrioritySwitch(candidate_per_core, champion_.champ_per_core);
     if (pa_switch.status == PrioritySwitchStatus::NotSingle)
@@ -319,8 +311,8 @@ bool RTACache::IsSingleTaskChange(const DAG_Model& dag_tasks,
         // ET-known branch: remove the ET-changed task from both orders on its
         // ACTUAL core and check the rest matches — else a SEPARATE task also
         // moved -> not single. Its own priority move is absorbed by removing it
-        // (combined ET+move = single change). changed_core == -1 here iff
-        // ET-only change iff old_pos == new_pos.
+        // (combined ET+move = single change). changed_core == -1 iff ET-only
+        // change iff old_pos == new_pos.
         const std::vector<int>& candidate_order =
             candidate_per_core[et_core];
         const std::vector<int>& champion_order = champion_.champ_per_core[et_core];
@@ -411,17 +403,16 @@ std::vector<RTAReusePerTask> RTACache::ClassifyReusePerTask(
         return result;
     }
 
-    // Rule B (Pure Priority Move): the move only PERMUTES the HP set of every
-    // task on this core within [p_min, p_max] — set membership and ETs are
-    // unchanged. The true RTA depends on the HP SET (convolution is commutative),
-    // so the bottom task's true RTA is identical between champion and candidate.
-    // Reusing the champion RTA is a SAFE UPPER BOUND: every RTA op is stochastically
-    // conservative (Convolve lossless; CompressDistribution moves mass to the max
-    // value in each bucket — "never underestimate"; CompressDeadlineMissProbability
-    // preserves above-deadline mass exactly), so the champion-built RTA for the
-    // same HP set is >= the true RTA -> cached miss-prob >= true miss-prob. The
-    // correctness gate is safe-upper-bound, NOT bit-identity to the oracle.
-    //   pos < p_min             -> FullReuse (HP set untouched, top of the core);
+    // Rule B (Pure Priority Move): the move only PERMUTES the HP set within
+    // [p_min, p_max] — membership and ETs are unchanged. The true RTA depends on
+    // the HP SET (convolution is commutative), so the bottom task's true RTA is
+    // identical between champion and candidate. Reusing the champion RTA is a
+    // SAFE UPPER BOUND: every RTA op is stochastically conservative (Convolve
+    // lossless; CompressDistribution moves mass to the max value in each bucket;
+    // CompressDeadlineMissProbability preserves above-deadline mass), so the
+    // champion-built RTA for the same HP set is >= the true RTA → cached miss-
+    // prob >= true miss-prob. The gate is safe-upper-bound, NOT bit-identity.
+    //   pos < p_min             -> FullReuse (HP set untouched, top of core);
     //   p_min <= pos <= p_max   -> NoReuse   (inside the priority-shift window);
     //   pos > p_max             -> FullReuse (bottom: HP set is the same set,
     //                              only permuted within [p_min, p_max]).
@@ -449,13 +440,12 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
         return Initialize(dag_tasks, pa, tl);
     }
 
-    // Reindex the champion RTA by TASK ID, not by positional copy. champion_.rta
-    // is indexed by CHAMPION priority-position, but candidate_rta_ is consumed
-    // as CANDIDATE priority-position (ObtainSP_Full_From_NodeRTAs reads
-    // node_rtas[k] as the candidate's tasks_prioritized[k]). When champion PA !=
-    // candidate PA a positional copy would put each FullReuse task's champion RTA
-    // in the WRONG slot — a silent scramble. Map each task's champion RTA into
-    // its candidate priority-position slot.
+    // Reindex the champion RTA by TASK ID. champion_.rta is indexed by CHAMPION
+    // priority-position, but candidate_rta_ is consumed as CANDIDATE priority-
+    // position (ObtainSP_Full_From_NodeRTAs reads node_rtas[k] as the candidate's
+    // tasks_prioritized[k]). When champion PA != candidate PA a positional copy
+    // would put each FullReuse task's champion RTA in the WRONG slot. Map each
+    // task's champion RTA into its candidate priority-position slot.
     TaskSet tasks_baked =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     TaskSet tasks_prioritized = UpdateTaskSetPriorities(tasks_baked, pa);
@@ -463,16 +453,14 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     for (size_t i = 0; i < tasks_prioritized.size(); i++) {
         task_id2index[tasks_prioritized[i].id] = static_cast<int>(i);
     }
-    // Candidate per-core partition, built once for the recompute loop below.
+    // Candidate per-core partition, built once for the recompute loop.
     // (Baking only changes ET, never processorId or priority order, so this ==
-    // PerCoreOrderFromPa(dag, pa).) P1.20: flat vector indexed by core.
+    // PerCoreOrderFromPa(dag, pa).)
     std::vector<TaskSet> per_core =
         ExtractTaskSetPerProcessor(tasks_prioritized);
 
-    // Reuse verdict from the shared classifier: |diff|==0 -> all FullReuse;
-    // |diff|==1 -> tasks on diff.core are NoReuse, every other core FullReuse.
-    // any_recompute iff at least one NoReuse slot exists (|diff|==1 on a
-    // non-empty core).
+    // Reuse verdict: |diff|==0 -> all FullReuse; |diff|==1 -> tasks on diff.core
+    // are NoReuse, every other core FullReuse. any_recompute iff any NoReuse slot.
     std::vector<RTAReusePerTask> verdict_per_task =
         ClassifyReusePerTask(dag_tasks, pa, tl);
     bool any_recompute = false;
@@ -484,13 +472,13 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     }
 
     // Size the buffer once; every slot is written before read (reindex fills
-    // FullReuse slots, recompute overwrites the NoReuse slots). resize (not
-    // assign) since nothing needs zero-init — no-op when already sized to N.
+    // FullReuse slots, recompute overwrites NoReuse slots). resize (not assign)
+    // since nothing needs zero-init — no-op when already sized to N.
     candidate_rta_.resize(champion_.rta.size());
     {
         // Champion priority-position -> task id, mirroring how champion_.rta was
         // built. champ_prioritized is cached (invariant across one champion
-        // lifetime), so this reads it directly instead of re-baking the champion.
+        // lifetime), read directly instead of re-baking.
         for (size_t k = 0; k < champion_.champ_prioritized.size() && k < champion_.rta.size(); k++) {
             int tid = champion_.champ_prioritized[k].id;
             auto it = task_id2index.find(tid);
@@ -510,13 +498,13 @@ const std::vector<FiniteDist>& RTACache::Evaluate(
     for (const TaskSet& core_tasks : per_core) {
         if (core_tasks.empty()) continue;
         // Mirror ProbabilisticRTA_TaskSet_SingleCore: maintain a rolling
-        // hp_tasks_et_conv (ET convolution of every higher-priority task on this
-        // core so far, snapshotted BEFORE the current task is folded in) and call
-        // the 3-arg GetRTA_OneTask with it. The 3-arg form Compresses the running
-        // RTA ONCE then Convolves against the pre-built prefix — bit-identical to
-        // the oracle. (The 2-arg form Compresses+Convolves PER HP task on the
-        // running RTA; with >=2 HP tasks and convolved support past Granularity
-        // the differing lossy compress count can diverge from the oracle.)
+        // hp_tasks_et_conv (ET convolution of higher-priority tasks so far,
+        // snapshotted BEFORE the current task is folded in) and call the 3-arg
+        // GetRTA_OneTask with it. The 3-arg form Compresses the running RTA ONCE
+        // then Convolves against the pre-built prefix — bit-identical to the
+        // oracle. (The 2-arg form Compresses+Convolves PER HP task; with >=2 HP
+        // tasks and convolved support past Granularity the differing lossy
+        // compress count can diverge from the oracle.)
         TaskSet hp_tasks;
         FiniteDist hp_tasks_et_conv = IdentityPrefix();
         for (const Task& task_curr : core_tasks) {

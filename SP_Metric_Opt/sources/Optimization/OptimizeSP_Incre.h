@@ -9,18 +9,15 @@
 
 namespace SP_OPT_PA {
 
-// P1.13 — forward-declare the FROZEN RTACache (sources/Safety_Performance_Metric/
-// RTA_Cache.h) so OptimizeIncre / OptimizeIncre_SingleTask can take an opt-in
-// cache ref WITHOUT pulling RTA_Cache.h into this header (no header cycle). The
-// cache API is FROZEN (P1.11 Phase 0): Evaluate/AdoptChampion/Initialize take
-// RAW dag + tl (NO sp_parameters) and bake TLs internally. Defined in RTA_Cache.cpp.
+// Forward-declare RTACache so OptimizeIncre / OptimizeIncre_SingleTask can take a
+// cache ref without pulling RTA_Cache.h into this header (no header cycle). The
+// cache API is frozen: Evaluate/AdoptChampion/Initialize take raw dag + tl (no
+// sp_parameters) and bake TLs internally.
 class RTACache;
 
-// P1.13 — opt-in cache handle. NO raw pointers (user binding): the optimizer only
-// BORROWS the cache for a call. `optional<reference_wrapper<RTACache>>` lets
-// `std::nullopt` express "no cache → legacy oracle path" (behavior-preserving),
-// which a bare `RTACache&` cannot. Access: `if (rta_cache)
-// rta_cache->get().Evaluate(...)` (the `->get()` unwraps the reference_wrapper).
+// Opt-in cache handle — the optimizer only BORROWS the cache. nullopt expresses
+// "no cache → legacy oracle path" (behavior-preserving), which a bare RTACache&
+// cannot. Access: `if (rta_cache) rta_cache->get().Evaluate(...)`.
 using RTACacheOpt = std::optional<std::reference_wrapper<RTACache>>;
 
 struct PriorityPartialPath {
@@ -53,11 +50,8 @@ struct PriorityPartialPath {
             .execution_time_dist.min_time;
     }
 
-    // const DAG_Model& dag_tasks;
-    // const SP_Parameters& sp_parameters;
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
-    // double sp=0;
     double sp_lost = 0;
     PriorityVec pa_vec_lower_pri;
     std::unordered_set<int> tasks_to_assign;
@@ -74,39 +68,28 @@ struct DiffObj {
     bool increase;
 };
 
-// Task IDs with time-limit freedom: a task is TL-flexible iff it carries a
-// non-empty `timePerformancePairs` (the perf-pair grid). Mirrors the
-// `{-1}`-sentinel test in RecordTimeLimitOptions (OptimizeSP_TL_BF.cpp): tasks
-// without pairs get the `{-1}`-only option set (no TL freedom); tasks with
-// pairs are the TL-flexible set the serialized Type-L step walks.
+// Task IDs with time-limit freedom: a task is TL-flexible iff it has a
+// non-empty `timePerformancePairs`. Mirrors the {-1}-sentinel test in
+// RecordTimeLimitOptions — tasks without pairs get the {-1}-only option set.
 std::vector<int> FindTasksWithFlexibleTimeLimits(const DAG_Model& dag_tasks);
 
-// Reports tasks whose pre-TL execution_time_dist moved, MINUS TL-flexible
-// tasks — the Type-E (env-changed) diff of the serialized search (P1.10 D2,
-// amended 2026-07-17). FiniteDist::operator!= is a 10%-relative approx_equal
-// (Probability.cpp:415-417), and a TL-flexible task's execution_time_dist is
-// built from raw mu/min/max YAML with no read-time override to the adopted TL,
-// so its dist can compare unequal across intervals for TL-induced (not env)
-// reasons. Filtering TL-flexible tasks here is more robust than relying on the
-// caller to equalize their ET. The UNFILTERED `FindTaskWithDifferentEt` below
-// stays as-is for the TL-walk call site (`OptimizeIncre`'s :282), which MUST
-// keep flagging the TL-walked (TL-flexible) task so its 1D priority is re-
-// searched each TL step.
+// Tasks whose pre-TL execution_time_dist moved, MINUS TL-flexible tasks — the
+// Type-E (env-changed) diff. TL-flexible tasks are filtered because
+// FiniteDist::operator!= is a 10%-relative approx_equal and a TL-flexible
+// task's dist is built from raw YAML mu/min/max (no TL override), so it can
+// compare unequal across intervals for TL-induced (not env) reasons. The
+// unfiltered `FindTaskWithDifferentEt` below stays for the TL-walk call site,
+// which MUST keep flagging the walked task so its 1D priority is re-searched.
 std::vector<DiffObj> FindEnvTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated);
 
 std::vector<DiffObj> FindTaskWithDifferentEt(
     const DAG_Model& dag_tasks, const DAG_Model& dag_tasks_updated);
 
-// Same diff over two TaskSets directly. `FindTaskWithDifferentEt` only reads
-// `tasks[i].execution_time_dist` at matching indices, so the DAG_Model overload
-// above is exactly this body fed `dag.tasks` — and callers that already hold
-// baked TaskSets (notably RTACache::IsSingleTaskChange, which has the champion
-// bake cached in champ_tasks_baked_ and only bakes the candidate TaskSet per
-// call) can use this to skip constructing a throwaway DAG_Model (which would
-// copy the BGL graph + per-processor maps only to overwrite .tasks immediately).
-// Coexists with the DAG_Model overload (still used by OptimizeIncre + the TL
-// walk); callers with matching-size TaskSets only.
+// Same diff over two TaskSets directly (the DAG_Model overload just feeds
+// dag.tasks here). Callers that already hold baked TaskSets (e.g.
+// RTACache::IsSingleTaskChange, which has the champion bake cached) use this to
+// skip constructing a throwaway DAG_Model.
 std::vector<DiffObj> FindTaskWithDifferentEt(const TaskSet& tasks_base,
                                              const TaskSet& tasks_updated);
 
@@ -117,12 +100,9 @@ enum PriorityChangeStatus { Increase, Decrease, OpenToAll };
 PriorityChangeStatus AnalyzePriorityChangeStatus(
     const SP_Parameters& sp_parameters, int task_id, bool et_increased);
 // `exclude_opt_pa` (default true): skip the variation that re-inserts task_id
-// at its carried position (i == old_priority_index), which reconstructs
-// `pa_vec` exactly and re-computes the incumbent's SP — the redundant eval the
-// sub-incremental (OptimizeIncre_SingleTask) avoids by scoring the carried PA
-// once as its baseline. Callers that want the FULL candidate range (including
-// the carried position) pass false (e.g. unit tests asserting the range
-// contract).
+// at its carried position, which reconstructs pa_vec exactly — the redundant
+// eval the sub-incremental avoids by scoring the carried PA once as its
+// baseline. Pass false for the full range (e.g. unit tests).
 std::vector<PriorityVec> FindPriorityVec1D_Variations(
     const PriorityVec& pa_vec, int task_id,
     PriorityChangeStatus priority_change, bool exclude_opt_pa = true);
@@ -134,78 +114,44 @@ class OptimizePA_Incre : public OptimimizePA_Base {
                      const SP_Parameters& sp_parameters)
         : OptimimizePA_Base(dag_tasks, sp_parameters) {}
 
-    // TODO: Current implementation doesn't consider end-to-end latency, need to
-    // add later! One way to do it is by modifying the parameters of
-    // sp_parameters
-    /*
-    The implementation for this function follows Audsley's algorithm with
-    modifications for speed and optimization considerations:
-    // 1. The algortihm iterativelys finds the task to assign the lowest
-    priority to. However, since multiple tasks may qualify for the lowest
-    priority,
-    // the algorithm will consider all of them and save them as partial paths.
-    // 2. The input argument K records the maximum number of partial paths under
-    consideration in each iteration.
-    // 3. This function updates both opt_pa_ and opt_sp_, and returns opt_pa_.
-    */
+    // TODO: consider end-to-end latency (e.g. via sp_parameters).
+    // Audsley's algorithm with beam search: iteratively assigns the lowest
+    // priority, keeping K partial paths. Updates opt_pa_/opt_sp_, returns opt_pa_.
     PriorityVec OptimizeFromScratch(int K);
 
-    // Incremental re-search over ALL tasks whose ET changed since the last
-    // dag_tasks_ (FindTaskWithDifferentEt). Seeds opt_sp_ to the carried PA's SP
-    // under the new env, then re-searches each changed task. `baseline_sp`
-    // (default INT_MIN = "not provided") lets a caller that already holds the
-    // carried PA's new-env SP skip the baseline re-score; if provided it MUST
-    // equal EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_),
-    // else the strict-> adopt test compares against a wrong seed. Advances
-    // dag_tasks_ to dag_tasks_update (orchestrator-owned under P0.5 — inert; the
-    // challenger is rebuilt each step; kept for bit-identity).
-    // P1.13 — `rta_cache` (default std::nullopt = create a local cache): the
-    // cache is ALWAYS engaged for this interval. nullopt → OptimizeIncre builds a
-    // local RTACache (same scope, outlives the loop) bound via std::ref (no raw
-    // pointer); an engaged optional is used as-is (e.g. a shared cache across
-    // intervals). The baseline re-score INITIALIZEs opt_pa_ as the cache
-    // champion, and every downstream OptimizeIncre_SingleTask call reuses RTA
-    // across its 1D priority variations (the engaged optional is forwarded into
-    // the loop). Supersedes the earlier "nullopt → legacy oracle path" contract:
-    // there is NO oracle arm inside OptimizeIncre anymore — the cache path is the
-    // only path, bit-identical to the oracle by Hazard B correctness + the Q5
-    // TL-baked-input invariant. No separate opt-in flag (Q6), unlike P1.12 2a's
-    // rta_cache_active_ (which gated a SHARED CommitIncumbent reopt collision
-    // that does NOT exist here). Champion lifecycle (Q3): adopt at this baseline
-    // re-score + each OptimizeIncre_SingleTask adoption. `tl` plumbing (Q5 —
-    // RESOLVED): the call-site dag_tasks_update arrives ALREADY TL-baked
-    // (UpdateExtDistBasedOnTimeLimit at OptimizeSP_TL_Incre.cpp:146 ==
-    // ApplyTimeLimitsToTasksExecutionTime — verified same loop/guard). So the
-    // cache is fed the BAKED dag_tasks_update + an all-(-1) tl (cache bakes
-    // nothing; sees exactly the final ETs the oracle did → bit-identity). No new
-    // tl arg. Behavior-preserving by default.
+    // Incremental re-search over every task whose ET changed since the last
+    // dag_tasks_. Seeds opt_sp_ to the carried PA's SP under the new env, then
+    // re-searches each changed task. Advances dag_tasks_ to dag_tasks_update.
+    // `baseline_sp` (default INT_MIN): a caller holding the carried PA's new-env
+    // SP may pass it to skip the re-score; if provided it MUST equal
+    // EvaluateSPWithPriorityVec(dag_tasks_update, sp_parameters_, opt_pa_).
+    // `rta_cache` (default nullopt = create a local cache): the cache is ALWAYS
+    // engaged for this interval — nullopt builds a local RTACache (same scope,
+    // bound via std::ref); an engaged optional is used as-is. The baseline re-
+    // score INITIALIZEs opt_pa_ as champion, and every downstream
+    // OptimizeIncre_SingleTask reuses RTA across its 1D variations. There is no
+    // oracle arm here — the cache path is the only path, bit-identical to the
+    // oracle. dag_tasks_update arrives ALREADY TL-baked, so the cache is fed the
+    // baked DAG + an all-(-1) tl (bakes nothing; sees the final ETs the oracle
+    // did → bit-identity).
     PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update,
                               double baseline_sp = INT_MIN,
                               RTACacheOpt rta_cache = std::nullopt);
 
-    // The sub-incremental primitive: assumes EXACTLY ONE task's ET changed
-    // (task_id). Trusts opt_sp_ as the current baseline (caller-set: OptimizeIncre
-    // scores the carried PA, or a TL handler seeds it). Generates the 1D priority
-    // variations for task_id (one half, per AnalyzePriorityChangeStatus, with
-    // exclude_opt_pa=true), scores each, and adopts on strict > — bit-identical
-    // to the former :274-292 loop body. Mutates opt_pa_/opt_sp_ in place. Does
-    // NOT advance dag_tasks_ (orchestrator-owned).
-    //
-    // P1.13 — `rta_cache`: each FindPriorityVec1D_Variations candidate is scored
-    // via rta_cache->get().Evaluate(baked_dag, priority_assignment, all_-1_tl) (a
-    // ≤1-task RTA patch vs the champion whose PA == opt_pa_) +
-    // ObtainSP_Full_From_NodeRTAs (Hazard B — multiplies perf_coefficient), INSTEAD
-    // of EvaluateSPWithPriorityVec. The champion MUST advance at each strict-
-    // improvement adoption (AdoptChampion with the candidate's RTA vector) so the
-    // NEXT variation's diff stays |diff|<=1 (Evaluate does NOT advance the
-    // champion itself; a stale champion drifts to |diff|>1 →
-    // ComputeTaskSetDifference throws, called unguarded by ClassifyReusePerTask).
-    // The engaged optional is forwarded here by OptimizeIncre (which owns the
-    // cache — caller-supplied or a local it created at nullopt). Direct callers
-    // may also pass one; if left nullopt, this primitive runs the legacy oracle
-    // path (EvaluateSPWithPriorityVec per candidate) — but OptimizeIncre never
-    // reaches that arm since it always binds a cache first. NO raw pointer:
-    // borrows the cache via reference_wrapper for the call.
+    // Sub-incremental primitive: assumes EXACTLY ONE task's ET changed
+    // (task_id). Trusts opt_sp_ as the baseline (caller-set). Generates the 1D
+    // priority variations for task_id (one half, per AnalyzePriorityChangeStatus,
+    // exclude_opt_pa=true), scores each, adopts on strict >. Mutates
+    // opt_pa_/opt_sp_ in place; does NOT advance dag_tasks_.
+    // `rta_cache`: each candidate is scored via
+    // rta_cache->get().Evaluate(baked_dag, pa, all_-1_tl) (a ≤1-task RTA patch vs
+    // the champion whose PA == opt_pa_) + ObtainSP_Full_From_NodeRTAs, instead of
+    // EvaluateSPWithPriorityVec. The champion MUST advance at each strict-
+    // improvement adoption (AdoptChampion) so the next variation's diff stays
+    // |diff|<=1 — Evaluate never advances the champion itself; a stale champion
+    // drifts to |diff|>1 and ComputeTaskSetDifference throws. OptimizeIncre
+    // always binds a cache before reaching here, so the legacy oracle arm (nullopt)
+    // is only for direct callers/tests.
     PriorityVec OptimizeIncre_SingleTask(const DAG_Model& dag_tasks_update,
                                          int task_id, bool et_increased,
                                          RTACacheOpt rta_cache = std::nullopt);

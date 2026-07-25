@@ -1,6 +1,5 @@
 #pragma once
-// Pure priority-analysis utilities for the single-champion RTA cache (P1.9 rev
-// 3). See agents/active_tasks/P1_9_incremental_rta_patching/{goal,tasks}.md.
+// Pure priority-analysis utilities for the single-champion RTA cache.
 //
 // These helpers factor the "is the candidate's per-core priority order a single
 // task's relocation away from the champion's?" question out of
@@ -36,7 +35,7 @@ bool RestEqualAfterRemoving(const std::vector<int>& candidate_order,
 
 // Locate which core `task_id` sits on in `per_core` (the processorId → task-id
 // order vector, indexed by core), or -1 if absent. Used to place the ET-changed
-// task's core. P1.20: takes a flat vector<vector<int>> (dense 0-based cores).
+// task's core. Takes a flat vector<vector<int>> (dense 0-based cores).
 int FindCoreOfTask(const std::vector<std::vector<int>>& per_core,
                    int task_id);
 
@@ -86,9 +85,9 @@ PrioritySwitchStatus AnalyzePrioritySwitchPerCore(
 // moved task is the ET-changed task) is handled in IsSingleTaskChange,
 // which calls this for the size/changed-core check then does its own
 // remove-and-compare with the known task id.
-// P1.20: takes flat vector<vector<int>> (dense 0-based cores). An absent core
-// and an empty core are indistinguishable here — both mean "zero tasks" — which
-// matches the old map semantics where a missing key fell back to an empty vec.
+// An absent core and an empty core are indistinguishable here — both mean
+// "zero tasks" — so the flat-vector size check collapses the missing-core and
+// emptied-core cases into one.
 PrioritySwitchAnalysis AnalyzePrioritySwitch(
     const std::vector<std::vector<int>>& candidate_per_core,
     const std::vector<std::vector<int>>& champion_per_core);

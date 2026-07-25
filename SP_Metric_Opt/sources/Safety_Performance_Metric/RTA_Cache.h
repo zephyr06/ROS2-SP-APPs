@@ -1,8 +1,8 @@
 #pragma once
-// Single-champion RTA cache (P1.9 rev 3). Bound to ONE champion solution. The
-// P1.10 single-change invariant (|diff|<=1 vs champion on the serialized path)
-// means Evaluate only answers: nothing changed (reuse all), or one task's ET
-// and/or priority position changed (patch the suffix from that task).
+// Single-champion RTA cache. Bound to ONE champion solution. The serialized
+// optimizer's single-change invariant (|diff|<=1 vs champion) means Evaluate
+// only answers: nothing changed (reuse all), or one task's ET and/or priority
+// position changed (patch the suffix from that task).
 //
 // Leaf header (not RTA.h) to avoid a cycle: the cache takes PriorityVec
 // (OptimizeSP_Base.h -> SP_Metric.h -> RTA.h), so RTA.h can't depend back here.
@@ -39,19 +39,17 @@ struct TaskSetDifference {
                        // ET diff); a locator-class fact, not a verdict.
 };
 
-// Full-champion state: the 5 members AdoptChampion/Initialize overwrite. The
-// live storage type for RTACache::champion_. All members are copyable, so a
-// full RTACache copy (the P1.25 D1=(b) reject-path backup) deep-copies the
-// champion correctly — see EvaluateTimeLimitConfig_SubIncremental.
-// candidate_rta_ is deliberately NOT here: it is a scratch buffer fully
-// overwritten before read on every Evaluate, so it never needs copying.
+// Full-champion state: the members AdoptChampion/Initialize overwrite. All
+// members are copyable, so the whole-cache reject-path backup (a full RTACache
+// copy) deep-copies the champion correctly. candidate_rta_ is deliberately NOT
+// here: it is a scratch buffer fully overwritten before read on every Evaluate,
+// so it never needs copying.
 struct ChampionState {
     std::vector<FiniteDist> rta;
     TaskSet champ_prioritized;
     TaskSet champ_tasks_baked;
-    // P1.20: flat per-core vectors indexed by processorId (dense 0-based). Both
-    // stay copyable, so the P1.25 D1=(b) reject-path whole-cache backup still
-    // deep-copies the champion correctly.
+    // Flat per-core vectors indexed by processorId (dense 0-based). Stay
+    // copyable so the whole-cache backup deep-copies correctly.
     std::vector<std::vector<int>> champ_per_core;
     std::vector<std::vector<FiniteDist>> hp_prefix_per_core;
 };
@@ -140,16 +138,14 @@ class RTACache {
         const std::vector<double>& tl) const;
 
    private:
-    // The champion lives ONLY in `champion_` (its 5 baked-form/RTA/prefix
-    // members — see ChampionState). The raw (dag, pa, tl) triple is consumed at
-    // bake time and not stored: pa/tl are read once by the bake and never again,
-    // and Evaluate/IsSingleTaskChange read the baked forms. A caller needing the
-    // champion's pa/tl back should add a const accessor rather than carry dead
-    // state here. champion_ is the ChampionState struct itself (not 5 loose
-    // members); on a rejected sub-incremental walk step the caller restores the
-    // whole cache by copy-assigning a pre-walk RTACache backup
-    // (EvaluateTimeLimitConfig_SubIncremental, D1=(b)) — struct-copy deep-copies
-    // all 5 members, so the backup is drift-proof by construction.
+    // Champion lives ONLY in `champion_`. The raw (dag, pa, tl) triple is
+    // consumed at bake time and not stored: pa/tl are read once by the bake and
+    // never again, and Evaluate/IsSingleTaskChange read the baked forms. A caller
+    // needing the champion's pa/tl back should add a const accessor rather than
+    // carry dead state here. On a rejected sub-incremental walk step the caller
+    // restores the whole cache by copy-assigning a pre-walk RTACache backup;
+    // struct-copy deep-copies all members, so the backup is drift-proof by
+    // construction.
     ChampionState champion_;
 
     // Candidate RTA buffer (Evaluate's output; champion_.rta untouched until
@@ -159,7 +155,7 @@ class RTACache {
     // Per-core priority ORDER from (dag, pa): for each processorId, task ids on
     // that core sorted ascending by priority value (lower = higher priority).
     // Shared by ComputeTaskSetDifference (candidate side) and Evaluate's patch
-    // branch. Pure. P1.20: flat vector indexed by processorId (dense 0-based).
+    // branch. Pure. Flat vector indexed by processorId (dense 0-based).
     std::vector<std::vector<int>> PerCoreOrderFromPa(
         const DAG_Model& dag_tasks, const PriorityVec& pa) const;
     // Per-core order from an ALREADY-prioritized TaskSet (no re-sort). Shared
