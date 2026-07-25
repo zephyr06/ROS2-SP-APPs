@@ -118,8 +118,120 @@
 
 ## Phase 5 — A/B experiment (the gate; NOT bit-identity)
 
-- [ ] **5a. Run `INCR_Reopt_1` + `INCR_Reopt_10` at N=16**: current-default-reopt
+- [~] **5a. Run `INCR_Reopt_1` + `INCR_Reopt_10` at N=16**: current-default-reopt
   (P2.10 baseline, flag OFF) vs new-merged-reopt. Compare SP + per-activation ET.
+  **BLOCKED 2026-07-25** — flag=0 baseline ran fine; flag=1 (merged) CRASHED at
+  `taskset_0/INCR_Reopt_1` with SIGABRT (uncaught `runtime_error` from
+  `RTACache::ComputeTaskSetDifference`, `|diff|>1`). Root cause: the reopt
+  flag-on arm adopts the champion TL from the from-scratch reopt
+  (`PerformCoordinateDescentForTaskConfigOpt:556`) but walks the un-re-synced
+  Gaussian `starting_time_limits` (`:566`), so the first walk step diffs
+  champion-TL vs Gaussian in >1 task → throw. Fix = re-sync
+  `starting_time_limits = ReconstructTimeLimitVecFromResOpt()` before the walk
+  (mirrors the incremental path). See dev_log 2026-07-25 Phase 5 crash entry.
+  Needs a TDD regression test (RED) + the one-line fix (GREEN) before re-running.
+
+## Phase 5.6 — Fix the flag=1 slowdown + TIME_LIMIT escape (prerequisite to 5a)
+
+> The flag=1 arm (after the 5.5 crash fix) does NOT crash, but is **much
+> SLOWER** than flag=0 for both `INCR_Reopt_1`/`_10`, AND escapes the per-
+> interval `TIME_LIMIT=1s` budget ~10× (a taskset ran 5 min when max ~30s).
+> This is the active blocker. Re-frames "slower than expected" as
+> "cooperative budget not effective."
+
+- [x] **5.6a. Confirm the budget-polling gap** — verify
+  `BFSharedBudgetCancelled()` is ABSENT from the 3 flag=1 hot loops
+  (`WalkSerializedTaskQueue`, `OptimizeSingleTaskTimeLimit_Impl`,
+  `OptimizeIncre_SingleTask`) and identify where the legacy path
+  (`OptimizeFromScratch` → `EvaluateSPWithPriorityVec`) DOES poll. Read
+  `OptimizeSP_Base.cpp` for `EvaluateSPWithPriorityVec` + the BF beam cancel.
+  **CONFIRMED 2026-07-25** — full call graph in dev_log; the gap it identified
+  is fixed in 5.6b (`a6922ff5`). Polls EXIST in
+  `RTA.cpp:102`, `SP_Metric.cpp:63/107/122`, `OptimizeSP_Base.cpp:192/206`,
+  `OptimizeSP_Incre.cpp:71`, `OptimizeSP_TL_Incre.cpp:218`. Polls ABSENT in the
+  3 flag=1 hot loops + the cache-path scorers (`RTACache::Evaluate` recompute,
+  `ObtainSP_DAG_From_Dists`). DECISIVE defect: the `:218` entry poll guards only
+  the baseline; `:228 OptimizeIncre_SingleTask` runs UNCONDITIONALLY with its
+  O(N) PA loop unpollled → budget escape ~10× → ~5 min for `INCR_Reopt_1`.
+- [x] **5.6b. Fix** — add `BFSharedBudgetCancelled()` polling at 4 sites
+  (committed `a6922ff5`): (1) `EvaluateTimeLimitConfig_SubIncremental:228` —
+  SKIP `OptimizeIncre_SingleTask` when the `:218` entry poll fired (highest
+  leverage); (2) `OptimizeIncre_SingleTask` PA loop (`OptimizeSP_Incre.cpp:330`)
+  — `if (BFSharedBudgetCancelled()) break;` per variation; (3)+(4)
+  (defense-in-depth) `WalkSerializedTaskQueue:349` +
+  `OptimizeSingleTaskTimeLimit_Impl:461` — break on cancel. All 4 inert outside
+  a `BFDLSharedBudget` scope + inert for the within-budget incremental path →
+  prod bit-identical. **Note:** the commit bundled 5.5b + 5.6b + the 5.5a
+  regression test (the defects are interleaved in the same file region and
+  could not be cleanly split without interactive staging). 17/17 ctest green.
+- [ ] **5.6c. Validate** — single fast reproducer: one taskset / `INCR_Reopt_1`
+  / flag=1 that previously ran 5 min → completion in ~30s = budget respected =
+  fixed. No new A/B, no TDD arc (per "speed up dev, skip TDD temporarily").
+
+## Phase 5.7 — SEPARATE ISSUE: flag=0 (prod) per-interval opt also slow at N=16
+
+> Reported by the user 2026-07-25 AFTER the flag=1 diagnosis. DISTINCT from 5.6:
+> affects the DEFAULT (flag=0) path = prod. ~5× per-interval regression
+> (under-0.1s → ~0.5s) with NO config/flag change. NOT a TIME_LIMIT escape
+> (0.5s < 1s budget) — a raw per-eval cost regression. Recorded separately so it
+> is not conflated with the flag=1 fix. See dev_log 2026-07-25 SEPARATE ISSUE.
+
+- [ ] **5.7a. Identify a known-fast ref** — find a commit the user recalls as
+  "under 0.1s" at N=16 flag=0 (likely pre-P2.9/P2.10/P2.11, before `5dfd146e`).
+  Ask the user / check the dev_log for the last timed-fast run.
+- [ ] **5.7b. Bisect** — `git bisect` from the known-fast ref to HEAD, timing
+  one N=16 flag=0 interval per step. Pin the regressing commit.
+- [ ] **5.7c. Profile (if bisect inconclusive)** — scoped timer around
+  `PerformSerializedTaskQueueOptimization` + `EvaluateTimeLimitConfig_SubIncremental`
+  (eval count × per-eval time) to split MORE-evals vs SLOWER-per-eval. Prime
+  suspects: P1.25 eager `RTACache` full-copy per eval (`:185`/`:234`); per-eval
+  double DAG rebuild (`:191`+`:203`); P1.18 Rule B `ClassifyReusePerTask`
+  over-conservative → more NoReuse recompute; P2.11 Phase 1a/3a added per-call
+  overhead in the shared walk.
+- [ ] **5.7d. Fix + validate** — address the root cause; confirm N=16 flag=0
+  per-interval opt returns to ~0.1s. DEFERRED until after the 5.6 flag=1 fix
+  lands (don't conflate the two).
+
+## Phase 5.5 — Fix the flag-on walk crash (DONE; superseded by 5.6 for the run)
+
+- [x] **5.5a. TDD regression test** — drive a real multi-task TL divergence
+  between the from-scratch reopt and the Gaussian seed (the fixture gap that let
+  the crash ship). Assert a flag-ON reopt at interval 0 does NOT throw and
+  completes the walk. **DONE 2026-07-25 (committed `a6922ff5`) as a
+  no-regression guard** — `ReoptFlagOnMultiTLFlexibleSynthetic` fixture +
+  `ReoptFlagOn_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs`: builds 2
+  TL-flexible tasks (`{100,200,300,400}` + Gaussian avg ~250 → seed=200) + a
+  `{-1}`-only T_noise; `EXPECT_NO_THROW(opt.ReOptimizePeriodic(dag_tasks, 2))`,
+  `EXPECT_GE(divergent, 2)` (pins the fixture reproduces the divergence),
+  `EXPECT_GT(subincremental_calls, 0)` (walk reached). NOT a strict RED-first
+  TDD arc (cf. P1.25 precedent) — a guard that pins the crash signature. The
+  original "skip TDD temporarily" call (2026-07-25 (2) entry) was superseded:
+  the real `p211_reopt_ab_config.json` run is too coarse to keep as a
+  regression pin. **CLEANUP NEEDED:** the test still carries a TEMP DIAGNOSTIC
+  `std::cerr` `[DIAG]` block from the divergence investigation — remove before
+  the next commit touching this test.
+- [x] **5.5b. One-line fix** — `PerformCoordinateDescentForTaskConfigOpt`:
+  `starting_time_limits = ReconstructTimeLimitVecFromResOpt();` before
+  `WalkSerializedTaskQueue`. **DONE 2026-07-25, committed `a6922ff5`** — applied
+  at `sources/Optimization/OptimizeSP_TL_Incre.cpp` (the
+  `if (use_subincremental_walk)` block before the `WalkSerializedTaskQueue`
+  call). Re-syncs the walk vector to the adopted champion TL so the first walk
+  step diffs champion-TL vs champion-TL (|diff|<=1) instead of champion-TL vs
+  Gaussian-seed-TL (>1 → throw). Mirrors the incremental path
+  (`PerformSerializedTaskQueueOptimization` establishes champion-TL ==
+  walk-start TL via `CommitIncumbent`).
+- [x] **5.5c. Rebuild + 17/17 ctest green** (`cmake --build build_test --target
+  check.SP_OPT -j5 --clean-first` — header unchanged but safe). **DONE
+  2026-07-25** — 17/17 ctest green (incl. `testIncreOpt_w_TL`); shipped in
+  `a6922ff5`.
+- [~] **5.5d. Re-run the flag=1 A/B arm** (`p211_reopt_ab_config.json`,
+  `RERUN_MODE=clear_results`, `SKIP_EVAL=1`, `BIN_DIR=release`). **DONE but
+  SUPERSEDED by 5.6** — the crash is fixed (no SIGABRT), but the run is far
+  slower than flag=0 AND blows the TIME_LIMIT budget. See Phase 5.6.
+  *(NOTE: the original 5.5d run used `BIN_DIR=build_test` — the DEBUG build,
+  ~8.5× slower, which inflated the scheduler ET and was the source of the
+  "optimization got much slower" confusion. All future A/B runs MUST use
+  `BIN_DIR=release`. Corrected 2026-07-25; see p211 config `_comment_on_bin_dir`.)*
 - [ ] **5b. Compare against pure incremental (`INCR_Reopt_∞`/no reopt)** to test
   the user's hypothesis (merged reopt ≈ current frequent reopt, sometimes worse
   than incremental).

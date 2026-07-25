@@ -85,6 +85,18 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 MODE="${MODE:-test}"
 BIN_DIR="${BIN_DIR:-release}"
+# Reject the DEBUG build (build_test) for the e2e simulation/eval path: it is
+# ~8.5x slower than release and inflates absolute scheduler ET into a
+# measurement artifact (the root cause of the "optimization got much slower"
+# investigation). Fail loudly here so neither an env var nor a downstream
+# default can sneak the DEBUG binary onto the simulation path. The e2e path
+# must use the RELEASE build (release/).
+if [[ "$(basename "${BIN_DIR}")" == "build_test" ]]; then
+    echo "ERROR: BIN_DIR='${BIN_DIR}' is the DEBUG build (build_test/), which is" >&2
+    echo "       ~8.5x slower and must NOT be used for the e2e simulation/eval path." >&2
+    echo "       Use BIN_DIR=release (the default)." >&2
+    exit 2
+fi
 VERBOSE="${VERBOSE:-1}"
 DRY_RUN="${DRY_RUN:-0}"
 PYTHON="${PYTHON:-python3}"

@@ -66,6 +66,7 @@ from simulation_experiments.experiment_config_loader import (
     build_run_root,
     DEFAULT_CONFIG_PATH,
 )
+from simulation_experiments.utils import validate_bin_dir
 
 DEFAULT_OUTPUT_PARENT = os.path.join(
     PROJECT_ROOT, "simulation_experiments", "optimizer_comparison"
@@ -459,11 +460,14 @@ def main():
     cfg = load_experiment_config(mode=args.mode, config_path=args.config_json)
 
     # Optional CLI override for the binary directory (not an experiment
-    # parameter, so it lives here rather than in the JSON config).
+    # parameter, so it lives here rather than in the JSON config). Validated
+    # hard against the DEBUG build (build_test) -- see utils.validate_bin_dir.
     if args.bin_dir is not None:
         cfg["bin_dir"] = args.bin_dir
+        validate_bin_dir(cfg["bin_dir"], source="--bin_dir CLI")
     else:
         cfg.setdefault("bin_dir", "release")
+        validate_bin_dir(cfg["bin_dir"], source="config bin_dir")
 
     output_parent = (
         args.output_parent if os.path.isabs(args.output_parent)

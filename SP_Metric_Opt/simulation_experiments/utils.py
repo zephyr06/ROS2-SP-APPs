@@ -1,8 +1,54 @@
 """Shared utilities for simulation experiment scripts."""
 import os
 import glob
+import sys
 
 from simulation_experiments.plotting_config import save_figure
+
+# The DEBUG build directory (CMAKE_BUILD_TYPE=DEBUG, lib libSP_OPTDebug.so) is
+# ~8.5x slower than release and inflates absolute scheduler ET -- it exists ONLY
+# to run ctest against the GTSAM/test infra gated by CMakeLists.txt. Running the
+# e2e simulation/eval pipeline against it produces ET numbers that are a
+# measurement artifact, not a real signal (this was the root cause of the
+# "optimization got much slower" investigation). The e2e path must use the
+# RELEASE build (release/). validate_bin_dir hard-rejects build_test at every
+# bin_dir resolution site so neither an env var, a CLI flag, nor a config JSON
+# key can sneak the DEBUG binary onto the simulation path.
+DEBUG_BUILD_DIR = "build_test"
+
+
+def validate_bin_dir(bin_dir, source=None):
+    """Reject the DEBUG build for the e2e simulation/eval path.
+
+    The C++ binaries used by the pipeline (RunOrchestrator) build in BOTH
+    ``build_test`` (DEBUG) and ``release`` (Release). Only ``release`` may feed
+    the e2e simulation/evaluation path -- the DEBUG build's ~8.5x slowdown turns
+    scheduler ET into a meaningless artifact. This guard fails loudly (exit 1)
+    rather than silently overriding, so a misconfiguration is visible instead of
+    masquerading as a real regression.
+
+    Parameters
+    ----------
+    bin_dir : str
+        The resolved binary directory (may be a bare name like ``"release"`` or
+        an absolute path). Matched on its final path component.
+    source : str, optional
+        Where the value came from (e.g. ``"BIN_DIR env"``, ``"--bin_dir CLI"``,
+        ``"config bin_dir"``), included in the error to pinpoint the culprit.
+    """
+    if bin_dir is None:
+        return bin_dir
+    leaf = os.path.basename(os.path.normpath(str(bin_dir)))
+    if leaf == DEBUG_BUILD_DIR:
+        src = f" (from {source})" if source else ""
+        print(
+            f"Error: bin_dir='{bin_dir}'{src} is the DEBUG build "
+            f"({DEBUG_BUILD_DIR}/), which is ~8.5x slower and must NOT be used "
+            f"for the e2e simulation/eval path. Use BIN_DIR=release (or "
+            f"--bin_dir release)."
+        )
+        sys.exit(1)
+    return bin_dir
 
 try:
     import matplotlib

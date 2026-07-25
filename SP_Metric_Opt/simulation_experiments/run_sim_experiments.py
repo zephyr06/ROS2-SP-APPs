@@ -27,6 +27,7 @@ from simulation_experiments.utils import (
     compute_miss_rate_by_task,
     compute_important_task_miss_rate,
     write_summary_and_plots,
+    validate_bin_dir,
 )
 
 
@@ -420,6 +421,7 @@ def main():
         args.bin_dir if args.bin_dir.startswith("/")
         else os.path.join(PROJECT_ROOT, args.bin_dir)
     )
+    validate_bin_dir(bin_dir_abs, source="--bin_dir CLI")
 
     sim_bin_path = os.path.join(bin_dir_abs, "tests", "RunOrchestrator")
 
