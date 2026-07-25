@@ -18,6 +18,9 @@ TARGET_LINK_LIBRARIES(AnalyzeSP_Metric ${CONVENIENCE_LIB_NAME})
 
 ADD_EXECUTABLE(RunOrchestrator RunOrchestrator.cpp)
 TARGET_LINK_LIBRARIES(RunOrchestrator ${CONVENIENCE_LIB_NAME})
+
+ADD_EXECUTABLE(RunSpeedTest RunSpeedTest.cpp)
+TARGET_LINK_LIBRARIES(RunSpeedTest ${CONVENIENCE_LIB_NAME})
 # CFS_RunOrchestrator_Binary (in testScheduleSimulate.cpp) shells out to the
 # RunOrchestrator binary at runtime, so it must be built alongside the test
 # group. gtsamAddTestsGlob only pulls in test*.cpp executables, not this
