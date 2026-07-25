@@ -1,7 +1,7 @@
 """Project evaluation suite -- the north-star integration test.
 
 This module is the *reporting layer* on top of the existing end-to-end
-pipeline. It does **not** run simulations (``run_simulation_and_plot_figures.sh`` does); it
+pipeline. It does **not** run simulations (``run_simulation_plot_eval_ns.sh`` does); it
 ingests the ``comparison_summary.csv`` files the simulate stage already wrote,
 normalizes SP via the shared :mod:`simulation_experiments.aggregate_across_tasks`
 helpers, and evaluates the five north-star gates from
@@ -615,7 +615,7 @@ def main(argv=None):
         description=(
             "Project evaluation suite: evaluate a completed run against the "
             "north-star gates (Q1-Q3, E1, E3). Does not run simulations -- "
-            "run scripts/run_simulation_plot_eval_ns.sh (or run_simulation_and_plot_figures.sh) first."
+            "run scripts/run_simulation_plot_eval_ns.sh first."
         )
     )
     parser.add_argument(

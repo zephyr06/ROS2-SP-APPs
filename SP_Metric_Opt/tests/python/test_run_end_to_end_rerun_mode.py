@@ -13,7 +13,7 @@ the wipe semantics:
 
 - ``reuse`` (default) is a TRUE no-op: a populated ``sim/`` tree is left
   intact. This is the contract that keeps the bare
-  ``./run_simulation_and_plot_figures.sh`` invocation unchanged.
+  ``./run_simulation_plot_eval_ns.sh`` invocation unchanged.
   invocation unchanged.
 - ``clear_all`` wipes the WHOLE ``<run_root>/sim/`` tree (generated tasksets +
   per-scheduler results + sweep variants) — exactly "remove all existing

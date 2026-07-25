@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Patch sources/parameters.yaml's TIME_LIMIT from a config's time_limit_seconds.
 
-run_simulation_and_plot_figures.sh delegates the TIME_LIMIT overwrite here so
+run_simulation_plot_eval_ns.sh delegates the TIME_LIMIT overwrite here so
 the YAML edit lives in readable Python rather than an inline awk/JSON one-liner.
 
 Why this file exists:

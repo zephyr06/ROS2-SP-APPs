@@ -175,7 +175,7 @@ class TestPaperConfigCarriesEvalKeys(unittest.TestCase):
 
 
 class TestTimeLimitConfig(unittest.TestCase):
-    """time_limit_seconds (default 1) is read by run_simulation_and_plot_figures.sh
+    """time_limit_seconds (default 1) is read by run_simulation_plot_eval_ns.sh
     and patched into sources/parameters.yaml's TIME_LIMIT before the C++ binary
     starts (the binary reads it at static init in Parameters.cpp). It bounds ONE
     optimizer call (per-activation budget), NOT the task time-limits.
@@ -187,7 +187,6 @@ class TestTimeLimitConfig(unittest.TestCase):
 
     ALL_CONFIGS = (
         "paper_simulation_config.json",
-        "compare_against_bf.json",
         "incr_et_profiling.json",
     )
 

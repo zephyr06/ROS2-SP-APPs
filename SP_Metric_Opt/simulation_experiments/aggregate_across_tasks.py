@@ -1006,7 +1006,7 @@ def main():
                   "comparison_summary.csv into each.)")
         print(
             "Run the pipeline end-to-end so simulate runs before aggregate:\n"
-            "  ./scripts/run_simulation_and_plot_figures.sh"
+            "  ./scripts/run_simulation_plot_eval_ns.sh"
         )
         sys.exit(1)
 

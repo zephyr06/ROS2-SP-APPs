@@ -1,6 +1,6 @@
 """Tests for scripts/lib/patch_time_limit.py -- the parameters.yaml TIME_LIMIT patcher.
 
-Pins the contract run_simulation_and_plot_figures.sh depends on:
+Pins the contract run_simulation_plot_eval_ns.sh depends on:
   - the first 'TIME_LIMIT:' line is rewritten in place; the rest of the file
     (incl. the trailing '# seconds' comment) is preserved byte-for-byte;
   - read fails loudly on a missing config / mode block / key / non-integer value
@@ -240,7 +240,6 @@ class TestShippedConfigsAllCarryKey(unittest.TestCase):
 
     CONFIGS = (
         "paper_simulation_config.json",
-        "compare_against_bf.json",
         "incr_et_profiling.json",
     )
 
