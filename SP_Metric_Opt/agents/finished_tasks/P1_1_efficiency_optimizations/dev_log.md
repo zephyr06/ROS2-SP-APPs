@@ -120,3 +120,36 @@
   P1.1 `tasks.md` "Done" entry, now state the measured ~3× (not ~10×) and note
   end-to-end noticeability is unmeasured. Idea 11 remains the next candidate.
 
+## 2026-07-24 — TASK CLOSED (let-go: runtime adequate)
+
+- User decision: the efficiency-optimizations task is marked DONE/CLOSED —
+  "current speed is good enough." This satisfies the task's own standing gate
+  ("pick up only if per-activation ET is a paper blocker"): no profiling evidence
+  shows ET is a paper blocker, so the deferred perf items stay deferred and the
+  task leaves the active queue.
+- Landed work that shipped: **Idea 10 (Single-Point Convolve Fast Path)** —
+  `FiniteDist::Convolve` / `ConvolveSinglePoint` + file-scope `ShiftAndCoalesce`
+  in `sources/Safety_Performance_Metric/Probability.cpp` (declared in
+  `Probability.h`), measured ~2.9–3.0× per-Convolve at Granularity 5/10/20, 16/16
+  ctest green (7 new `Convolve_SinglePoint*` tests). Everything else in
+  `goal.md`/`tasks.md` was explicitly deferred (perf, not correctness) and
+  remains deferred.
+- Deferred items carried forward (NOT implemented, by design):
+  - `PriorityPartialPath` → `const DAG_Model*` / `const SP_Parameters*` pointers
+    (`OptimizeSP_Incre.h`).
+  - Reuse one challenger across `EvaluateTimeLimitConfig_ScratchOrIncre` calls
+    (moved here from P0.5 Phase-5 issue 5h, 2026-07-10; rebuild-from-champion
+    chosen over persistent challenger — drift risk to the diff baseline).
+  - Ideas #11–#15 from the 2026-07-12 brainstorm (incremental RTA patching, drop
+    per-eval DAG/TaskSet copy, multi-fidelity coarse-granularity search, cache
+    the static TL option set across intervals, patience-bounded local 1D
+    priority search). Note: incremental RTA patching (#11 / Idea 2 priority-
+    prefix reuse) was later taken up as its own task — see
+    `finished_tasks/P1_11_incremental_rta_patching/` (Implements Idea 11) and
+    the P1.9/P1.12 RTA-cache line of work.
+- Task moved to `finished_tasks/`. Note: this folder's files are internally
+  titled "P3.1" (the original label; promoted to the P1.1 efficiency slot at
+  commit `e238e1aa`). The `idea_queue.md` referenced in the 2026-07-12/07-13
+  entries is no longer on disk (removed in a later commit) — its Idea-10 results
+  are captured above and in `tasks.md`.
+

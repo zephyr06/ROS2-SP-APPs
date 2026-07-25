@@ -1,5 +1,23 @@
 # Development Log
 
+> ## 2026-07-24 — P1.1 Efficiency Optimizations: CLOSED (let-go, runtime adequate)
+>
+> User: "current speed is good enough" → the efficiency-optimizations task
+> (`active_tasks/P1_1_efficiency_optimizations/`, internally titled P3.1) is
+> marked DONE/CLOSED and moved to `finished_tasks/P1_1_efficiency_optimizations/`.
+> Satisfies the task's own standing gate ("pick up only if per-activation ET is a
+> paper blocker") — no profiling evidence shows ET is a paper blocker, so the
+> deferred perf items stay deferred. Shipped work: Idea 10 (Single-Point Convolve
+> Fast Path, `FiniteDist::Convolve`/`ConvolveSinglePoint`+`ShiftAndCoalesce`,
+> ~3× per-Convolve, 16/16 ctest green — recorded 2026-07-13). Deferred items
+> (`PriorityPartialPath`→pointers, persistent challenger reuse, ideas #11–#15)
+> remain deferred; #11 incremental RTA patching later shipped as P1.11. The
+> three `overall_tasks.md` Deferred/P3 rows are repointed at the moved folder and
+> marked CLOSED. Note: the older stale duplicate `active_tasks/P3_1_efficiency_optimizations/`
+> (dev_log stops 2026-07-10, content a subset of the P1_1 folder) still exists on
+> disk — flagged for separate deletion. Full record:
+> `agents/finished_tasks/P1_1_efficiency_optimizations/`.
+
 > ## 2026-07-13 — P1.1 Idea 10 (Single-Point Convolve Fast Path): DONE + measured
 >
 > `FiniteDist::Convolve` (`sources/Safety_Performance_Metric/Probability.cpp`)
@@ -16,7 +34,8 @@
 > Granularity 5/10/20 — real but below the earlier ~10× estimate (the savings
 > are the eliminated temp allocations + emplace/push/move, NOT the near-free
 > `std::sort`); end-to-end noticeability unmeasured. Full record:
-> `agents/active_tasks/P1_1_efficiency_optimizations/`.
+> `agents/finished_tasks/P1_1_efficiency_optimizations/` (moved from
+> `active_tasks/` on 2026-07-24 when the task was closed).
 
 > ## 2026-07-12 — P2.3 `FiniteDist::approx_equal` dead-code cleanup: DONE (wire-up, working tree only)
 >

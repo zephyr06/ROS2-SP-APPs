@@ -14,8 +14,13 @@
       challenger in P0.5 5b — the diff baseline drift risk makes this risky).
 
 ## Done when
-- [ ] Either implemented (with `make check.SP_OPT -j5` green + `ctest` 16/16) or
+- [x] Either implemented (with `make check.SP_OPT -j5` green + `ctest` 16/16) or
       explicitly let-go with rationale recorded here
+      - **LET-GO 2026-07-24** (user): "current speed is good enough." No profiling
+        evidence shows per-activation ET is a paper blocker → the task's own gate
+        ("pick up only if P1.1 finds per-activation ET is a paper blocker") is
+        satisfied by NOT picking it up. The two items above stay deferred (perf,
+        not correctness). Task CLOSED; moved to `finished_tasks/`.
 
 ## Done
 
@@ -42,5 +47,6 @@
         sub-100 ns at Granularity=10). Zero correctness risk.
 
 ## Done when
-- [ ] Either implemented (with `make check.SP_OPT -j5` green + `ctest` 16/16) or
-      explicitly let-go with rationale recorded here
+- [x] Either implemented (with `make check.SP_OPT -j5` green + `ctest` 16/16) or
+      explicitly let-go with rationale recorded here — **LET-GO 2026-07-24**
+      (see above).
