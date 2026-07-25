@@ -37,6 +37,18 @@
 #                  and wipes ONLY the per-scheduler result subdirs, so a fresh
 #                  simulate re-runs the binary against the reused tasksets
 #                  (A/B two binaries on identical tasksets without regeneration).
+#
+# parameters.yaml TIME_LIMIT overwrite:
+#   The C++ binary reads TIME_LIMIT from sources/parameters.yaml at STATIC INIT
+#   (Parameters.cpp: YAML::LoadFile runs before main()), so the file must carry
+#   the configured value before the binary process starts. This script delegates
+#   the edit to scripts/patch_time_limit.py: it reads time_limit_seconds from the
+#   active config/mode (default 1s), backs up sources/parameters.yaml, patches
+#   the TIME_LIMIT line, and this script restores the original file on exit
+#   (normal / error / signal). Skipped on DRY_RUN. time_limit_seconds bounds ONE
+#   optimizer call (the per-activation budget a single
+#   EnumeratePA_with_TimeLimits / OptimizeIncre call runs against), NOT the task
+#   time-limits themselves.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
@@ -79,6 +91,55 @@ if [[ "${DRY_RUN}" != "1" ]]; then
 fi
 
 register_signal_trap
+
+# --- Overwrite sources/parameters.yaml TIME_LIMIT from the config ---
+# Delegates the YAML edit to scripts/patch_time_limit.py (readable Python, not
+# an inline awk/JSON one-liner). The helper backs up the original, patches only
+# the first 'TIME_LIMIT:' line (preserving the trailing comment), and prints the
+# backup path as its final stdout line -- captured here so the EXIT trap can
+# restore the original on every exit path (normal / error / signal). The C++
+# binary reads TIME_LIMIT at static init (before main()), so the patch must land
+# before the pipeline spawns the binary. No-op on DRY_RUN (nothing runs, nothing
+# is patched).
+PARAMS_YAML="${PROJECT_ROOT}/sources/parameters.yaml"
+_PARAMS_BACKUP=""
+
+restore_params_yaml() {
+    if [[ -n "${_PARAMS_BACKUP}" ]]; then
+        # Pass the captured backup path explicitly (positional: PARAMS_YAML BACKUP)
+        # so restore is not dependent on the sibling-search fallback.
+        "${PYTHON}" "${SCRIPT_DIR}/patch_time_limit.py" restore \
+            "${PARAMS_YAML}" "${_PARAMS_BACKUP}" >/dev/null 2>&1 || true
+        _PARAMS_BACKUP=""
+    fi
+}
+trap restore_params_yaml EXIT
+
+if [[ "${DRY_RUN}" != "1" ]]; then
+    if [[ ! -f "${PARAMS_YAML}" ]]; then
+        echo "ERROR: ${PARAMS_YAML} not found -- cannot set TIME_LIMIT." >&2
+        exit 2
+    fi
+    # Resolve the config path the pipeline will use: the --config_json default
+    # in run_end_to_end_experiments.py is the shipped paper_simulation_config,
+    # so fall back to it when CONFIG_JSON is unset.
+    _RESOLVED_CONFIG="${CONFIG_JSON:-${PROJECT_ROOT}/simulation_experiments/configs/paper_simulation_config.json}"
+    if [[ ! -f "${_RESOLVED_CONFIG}" ]]; then
+        echo "ERROR: config not found: ${_RESOLVED_CONFIG}" >&2
+        exit 2
+    fi
+    # `patch` reads time_limit_seconds from <MODE>_mode, backs up parameters.yaml,
+    # patches the TIME_LIMIT line, and prints the backup path as its FINAL line.
+    # Capture every line (status echo + backup path) but keep only the last for
+    # the restore trap; fail loudly (exit 2) if the helper rejects the contract.
+    _PATCH_OUT="$("${PYTHON}" "${SCRIPT_DIR}/patch_time_limit.py" patch \
+        "${_RESOLVED_CONFIG}" "${MODE}" "${PARAMS_YAML}")" || {
+        echo "${_PATCH_OUT}" >&2
+        echo "ERROR: patch_time_limit.py patch failed." >&2
+        exit 2
+    }
+    _PARAMS_BACKUP="$(printf '%s\n' "${_PATCH_OUT}" | tail -n 1)"
+fi
 
 # --- Build Python command ---
 CMD=(

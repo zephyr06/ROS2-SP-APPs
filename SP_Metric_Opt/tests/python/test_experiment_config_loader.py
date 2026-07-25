@@ -174,5 +174,37 @@ class TestPaperConfigCarriesEvalKeys(unittest.TestCase):
                 f"{mode_key} main_scheduler_list changed from the paper set: {main}")
 
 
+class TestTimeLimitConfig(unittest.TestCase):
+    """time_limit_seconds (default 1) is read by run_simulation_and_plot_figures.sh
+    and patched into sources/parameters.yaml's TIME_LIMIT before the C++ binary
+    starts (the binary reads it at static init in Parameters.cpp). It bounds ONE
+    optimizer call (per-activation budget), NOT the task time-limits.
+
+    Pins that every shipped config carries the key in BOTH modes, so the .sh
+    overwrite always resolves a real value instead of falling back to its 1s
+    default. A config missing the key is a contract break, not a silent default.
+    """
+
+    ALL_CONFIGS = (
+        "paper_simulation_config.json",
+        "compare_against_bf.json",
+        "incr_et_profiling.json",
+    )
+
+    def test_all_configs_carry_time_limit_seconds(self):
+        import json
+        for name in self.ALL_CONFIGS:
+            with open(os.path.join(CONFIGS_DIR, name)) as f:
+                raw = json.load(f)
+            for mode_key in ("test_mode", "prod_mode"):
+                self.assertIn(
+                    "time_limit_seconds", raw[mode_key],
+                    f"{name} {mode_key} missing time_limit_seconds")
+                self.assertEqual(
+                    raw[mode_key]["time_limit_seconds"], 1,
+                    f"{name} {mode_key} time_limit_seconds must be the 1s default, "
+                    f"got {raw[mode_key]['time_limit_seconds']}")
+
+
 if __name__ == "__main__":
     unittest.main()
