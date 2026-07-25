@@ -147,8 +147,89 @@ real default run root. End-to-end forwarding confirmed.
 `clear_all` mode is implemented, verified (destructive wipe confirmed against a
 populated throwaway tree), and pinned (8 TDD tests green, existing e2e tests
 green, full-stack shell→Python wiring confirmed). Working tree, NOT committed
-(`git add` only per the agent rule; user commits).
+(`git add` only per the agent rule; user commits). **Committed `8279ae0d`
+("and clear_all mode to run_e2e") on 2026-07-20.**
 
 NEXT (deferred per user scope-narrowing): Phase 2 (`clear_results` — keep
 tasksets, wipe only sim outputs) + Phase 3 (`resume` — skip stages whose
 outputs already exist).
+
+## 2026-07-24 — Phase 2 (`clear_results`) + close
+
+User: "so can we mark p1_19 as done." Verified the real state vs. the (stale)
+tracking before answering:
+
+- Phase 1 `clear_all` — committed `8279ae0d` 2026-07-20 (the tracking still
+  said "working tree, NOT committed"; corrected).
+- Phase 2a `clear_results` — committed `f0858eef` 2026-07-23 ("add clear_results
+  mode to run_e2e"). `apply_rerun_mode` handles `reuse`/`clear_all`/
+  `clear_results`; argparse choices match
+  (`run_end_to_end_experiments.py:435`). The `clear_results` branch globs
+  `tasks*_dur*_interval*_seed*/taskset_*/` and removes every SUBDIR
+  (per-scheduler results) while keeping the flat taskset artifact files
+  (generator_config.json, *.yaml, path_Et_task_*.txt) and the taskset dir
+  itself. So `compare_optimizers`'s `--skip_generation_if_exists` reuses the
+  tasksets while `--resume` re-runs every arm — exactly "remove only simulation
+  results and re-run results."
+- Phase 2b TDD pin — MISSING (8 clear_all tests, 0 clear_results tests). User
+  chose "write tests, then close."
+
+### 2b — DONE (clear_results TDD pin)
+
+Added 6 `clear_results` tests to `tests/python/test_run_end_to_end_rerun_mode.py`:
+- `test_clear_results_wipes_per_scheduler_dirs` — removes `<taskset>/INCR/`
+  and the `interval_sp_metrics.txt` (the `--resume` guard's key file).
+- `test_clear_results_keeps_taskset_artifacts` — keeps the flat artifacts
+  (`generator_config.json`, `taskset_param.yaml`, `path_Et_task_0.txt`,
+  `taskset_characteristics_0.yaml`) + the taskset dir. THIS is the contract
+  that distinguishes `clear_results` from `clear_all`.
+- `test_clear_results_keeps_figures_tree` — does NOT touch sibling `figures/`.
+- `test_clear_results_missing_sim_is_noop` + `test_clear_results_missing_run_root_is_noop`
+  — clearing never aborts the pipeline.
+- `test_clear_results_dry_run_touches_nothing` — prints "would remove", removes
+  nothing.
+
+Enriched the shared `setUp` with flat taskset artifacts (the old single-file
+tree had only `taskset_0/INCR/interval_sp_metrics.txt`, so it could pin "removes
+results" but NOT "keeps taskset artifacts" — the whole point of `clear_results`).
+The enriched tree does not affect the `clear_all` tests (they wipe everything
+regardless).
+
+**Result:** suite now 14/14 green (8 clear_all + 6 clear_results). Existing
+`test_run_end_to_end.py` still 17/17 green (no regression from the `setUp`
+change). Updated the module docstring (`--rerun_mode {reuse, clear_all,
+clear_results}`).
+
+### Phase 3 — DEFERRED, reframed (resume behavior already exists)
+
+Investigated the user's hunch "resume mode is actually supported." It is — but
+NOT as a `--rerun_mode` choice. Resume is a separate, older, config-gated
+mechanism (see `tasks.md` 3a for the full evidence chain):
+- `analysis.enable_resume_from_existing_results` (boolean, config JSON) →
+  `build_simulate_command` (`run_end_to_end_experiments.py:163`) forwards
+  `--resume` to `compare_optimizers`; the sweep forwards the same flag
+  (`interval_sweep.py:214`).
+- `compare_optimizers` skips arms whose `interval_sp_metrics.txt` exists AND
+  is non-empty (`_has_complete_metrics`, `compare_optimizers.py:279`/`:665`).
+- The sweep ALSO has its own reuse logic independent of `--resume`:
+  `_main_dir_is_fresh` (`interval_sweep.py:101`) skips re-running
+  `compare_optimizers` when a fresh `comparison_summary.csv` exists.
+- The flag is `true` in 4/6 configs (`experiment_config`,
+  `evaluation_suite_config`, `n4_perf_test`, `INCR_ET_Profiling`), `false` in 2
+  (`simulation_only_config`, `bf_n8_verify_config`).
+
+So Phase 3 as originally scoped would only ADD: (i) unconditional resume (a
+`--rerun_mode resume` choice that ignores the config flag) and (ii) stage-level
+skip for aggregate (which currently always regenerates figures — no
+skip-if-figures-exist branch). Both are convenience, not correctness; the
+common case (partial run, re-invoke same command) already works when the config
+flag is on. Deferred unless a consumer needs unconditional resume or a
+measurably costly aggregate re-run.
+
+### Close — DONE
+
+P1.19's requested code work (`clear_all` + `clear_results`) is committed and
+now fully TDD-pinned (14/14). Phase 3 reframed + deferred with justification
+(resume behavior already exists via the config-gated `--resume` flag). Task
+moved `active_tasks/` → `finished_tasks/`; `overall_tasks.md` + memory updated.
+`git add` only per the agent rule; user commits.

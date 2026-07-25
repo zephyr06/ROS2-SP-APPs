@@ -1,10 +1,11 @@
 """P1.19 — ``--rerun_mode`` policy tests for the e2e orchestrator.
 
 The end-to-end orchestrator gained a single up-front knob,
-``--rerun_mode {reuse, clear_all}`` (default ``reuse``), that decides how to
-treat prior run artifacts before the simulate/sweep/aggregate stages run. The
-policy lives in :func:`apply_rerun_mode`; it runs BEFORE any stage so it
-preempts each stage's own reuse/resume guards rather than fighting them.
+``--rerun_mode {reuse, clear_all, clear_results}`` (default ``reuse``), that
+decides how to treat prior run artifacts before the simulate/sweep/aggregate
+stages run. The policy lives in :func:`apply_rerun_mode`; it runs BEFORE any
+stage so it preempts each stage's own reuse/resume guards rather than fighting
+them.
 
 These tests pin the destructive behavior directly (no subprocess, no real
 simulation) so a future change to ``apply_rerun_mode`` cannot silently regress
@@ -17,8 +18,14 @@ the wipe semantics:
   per-scheduler results + sweep variants) — exactly "remove all existing
   generated task sets to re-run." It must NOT touch the sibling ``figures/``
   tree (figures are terminal output, not tasksets/sim results).
-- ``clear_all`` on a run root with no ``sim/`` directory is a no-op (not an
-  error) — clearing never aborts the pipeline.
+- ``clear_results`` wipes ONLY the per-scheduler result subdirs
+  (``<taskset>/<scheduler>/``) while keeping the flat taskset artifacts
+  (``generator_config.json``, ``*.yaml``, ``path_Et_task_*.txt``) and the
+  taskset dir itself — so a fresh simulate re-runs the binary against the
+  reused tasksets (A/B two binaries on identical tasksets without paying
+  taskset regeneration). It must NOT touch ``figures/``.
+- Both clear modes on a run root with no ``sim/`` directory are a no-op (not
+  an error) — clearing never aborts the pipeline.
 - ``dry_run=True`` prints the intent and touches nothing.
 - An unknown mode warns and is a no-op (defensive; argparse choices prevent
   this in practice, but the function is also called directly by tests).
@@ -49,14 +56,22 @@ class TestApplyRerunMode(unittest.TestCase):
         self.sim_dir = os.path.join(self.run_root, "sim")
         self.figures_dir = os.path.join(self.run_root, "figures")
 
-        # Populate a realistic-ish sim tree: a taskset dir + a per-scheduler
-        # result file + a sweep artifact. Plus a sibling figures/ tree that
-        # MUST survive clear_all.
-        os.makedirs(os.path.join(
-            self.sim_dir, "tasks6_dur70_interval10_seed1000", "taskset_0", "INCR"))
-        with open(os.path.join(self.sim_dir, "tasks6_dur70_interval10_seed1000",
-                               "taskset_0", "INCR", "interval_sp_metrics.txt"), "w") as f:
+        # Populate a realistic-ish sim tree: a taskset dir holding FLAT taskset
+        # artifacts (generator_config.json, path_Et_task_*.txt, *.yaml) plus a
+        # per-scheduler RESULT subdir (INCR/interval_sp_metrics.txt), and a
+        # sweep artifact. Plus a sibling figures/ tree that MUST survive
+        # clear_all/clear_results.
+        self.taskset_dir = os.path.join(
+            self.sim_dir, "tasks6_dur70_interval10_seed1000", "taskset_0")
+        os.makedirs(os.path.join(self.taskset_dir, "INCR"))
+        with open(os.path.join(self.taskset_dir, "INCR",
+                               "interval_sp_metrics.txt"), "w") as f:
             f.write("pretend metrics\n")
+        # Flat taskset artifacts (must survive clear_results; wiped by clear_all).
+        for flat in ("generator_config.json", "taskset_param.yaml",
+                     "path_Et_task_0.txt", "taskset_characteristics_0.yaml"):
+            with open(os.path.join(self.taskset_dir, flat), "w") as f:
+                f.write("pretend taskset artifact\n")
         with open(os.path.join(self.sim_dir, "sweep_dummy.txt"), "w") as f:
             f.write("pretend sweep artifact\n")
         os.makedirs(self.figures_dir)
@@ -136,6 +151,73 @@ class TestApplyRerunMode(unittest.TestCase):
                                  dry_run=False, verbose=1)
         self.assertIn("removing", buf.getvalue().lower())
         self.assertIn("sim", buf.getvalue())
+
+    # --- clear_results (keep tasksets, wipe only per-scheduler results) ---
+
+    def test_clear_results_wipes_per_scheduler_dirs(self):
+        """``clear_results`` removes every <taskset>/<scheduler>/ result dir."""
+        ok = e2e.apply_rerun_mode("clear_results", self.run_root,
+                                  dry_run=False, verbose=1)
+        self.assertTrue(ok)
+        self.assertFalse(
+            os.path.isdir(os.path.join(self.taskset_dir, "INCR")),
+            "clear_results must remove the per-scheduler result dir")
+        self.assertFalse(
+            os.path.exists(os.path.join(self.taskset_dir, "INCR",
+                                        "interval_sp_metrics.txt")),
+            "clear_results must remove the --resume guard's metrics file")
+
+    def test_clear_results_keeps_taskset_artifacts(self):
+        """``clear_results`` keeps the flat taskset artifacts + the taskset dir."""
+        e2e.apply_rerun_mode("clear_results", self.run_root,
+                             dry_run=False, verbose=1)
+        self.assertTrue(os.path.isdir(self.taskset_dir),
+                        "clear_results must keep the taskset dir")
+        for flat in ("generator_config.json", "taskset_param.yaml",
+                     "path_Et_task_0.txt", "taskset_characteristics_0.yaml"):
+            self.assertTrue(
+                os.path.exists(os.path.join(self.taskset_dir, flat)),
+                f"clear_results must keep the flat taskset artifact {flat}")
+
+    def test_clear_results_keeps_figures_tree(self):
+        """``clear_results`` must NOT touch the sibling figures/ tree."""
+        e2e.apply_rerun_mode("clear_results", self.run_root,
+                             dry_run=False, verbose=1)
+        self.assertTrue(os.path.isdir(self.figures_dir),
+                        "clear_results must not remove figures/")
+        self.assertTrue(os.path.exists(os.path.join(self.figures_dir, "fig1.png")),
+                        "clear_results must not remove figures/ contents")
+
+    def test_clear_results_missing_sim_is_noop(self):
+        """``clear_results`` on a run root with no sim/ is a no-op."""
+        run_root_no_sim = os.path.join(self.tmp, "runs", "run_with_no_sim")
+        os.makedirs(run_root_no_sim)  # exists, but no sim/ subdir
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            ok = e2e.apply_rerun_mode("clear_results", run_root_no_sim,
+                                      dry_run=False, verbose=1)
+        self.assertTrue(ok, "a missing sim/ dir must not abort the pipeline")
+        self.assertIn("nothing to clear", buf.getvalue())
+
+    def test_clear_results_missing_run_root_is_noop(self):
+        """``clear_results`` on a non-existent run root is a no-op."""
+        missing = os.path.join(self.tmp, "runs", "never_created")
+        self.assertFalse(os.path.exists(missing))
+        ok = e2e.apply_rerun_mode("clear_results", missing,
+                                  dry_run=False, verbose=1)
+        self.assertTrue(ok)
+
+    def test_clear_results_dry_run_touches_nothing(self):
+        """``clear_results`` with dry_run=True prints intent, removes nothing."""
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            ok = e2e.apply_rerun_mode("clear_results", self.run_root,
+                                      dry_run=True, verbose=1)
+        self.assertTrue(ok)
+        self.assertTrue(
+            os.path.isdir(os.path.join(self.taskset_dir, "INCR")),
+            "dry_run must not remove any result dir")
+        self.assertIn("would remove", buf.getvalue())
 
     # --- dry_run ---
 
