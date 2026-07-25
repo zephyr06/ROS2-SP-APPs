@@ -409,6 +409,12 @@ def main():
     cfg = load_experiment_config(mode=args.mode, config_path=args.config_json)
 
     num_tasks = args.num_tasks if args.num_tasks is not None else cfg.get("num_tasks_for_single_task_figures", 6)
+    # 0 = opt out of the single-task sweep entirely (no Fig 2, no N sim).
+    # Honored here so a direct ``python -m simulation_experiments.interval_sweep``
+    # invocation respects the same opt-out as the e2e stage_sweep.
+    if num_tasks == 0:
+        print("num_tasks_for_single_task_figures=0; skipping interval sweep (Fig 2).")
+        return
     n_tasksets = args.n_tasksets if args.n_tasksets is not None else cfg.get("num_tasksets_to_generate", 2)
     n_sec = args.n_sec if args.n_sec is not None else cfg.get("simulation_duration_seconds", 30)
     interval_list = cfg.get("interval_sweep_seconds_list", [5, 10])

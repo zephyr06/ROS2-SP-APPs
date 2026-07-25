@@ -377,6 +377,16 @@ def stage_simulate(cfg, output_parent, run_root, verbose, dry_run):
 
 def stage_sweep(cfg, output_parent, verbose, dry_run):
     """Run the trigger-interval sweep stage (Figure 2)."""
+    # num_tasks_for_single_task_figures == 0 opts out of the single-task
+    # sweep + figures: the sweep's N comes from this key, so 0 means "don't
+    # run the sweep stage at all" (no Fig 2, no extra N sim). The cross-task
+    # figures (driven by num_tasks_for_cross_task_comparison) are unaffected --
+    # aggregate still runs and still emits Fig 1A-1E from the main sim.
+    if cfg.get("num_tasks_for_single_task_figures", 6) == 0:
+        _print_header(
+            "STAGE 2/3: SWEEP  -- SKIPPED (num_tasks_for_single_task_figures=0)"
+        )
+        return True
     intervals = cfg.get("interval_sweep_seconds_list", [5, 10])
     _print_header(
         f"STAGE 2/3: SWEEP  -- intervals {intervals} "

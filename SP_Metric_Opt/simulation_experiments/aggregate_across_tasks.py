@@ -671,6 +671,10 @@ def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
         return
 
     target_tasks = cfg.get("num_tasks_for_single_task_figures", 6)
+    # 0 = opt out of the single-task figures (paired with the sweep skip).
+    if target_tasks == 0:
+        print("num_tasks_for_single_task_figures=0; skipping Fig 3.")
+        return
     scheduler_list = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
 
@@ -797,6 +801,10 @@ def generate_distribution_boxplot(cfg, figures_dir=None, run_root=None):
         return
 
     target_tasks = cfg.get("num_tasks_for_single_task_figures", 6)
+    # 0 = opt out of the single-task figures (paired with the sweep skip).
+    if target_tasks == 0:
+        print("num_tasks_for_single_task_figures=0; skipping Fig 1F.")
+        return
     scheduler_list = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
 

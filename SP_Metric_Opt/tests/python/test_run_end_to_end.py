@@ -218,6 +218,40 @@ class TestMainPipeline(unittest.TestCase):
         expected_simulate = len(cfg["num_tasks_for_cross_task_comparison"])
         self.assertEqual(mock_rc.call_count, expected_simulate + 2)
 
+    def test_single_task_figures_zero_skips_sweep(self):
+        """num_tasks_for_single_task_figures=0 opts out of the single-task
+        sweep (Fig 2) and the single-task figures (Fig 1F/3). The sweep stage
+        returns early without building a command, so run_command is called once
+        FEWER (simulate + aggregate only, no sweep). The cross-task figures are
+        unaffected -- aggregate still runs.
+        """
+        cfg = _cfg("test")
+        cfg["num_tasks_for_single_task_figures"] = 0
+        with unittest.mock.patch.object(e2e, "load_experiment_config",
+                                        return_value=cfg), \
+             unittest.mock.patch.object(sys, "argv",
+                                        ["prog", "--mode", "test", "--dry_run"]), \
+             unittest.mock.patch.object(e2e, "run_command", return_value=True) as mock_rc, \
+             unittest.mock.patch.object(e2e, "time") as mock_time:
+            mock_time.time.return_value = 0.0
+            try:
+                e2e.main()
+                exit_code = 0
+            except SystemExit as exc:
+                exit_code = exc.code
+        self.assertEqual(exit_code, 0)
+        # simulate (once per cross-task count) + aggregate; sweep SKIPPED.
+        expected = len(cfg["num_tasks_for_cross_task_comparison"]) + 1
+        self.assertEqual(mock_rc.call_count, expected)
+        # The aggregate command still runs (cross-task figures unaffected);
+        # the sweep command is NOT built (early return). run_command(cmd, ...)
+        # -> cmd is the first positional arg (an argv list), so join to a str.
+        cmds = [" ".join(c.args[0]) for c in mock_rc.call_args_list]
+        self.assertTrue(any("aggregate_across_tasks" in cmd for cmd in cmds),
+                        "aggregate stage must still run")
+        self.assertFalse(any("interval_sweep" in cmd for cmd in cmds),
+                         "sweep stage must be skipped")
+
     def test_steps_flag_rejected(self):
         # --steps was removed; argparse must reject it (unrecognized arg).
         argv = ["prog", "--mode", "test", "--dry_run", "--steps", "simulate"]

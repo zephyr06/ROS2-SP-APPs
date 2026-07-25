@@ -1,0 +1,38 @@
+{
+    "_comment": "P2.11 Phase 5 A/B config: current-default reopt (flag OFF, legacy full-beam walk) vs merged reopt (flag ON, sub-incremental walk + Type-E in the serialized queue). Single task count N=16, 10 tasksets, two arms. The flag is ReoptimizationUseSubIncrementalWalk in sources/parameters.yaml (line 46), read at static init by Parameters.cpp -- process-wide, so flag 0 vs flag 1 = TWO separate .sh runs with the YAML value flipped between them (no rebuild; the same build_test binary reads the flag from YAML at startup). Run order: (1) flag=0 run with RERUN_MODE=clear_all, (2) cp comparison_summary.csv aside, (3) flip YAML flag 0->1, (4) flag=1 run with RERUN_MODE=clear_results (reuses the identical seeded tasksets, re-simulates with the flag on), (5) cp comparison_summary.csv aside, (6) flip YAML flag back to 0. Compare the two saved CSVs (Mean_SP_Metric + Mean_Scheduler_Execution_Time_s per arm). SKIP_EVAL=1 because the north-star gates need BF/CFS/RM_FAST/RM_SLOW (not simulated here) and would report MISSING; this run is a focused 2-arm A/B, not a gate run. enable_resume_from_existing_results is deliberately FALSE so the flag=1 run re-simulates every arm instead of skipping the flag=0 results left on disk.",
+    "_comment_on_arms": "INCR_Reopt_1 = reopt every interval (max-reopt stress; the flag affects every interval). INCR_Reopt_10 = reopt every 10th interval (realistic; the flag affects only every 10th). The flag only changes the ReOptimizePeriodic path; the incremental path (the other 9/10 intervals) is identical. So INCR_Reopt_1 shows the maximal flag effect, INCR_Reopt_10 shows the realistic effect. Both arms run under both flags = 4 data points per taskset. arms = main_scheduler_list only (ablation_scheduler_list empty) so the simulate union is exactly these two.",
+    "_comment_on_bin_dir": "Use BIN_DIR=build_test (the DEBUG build, CMAKE_BUILD_TYPE=DEBUG). The .sh build stage runs 'make -j6' in BIN_DIR -- a fast no-op against the already-current binary (built Jul 25 11:38, after Phase 1a). DEBUG magnifies absolute ET but both flags run the same DEBUG binary, so the SP and relative-ET comparison is fair. lib = libSP_OPTDebug.so.",
+
+    "test_mode": {
+        "num_tasks_for_cross_task_comparison": [8],
+        "num_tasks_for_single_task_figures": 0,
+        "num_tasksets_to_generate": 1,
+        "simulation_duration_seconds": 100,
+        "scheduler_trigger_interval_seconds": 10,
+        "time_limit_seconds": 1,
+        "main_scheduler_list": ["INCR_Reopt_1", "INCR_Reopt_10"],
+        "ablation_scheduler_list": [],
+        "interval_sweep_seconds_list": [10],
+        "_comment_interval_sweep": "num_tasks_for_single_task_figures=0 opts out of the single-task sweep + figures (Fig 2/3/1F). NOTE: the sweep's reuse_matching_interval keys on N; since the sweep N (= this key, here 0=skipped) need not equal the main N (num_tasks_for_cross_task_comparison=[8]), a non-zero value here would NOT reuse the main-step dir and would run a FULL extra N sim. So 0 here is both the opt-out AND avoids that extra sim cost. The e2e pipeline still runs sweep->aggregate structurally, but both stages no-op cleanly when this is 0.",
+        "parallel_worker_processes": 4,
+        "enable_execution_time_profiling": true,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1
+    },
+
+    "plotting": {
+        "run_name_prefix": ""
+    },
+
+    "analysis": {
+        "important_task_top_percentage": 0.10,
+        "minimum_important_tasks_count": 1,
+        "discard_early_intervals_for_sp_computation": 0,
+        "enable_resume_from_existing_results": false,
+        "skip_generation_if_exists": true,
+        "on_taskset_config_change": "prompt",
+        "normalize_sp": true,
+        "sp_normalization_method": "upper_bound"
+    }
+}
