@@ -158,6 +158,18 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
         double baseline_val, int step, int patience,
         std::function<double(const std::vector<double>&)> eval);
 
+    // One task's sub-incremental TL walk: builds the sub-incremental eval lambda
+    // (binding EvaluateTimeLimitConfig_SubIncremental) and runs the backward
+    // (step=-1) then forward (step=+1) passes over OptimizeSingleTaskTimeLimit_Impl,
+    // finally syncing the working TL vector to the adopted champion. Shared by the
+    // incremental serialized queue (PerformSerializedTaskQueueOptimization Type-L
+    // body) and the reopt sub-incremental arm (PerformCoordinateDescentForTaskConfigOpt
+    // when ReoptimizationUseSubIncrementalWalk is on) — both ran this exact block
+    // inline, differing only in the task_idx source.
+    double OptimizeOneTaskTimeLimit(
+        int K, size_t task_idx, std::vector<double>& starting_time_limits,
+        double current_config_sp, double baseline_val, int patience);
+
     // Fast path when disable_time_limit_opt is set: pin every TL to its smallest
     // option and evaluate that single config (no descent).
     PriorityVec OptimizeWithTimeLimitOptDisabled(

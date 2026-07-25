@@ -380,24 +380,9 @@ void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
             starting_time_limits = ReconstructTimeLimitVecFromResOpt();
         } else {
             // Type-L: TL walk, each step calling the sub-incremental eval.
-            // et_increased per step = sign of (trial TL − committed TL).
-            double baseline_val = starting_time_limits[entry.task_id];
-            size_t task_idx = static_cast<size_t>(entry.task_id);
-            int K_cap = K;
-            auto eval = [this, K_cap, task_idx,
-                         baseline_val](const std::vector<double>& tl) {
-                bool et_up = tl[task_idx] > baseline_val;
-                return EvaluateTimeLimitConfig_SubIncremental(K_cap, tl,
-                                                              task_idx, et_up);
-            };
-            // Backward pass (smaller TL), then forward pass from the same origin.
-            current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
-                task_idx, starting_time_limits, current_config_sp, baseline_val,
-                /*step=*/-1, patience, eval);
-            current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
-                task_idx, starting_time_limits, current_config_sp, baseline_val,
-                /*step=*/1, patience, eval);
-            starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+            current_config_sp = OptimizeOneTaskTimeLimit(
+                K, static_cast<size_t>(entry.task_id), starting_time_limits,
+                current_config_sp, starting_time_limits[entry.task_id], patience);
         }
     }
     opt_pa_ = res_opt_.priority_vec;
@@ -482,6 +467,33 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit_Impl(
     return best_sp;
 }
 
+double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskTimeLimit(
+    int K, size_t task_idx, std::vector<double>& starting_time_limits,
+    double current_config_sp, double baseline_val, int patience) {
+    // Sub-incremental walk: each trial TL calls the cache-routed
+    // EvaluateTimeLimitConfig_SubIncremental (re-scores the carried PA + 1D
+    // single-task re-search), reusing the incremental path's machinery.
+    // et_increased per step = sign of (trial TL − committed TL).
+    int K_cap = K;
+    auto eval = [this, K_cap, task_idx,
+                 baseline_val](const std::vector<double>& tl) {
+        bool et_up = tl[task_idx] > baseline_val;
+        return EvaluateTimeLimitConfig_SubIncremental(K_cap, tl, task_idx, et_up);
+    };
+    // Backward pass (tie-break toward smaller TL on SP ties via step<0), then a
+    // forward pass from the same origin.
+    current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
+        task_idx, starting_time_limits, current_config_sp, baseline_val,
+        /*step=*/-1, patience, eval);
+    current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
+        task_idx, starting_time_limits, current_config_sp, baseline_val,
+        /*step=*/1, patience, eval);
+    // Keep the working TL vector tracking the committed best so the next task's
+    // baseline reflects any adoption.
+    starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+    return current_config_sp;
+}
+
 void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     int K, std::vector<double>& starting_time_limits, bool from_scratch) {
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
@@ -537,30 +549,11 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
 
         double baseline_val = starting_time_limits[idx];
         if (use_subincremental_walk) {
-            // Sub-incremental walk: each trial TL calls the cache-routed
-            // EvaluateTimeLimitConfig_SubIncremental (re-scores the carried PA +
-            // 1D single-task re-search), reusing the incremental path's machinery.
-            // et_increased per step = sign of (trial TL − committed TL), matching
-            // PerformSerializedTaskQueueOptimization's Type-L body.
-            size_t task_idx = idx;
-            int K_cap = K;
-            auto eval = [this, K_cap, task_idx,
-                         baseline_val](const std::vector<double>& tl) {
-                bool et_up = tl[task_idx] > baseline_val;
-                return EvaluateTimeLimitConfig_SubIncremental(K_cap, tl, task_idx,
-                                                              et_up);
-            };
-            // Backward pass (tie-break toward smaller TL on SP ties via step<0),
-            // then a forward pass from the same origin.
-            current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
-                task_idx, starting_time_limits, current_config_sp, baseline_val,
-                /*step=*/-1, patience, eval);
-            current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
-                task_idx, starting_time_limits, current_config_sp, baseline_val,
-                /*step=*/1, patience, eval);
-            // Keep the working TL vector tracking the committed best so the next
-            // task's baseline reflects any adoption (mirrors the serialized loop).
-            starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+            // Sub-incremental walk: shared with the incremental serialized queue's
+            // Type-L body (see PerformSerializedTaskQueueOptimization).
+            current_config_sp = OptimizeOneTaskTimeLimit(
+                K, idx, starting_time_limits, current_config_sp, baseline_val,
+                patience);
         } else {
             // Legacy walk: full-beam eval per trial TL (OptimizeFromScratch).
             // Backward pass (tie-break toward smaller TL on SP ties via step<0),
