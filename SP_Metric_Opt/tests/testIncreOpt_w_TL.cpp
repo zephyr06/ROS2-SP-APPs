@@ -1071,6 +1071,14 @@ class CounterDispatcherSynthetic : public ::testing::Test {
         // lever-A walk routes every trial here. So subincremental_calls>0 after
         // a reopt descent is the lever-A routing signal.
         int subincremental_calls = 0;
+        // P2.11: the task_idx of every sub-incremental call, in call order. The
+        // reopt sub-incremental arm historically walked sorted_indices and
+        // skipped {-1}-only tasks, so an env-changed task with no perf pairs was
+        // never reached. The merged arm walks the E+L serialized queue, whose
+        // Type-E handler calls SubIncremental directly on the env-changed task.
+        // So a task_idx appearing here that the legacy arm skipped is the
+        // Type-E-handling signal.
+        std::vector<size_t> subincremental_task_idx;
         using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
         double EvaluateTimeLimitConfig_ScratchOrIncre(
             int K, const std::vector<double>& time_limits,
@@ -1084,6 +1092,7 @@ class CounterDispatcherSynthetic : public ::testing::Test {
             int K, const std::vector<double>& time_limits, size_t task_idx,
             bool et_increased) override {
             ++subincremental_calls;
+            subincremental_task_idx.push_back(task_idx);
             return OptimizePA_Incre_with_TimeLimits::
                 EvaluateTimeLimitConfig_SubIncremental(K, time_limits, task_idx,
                                                        et_increased);
@@ -1263,6 +1272,69 @@ TEST_F(CounterDispatcherSynthetic,
         << "lever-A reopt walk must route its per-candidate trials through the "
         << "sub-incremental eval; saw zero calls (the walk did not run, or ran "
         << "through the legacy ScratchOrIncre path instead).";
+}
+
+// P2.11 reading (a) — Type-E in the reopt queue. The merged reopt path walks the
+// SAME E+L serialized queue the incremental path uses (BuildSerializedTaskQueue),
+// so an env-changed task with NO perf pair (T_noise, task 1) is reached via its
+// Type-E entry and re-searched through EvaluateTimeLimitConfig_SubIncremental.
+//
+// The legacy reopt sub-incremental arm walks sorted_indices and skips {-1}-only
+// tasks (T_noise has no perf pair → {-1}-only → skipped), so it NEVER reaches an
+// env-changed T_noise. This test pins the merge: after a flag-ON reopt on a DAG
+// whose T_noise ET changed since the previous interval, the recorded
+// subincremental_task_idx must contain T_noise's index (1). Today it does not
+// (legacy arm skips it, AND ReOptimizePeriodic does not even capture the pre-
+// absorb DAG for the Type-E diff) → fails RED until both gaps close.
+//
+// Direct ReOptimizePeriodic calls (the counter routing is pinned by the tests
+// above; this targets the reopt path's queue contents). Bootstrap on the
+// original DAG establishes the incumbent; a second reopt on an env-changed DAG
+// is the reopt under test. The env change (T_noise ET 50 → 1234) is fresh: the
+// previous interval's dag_tasks_ is the original DAG, the reopt's update is the
+// env-changed DAG → FindEnvTaskWithDifferentEt flags T_noise as Type-E.
+TEST_F(CounterDispatcherSynthetic,
+       ReoptWalk_LeverA_On_ReachesEnvChangedTaskViaSerializedQueue) {
+    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 1;
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+
+    // Bootstrap the incumbent on the original DAG (T_noise ET ~ 50). With the
+    // flag ON this already uses the sub-incremental arm; on the bootstrap there
+    // is no env change (prev == update), so only T_perf's Type-L walk runs.
+    opt.ReOptimizePeriodic(dag_tasks, 2);
+    ASSERT_TRUE(opt.IfInitialized());
+
+    // Drop the bootstrap's recorded calls so only the second reopt's routing is
+    // observed.
+    opt.subincremental_calls = 0;
+    opt.subincremental_task_idx.clear();
+    opt.from_scratch_flags.clear();
+
+    // Env change: T_noise (task 1, no perf pair → {-1}-only, so the TL-flexible
+    // filter does NOT exclude it from FindEnvTaskWithDifferentEt) ET moved from
+    // ~50 to 1234. The merged E+L queue must emit a Type-E entry for it.
+    DAG_Model dag_env_changed = dag_tasks;
+    dag_env_changed.tasks[1].execution_time_dist =
+        GetUnitExecutionTimeDist(1234.0);
+
+    // The reopt under test: previous interval's dag_tasks_ is the original DAG,
+    // this call's update is the env-changed DAG.
+    opt.ReOptimizePeriodic(dag_env_changed, 2);
+
+    // The merged reopt arm walks the E+L serialized queue. T_noise's ET change
+    // is Type-E → its handler calls SubIncremental with task_idx == 1 (T_noise).
+    // The legacy arm skips {-1}-only tasks → never reaches T_noise → this fails.
+    bool reached_t_noise = false;
+    for (size_t idx : opt.subincremental_task_idx) {
+        if (idx == 1) reached_t_noise = true;
+    }
+    EXPECT_TRUE(reached_t_noise)
+        << "P2.11 merge: a flag-ON reopt on a DAG with an env-changed T_noise "
+        << "(no perf pair, Type-E) must reach T_noise via the E+L serialized "
+        << "queue's Type-E handler (SubIncremental call with task_idx==1). The "
+        << "legacy reopt arm skips {-1}-only tasks and never reaches it. "
+        << "Recorded subincremental_task_idx: "
+        << ::testing::PrintToString(opt.subincremental_task_idx);
 }
 
 // INCR diff-baseline invariant (P0.5 redesign). The whole point of carrying an

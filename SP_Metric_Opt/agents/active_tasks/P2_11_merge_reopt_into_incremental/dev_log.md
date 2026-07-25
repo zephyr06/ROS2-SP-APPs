@@ -145,3 +145,69 @@ re-optimize the PA). Avoids inventing new terminology.
 **Status:** awaiting user review + commit as a standalone modular step BEFORE
 the behavior-changing merge. Per agent_coding_rules.md "work by module, commit
 by module." The merge (Phases 1-3) builds on this renamed symbol.
+
+## 2026-07-25 — Phase 3a+3b landed (Type-E in the reopt queue, flag-gated)
+
+### State correction first (do NOT trust the design docs' symbol names)
+HEAD is `e986f132`, not `6f7ed838`. The P2.10 13-fn rename + the Phase 0.5
+`_PAReopt` rename were BOTH reverted. The code retains OLD names:
+`ReOptimizePeriodic`, `PerformCoordinateDescentForTaskConfigOpt`,
+`PerformSerializedTaskQueueOptimization`, `EvaluateTimeLimitConfig_ScratchOrIncre`,
+`EvaluateTimeLimitConfig_SubIncremental`, `OptimizeSingleTaskTimeLimit(_Impl)`.
+Only the helper extraction rename survived: `OptimizeOneTaskTimeLimit` (was
+`WalkOneTaskTimeLimit_SubIncremental`). The P2.11 design docs (goal.md/tasks.md)
+are written against the dropped rename table (`RunIntervalDescent`,
+`_PAReopt`, `_SingleTaskPatch`, `WalkOneTaskTimeLimit_FullBeam`) — these symbols
+do NOT exist. All implementation work uses the real names.
+
+### What landed
+The ONE genuine delta of reading (a): the reopt sub-incremental arm (P2.9
+flag-on) now walks the SAME E+L serialized queue the incremental path uses, so
+env-changed tasks with no perf pair (Type-E) are reached.
+
+- **3a (plumb):** `ReOptimizePeriodic` captures `dag_tasks_prev_pre_tl` before
+  absorbing `dag_tasks_update` (it previously did not — the Type-E diff source
+  was missing on the reopt path) and passes it as a REQUIRED arg to
+  `PerformCoordinateDescentForTaskConfigOpt` (no default, per the optional-arg
+  coding rule — a forgotten default would silently skip Type-E).
+- **3b (TDD):** `ReoptWalk_LeverA_On_ReachesEnvChangedTaskViaSerializedQueue`.
+  Fixture `CounterDispatcherSynthetic` (pins `ReoptimizationPeriod=10`); env
+  change = T_noise (task 1, no perf pair → `{-1}`-only) ET 50→1234. Asserts a
+  flag-ON reopt drives a `SubIncremental` call with `task_idx==1`. RED first
+  (`subincremental_task_idx: {0,0}` — T_noise skipped by `sorted_indices`),
+  GREEN after the fix. Extended the `RecordingDispatcherOpt` seam to record
+  `subincremental_task_idx`.
+- **Implementation:** the flag-on arm of `PerformCoordinateDescentForTaskConfigOpt`
+  now builds `serialized_queue = BuildSerializedTaskQueue(dag_tasks_prev_pre_tl)`
+  and walks it with the SAME Type-E/Type-L dispatch as
+  `PerformSerializedTaskQueueOptimization` (Type-E → `SubIncremental` at the
+  committed TL; Type-L → `OptimizeOneTaskTimeLimit`). The legacy (flag-OFF) arm
+  is unchanged — still `sorted_indices` + `OptimizeSingleTaskTimeLimit`.
+
+### Scope / safety
+- **Flag-gated, default OFF → prod path bit-identical.** Only the P2.9 flag-on
+  path changed. This is the P2.11 merge's first concrete step, staged behind
+  the existing flag so the default reopt algorithm is untouched until the A/B.
+- **Cache contract holds:** the flag-on arm already re-arms `rta_cache_active_`
+  + adopts the baseline champion (P2.9); the Type-E handler's `|diff|==0`
+  (Phase 0d) and the Type-L `OptimizeOneTaskTimeLimit`'s `|diff|==1` are
+  unchanged. `dag_tasks_prev_pre_tl` captured before the absorb (Phase 3a) is
+  exactly the precondition Phase 0d named.
+- 17/17 ctest green.
+
+### NOT done (remaining P2.11 phases)
+- Phase 0.5 (`_PAReopt` rename) — re-decide; code still has
+  `EvaluateTimeLimitConfig_ScratchOrIncre`. NOT a blocker for the merge.
+- Phase 1 (unified descent body `RunIntervalDescent(mode)`) — the dedup of the
+  two descent bodies. The flag-on arm now shares the Type-E/Type-L dispatch
+  with the incremental path (factored into a local lambda); a follow-up can
+  extract that into the shared `WalkSerializedTaskQueue` helper (Phase 1/2).
+- Phase 2 (delete legacy full-beam arm `OptimizeSingleTaskTimeLimit` +
+  `ReoptimizationUseSubIncrementalWalk` flag) — only AFTER the A/B accepts the
+  merge.
+- Phase 4-6 (build+verify done; A/B experiment at N=16 `INCR_Reopt_1`/`_10`
+  flag 0 vs 1; closeout).
+
+### Status
+Awaiting user review + commit of this flag-gated Type-E step as a standalone
+modular commit. Per "work by module, commit by module."

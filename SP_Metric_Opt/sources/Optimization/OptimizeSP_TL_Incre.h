@@ -132,9 +132,13 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // res_opt_ (ReconstructTimeLimitVecFromResOpt) — the optimizer's own prior
     // output. The Gaussian-mean TL (InitializeTimeLimitsFromETConfig) is the
     // interval-0 fallback only (no incumbent).
+    // `dag_tasks_prev_pre_tl` is the pre-absorb DAG captured before
+    // ReOptimizePeriodic absorbed dag_tasks_update; it is the Type-E diff source
+    // for BuildSerializedTaskQueue on the flag-on (sub-incremental) arm. Unused
+    // on the legacy (full-beam) arm, which walks sorted_indices.
     void PerformCoordinateDescentForTaskConfigOpt(
-        int K, std::vector<double>& starting_time_limits,
-        bool from_scratch = false);
+        int K, std::vector<double>& starting_time_limits, bool from_scratch,
+        const DAG_Model& dag_tasks_prev_pre_tl);
 
     // Unidirectional trial-and-error walk for one task's TL. Steps outward from
     // `baseline_val` (a member of the option set, else no-op) in direction

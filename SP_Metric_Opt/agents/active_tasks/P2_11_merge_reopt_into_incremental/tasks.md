@@ -67,12 +67,28 @@
 
 ## Phase 3 — Type-E in the reopt queue (reading (a) only)
 
-- [ ] **3a. Plumb `dag_prev_pre_tl` into `OptimizeIntervalFromScratch`** so
+- [x] **3a. Plumb `dag_prev_pre_tl` into `OptimizeIntervalFromScratch`** so
   `BuildSerializedTaskQueue` can diff champion DAG vs new DAG and emit Type-E
-  entries on the reopt path.
-- [ ] **3b. TDD** — a `CounterDispatcherSynthetic` test asserting a reopt
+  entries on the reopt path. **DONE 2026-07-25** — `ReOptimizePeriodic` now
+  captures `dag_tasks_prev_pre_tl` before absorbing `dag_tasks_update` and
+  passes it (required arg, no default per the optional-arg rule) to
+  `PerformCoordinateDescentForTaskConfigOpt`. Real symbol names retained (the
+  P2.10/P2.11 rename table was reverted; code keeps
+  `ReOptimizePeriodic`/`PerformCoordinateDescentForTaskConfigOpt`/
+  `EvaluateTimeLimitConfig_ScratchOrIncre`/`_SubIncremental`).
+- [x] **3b. TDD** — a `CounterDispatcherSynthetic` test asserting a reopt
   dispatch with an env-changed task produces Type-E entries (queue contains an
-  `EnvChanged` kind for the moved task).
+  `EnvChanged` kind for the moved task). **DONE 2026-07-25** —
+  `ReoptWalk_LeverA_On_ReachesEnvChangedTaskViaSerializedQueue`: a flag-ON
+  reopt on a DAG with an env-changed T_noise (no perf pair → `{-1}`-only,
+  skipped by the legacy `sorted_indices` arm) must drive a
+  `EvaluateTimeLimitConfig_SubIncremental` call with `task_idx==1`. Went RED
+  first (`subincremental_task_idx: { 0, 0 }` — T_noise never reached), then
+  GREEN after the flag-on arm walked `BuildSerializedTaskQueue(dag_tasks_prev_pre_tl)`
+  with the same Type-E/Type-L dispatch as `PerformSerializedTaskQueueOptimization`.
+  The `RecordingDispatcherOpt` seam was extended to record
+  `subincremental_task_idx`. 17/17 ctest green. **Flag-gated (default OFF) →
+  prod path bit-identical; only the flag-on path changed.**
 
 ## Phase 4 — Build + verify
 

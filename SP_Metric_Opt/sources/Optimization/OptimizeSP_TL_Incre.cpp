@@ -495,7 +495,8 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskTimeLimit(
 }
 
 void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
-    int K, std::vector<double>& starting_time_limits, bool from_scratch) {
+    int K, std::vector<double>& starting_time_limits, bool from_scratch,
+    const DAG_Model& dag_tasks_prev_pre_tl) {
     std::vector<size_t> sorted_indices(dag_tasks_.tasks.size());
     std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
     std::sort(sorted_indices.begin(), sorted_indices.end(),
@@ -507,13 +508,14 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
                        ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
                        : GlobalVariables::IncrementalTimeLimitSearchPatience;
 
-    // P2.9 lever A: when the flag is on AND this is the from-scratch/reopt
-    // descent, route the per-task TL walk through the sub-incremental eval
-    // (cache-routed, |diff|<=1 single-task re-search) instead of the legacy
-    // full-beam eval. The incremental (warm-started) path already uses the
-    // sub-incremental machinery directly (PerformSerializedTaskQueueOptimization),
-    // so this only re-arms the reopt descent's walk — the common case where a
-    // single-task TL change does not shift the global optimum PA by >1 task.
+    // P2.9 lever A + P2.11 merge: when the flag is on AND this is the
+    // from-scratch/reopt descent, the reopt TL walk mirrors the incremental
+    // path's serialized E+L queue (BuildSerializedTaskQueue) instead of the
+    // legacy full-beam eval over sorted_indices. The E+L queue's Type-E entries
+    // (env-changed tasks with no perf pair, which sorted_indices skips as
+    // {-1}-only) are reached via the sub-incremental handler — strictly more
+    // targeted than the legacy arm, which never sees them. This is the one
+    // genuine delta of the P2.11 "reopt = incremental path + ..." merge.
     // NOT bit-identical to the legacy from-scratch-per-candidate walk (reopt's
     // PA search can be non-unimodal at high util); gated, default OFF.
     // See parameters.yaml for the trade-off.
@@ -541,20 +543,47 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
         rta_cache_.AdoptChampion(dag_tasks_, opt_pa_, champion_tl, champ_rtas);
     }
 
-    for (size_t idx : sorted_indices) {
-        // Skip {-1}-only tasks (no perf pairs → no TL freedom).
-        const std::vector<double>& opts = time_limit_option_for_each_task_[idx];
-        if (opts.size() == 1 && opts[0] == -1.0)
-            continue;
+    // The flag-on arm walks the merged E+L serialized queue (Type-E + Type-L,
+    // weight-sorted) — the SAME queue the incremental path uses — so env-changed
+    // tasks with no perf pair are reached via their Type-E entry. The legacy arm
+    // walks sorted_indices (Type-L only; {-1}-only tasks skipped at line below).
+    std::vector<SerializedTaskQueueEntry> serialized_queue;
+    if (use_subincremental_walk) {
+        serialized_queue = BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
+    }
 
-        double baseline_val = starting_time_limits[idx];
-        if (use_subincremental_walk) {
-            // Sub-incremental walk: shared with the incremental serialized queue's
-            // Type-L body (see PerformSerializedTaskQueueOptimization).
-            current_config_sp = OptimizeOneTaskTimeLimit(
-                K, idx, starting_time_limits, current_config_sp, baseline_val,
-                patience);
-        } else {
+    auto walk_serialized_entry =
+        [&](const SerializedTaskQueueEntry& entry) {
+            if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
+                // Type-E: sub-incremental re-search at the committed TL (no TL
+                // walk). et_increased = the env-move direction carried on the
+                // entry. Identical to the incremental path's Type-E handler.
+                current_config_sp = EvaluateTimeLimitConfig_SubIncremental(
+                    K, starting_time_limits,
+                    static_cast<size_t>(entry.task_id), entry.et_increased);
+                starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+            } else {
+                // Type-L: TL walk, each step calling the sub-incremental eval.
+                current_config_sp = OptimizeOneTaskTimeLimit(
+                    K, static_cast<size_t>(entry.task_id), starting_time_limits,
+                    current_config_sp,
+                    starting_time_limits[entry.task_id], patience);
+            }
+        };
+
+    if (use_subincremental_walk) {
+        for (const SerializedTaskQueueEntry& entry : serialized_queue) {
+            walk_serialized_entry(entry);
+        }
+    } else {
+        for (size_t idx : sorted_indices) {
+            // Skip {-1}-only tasks (no perf pairs → no TL freedom).
+            const std::vector<double>& opts =
+                time_limit_option_for_each_task_[idx];
+            if (opts.size() == 1 && opts[0] == -1.0)
+                continue;
+
+            double baseline_val = starting_time_limits[idx];
             // Legacy walk: full-beam eval per trial TL (OptimizeFromScratch).
             // Backward pass (tie-break toward smaller TL on SP ties via step<0),
             // then a forward pass from the original starting TL.
@@ -754,6 +783,11 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     // greater-SP guard (tie-break lower TL-sum) preserves the incumbent if the
     // search finds nothing better.
 
+    // Capture the pre-absorb DAG before overwriting dag_tasks_ — it is the Type-E
+    // diff source for BuildSerializedTaskQueue on the flag-on (sub-incremental)
+    // arm of PerformCoordinateDescentForTaskConfigOpt (P2.11 merge). Unused on
+    // the legacy (full-beam) arm; cheap to capture (copy on write via the absorb).
+    DAG_Model dag_tasks_prev_pre_tl = dag_tasks_;
     dag_tasks_ = dag_tasks_update;
     ApplyWCETAblationIfRequired(dag_tasks_);
     // Full per-task option set (see OptimizeIncre_w_TL for the no-radius-cap walk).
@@ -769,8 +803,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     if (GlobalVariables::disable_time_limit_opt) {
         OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);
     } else {
-        PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
-                                                 /*from_scratch=*/true);
+        PerformCoordinateDescentForTaskConfigOpt(
+            K, time_limits, /*from_scratch=*/true, dag_tasks_prev_pre_tl);
     }
     return opt_pa_;
 }
