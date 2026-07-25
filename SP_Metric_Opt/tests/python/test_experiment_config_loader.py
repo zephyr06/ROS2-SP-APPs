@@ -187,6 +187,7 @@ class TestTimeLimitConfig(unittest.TestCase):
 
     ALL_CONFIGS = (
         "paper_simulation_config.json",
+        "compare_against_bf.json",
         "incr_et_profiling.json",
     )
 
