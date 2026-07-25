@@ -5,7 +5,7 @@ Every script that needs experiment parameters should call:
     cfg = load_experiment_config(mode="test")
 
 where ``mode`` is either ``"test"`` or ``"prod"``. The function loads
-`configs/experiment_config.json` relative to this module.
+`configs/paper_simulation_config.json` relative to this module.
 
 Example
 -------
@@ -21,7 +21,7 @@ import os
 _MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Public so callers (e.g. run_end_to_end_experiments --config_json default) can
 # reference the shipped config path without hard-coding it.
-DEFAULT_CONFIG_PATH = os.path.join(_MODULE_DIR, "configs", "experiment_config.json")
+DEFAULT_CONFIG_PATH = os.path.join(_MODULE_DIR, "configs", "paper_simulation_config.json")
 
 
 def load_experiment_config(mode="test", config_path=DEFAULT_CONFIG_PATH):
@@ -34,7 +34,7 @@ def load_experiment_config(mode="test", config_path=DEFAULT_CONFIG_PATH):
         CI and quick smoke tests. ``"prod"`` uses paper-grade values.
     config_path : str
         Path to the JSON config file. Defaults to the shipped config at
-        ``configs/experiment_config.json``.
+        ``configs/paper_simulation_config.json``.
 
     Returns
     -------

@@ -15,7 +15,7 @@ except ImportError:
     SEABORN_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
-# Default style parameters (override via experiment_config.json -> plotting)
+# Default style parameters (override via paper_simulation_config.json -> plotting)
 # ---------------------------------------------------------------------------
 DEFAULT_FONT_BASE_SIZE_POINTS = 14
 DEFAULT_FONT_AXIS_LABEL_SIZE_POINTS = 16

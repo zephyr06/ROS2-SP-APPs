@@ -11,7 +11,7 @@
 
 ## Run the prod pipeline
 - [ ] Confirm `release/tests/RunOrchestrator` exists
-- [ ] `MODE=prod CONFIG_JSON=simulation_experiments/configs/experiment_config.json ./scripts/run_end_to_end.sh`
+- [ ] `MODE=prod CONFIG_JSON=simulation_experiments/configs/paper_simulation_config.json ./scripts/run_simulation_and_plot_figures.sh`
 - [ ] Confirm all 8 figures land under `optimizer_comparison/runs/<run_id>/figures/`
 
 ## Verification

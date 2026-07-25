@@ -366,8 +366,8 @@ def main():
     )
     parser.add_argument(
         "--config_json", default=DEFAULT_CONFIG_PATH,
-        help="Path to the experiment_config.json. Defaults to the shipped "
-             "config at configs/experiment_config.json.",
+        help="Path to the paper_simulation_config.json. Defaults to the shipped "
+             "config at configs/paper_simulation_config.json.",
     )
     parser.add_argument(
         "--num_tasks", type=int, default=None,

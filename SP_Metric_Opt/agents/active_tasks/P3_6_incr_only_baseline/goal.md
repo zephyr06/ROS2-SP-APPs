@@ -255,7 +255,7 @@ row for the new arm. The comparison table (avg SP + `Mean_Scheduler_Execution_Ti
 
 - **No implementation now** — the user asked for the task folder only.
 - `git commit` — user's standing constraint (`git add` only).
-- Running the A/B myself — user runs `run_end_to_end.sh`.
+- Running the A/B myself — user runs `run_simulation_and_plot_figures.sh`.
 - Re-litigating P1.1 (residual ET growth) or P1.4 (seed policy) — this arm
   inherits P1.4's seed unchanged; it asks a different question (reopt value +
   warm-start value).

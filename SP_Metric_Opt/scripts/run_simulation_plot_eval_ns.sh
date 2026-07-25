@@ -2,31 +2,33 @@
 # Project evaluation suite: run the pipeline, then evaluate the north-star gates.
 #
 # This is the single entry point for the "did this change help?" dashboard. It
-# runs run_end_to_end.sh with the evaluation-suite config (which produces the
-# comparison_summary.csv files the suite reads), then invokes
-# simulation_experiments.evaluation_suite.py to evaluate the five north-star
+# runs run_simulation_and_plot_figures.sh with the evaluation-suite config
+# (which produces the comparison_summary.csv files the suite reads), then
+# invokes simulation_experiments.evaluation_suite.py to evaluate the five
+# north-star
 # gates (Q1-Q3 SP-quality, E1 overhead, E2 INCR<=SCRATCH ET) into a single
 # PASS/FAIL verdict. Exit code is 0 only if every gate PASSES, so CI / a shell
 # gate can act on it.
 #
 # Usage:
-#   ./scripts/run_evaluation_suite.sh            # test mode (fast smoke, ~1 min)
-#   MODE=prod ./scripts/run_evaluation_suite.sh  # full gate run (~15-20 min)
-#   SKIP_PIPELINE=1 ./scripts/run_evaluation_suite.sh   # only re-evaluate an
-#                                                       # already-completed run
-#   DRY_RUN=1 ./scripts/run_evaluation_suite.sh  # print commands, run nothing
+#   ./scripts/run_simulation_plot_eval_ns.sh            # test mode (fast smoke, ~1 min)
+#   MODE=prod ./scripts/run_simulation_plot_eval_ns.sh  # full gate run (~15-20 min)
+#   SKIP_PIPELINE=1 ./scripts/run_simulation_plot_eval_ns.sh   # only re-evaluate an
+#                                                             # already-completed run
+#   DRY_RUN=1 ./scripts/run_simulation_plot_eval_ns.sh  # print commands, run nothing
 #
 # Environment variables (all optional):
 #   MODE            - test | prod (default: test)
-#   SKIP_PIPELINE   - set to "1" to skip run_end_to_end.sh and only re-run the
-#                     evaluator against the run root from the config (use after a
-#                     successful pipeline run, to re-render the verdict)
+#   SKIP_PIPELINE   - set to "1" to skip run_simulation_and_plot_figures.sh and
+#                     only re-run the evaluator against the run root from the
+#                     config (use after a successful pipeline run, to re-render
+#                     the verdict)
 #   CONFIG_JSON     - override the eval config (default: the shipped
-#                     configs/evaluation_suite_config.json)
+#                     configs/gate_eval_config.json)
 #   OVERHEAD_N      - override the E1 overhead probe N (default: from config)
 #   DRY_RUN         - set to "1" to print commands without executing
 #   PYTHON          - python interpreter (default: python3)
-#   BIN_DIR, VERBOSE- forwarded to run_end_to_end.sh when the pipeline runs
+#   BIN_DIR, VERBOSE- forwarded to run_simulation_and_plot_figures.sh when the pipeline runs
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/common.sh
@@ -36,13 +38,13 @@ MODE="${MODE:-test}"
 SKIP_PIPELINE="${SKIP_PIPELINE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
 PYTHON="${PYTHON:-python3}"
-CONFIG_JSON="${CONFIG_JSON:-${PROJECT_ROOT}/simulation_experiments/configs/evaluation_suite_config.json}"
+CONFIG_JSON="${CONFIG_JSON:-${PROJECT_ROOT}/simulation_experiments/configs/gate_eval_config.json}"
 
 # --- Header ---
 if [[ "${SKIP_PIPELINE}" == "1" ]]; then
     stage_line="Stages:       evaluate only (pipeline skipped)"
 else
-    stage_line="Stages:       run_end_to_end.sh -> evaluate north-star gates"
+    stage_line="Stages:       run_simulation_and_plot_figures.sh -> evaluate north-star gates"
 fi
 print_header "Project Evaluation Suite" \
     "Mode:         ${MODE}" \
@@ -57,7 +59,7 @@ if [[ ! -f "${CONFIG_JSON}" ]]; then
 fi
 
 # Locate the e2e wrapper this script delegates to (for the pipeline stage).
-E2E_WRAPPER="${SCRIPT_DIR}/run_end_to_end.sh"
+E2E_WRAPPER="${SCRIPT_DIR}/run_simulation_and_plot_figures.sh"
 
 cd "${PROJECT_ROOT}"
 

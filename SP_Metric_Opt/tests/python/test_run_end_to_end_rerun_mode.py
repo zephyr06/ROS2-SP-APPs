@@ -12,7 +12,8 @@ simulation) so a future change to ``apply_rerun_mode`` cannot silently regress
 the wipe semantics:
 
 - ``reuse`` (default) is a TRUE no-op: a populated ``sim/`` tree is left
-  intact. This is the contract that keeps the bare ``./run_end_to_end.sh``
+  intact. This is the contract that keeps the bare
+  ``./run_simulation_and_plot_figures.sh`` invocation unchanged.
   invocation unchanged.
 - ``clear_all`` wipes the WHOLE ``<run_root>/sim/`` tree (generated tasksets +
   per-scheduler results + sweep variants) — exactly "remove all existing

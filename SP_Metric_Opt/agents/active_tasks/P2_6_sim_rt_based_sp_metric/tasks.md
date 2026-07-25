@@ -62,7 +62,7 @@
 
 - [ ] `cmake --build build --target check.SP_OPT -j5` (DEBUG) — 16/16 ctest
       green; `tests/python/` green.
-- [ ] Cross-check on a real run (user runs `run_end_to_end.sh`): report the
+- [ ] Cross-check on a real run (user runs `run_simulation_and_plot_figures.sh`): report the
       analytic-vs-sim SP gap in `dev_log.md` (is the RTA conservative? by how
       much? does the gap vary by arm / by N?).
 
@@ -79,7 +79,7 @@
 - **No implementation until the user greenlights** (this task is filed for
   later; the 2026-07-12 work created the plan, did not code).
 - No `git commit` (user's task; `git add` only).
-- No running the A/B myself (user runs `run_end_to_end.sh`).
+- No running the A/B myself (user runs `run_simulation_and_plot_figures.sh`).
 - No gate reads the sim SP without an explicit user decision (D4) — the
   analytical SP stays the gate-facing + optimizer-facing metric.
 - Don't conflate this with P1.7 D1 (generator `per_core_cpu_util`

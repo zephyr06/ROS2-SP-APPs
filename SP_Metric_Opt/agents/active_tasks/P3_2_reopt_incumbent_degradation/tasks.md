@@ -44,5 +44,5 @@
 
 ## Standing constraints
 - No `git commit` (user's task; `git add` only).
-- No running the full A/B suite myself (user runs `run_end_to_end.sh`).
+- No running the full A/B suite myself (user runs `run_simulation_and_plot_figures.sh`).
 - Step 1 reads **existing** output; a fresh A/B run is the user's call.

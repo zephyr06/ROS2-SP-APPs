@@ -42,15 +42,15 @@ that:
 ## Run command
 
 ```
-MODE=prod CONFIG_JSON=simulation_experiments/configs/experiment_config.json \
-  ./scripts/run_end_to_end.sh
+MODE=prod CONFIG_JSON=simulation_experiments/configs/paper_simulation_config.json \
+  ./scripts/run_simulation_and_plot_figures.sh
 ```
 
 ## Files
 
-- `scripts/run_end_to_end.sh`
+- `scripts/run_simulation_and_plot_figures.sh`
 - `simulation_experiments/aggregate_across_tasks.py` (add P25 period generator)
-- `simulation_experiments/configs/experiment_config.json`
+- `simulation_experiments/configs/paper_simulation_config.json`
 
 ## Done when
 

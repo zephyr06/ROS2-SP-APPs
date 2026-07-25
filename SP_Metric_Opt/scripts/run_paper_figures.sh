@@ -3,8 +3,8 @@
 #
 # This script does NOT run simulations. It only produces figures using data
 # already present in simulation_experiments/optimizer_comparison/. Run
-# run_end_to_end.sh (or run_simulation.sh + run_interval_sweep.sh) first to
-# produce that data, including the interval-sweep results that feed Figure 2.
+# run_simulation_and_plot_figures.sh first to produce that data, including the
+# interval-sweep results that feed Figure 2.
 #
 # Usage:
 #   ./run_paper_figures.sh
@@ -13,7 +13,7 @@
 # Figures produced:
 #   Fig 1A-1F: Cross-task-count and distribution figures
 #   Fig 3:     Important-task miss rate
-# (Figure 2 is rendered by run_interval_sweep.sh, which produces the sweep
+# (Figure 2 is rendered by the pipeline's sweep stage, which produces the sweep
 # data it plots -- it is not a figures-only step.)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

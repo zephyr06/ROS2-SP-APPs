@@ -1,7 +1,7 @@
 """Project evaluation suite -- the north-star integration test.
 
 This module is the *reporting layer* on top of the existing end-to-end
-pipeline. It does **not** run simulations (``run_end_to_end.sh`` does); it
+pipeline. It does **not** run simulations (``run_simulation_and_plot_figures.sh`` does); it
 ingests the ``comparison_summary.csv`` files the simulate stage already wrote,
 normalizes SP via the shared :mod:`simulation_experiments.aggregate_across_tasks`
 helpers, and evaluates the five north-star gates from
@@ -66,10 +66,10 @@ SP-metric / I/O; see ``run_sim_experiments.py``).
 Usage
 -----
     python3 -m simulation_experiments.evaluation_suite \\
-        --config_json simulation_experiments/configs/evaluation_suite_config.json \\
+        --config_json simulation_experiments/configs/gate_eval_config.json \\
         --mode prod
 
-Or via the wrapper ``scripts/run_evaluation_suite.sh`` which runs the pipeline
+Or via the wrapper ``scripts/run_simulation_plot_eval_ns.sh`` which runs the pipeline
 first. Exit code is 0 only if every gate passes, so CI / the shell wrapper can
 gate on it.
 """
@@ -602,13 +602,13 @@ def main(argv=None):
         description=(
             "Project evaluation suite: evaluate a completed run against the "
             "north-star gates (Q1-Q3, E1, E3). Does not run simulations -- "
-            "run scripts/run_evaluation_suite.sh (or run_end_to_end.sh) first."
+            "run scripts/run_simulation_plot_eval_ns.sh (or run_simulation_and_plot_figures.sh) first."
         )
     )
     parser.add_argument(
         "--config_json",
         default=os.path.join(os.path.dirname(__file__), "configs",
-                             "evaluation_suite_config.json"),
+                             "gate_eval_config.json"),
         help="Path to the evaluation suite config JSON.",
     )
     parser.add_argument(
@@ -651,7 +651,7 @@ def main(argv=None):
     if not lookup:
         sim_dir = os.path.join(run_root, "sim")
         print(f"No records found under {sim_dir}.")
-        print("Run the pipeline first: ./scripts/run_evaluation_suite.sh")
+        print("Run the pipeline first: ./scripts/run_simulation_plot_eval_ns.sh")
         return 1
     print(f"Loaded {len(lookup)} (N, scheduler) records.")
 

@@ -161,7 +161,7 @@ weights + thresholds downstream → apples-to-apples.
 - Replacing the analytical SP — it stays the gate-facing + optimizer-facing
   metric. P2.6 ADDS a column, doesn't swap one.
 - `git commit` — user's standing constraint (`git add` only).
-- Running the A/B myself — user runs `run_end_to_end.sh`.
+- Running the A/B myself — user runs `run_simulation_and_plot_figures.sh`.
 - The P1.7 D1 generator `per_core_cpu_util` re-calibration — separate decision,
   depends on the fixed sim's honest per-core util, not on this task.
 

@@ -5,7 +5,7 @@ This is the single entry point that runs the *entire* simulation-experiment
 pipeline from one config file. Instead of manually invoking the three
 pipeline stages by hand (step 1: per-task-count simulations, step 2: interval
 sweep, step 3: cross-task aggregation and figures), this script does all of
-them, driven entirely by ``configs/experiment_config.json``.
+them, driven entirely by ``configs/paper_simulation_config.json``.
 
 Pipeline stages
 ---------------
@@ -406,12 +406,12 @@ def main():
     parser.add_argument(
         "--mode", choices=["test", "prod"], default="test",
         help="Experiment mode: test (fast/smoke) or prod (paper-grade). "
-             "Selects the parameter block in experiment_config.json.",
+             "Selects the parameter block in paper_simulation_config.json.",
     )
     parser.add_argument(
         "--config_json", default=DEFAULT_CONFIG_PATH,
-        help="Path to the experiment_config.json. Defaults to the shipped "
-             "config at configs/experiment_config.json.",
+        help="Path to the paper_simulation_config.json. Defaults to the shipped "
+             "config at configs/paper_simulation_config.json.",
     )
     parser.add_argument(
         "--output_parent", default=DEFAULT_OUTPUT_PARENT,

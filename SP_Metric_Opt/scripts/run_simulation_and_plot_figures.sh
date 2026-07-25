@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run the full simulation-experiment pipeline end-to-end from one config file.
 #
-# This is the single entry point: it loads the configured experiment_config.json
+# This is the single entry point: it loads the configured paper_simulation_config.json
 # and runs all three stages in fixed order -- simulate -> sweep -> aggregate --
 # so you do not have to run steps 1/2/3 by hand. Every experiment parameter
 # comes from the JSON config; the only knobs here select mode / verbosity.
@@ -12,10 +12,10 @@
 #   3. aggregate - cross-task figures (Figs 1A-1F, 3) under runs/<run_id>/figures/
 #
 # Usage:
-#   ./run_end_to_end.sh                      # test mode, all stages
-#   MODE=prod ./run_end_to_end.sh            # paper-grade, all stages
-#   DRY_RUN=1 ./run_end_to_end.sh            # print commands, run nothing
-#   BIN_DIR=build ./run_end_to_end.sh        # use a non-release binary
+#   ./run_simulation_and_plot_figures.sh                      # test mode, all stages
+#   MODE=prod ./run_simulation_and_plot_figures.sh            # paper-grade, all stages
+#   DRY_RUN=1 ./run_simulation_and_plot_figures.sh            # print commands, run nothing
+#   BIN_DIR=build ./run_simulation_and_plot_figures.sh        # use a non-release binary
 #
 # Environment variables (all optional):
 #   MODE         - test | prod (default: test)
@@ -24,10 +24,10 @@
 #   DRY_RUN      - set to "1" to print commands without executing
 #   PYTHON       - python interpreter (default: python3)
 #   CONFIG_JSON  - path to an experiment config JSON (default: the shipped
-#                  configs/experiment_config.json). Point this at an alternate
+#                  configs/paper_simulation_config.json). Point this at an alternate
 #                  config to scope the run -- e.g.:
-#                      CONFIG_JSON=simulation_experiments/configs/incr_et_8tasks_config.json \
-#                          ./run_end_to_end.sh
+#                      CONFIG_JSON=simulation_experiments/configs/incr_et_profiling.json \
+#                          ./run_simulation_and_plot_figures.sh
 #   RERUN_MODE   - reuse (default) | clear_all | clear_results
 #                  'clear_all' wipes <run_root>/sim/ (generated tasksets +
 #                  per-scheduler results + sweep variants) before the stages

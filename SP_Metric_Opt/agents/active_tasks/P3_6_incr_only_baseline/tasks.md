@@ -89,7 +89,7 @@
 - **No implementation until the user greenlights** (this task is filed only;
   the 2026-07-11 follow-up updated plans only — still no implementation).
 - No `git commit` (user's task; `git add` only).
-- No running the A/B myself (user runs `run_end_to_end.sh`).
+- No running the A/B myself (user runs `run_simulation_and_plot_figures.sh`).
 - Inherits P1.4's incumbent seed unchanged — this arm is a dispatch/bootstrap
   change, not a seed-policy change.
 - Paper-grade A/B baseline, NOT an E3 gate (E3 stays on plain `INCR`) — D5

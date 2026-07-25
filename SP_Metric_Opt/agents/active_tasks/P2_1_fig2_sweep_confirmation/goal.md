@@ -21,11 +21,11 @@ that on a real prod sweep, not just unit tests.
 
 ## Approach
 
-Run the sweep stage standalone:
+Run the sweep stage (now reachable only via the pipeline's sweep stage — the
+standalone `run_interval_sweep.sh` wrapper was removed in P2.8):
 
 ```
-./scripts/run_interval_sweep.sh
-# or: --steps simulate sweep aggregate  (if the e2e supports step selection)
+./scripts/run_simulation_and_plot_figures.sh
 ```
 
 Assert `fig2_sp_vs_interval.{png,pdf}` land under the run's `figures/`.
@@ -33,7 +33,6 @@ Assert `fig2_sp_vs_interval.{png,pdf}` land under the run's `figures/`.
 ## Files
 
 - `simulation_experiments/interval_sweep.py`
-- `scripts/run_interval_sweep.sh`
 - `simulation_experiments/compare_optimizers.py` (the flag consumer)
 
 ## Done when

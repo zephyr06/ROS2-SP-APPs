@@ -73,5 +73,5 @@
 - **Not started.** Next action is the user's: greenlight + settle D1–D4 when P2
   work resumes. Standing constraints: no implementation until greenlit; no
   `git commit` (`git add` only); no A/B run by me (user runs
-  `run_end_to_end.sh`); no gate reads the sim SP without an explicit user
+  `run_simulation_and_plot_figures.sh`); no gate reads the sim SP without an explicit user
   decision (D4).

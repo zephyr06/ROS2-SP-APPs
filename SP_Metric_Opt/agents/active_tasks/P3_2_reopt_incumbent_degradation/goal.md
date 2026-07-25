@@ -153,7 +153,7 @@ memory but keeps the per-step from-scratch ET cost.
   Both agents agreed: check the data first.
 - Re-running the full A/B suite myself — the user runs the actual A/B
   (`MODE=test/prod CONFIG_JSON=.../p25_period_ab_config.json
-  ./scripts/run_end_to_end.sh`). Step 1 reads already-existing output; a fresh
+  ./scripts/run_simulation_and_plot_figures.sh`). Step 1 reads already-existing output; a fresh
   run is the user's call.
 - `git commit` — user's standing constraint (`git add` only).
 - Re-litigating the SP-value guard's soundness — settled (it is sound; the
