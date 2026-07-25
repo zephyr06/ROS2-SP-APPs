@@ -253,7 +253,7 @@ class TestBuildLineChart(unittest.TestCase):
 
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.plt")
     def test_log_y_sets_log_scale(self, mock_plt):
-        """log_y=True must call ax.set_yscale('log')."""
+        """log_y=True must set log scale and label both major and minor ticks."""
         mock_ax = unittest.mock.MagicMock()
         mock_fig = unittest.mock.MagicMock()
         mock_plt.subplots.return_value = (mock_fig, mock_ax)
@@ -268,11 +268,44 @@ class TestBuildLineChart(unittest.TestCase):
                 os.path.join(tmpdir, "fig"), log_y=True,
             )
         mock_ax.set_yscale.assert_called_once_with("log")
-        # Major decade ticks are labeled as plain numbers...
+        # Major decade ticks are labelled as plain numbers...
         mock_ax.yaxis.set_major_formatter.assert_called_once()
-        # ...but minor (sub-decade) ticks must NOT be labeled, otherwise every
-        # 2x..9x position prints a number and the axis becomes unreadable.
-        mock_ax.yaxis.set_minor_formatter.assert_not_called()
+        # ...and the sub-decade (minor) ticks are labelled too (sparsely, 2x/5x
+        # only) so a value between two decades (e.g. 0.062) is readable instead
+        # of floating in an unlabelled gap up to the next decade tick.
+        mock_ax.yaxis.set_minor_formatter.assert_called_once()
+
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.plt")
+    def test_log_y_minor_ticks_are_sparse_2x_5x(self, mock_plt):
+        """Minor ticks are labelled SPARSELY (2x, 5x only) regardless of span.
+
+        Regression for the exec-time figure: a ~2.4-decade span
+        (0.00025..0.062s) used to trip a "wide" branch that suppressed minor
+        labels, leaving N>10 ET values in an unlabelled gap. The first fix
+        labelled EVERY sub-decade (2x..9x), which overlapped into an unreadable
+        wall of numbers. The contract is now: always label minor ticks, but only
+        the well-spaced 2x and 5x multiples per decade -- e.g. 0.001 / 0.002 /
+        0.005 / 0.01 / 0.02 / 0.05 / 0.1 -- so the in-between values are readable
+        without overlap, at any decade span.
+        """
+        for mean_lo, mean_hi in [(2.5e-4, 6.2e-2), (5e-4, 1.0)]:
+            mock_ax = unittest.mock.MagicMock()
+            mock_fig = unittest.mock.MagicMock()
+            mock_plt.subplots.return_value = (mock_fig, mock_ax)
+
+            records = [
+                {"num_tasks": 4, "scheduler": "INCR", "mean_sp": mean_lo, "std_sp": 0.0},
+                {"num_tasks": 16, "scheduler": "INCR", "mean_sp": mean_hi, "std_sp": 0.0},
+            ]
+            with tempfile.TemporaryDirectory() as tmpdir:
+                agg.build_line_chart(
+                    records, ["INCR"], "mean_sp", "std_sp", "Y", "T",
+                    os.path.join(tmpdir, "fig"), log_y=True,
+                )
+            loc = mock_ax.yaxis.set_minor_locator.call_args[0][0]
+            # Sparse set: 0.2 and 0.5 only = 2 sub-decade positions per decade,
+            # at BOTH narrow (~2.4-decade) and wide (~3.3-decade) spans.
+            self.assertEqual(len(loc._subs), 2, f"span {mean_lo}..{mean_hi}")
 
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.plt")
     def test_log_y_false_default_no_log(self, mock_plt):

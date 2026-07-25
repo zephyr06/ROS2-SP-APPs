@@ -31,11 +31,15 @@
 - [x] **2c. Update `Evaluate` Dispatch**
   - NO loop change needed — the existing verdict-driven fold (skip FullReuse, recompute NoReuse, fold every task's ET into the rolling prefix) already handles bottom-reuse: the FullReuse bottom task keeps its seeded (reindexed-by-task-id) champion RTA while the window tasks recompute against the rolling prefix. Verified by `Evaluate_PriorityMoveMiddle_BottomReuseSafeUpperBound_RuleB`.
 
+## Phase 2 — COMMITTED `09d1fca9` (2026-07-24, by user)
+
+Rule B (Pure Priority Move) window-bounded reuse landed. Working tree clean vs HEAD; Rule B code + both tests verified present in `HEAD:sources/.../RTA_Cache.cpp` / `HEAD:tests/testRTA.cpp`.
+
 ## Phase 3 — Verification & Benchmarking
 
 - [x] **3a. Run Full C++ Test Suite (`ctest`)**
   - 17/17 ctest green + 63/63 testRTA green after Rule B (no existing test broke; the v1 whole-core-NoReuse `Evaluate_*PriorityMove*` tests still pass because recomputing a slot the oracle also recomputes stays bit-identical / safe-upper-bound).
-- [ ] **3a2. Run Full Python Test Suite (`pytest`)**
-  - Confirm no SP-level regression (cache path is exercised end-to-end via the optimizer).
+- [x] **3a2. Python suite — SUPERSEDED (cannot observe C++ SP)**
+  - Premise was false: the Python unit suite is entirely mock-based (`test_run_sim_experiments.py` stubs `subprocess.run`, 21 mock/patch lines; no test loads `libSP_OPT` or runs a `build_test` binary — grep for build/lib refs in `tests/python/` is empty). The C++ optimizer is reached only via subprocess in the real runner, which the unit tests mock out. ∴ pytest green would prove nothing about Rule B. The C++ `ctest` (17/17 + 63/63, incl. both new Rule B tests) IS the SP-regression gate for the cache path and is green. A real SP-level end-to-end signal requires an A/B run of the optimizer binary (→ folded into 3b).
 - [ ] **3b. Benchmark Recompute Savings in `OptimizePA_Incre`**
   - Measure reduction in `GetRTA_OneTask` call counts during sub-incremental walks.
