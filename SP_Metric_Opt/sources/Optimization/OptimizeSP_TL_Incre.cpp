@@ -225,9 +225,19 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
             dag_tasks_cur, sp_parameters_, challenger.opt_pa_, time_limits,
             baseline_rtas);
     }
-    challenger.OptimizeIncre_SingleTask(dag_tasks_cur,
-                                        static_cast<int>(task_idx),
-                                        et_increased, std::ref(rta_cache_));
+    // Cancel contract (post-Evaluate): the :218 entry poll guards only the
+    // baseline Evaluate+ObtainSP_Full. OptimizeIncre_SingleTask is the bulk of
+    // the per-eval cost (O(N) PA variations, each an Evaluate+ObtainSP_Full, no
+    // internal poll pre-5.6b) — skip it once the budget expired, whether at
+    // entry or during the baseline. opt_sp_ is then INT_MIN (entry cancel) or
+    // the just-scored baseline (mid-baseline cancel); either way UpdateRecords'
+    // strict-> guard discards or adopts safely. Inert within the 1s budget
+    // (incremental path finishes inside it) → prod bit-identical. [P2.11 5.6b]
+    if (!BFSharedBudgetCancelled()) {
+        challenger.OptimizeIncre_SingleTask(dag_tasks_cur,
+                                            static_cast<int>(task_idx),
+                                            et_increased, std::ref(rta_cache_));
+    }
     double current_sp = challenger.opt_sp_;
     bool updated = UpdateRecords(challenger, time_limits);
     if (!updated) {
@@ -347,6 +357,13 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
     // step's challenger sees the new champion; the committed TL tracks the adopted
     // best, so the diff flags only the walked task (|diff|<=1).
     for (const SerializedTaskQueueEntry& entry : queue) {
+        // Cooperative budget (P2.11 5.6b defense-in-depth): stop walking the
+        // queue once the per-interval TIME_LIMIT expired. Retains the best-so-far
+        // current_config_sp (compare-and-keep). Inert within budget (incremental
+        // path finishes inside it) → prod bit-identical.
+        if (BFSharedBudgetCancelled()) {
+            break;
+        }
         if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
             // Type-E: sub-incremental re-search at the committed TL (no TL walk).
             // et_increased = the env-move direction carried on the entry.
@@ -460,6 +477,12 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit_Impl(
     // improvement budget (no reset on improvement); at 0 the walk stops.
     for (int i = static_cast<int>(curr_opt_idx) + step;
          i >= 0 && i < static_cast<int>(opts.size()); i += step) {
+        // Cooperative budget (P2.11 5.6b defense-in-depth): stop stepping TL
+        // options once the per-interval TIME_LIMIT expired. Retains best_so-far
+        // best_sp/best_option_val. Inert within budget → prod bit-identical.
+        if (BFSharedBudgetCancelled()) {
+            break;
+        }
         double val = opts[i];
         if (val == -1.0)  // defensive: a {-1} slot inside a real window
             continue;
@@ -563,6 +586,16 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     if (use_subincremental_walk) {
         std::vector<SerializedTaskQueueEntry> serialized_queue =
             BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
+        // Re-sync the walk vector to the adopted champion TL. The upfront
+        // from-scratch reopt (EvaluateTimeLimitConfig_ScratchOrIncre above) +
+        // AdoptChampion committed a TL that diverges from the incoming
+        // starting_time_limits (Gaussian seed) by >1 task on a real taskset.
+        // Without this re-sync the first walk step would diff champion-TL vs
+        // seed-TL in >1 task → RTACache::ComputeTaskSetDifference throws
+        // |diff|>1 → SIGABRT. Mirrors the incremental path, which establishes
+        // champion-TL == walk-start TL via CommitIncumbent (line ~390). The
+        // walk then refines the champion, as intended. Flag-gated, default OFF.
+        starting_time_limits = ReconstructTimeLimitVecFromResOpt();
         current_config_sp = WalkSerializedTaskQueue(
             serialized_queue, K, starting_time_limits, current_config_sp,
             patience);

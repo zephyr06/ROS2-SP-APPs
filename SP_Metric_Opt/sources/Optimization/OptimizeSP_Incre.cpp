@@ -328,6 +328,13 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
     // diff stays |diff|<=1 (Evaluate never advances the champion itself).
     std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     for (const PriorityVec& priority_assignment : pa_vec_variations) {
+        // Cooperative budget: stop re-searching PA variations once the per-
+        // interval TIME_LIMIT expired (P2.11 5.6b). Retains the best-so-far
+        // opt_pa_/opt_sp_. Inert within budget (incremental path finishes inside
+        // it) → prod bit-identical.
+        if (BFSharedBudgetCancelled()) {
+            break;
+        }
         double sp_eval;
         NodeRtasHolder rtas_holder;
         if (rta_cache) {

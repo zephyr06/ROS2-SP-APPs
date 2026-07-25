@@ -1144,6 +1144,161 @@ class CounterDispatcherSynthetic : public ::testing::Test {
     int saved_subincremental_walk_;
 };
 
+// P2.11 Phase 5.5 — regression for the flag-ON reopt interval-0 crash. The
+// flag-on reopt arm (PerformCoordinateDescentForTaskConfigOpt with
+// use_subincremental_walk=true) adopted the cache champion from the from-scratch
+// reopt's TL (champion_tl = ReconstructTimeLimitVecFromResOpt(), after the
+// upfront EvaluateTimeLimitConfig_ScratchOrIncre from-scratch call overwrites
+// res_opt_) but then walked the UN-re-synced starting_time_limits — which at
+// interval 0 is the Gaussian-mean seed (InitializeTimeLimitsFromETConfig). When
+// the from-scratch reopt moves >=2 TL-flexible tasks off the Gaussian seed, the
+// first walk step's candidate DAG (Gaussian with one task stepped) differs from
+// the champion DAG (reopt TL) in >1 task -> RTACache::ComputeTaskSetDifference
+// throws |diff|>1 -> std::terminate -> SIGABRT.
+//
+// The existing CounterDispatcherSynthetic fixture has only ONE TL-flexible task,
+// so the reopt can move at most one TL off the seed -> |diff|<=1 holds by
+// accident and the crash never fired in tests (the fixture gap that shipped the
+// bug). This fixture has TWO symmetric TL-flexible tasks: the from-scratch reopt
+// moves BOTH off the Gaussian seed (200) to a higher-TL optimum, so the walk's
+// first step diffs champion-TL vs Gaussian-with-one-stepped in 2 tasks -> throw.
+//
+// Fix under test: PerformCoordinateDescentForTaskConfigOpt re-syncs
+// starting_time_limits = ReconstructTimeLimitVecFromResOpt() before the
+// WalkSerializedTaskQueue call, so the walk starts from champion_tl (the first
+// step diffs champion vs champion-with-one-stepped -> |diff|==1, no throw),
+// mirroring the incremental path (PerformSerializedTaskQueueOptimization:390
+// commits the champion FROM starting_time_limits; OptimizeOneTaskTimeLimit:506
+// re-syncs per task).
+class ReoptFlagOnMultiTLFlexibleSynthetic : public ::testing::Test {
+   public:
+    // Same recording subclass as CounterDispatcherSynthetic: counts sub-incremental
+    // evals so the test can assert the walk actually ran (not just didn't throw).
+    class RecordingDispatcherOpt : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        int subincremental_calls = 0;
+        using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
+        double EvaluateTimeLimitConfig_SubIncremental(
+            int K, const std::vector<double>& time_limits, size_t task_idx,
+            bool et_increased) override {
+            ++subincremental_calls;
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_SubIncremental(K, time_limits, task_idx,
+                                                       et_increased);
+        }
+    };
+
+    // Build ONE TL-flexible task with TL options {100,200,300,400} and a Gaussian
+    // ET whose average (~250) lands between options 200 and 300. Find_Close_ExecutionTime
+    // resolves the tie to the first minimum (index 1 -> TL 200), so the Gaussian
+    // seed for this task is 200. The reopt (maximizing SP) moves it to a higher-TL
+    // optimum, diverging from the seed.
+    Task MakeTLFlexibleTask(int id, const std::string& name) {
+        const double et_avg = 250.0;
+        std::vector<Value_Proba> dist = {Value_Proba(et_avg, 1.0)};
+        Task t(id, dist, 2000, 2000, id, name);
+        t.execution_time_dist = FiniteDist(GaussianDist(et_avg, 0.5), 5);
+        // (time_limit, performance): higher TL -> higher performance (the reopt
+        // has a strict incentive to raise TL, so it diverges from the seed 200).
+        t.timePerformancePairs.push_back(TimePerfPair(100, 0.4));
+        t.timePerformancePairs.push_back(TimePerfPair(200, 0.7));
+        t.timePerformancePairs.push_back(TimePerfPair(300, 0.9));
+        t.timePerformancePairs.push_back(TimePerfPair(400, 1.0));
+        return t;
+    }
+
+    void SetUp() override {
+        Task t_perf_a = MakeTLFlexibleTask(0, "T_perf_a");
+        Task t_perf_b = MakeTLFlexibleTask(1, "T_perf_b");
+
+        // T_noise: no perf pair -> {-1}-only -> skipped by the TL walk (present so
+        // the DAG has a non-TL-flexible task, mirroring a realistic mix).
+        std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+        Task t_noise(2, dist_noise, 2000, 2000, 2, "T_noise");
+        t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+
+        TaskSet tasks = {t_perf_a, t_perf_b, t_noise};
+        dag_tasks = DAG_Model(tasks, mapPrev, 0, 0);
+        sp_parameters = SP_Parameters(dag_tasks);
+
+        saved_subincremental_walk_ =
+            GlobalVariables::ReoptimizationUseSubIncrementalWalk;
+    }
+
+    void TearDown() override {
+        GlobalVariables::ReoptimizationUseSubIncrementalWalk =
+            saved_subincremental_walk_;
+    }
+
+    MAP_Prev mapPrev;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+    int saved_subincremental_walk_;
+};
+
+// The crash regression: a flag-ON reopt at interval 0 (count==0, no incumbent ->
+// the Gaussian-seed path) on a DAG with >=2 TL-flexible tasks must NOT throw.
+// Today it throws std::runtime_error from RTACache::ComputeTaskSetDifference
+// (|diff|>1) -> std::terminate -> SIGABRT, because the walk starts from the
+// Gaussian seed while the champion was adopted from the from-scratch reopt's TL
+// (which moved both TL-flexible tasks off the seed). The fix re-syncs the walk's
+// starting TL to the champion TL before WalkSerializedTaskQueue.
+TEST_F(ReoptFlagOnMultiTLFlexibleSynthetic,
+       ReoptFlagOn_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs) {
+    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 1;
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+
+    // The Gaussian seed (InitializeTimeLimitsFromETConfig) is the interval-0
+    // starting_time_limits the walk would use WITHOUT the fix. Pin it BEFORE the
+    // reopt so the divergence check below compares against the true seed (the
+    // reopt overwrites res_opt_, so ReconstructTimeLimitVecFromResOpt() after
+    // reflects the champion, not the seed).
+    std::vector<double> gaussian_seed = opt.InitializeTimeLimitsFromETConfig();
+
+    // Interval-0 reopt: no incumbent -> InitializeTimeLimitsFromETConfig seeds
+    // the Gaussian-mean TL (200 for both T_perf_a and T_perf_b); the from-scratch
+    // reopt then moves both to a higher-TL optimum; the flag-on walk must re-sync
+    // to the champion TL before stepping, else the first step throws |diff|>1.
+    // EXPECT_NO_THROW catches the runtime_error the buggy path raises and turns
+    // the crash into a clean test failure (RED) instead of SIGABRT.
+    EXPECT_NO_THROW(opt.ReOptimizePeriodic(dag_tasks, 2))
+        << "P2.11 Phase 5.5: a flag-ON reopt at interval 0 must not throw when "
+        << "the from-scratch reopt moves multiple TL-flexible tasks off the "
+        << "Gaussian seed. The walk must re-sync starting_time_limits to the "
+        << "champion TL before WalkSerializedTaskQueue (mirrors the incremental "
+        << "path). A throw here is the |diff|>1 cache-contract crash.";
+
+    // Guard against the fixture gap that shipped the bug: this is only a valid
+    // crash regression if the reopt ACTUALLY diverged in >=2 tasks. The prior
+    // CounterDispatcherSynthetic fixture had one TL-flexible task, so |diff|<=1
+    // held by accident and the crash never fired in tests. Pin the divergence so
+    // the fixture cannot silently regress to non-reproducing.
+    std::vector<double> champion_tl = opt.ReconstructTimeLimitVecFromResOpt();
+    int divergent = 0;
+    for (size_t i = 0; i < gaussian_seed.size() && i < champion_tl.size(); ++i) {
+        if (gaussian_seed[i] != champion_tl[i]) ++divergent;
+    }
+    EXPECT_GE(divergent, 2)
+        << "fixture must drive a >=2-task TL divergence between the Gaussian "
+        << "seed and the from-scratch reopt's champion; otherwise |diff|<=1 "
+        << "holds by accident and this test cannot reproduce the crash.";
+
+    // TEMP DIAGNOSTIC (remove once the crash reproduction is understood): stderr
+    // is NOT suppressed by gtest on PASS, so this surfaces unconditionally.
+    std::cerr << "[DIAG] gaussian_seed =";
+    for (double v : gaussian_seed) std::cerr << " " << v;
+    std::cerr << "\n[DIAG] champion_tl   =";
+    for (double v : champion_tl) std::cerr << " " << v;
+    std::cerr << "\n[DIAG] divergent = " << divergent
+              << "  subincremental_calls = " << opt.subincremental_calls << "\n";
+
+    // Secondary signal: the flag-on walk actually ran (the sub-incremental arm
+    // was reached). If this is 0 the walk never started, masking a throw.
+    EXPECT_GT(opt.subincremental_calls, 0)
+        << "the flag-on reopt walk must route its per-candidate trials through "
+        << "the sub-incremental eval; zero calls means the walk never ran.";
+}
+
 // The counter advances by 1 after every dispatch and never resets. Three
 // consecutive calls → counter == 3 regardless of which branch each call took.
 TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
