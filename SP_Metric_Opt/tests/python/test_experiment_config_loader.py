@@ -1,19 +1,32 @@
-"""P2.8 — config layout + rename pin (red→green TDD).
+"""P2.8 — config layout + rename pin (red->green TDD).
 
 Asserts the consolidated config directory layout:
 
     configs/
-      paper_simulation_config.json   (renamed from experiment_config.json)
-      gate_eval_config.json          (renamed from evaluation_suite_config.json)
+      paper_simulation_config.json   (renamed from experiment_config.json;
+                                      ALSO now the single config for the
+                                      north-star gate eval -- eval_* keys
+                                      folded in, D1 reversed beta->alpha)
       incr_et_profiling.json         (renamed from INCR_ET_Profiling.json)
 
-and that the two removed configs are gone (`experiment_config.json` itself must
-FAIL LOUDLY if referenced, not silently alias). Also pins that the load-bearing
-default paths point at the new names.
+and that the removed configs are gone (`experiment_config.json` and
+`gate_eval_config.json` themselves must FAIL LOUDLY if referenced, not silently
+aliased). Also pins that the load-bearing default paths point at the single
+surviving config.
 
 This is a refactor (naming/consolidation), not a correctness change: the gate =
-the loader + the eval suite still resolve their defaults to real files, and the
+the loader + the eval suite still resolve their defaults to a real file, and the
 old names are not silently kept as aliases.
+
+Note on the gate-eval consequences of the fold (D1=alpha):
+  `paper_simulation_config.json` carries the PAPER scheduler set (4 main:
+  INCR_Reopt_10, BF, RM, CFS) -- NOT the 10-scheduler gate set. The gate eval
+  therefore runs against those 6 schedulers (main+ablation union). Q1/Q2/Q3/E1
+  still evaluate (BF/INCR_Reopt_10/CFS/RM all simulated); E3 (period-
+  monotonicity) needs >=2 INCR_Reopt_X arms but only INCR_Reopt_10 is simulated,
+  so E3 reports MISSING at every N (non-fatal) -- it loses the signal it had
+  under the dedicated gate config. Accepted by the user's "paper set; drop
+  gate_eval" decision.
 """
 import os
 import sys
@@ -29,14 +42,16 @@ from simulation_experiments.experiment_config_loader import (
 
 CONFIGS_DIR = os.path.join(PROJECT_ROOT, "simulation_experiments", "configs")
 
+# After the D1=alpha fold: only two configs survive. gate_eval_config.json is
+# GONE (its eval_* keys moved into paper_simulation_config.json).
 EXPECTED_PRESENT = {
     "paper_simulation_config.json",
-    "gate_eval_config.json",
     "incr_et_profiling.json",
 }
-# Old names that must NOT exist -- the renames are not silent aliases.
+# Old names that must NOT exist -- the renames/fold are not silent aliases.
 EXPECTED_ABSENT = {
     "experiment_config.json",
+    "gate_eval_config.json",
     "evaluation_suite_config.json",
     "INCR_ET_Profiling.json",
     "simulation_only_config.json",
@@ -55,12 +70,20 @@ class TestConfigLayout(unittest.TestCase):
         leftover = EXPECTED_ABSENT & actual
         self.assertFalse(
             leftover,
-            f"old config names still present (rename must be total, not an alias): {leftover}")
+            f"old config names still present (rename/fold must be total, not an alias): {leftover}")
 
-    def test_no_extra_configs(self):
+    def test_no_folded_or_renamed_configs_linger(self):
+        # P2.8 does NOT freeze the config directory against new experiment
+        # configs (the repo actively authors per-purpose configs). It pins only
+        # that the folded/renamed old names are GONE -- they must not linger as
+        # silent aliases. (Positive presence of the two survivors is checked in
+        # test_expected_configs_present; stale-name fail-loudly in
+        # TestStaleNameFailsLoudly.)
         actual = set(os.listdir(CONFIGS_DIR))
-        extra = actual - EXPECTED_PRESENT
-        self.assertFalse(extra, f"unexpected configs in configs/: {extra}")
+        leftover = EXPECTED_ABSENT & actual
+        self.assertFalse(
+            leftover,
+            f"folded/renamed old config names still present (must not be aliases): {leftover}")
 
 
 class TestLoaderDefaultPath(unittest.TestCase):
@@ -91,14 +114,30 @@ class TestStaleNameFailsLoudly(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             load_experiment_config("test", config_path=stale)
 
+    def test_folded_gate_eval_config_does_not_exist(self):
+        # D1=alpha: gate_eval_config.json was DELETED (eval_* keys folded into
+        # paper_simulation_config.json). It must not linger as an alias.
+        stale = os.path.join(CONFIGS_DIR, "gate_eval_config.json")
+        self.assertFalse(
+            os.path.exists(stale),
+            "gate_eval_config.json still exists -- fold was not applied")
 
-class TestGateEvalConfigSurvives(unittest.TestCase):
+    def test_loading_via_folded_gate_eval_name_raises(self):
+        # Pointing the loader at the deleted gate-eval name must FAIL LOUDLY,
+        # not silently alias to paper_simulation_config.json.
+        stale = os.path.join(CONFIGS_DIR, "gate_eval_config.json")
+        with self.assertRaises(FileNotFoundError):
+            load_experiment_config("test", config_path=stale)
 
-    def test_gate_eval_config_carries_eval_keys(self):
-        # D1=beta: the eval config is kept (renamed, not folded) BECAUSE it
-        # carries the gate scheduler set + eval_* keys the suite needs.
+
+class TestPaperConfigCarriesEvalKeys(unittest.TestCase):
+    """D1=alpha: the eval_* keys live in paper_simulation_config.json now (folded
+    out of the deleted gate_eval_config.json), so the gate eval reads them from
+    whichever config is active -- the pipeline ignores them."""
+
+    def test_paper_config_carries_eval_keys(self):
         import json
-        with open(os.path.join(CONFIGS_DIR, "gate_eval_config.json")) as f:
+        with open(os.path.join(CONFIGS_DIR, "paper_simulation_config.json")) as f:
             raw = json.load(f)
         for mode_key in ("test_mode", "prod_mode"):
             block = raw[mode_key]
@@ -109,12 +148,27 @@ class TestGateEvalConfigSurvives(unittest.TestCase):
             self.assertIn("eval_period_arms", block,
                           f"{mode_key} missing eval_period_arms")
 
-    def test_gate_eval_config_default_referenced_by_suite(self):
-        # The eval suite's argparse default must follow the rename.
+    def test_eval_suite_default_points_at_paper_config(self):
+        # The eval suite's argparse default must follow the fold: it now reads
+        # paper_simulation_config.json (the single config), not a dedicated
+        # gate-eval config.
         import simulation_experiments.evaluation_suite as es
         src = open(es.__file__).read()
-        self.assertIn("gate_eval_config.json", src)
-        self.assertNotIn("evaluation_suite_config.json", src)
+        self.assertIn("paper_simulation_config.json", src)
+        self.assertNotIn("gate_eval_config.json", src)
+
+    def test_paper_config_scheduler_set_is_the_paper_set(self):
+        # Pin the consequence of the fold: paper config's main_scheduler_list is
+        # the PAPER set (4 schedulers), NOT the 10-scheduler gate set. E3 will
+        # therefore be MISSING-only under the gate eval (documented, accepted).
+        import json
+        with open(os.path.join(CONFIGS_DIR, "paper_simulation_config.json")) as f:
+            raw = json.load(f)
+        for mode_key in ("test_mode", "prod_mode"):
+            main = raw[mode_key]["main_scheduler_list"]
+            self.assertEqual(
+                main, ["INCR_Reopt_10", "BF", "RM", "CFS"],
+                f"{mode_key} main_scheduler_list changed from the paper set: {main}")
 
 
 if __name__ == "__main__":

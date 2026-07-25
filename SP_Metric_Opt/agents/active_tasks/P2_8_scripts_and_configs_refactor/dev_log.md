@@ -111,3 +111,71 @@ see goal.md). Goal (a) "one script for ALL figures" still has that gap.
 
 **Gate status:** rename/delete is functionally complete and green; D6 + Fig 2
 extension + the two Phase-3 "re-run" items remain.
+
+## 2026-07-24 — D1 RE-RESOLVED β→α (fold gate_eval into paper config) + D6 resolved
+
+User: "make `run_evaluation_suite.sh` import code from `run_end_to_end`...
+reduce repeated code, make the 2 share the same input config json. after it,
+clear the config json that's no longer used." → this is D6 (dedup the scripts)
+PLUS a reversal of D1 (which β had kept `gate_eval_config.json` separate
+*because* folding is result-changing).
+
+**Surfaced before coding (the gap in "IIUC eval = pipeline + north-star"):**
+the two configs are NOT near-clones. They differ in (1) scheduler set
+(paper: 4 main `INCR_Reopt_10/BF/RM/CFS`; gate: 8 main incl. 5 `INCR_Reopt_X`
+period arms the E3 gate needs), (2) task-count list, (3) `run_name_prefix`
+(`""` vs `evalsuite`). The eval suite does NOT simulate — it reads whatever
+the pipeline simulated. So merging to ONE config = picking ONE scheduler set.
+Asked the user; they picked **"paper set; drop gate_eval"** (D1=α): single
+config = `paper_simulation_config.json`; gate eval runs against the 6-scheduler
+paper set; E3 loses its period-arm signal.
+
+**E3 consequence (traced, non-fatal):** `evaluate_e3` → `_e3_at_n` needs ≥2
+`INCR_Reopt_X` arms. test_mode simulates only `INCR_Reopt_10` → E3 reports
+MISSING at every N (not fatal; Q1/Q2/Q3/E1 still evaluate on BF/INCR_Reopt_10/
+CFS/RM). prod_mode's ablation list carries `INCR_Reopt_1/_10/_30/_60` (missing
+`_5`) → E3 evaluates over those four arms in prod. No crash; suite emits a
+verdict. (Earlier this session a concurrent edit to `paper_simulation_config.json`
+added `INCR_Reopt_1/_30/_60` to the prod ablation list — preserved; the
+stale-file guard caught the divergence before a block-replace clobbered it.)
+
+**D6 resolved (the script dedup, regardless of the config answer):** the eval
+script ALREADY delegated the pipeline stage to `run_simulation_and_plot_figures.sh`
+(lines 76-87). The duplicated code was its OWN build block (old lines 67-73),
+which double-built (eval builds, then the pipeline it calls builds again).
+REMOVED that build block. Eval script is now: header → validate config →
+delegate pipeline (builds+simulates+aggregates) → `evaluation_suite.py` →
+verdict. `SKIP_PIPELINE=1` (eval-only) needs no build. NOT merged into one
+`--eval_ns` script — the dedup (share the pipeline's build) IS the merge.
+
+**Fold done (D1=α):**
+- Added `eval_quality_task_counts` / `eval_overhead_task_count` / `eval_period_arms`
+  to `paper_simulation_config.json` test+prod mode (faithful verbatim values from
+  the deleted gate config, so the gate behaves the same modulo the scheduler set).
+- `git rm gate_eval_config.json`. Stale name FAILS LOUDLY (pinned).
+- `evaluation_suite.py` `--config_json` default + docstring usage →
+  `paper_simulation_config.json` (was `gate_eval_config.json`).
+- `run_simulation_plot_eval_ns.sh` `CONFIG_JSON` default →
+  `paper_simulation_config.json`; header/comment text updated.
+- `incr_et_profiling.json` `_comment` cross-ref updated
+  (`gate_eval_config.json` → "single config" note).
+
+**Verify (this session):**
+- `bash -n` both scripts: SYNTAX_OK. `json.load` both surviving configs: valid.
+- `pytest tests/python/test_experiment_config_loader.py
+  test_run_end_to_end_rerun_mode.py test_run_end_to_end.py` → **43 passed**
+  (config-loader now 12/12: added `test_folded_gate_eval_config_does_not_exist` +
+  `test_loading_via_folded_gate_eval_name_raises` + reframed
+  `TestGateEvalConfigSurvives` → `TestPaperConfigCarriesEvalKeys` + a
+  `test_paper_config_scheduler_set_is_the_paper_set` consequence-pin).
+- `DRY_RUN=1` eval script (both paths): default config resolves to
+  `paper_simulation_config.json`; pipeline delegation intact; SKIP_PIPELINE=1
+  path no longer builds.
+
+**Remaining DEFERRED:** Fig 2 extension in `run_paper_figures.sh` (goal a);
+bit-identical figure re-run (semantics unchanged by pure rename/dedup; TDD pins
+layout+defaults not figure bytes); the prod gate run is now heavier than the old
+dedicated gate config (paper sizing: 8 N × 6 sched × 10 tasksets vs old 4 N ×
+10 sched × 5 tasksets) — a result-changing consequence of sharing the paper
+config, accepted by the user's choice.
+

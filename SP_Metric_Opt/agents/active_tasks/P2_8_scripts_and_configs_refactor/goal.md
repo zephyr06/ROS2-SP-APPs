@@ -93,8 +93,17 @@ requires a decision:
   (fallbacks otherwise); drop the dedicated eval config. Run gate eval by
   passing `--eval_ns` + pointing at a config that has the gate scheduler set.
 
-**Recommendation:** (γ) + fold the `eval_*` keys into `paper_simulation_config.json`
-so gate eval is flag-gated and config-driven. NEEDS USER DECISION.
+**RESOLVED (2026-07-24): RE-RESOLVED α** (was β earlier this date). User picked
+"paper set; drop gate_eval" — fold the `eval_*` keys into
+`paper_simulation_config.json` and DELETE `gate_eval_config.json`. The eval
+suite does NOT simulate (it reads whatever the pipeline simulated), so merging
+to one config means the gate eval runs against the PAPER scheduler set, not the
+former 10-scheduler gate set. **Accepted consequence:** E3 (INCR_Reopt_X
+period-monotonicity) needs ≥2 period arms; test_mode simulates only
+`INCR_Reopt_10` → E3 reports MISSING at every N (non-fatal; Q1/Q2/Q3/E1 still
+evaluate). The gate scheduler set itself is NOT folded (the paper set wins).
+The `eval_*` keys are folded verbatim so the gate→N mapping is unchanged.
+Pinned by `TestPaperConfigCarriesEvalKeys` + stale-name-fails-loudly.
 
 ### D2 — `--steps` is stale (already removed)
 

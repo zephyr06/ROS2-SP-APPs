@@ -2360,3 +2360,19 @@ confirm the flip on the loaded tasksets.
 > observe C++ SP); 3b (perf-only recompute-savings benchmark) deferred then
 > closed by the user's e2e optimizer-binary verification (results acceptable).
 > Full record: `agents/finished_tasks/P1_18_classify_reuse_per_task_more_types/`.
+
+- **P2.8 (scripts & configs refactor) — D1 re-resolved β→α + D6 resolved
+  (working tree, NOT committed).** Folded the `eval_*` keys into
+  `paper_simulation_config.json` and DELETED `gate_eval_config.json`; the eval
+  suite + eval script now default to the single paper config. Reverses the
+  earlier β (which kept the gate config separate *because* folding is
+  result-changing). Accepted consequence: the gate eval runs against the
+  6-scheduler PAPER set, not the former 10-scheduler gate set — test_mode E3
+  (INCR_Reopt_X period-monotonicity) reports MISSING at every N (only
+  `INCR_Reopt_10` simulated, non-fatal); Q1/Q2/Q3/E1 still evaluate on
+  BF/INCR_Reopt_10/CFS/RM. D6: the eval script delegates the pipeline stage to
+  `run_simulation_and_plot_figures.sh` (already did) — removed its redundant
+  own-build block that was double-building (the pipeline it delegates to builds
+  itself). TDD 12/12 config-loader + 43/43 python suite green; both script
+  DRY_RUNs resolve the paper config. Full record:
+  `agents/active_tasks/P2_8_scripts_and_configs_refactor/`.

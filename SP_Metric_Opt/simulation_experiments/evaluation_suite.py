@@ -66,12 +66,22 @@ SP-metric / I/O; see ``run_sim_experiments.py``).
 Usage
 -----
     python3 -m simulation_experiments.evaluation_suite \\
-        --config_json simulation_experiments/configs/gate_eval_config.json \\
+        --config_json simulation_experiments/configs/paper_simulation_config.json \\
         --mode prod
 
-Or via the wrapper ``scripts/run_simulation_plot_eval_ns.sh`` which runs the pipeline
-first. Exit code is 0 only if every gate passes, so CI / the shell wrapper can
+``--config_json`` defaults to the shipped ``paper_simulation_config.json``
+(the single config, since P2.8 folded the eval_* keys in and deleted the
+dedicated gate-eval config). Or via the wrapper
+``scripts/run_simulation_plot_eval_ns.sh`` which runs the pipeline first.
+Exit code is 0 only if every gate passes, so CI / the shell wrapper can
 gate on it.
+
+Note (P2.8 D1=alpha): the gate eval runs against whichever scheduler set the
+active config carries -- by default the PAPER set (main+ablation union of
+``paper_simulation_config.json``), NOT the former 10-scheduler gate set.
+Q1/Q2/Q3/E1 evaluate against BF/INCR_Reopt_10/CFS/RM. E3 needs >=2 INCR_Reopt_X
+period arms; it evaluates over the arms the config actually simulates, else
+reports MISSING (non-fatal).
 """
 import argparse
 import json
@@ -608,7 +618,7 @@ def main(argv=None):
     parser.add_argument(
         "--config_json",
         default=os.path.join(os.path.dirname(__file__), "configs",
-                             "gate_eval_config.json"),
+                             "paper_simulation_config.json"),
         help="Path to the evaluation suite config JSON.",
     )
     parser.add_argument(
