@@ -33,6 +33,14 @@ extern int ReoptimizationPeriod;
 extern int IncrementalTimeLimitSearchPatience;
 extern int ReoptimizationTimeLimitSearchPatience;
 
+// P2.9 lever A: when nonzero, the reopt TL coordinate walk (inside
+// PerformCoordinateDescentForTaskConfigOpt) routes its per-candidate eval
+// through EvaluateTimeLimitConfig_SubIncremental (cache-routed, |diff|<=1
+// single-task re-search) instead of the legacy full-beam
+// EvaluateTimeLimitConfig_ScratchOrIncre(from_scratch=true). See
+// parameters.yaml for the accuracy/speed trade-off. Default 0 (legacy).
+extern int ReoptimizationUseSubIncrementalWalk;
+
 // simulation export controls
 extern int EXPORT_DETAIL_LEVEL;               // 0=sp_metrics_only, 1=+miss_rate_per_task, 2=+task_aggregate, 3=+full_job_traces
 extern int METRIC_SAMPLE_INTERVAL_SECONDS;    // 0=un-sampled (all intervals), N>0=sample every N seconds
