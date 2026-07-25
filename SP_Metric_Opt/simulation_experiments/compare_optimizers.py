@@ -62,7 +62,7 @@ except ImportError:
 ALL_SCHEDULERS = [
     "INCR_Reopt_10", "BF",
     "INCR_NO_TL", "INCR_WCET",
-    "RM", "RM_FAST", "RM_SLOW",
+    "RM_FAST", "RM_SLOW",
     "CFS",
 ]
 

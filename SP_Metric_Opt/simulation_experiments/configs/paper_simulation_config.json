@@ -1,5 +1,5 @@
 {
-    "_comment": "Central experiment configuration (JSON). All simulation and plotting parameters live here. Scripts load this file via experiment_config_loader.py. Modify values directly; no CLI overrides are supported. This is ALSO the single config the north-star gate eval reads (P2.8 D1=alpha fold): the eval_* keys in each mode block carry the gate->N mapping; the pipeline ignores them, evaluation_suite.py reads them. The former dedicated gate_eval_config.json was DELETED; pointing at its old name FAILS LOUDLY. Consequence of the fold: the gate eval runs against the PAPER scheduler set (main+ablation union), NOT the former 10-scheduler gate set. Q1/Q2/Q3/E1 still evaluate (BF/INCR_Reopt_10/CFS/RM simulated). E3 (INCR_Reopt_X period-monotonicity) needs >=2 INCR_Reopt_X arms; test_mode simulates only INCR_Reopt_10 -> E3 reports MISSING at every N (non-fatal); prod_mode's ablation list carries INCR_Reopt_1/_10/_30/_60 (missing _5) so E3 evaluates over those four arms.",
+    "_comment": "Central experiment configuration (JSON). All simulation and plotting parameters live here. Scripts load this file via experiment_config_loader.py. Modify values directly; no CLI overrides are supported. This is ALSO the single config the north-star gate eval reads (P2.8 D1=alpha fold): the eval_* keys in each mode block carry the gate->N mapping; the pipeline ignores them, evaluation_suite.py reads them. The former dedicated gate_eval_config.json was DELETED; pointing at its old name FAILS LOUDLY. Consequence of the fold: the gate eval runs against the PAPER scheduler set (main+ablation union), NOT the former 10-scheduler gate set. Q1/Q2/Q3/E1 still evaluate (BF/INCR_Reopt_10/CFS/RM_FAST/RM_SLOW simulated). E3 (INCR_Reopt_X period-monotonicity) needs >=2 INCR_Reopt_X arms; test_mode simulates only INCR_Reopt_10 -> E3 reports MISSING at every N (non-fatal); prod_mode's ablation list carries INCR_Reopt_1/_10/_30/_60 (missing _5) so E3 evaluates over those four arms.",
     "_comment_on_naming": "All keys use full descriptive names. Avoid abbreviations. Times are in seconds unless noted.",
 
     "test_mode": {
@@ -9,7 +9,7 @@
         "num_tasksets_to_generate": 2,
         "simulation_duration_seconds": 70,
         "scheduler_trigger_interval_seconds": 10,
-        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM", "CFS"],
+        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
         "ablation_scheduler_list": ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET"],
         "interval_sweep_seconds_list": [5, 10],
         "parallel_worker_processes": 4,
@@ -28,7 +28,7 @@
         "num_tasksets_to_generate": 10,
         "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
-        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM", "CFS"],
+        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
         "ablation_scheduler_list": ["INCR_NO_TL", "INCR_WCET", "INCR_Reopt_1", "INCR_Reopt_30", "INCR_Reopt_60" ],
         "interval_sweep_seconds_list": [1, 5, 10, 30, 60],
         "parallel_worker_processes": 12,

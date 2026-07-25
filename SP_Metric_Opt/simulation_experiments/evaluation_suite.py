@@ -79,7 +79,7 @@ gate on it.
 Note (P2.8 D1=alpha): the gate eval runs against whichever scheduler set the
 active config carries -- by default the PAPER set (main+ablation union of
 ``paper_simulation_config.json``), NOT the former 10-scheduler gate set.
-Q1/Q2/Q3/E1 evaluate against BF/INCR_Reopt_10/CFS/RM. E3 needs >=2 INCR_Reopt_X
+Q1/Q2/Q3/E1 evaluate against BF/INCR_Reopt_10/CFS/RM_FAST/RM_SLOW. E3 needs >=2 INCR_Reopt_X
 period arms; it evaluates over the arms the config actually simulates, else
 reports MISSING (non-fatal).
 """
@@ -116,8 +116,11 @@ from simulation_experiments.experiment_config_loader import (  # noqa: E402
 INCR = "INCR_Reopt_10"
 BF = "BF"
 # Baselines that INCR must beat for gate Q3 (the ablation group minus INCR
-# itself, plus the two non-optimizer schedulers).
-Q3_BASELINES = ["RM", "CFS", "INCR_NO_TL", "INCR_WCET"]
+# itself, plus the non-optimizer schedulers: the two RM time-limit variants
+# RM_FAST/RM_SLOW and CFS). The bare "RM" arm was replaced by RM_FAST+RM_SLOW
+# in every config's main_scheduler_list, so the gate reads the two variants
+# actually simulated.
+Q3_BASELINES = ["RM_FAST", "RM_SLOW", "CFS", "INCR_NO_TL", "INCR_WCET"]
 
 # Default ordered period arms for gate E3 (the P1.1 A/B set). ``INCR_Reopt_10``
 # (the canonical incremental arm the Q1/Q2/Q3/E1 gates read) IS the period=10
