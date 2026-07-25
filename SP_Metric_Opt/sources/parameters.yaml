@@ -1,6 +1,6 @@
 %YAML:1.0
 # the time limit to run optimization for one time
-TIME_LIMIT: 1 # seconds
+TIME_LIMIT: 10 # seconds
 
 # must be no less than 1, granularity balences accuracy and speed;
 Granularity: 10
@@ -29,6 +29,7 @@ Layer_Node_During_Incremental_Optimization: 2
 ReoptimizationPeriod: 10
 IncrementalTimeLimitSearchPatience: 0
 ReoptimizationTimeLimitSearchPatience: 1
+
 # P2.9 lever A: route the reopt TL coordinate walk through the sub-incremental
 # eval (cache-routed, |diff|<=1 single-task re-search) instead of the legacy
 # full-beam eval (one OptimizeFromScratch per trial TL). After the ONE baseline

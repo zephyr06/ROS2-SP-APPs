@@ -1065,6 +1065,12 @@ class CounterDispatcherSynthetic : public ::testing::Test {
        public:
         std::vector<bool> from_scratch_flags;
         int serialized_entries = 0;
+        // P2.9 lever A: counts per-candidate evals routed through the
+        // sub-incremental (cache-routed, |diff|<=1) eval. The legacy reopt walk
+        // never calls this for its TL trials (it uses ScratchOrIncre); the
+        // lever-A walk routes every trial here. So subincremental_calls>0 after
+        // a reopt descent is the lever-A routing signal.
+        int subincremental_calls = 0;
         using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
         double EvaluateTimeLimitConfig_ScratchOrIncre(
             int K, const std::vector<double>& time_limits,
@@ -1073,6 +1079,14 @@ class CounterDispatcherSynthetic : public ::testing::Test {
             return OptimizePA_Incre_with_TimeLimits::
                 EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits,
                                                        from_scratch);
+        }
+        double EvaluateTimeLimitConfig_SubIncremental(
+            int K, const std::vector<double>& time_limits, size_t task_idx,
+            bool et_increased) override {
+            ++subincremental_calls;
+            return OptimizePA_Incre_with_TimeLimits::
+                EvaluateTimeLimitConfig_SubIncremental(K, time_limits, task_idx,
+                                                       et_increased);
         }
         void PerformSerializedTaskQueueOptimization(
             int K, std::vector<double>& starting_time_limits,
@@ -1104,16 +1118,21 @@ class CounterDispatcherSynthetic : public ::testing::Test {
 
         saved_period_ = GlobalVariables::ReoptimizationPeriod;
         GlobalVariables::ReoptimizationPeriod = 10;
+        saved_subincremental_walk_ =
+            GlobalVariables::ReoptimizationUseSubIncrementalWalk;
     }
 
     void TearDown() override {
         GlobalVariables::ReoptimizationPeriod = saved_period_;
+        GlobalVariables::ReoptimizationUseSubIncrementalWalk =
+            saved_subincremental_walk_;
     }
 
     MAP_Prev mapPrev;
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
     int saved_period_;
+    int saved_subincremental_walk_;
 };
 
 // The counter advances by 1 after every dispatch and never resets. Three
@@ -1187,6 +1206,63 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
         << "count==1 must route through the incremental (serialized driver) "
         << "branch; it never entered PerformSerializedTaskQueueOptimization "
         << "(reopt ran instead).";
+}
+
+// P2.9 lever A — default-OFF routing. With ReoptimizationUseSubIncrementalWalk=0
+// (the production default), the reopt descent's TL walk evaluates every trial TL
+// through the legacy full-beam EvaluateTimeLimitConfig_ScratchOrIncre
+// (from_scratch=true). The sub-incremental eval is the incremental path's
+// primitive; the legacy reopt walk must NOT touch it. So after a count==0 reopt
+// dispatch, subincremental_calls==0 (no walk trial routed through it) while the
+// from-scratch flags are non-empty (the baseline beam + every walk trial).
+TEST_F(CounterDispatcherSynthetic,
+       ReoptWalk_Legacy_Off_RoutesTrialsThroughScratchOrIncre) {
+    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 0;
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // count==0 → reopt
+
+    ASSERT_FALSE(opt.from_scratch_flags.empty())
+        << "count==0 reopt must evaluate candidates through "
+        << "EvaluateTimeLimitConfig_ScratchOrIncre (baseline beam + walk trials).";
+    for (bool fs : opt.from_scratch_flags) {
+        EXPECT_TRUE(fs) << "legacy reopt walk must evaluate every trial with "
+                        << "from_scratch=true; saw a false flag.";
+    }
+    EXPECT_EQ(0, opt.subincremental_calls)
+        << "legacy reopt walk (flag OFF) must NOT route any trial through the "
+        << "sub-incremental eval; that is the incremental path's primitive.";
+}
+
+// P2.9 lever A — flag-ON routing. With ReoptimizationUseSubIncrementalWalk=1,
+// the reopt descent still runs ONE baseline beam through
+// EvaluateTimeLimitConfig_ScratchOrIncre(from_scratch=true) to establish the
+// champion, then switches the TL walk's per-candidate eval to the cache-routed
+// EvaluateTimeLimitConfig_SubIncremental (|diff|<=1 single-task re-search). So
+// after a count==0 reopt dispatch: from_scratch_flags is non-empty (the one
+// baseline beam) AND subincremental_calls>0 (the walk trials). The walk trials
+// must NOT appear as from_scratch flags — only the baseline beam does.
+TEST_F(CounterDispatcherSynthetic,
+       ReoptWalk_LeverA_On_RoutesWalkTrialsThroughSubIncremental) {
+    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 1;
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // count==0 → reopt
+
+    // The baseline beam still runs through ScratchOrIncre(from_scratch=true).
+    ASSERT_FALSE(opt.from_scratch_flags.empty())
+        << "lever-A reopt must still run the one baseline beam through "
+        << "EvaluateTimeLimitConfig_ScratchOrIncre.";
+    for (bool fs : opt.from_scratch_flags) {
+        EXPECT_TRUE(fs);
+    }
+    // The walk trials route through the sub-incremental eval. T_perf has a
+    // 10-option TL set; on this monotonic SP landscape the walk takes ≥1 step
+    // before patience stops it, so subincremental_calls>0.
+    EXPECT_GT(opt.subincremental_calls, 0)
+        << "lever-A reopt walk must route its per-candidate trials through the "
+        << "sub-incremental eval; saw zero calls (the walk did not run, or ran "
+        << "through the legacy ScratchOrIncre path instead).";
 }
 
 // INCR diff-baseline invariant (P0.5 redesign). The whole point of carrying an

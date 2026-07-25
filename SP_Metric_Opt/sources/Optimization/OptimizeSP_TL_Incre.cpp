@@ -495,11 +495,39 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
                        ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
                        : GlobalVariables::IncrementalTimeLimitSearchPatience;
 
+    // P2.9 lever A: when the flag is on AND this is the from-scratch/reopt
+    // descent, route the per-task TL walk through the sub-incremental eval
+    // (cache-routed, |diff|<=1 single-task re-search) instead of the legacy
+    // full-beam eval. The incremental (warm-started) path already uses the
+    // sub-incremental machinery directly (PerformSerializedTaskQueueOptimization),
+    // so this only re-arms the reopt descent's walk — the common case where a
+    // single-task TL change does not shift the global optimum PA by >1 task.
+    // NOT bit-identical to the legacy from-scratch-per-candidate walk (reopt's
+    // PA search can be non-unimodal at high util); gated, default OFF.
+    // See parameters.yaml for the trade-off.
+    bool use_subincremental_walk =
+        from_scratch && GlobalVariables::ReoptimizationUseSubIncrementalWalk;
+
     // Reset the baseline for this interval so the eval below measures against
     // the correct current-interval baseline, not a stale prior.
     ResetIncumbentBaseline(from_scratch);
     double current_config_sp = EvaluateTimeLimitConfig_ScratchOrIncre(
         K, starting_time_limits, from_scratch);
+
+    if (use_subincremental_walk) {
+        // Re-arm the cache: the baseline beam above committed its champion via
+        // CommitIncumbent, but with rta_cache_active_ false (ResetIncumbentBaseline
+        // clears it), so the cache was NOT adopted. Adopt the committed triple
+        // now (|diff|==0 → Evaluate's FullReuse path, zero-cost) and arm the gate
+        // so every subsequent accepted walk step re-adopts via CommitIncumbent —
+        // mirroring PerformSerializedTaskQueueOptimization's setup. This makes the
+        // |diff|<=1 single-change invariant hold for the whole walk.
+        rta_cache_active_ = true;
+        std::vector<double> champion_tl = ReconstructTimeLimitVecFromResOpt();
+        const std::vector<FiniteDist>& champ_rtas =
+            rta_cache_.Evaluate(dag_tasks_, opt_pa_, champion_tl);
+        rta_cache_.AdoptChampion(dag_tasks_, opt_pa_, champion_tl, champ_rtas);
+    }
 
     for (size_t idx : sorted_indices) {
         // Skip {-1}-only tasks (no perf pairs → no TL freedom).
@@ -508,14 +536,48 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
             continue;
 
         double baseline_val = starting_time_limits[idx];
-        // Backward pass (tie-break toward smaller TL on SP ties via step<0), then
-        // a forward pass from the original starting TL.
-        current_config_sp = OptimizeSingleTaskTimeLimit(
-            idx, K, starting_time_limits, current_config_sp, baseline_val,
-            /*step=*/-1, from_scratch, patience);
-        current_config_sp = OptimizeSingleTaskTimeLimit(
-            idx, K, starting_time_limits, current_config_sp, baseline_val,
-            /*step=*/1, from_scratch, patience);
+        if (use_subincremental_walk) {
+            // Sub-incremental walk: each trial TL calls the cache-routed
+            // EvaluateTimeLimitConfig_SubIncremental (re-scores the carried PA +
+            // 1D single-task re-search), reusing the incremental path's machinery.
+            // et_increased per step = sign of (trial TL − committed TL), matching
+            // PerformSerializedTaskQueueOptimization's Type-L body.
+            size_t task_idx = idx;
+            int K_cap = K;
+            auto eval = [this, K_cap, task_idx,
+                         baseline_val](const std::vector<double>& tl) {
+                bool et_up = tl[task_idx] > baseline_val;
+                return EvaluateTimeLimitConfig_SubIncremental(K_cap, tl, task_idx,
+                                                              et_up);
+            };
+            // Backward pass (tie-break toward smaller TL on SP ties via step<0),
+            // then a forward pass from the same origin.
+            current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
+                task_idx, starting_time_limits, current_config_sp, baseline_val,
+                /*step=*/-1, patience, eval);
+            current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
+                task_idx, starting_time_limits, current_config_sp, baseline_val,
+                /*step=*/1, patience, eval);
+            // Keep the working TL vector tracking the committed best so the next
+            // task's baseline reflects any adoption (mirrors the serialized loop).
+            starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+        } else {
+            // Legacy walk: full-beam eval per trial TL (OptimizeFromScratch).
+            // Backward pass (tie-break toward smaller TL on SP ties via step<0),
+            // then a forward pass from the original starting TL.
+            current_config_sp = OptimizeSingleTaskTimeLimit(
+                idx, K, starting_time_limits, current_config_sp, baseline_val,
+                /*step=*/-1, from_scratch, patience);
+            current_config_sp = OptimizeSingleTaskTimeLimit(
+                idx, K, starting_time_limits, current_config_sp, baseline_val,
+                /*step=*/1, from_scratch, patience);
+        }
+    }
+    // Disarm the cache gate on the way out so the reopt path does not leave it
+    // armed for the next interval's reset (ResetIncumbentBaseline clears it too,
+    // but this keeps the gate scoped to this descent exactly).
+    if (use_subincremental_walk) {
+        rta_cache_active_ = false;
     }
 }
 
