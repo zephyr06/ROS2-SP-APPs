@@ -42,7 +42,7 @@
 #   The C++ binary reads TIME_LIMIT from sources/parameters.yaml at STATIC INIT
 #   (Parameters.cpp: YAML::LoadFile runs before main()), so the file must carry
 #   the configured value before the binary process starts. This script delegates
-#   the edit to scripts/patch_time_limit.py: it reads time_limit_seconds from the
+#   the edit to scripts/lib/patch_time_limit.py: it reads time_limit_seconds from the
 #   active config/mode (default 1s), backs up sources/parameters.yaml, patches
 #   the TIME_LIMIT line, and this script restores the original file on exit
 #   (normal / error / signal). Skipped on DRY_RUN. time_limit_seconds bounds ONE
@@ -93,7 +93,7 @@ fi
 register_signal_trap
 
 # --- Overwrite sources/parameters.yaml TIME_LIMIT from the config ---
-# Delegates the YAML edit to scripts/patch_time_limit.py (readable Python, not
+# Delegates the YAML edit to scripts/lib/patch_time_limit.py (readable Python, not
 # an inline awk/JSON one-liner). The helper backs up the original, patches only
 # the first 'TIME_LIMIT:' line (preserving the trailing comment), and prints the
 # backup path as its final stdout line -- captured here so the EXIT trap can
@@ -108,7 +108,7 @@ restore_params_yaml() {
     if [[ -n "${_PARAMS_BACKUP}" ]]; then
         # Pass the captured backup path explicitly (positional: PARAMS_YAML BACKUP)
         # so restore is not dependent on the sibling-search fallback.
-        "${PYTHON}" "${SCRIPT_DIR}/patch_time_limit.py" restore \
+        "${PYTHON}" "${SCRIPT_DIR}/lib/patch_time_limit.py" restore \
             "${PARAMS_YAML}" "${_PARAMS_BACKUP}" >/dev/null 2>&1 || true
         _PARAMS_BACKUP=""
     fi
@@ -132,7 +132,7 @@ if [[ "${DRY_RUN}" != "1" ]]; then
     # patches the TIME_LIMIT line, and prints the backup path as its FINAL line.
     # Capture every line (status echo + backup path) but keep only the last for
     # the restore trap; fail loudly (exit 2) if the helper rejects the contract.
-    _PATCH_OUT="$("${PYTHON}" "${SCRIPT_DIR}/patch_time_limit.py" patch \
+    _PATCH_OUT="$("${PYTHON}" "${SCRIPT_DIR}/lib/patch_time_limit.py" patch \
         "${_RESOLVED_CONFIG}" "${MODE}" "${PARAMS_YAML}")" || {
         echo "${_PATCH_OUT}" >&2
         echo "ERROR: patch_time_limit.py patch failed." >&2

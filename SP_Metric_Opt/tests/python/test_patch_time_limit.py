@@ -1,4 +1,4 @@
-"""Tests for scripts/patch_time_limit.py -- the parameters.yaml TIME_LIMIT patcher.
+"""Tests for scripts/lib/patch_time_limit.py -- the parameters.yaml TIME_LIMIT patcher.
 
 Pins the contract run_simulation_and_plot_figures.sh depends on:
   - the first 'TIME_LIMIT:' line is rewritten in place; the rest of the file
@@ -23,7 +23,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "scripts")
+SCRIPTS_DIR = os.path.join(PROJECT_ROOT, "scripts", "lib")
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
