@@ -211,3 +211,42 @@ env-changed tasks with no perf pair (Type-E) are reached.
 ### Status
 Awaiting user review + commit of this flag-gated Type-E step as a standalone
 modular commit. Per "work by module, commit by module."
+
+## 2026-07-25 — Phase 1a landed (shared `WalkSerializedTaskQueue` helper)
+
+### What landed
+The per-entry Type-E/Type-L dispatch was duplicated byte-for-byte between the
+two descent bodies:
+- `PerformSerializedTaskQueueOptimization` (incremental) — inline loop;
+- `PerformCoordinateDescentForTaskConfigOpt` flag-on arm — a local
+  `walk_serialized_entry` lambda (added in Phase 3b).
+
+Both now call ONE shared helper `WalkSerializedTaskQueue(queue, K, tl, sp,
+patience)`, defined right after `BuildSerializedTaskQueue`. Each call site is
+one line. The helper body is literally the inline loop (no logic change).
+
+### Scope / safety
+- **Behavior-neutral dedup.** No new logic, no flag change, no signature change
+  to existing functions. The helper is a pure extraction of identical code.
+- **Bit-identity gate:** flag OFF (default) → only the incremental path uses
+  the helper in prod, and the extracted body is byte-identical to the inline
+  loop it replaced → prod SP unchanged. `testIncreOpt_w_TL` pins both the
+  incremental serialized walk AND the Phase 3b Type-E reopt reach test
+  (flag-on path), so both call sites of the helper are exercised.
+- 17/17 ctest green (`--clean-first`, header changed).
+
+### NOT done (remaining Phase 1+)
+- Phase 1b-1e: unify the two full descent bodies into one
+  `RunIntervalDescent(K, tl, mode, dag_prev_pre_tl)` parameterized over
+  `mode ∈ {Incremental, Reopt}`, then route both entries through it and delete
+  the originals. The walk is now shared (1a); the remaining delta is the setup
+  preamble (baseline seed: dedicated re-score vs upfront `ScratchOrIncre`
+  re-opt; cache arming) + the legacy-arm fallback. This is the larger
+  structural unification.
+- Phase 0.5 (`_PAReopt` rename) — re-decide; NOT a blocker.
+- Phase 2 (delete `OptimizeSingleTaskTimeLimit` + P2.9 flag) — post-A/B only.
+- Phase 5 A/B at N=16 (`INCR_Reopt_1`/`_10`, flag 0 vs 1) — the gate.
+
+### Status
+Awaiting user review + commit of the Phase 1a dedup as a standalone modular
+commit. Per "work by module, commit by module."

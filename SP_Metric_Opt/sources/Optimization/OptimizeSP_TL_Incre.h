@@ -190,6 +190,19 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     std::vector<SerializedTaskQueueEntry> BuildSerializedTaskQueue(
         const DAG_Model& dag_tasks_prev_pre_tl) const;
 
+    // Walks the merged E+L serialized queue in place. Type-E → SubIncremental
+    // re-search at the committed TL (no TL walk); Type-L → OptimizeOneTaskTimeLimit
+    // TL walk. Each step adopts into res_opt_, so the next step's challenger sees
+    // the new champion and the diff flags only the walked task (|diff|<=1).
+    // Shared by PerformSerializedTaskQueueOptimization (incremental) and the
+    // PerformCoordinateDescentForTaskConfigOpt flag-on arm (reopt) — both ran this
+    // exact loop inline before P2.11 Phase 1. Returns the final SP; syncs
+    // starting_time_limits to the adopted champion.
+    double WalkSerializedTaskQueue(
+        const std::vector<SerializedTaskQueueEntry>& queue, int K,
+        std::vector<double>& starting_time_limits, double current_config_sp,
+        int patience);
+
     // Serialized loop driver — the incremental-path replacement for
     // PerformCoordinateDescentForTaskConfigOpt. Resets the baseline, re-scores the
     // champion under the new env (dedicated re-score, NOT ScratchOrIncre — must

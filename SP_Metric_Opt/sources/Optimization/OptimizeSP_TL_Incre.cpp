@@ -338,6 +338,32 @@ OptimizePA_Incre_with_TimeLimits::BuildSerializedTaskQueue(
     return queue;
 }
 
+double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
+    const std::vector<SerializedTaskQueueEntry>& queue, int K,
+    std::vector<double>& starting_time_limits, double current_config_sp,
+    int patience) {
+    // Shared per-entry dispatch for the incremental + reopt flag-on arms (P2.11
+    // Phase 1 dedup). Each step's UpdateRecords adopts into res_opt_, so the next
+    // step's challenger sees the new champion; the committed TL tracks the adopted
+    // best, so the diff flags only the walked task (|diff|<=1).
+    for (const SerializedTaskQueueEntry& entry : queue) {
+        if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
+            // Type-E: sub-incremental re-search at the committed TL (no TL walk).
+            // et_increased = the env-move direction carried on the entry.
+            current_config_sp = EvaluateTimeLimitConfig_SubIncremental(
+                K, starting_time_limits, static_cast<size_t>(entry.task_id),
+                entry.et_increased);
+            starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+        } else {
+            // Type-L: TL walk, each step calling the sub-incremental eval.
+            current_config_sp = OptimizeOneTaskTimeLimit(
+                K, static_cast<size_t>(entry.task_id), starting_time_limits,
+                current_config_sp, starting_time_limits[entry.task_id], patience);
+        }
+    }
+    return current_config_sp;
+}
+
 void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
     int K, std::vector<double>& starting_time_limits,
     const DAG_Model& dag_tasks_prev_pre_tl) {
@@ -370,21 +396,8 @@ void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
     // 4. Walk serially: each step's UpdateRecords adopts into res_opt_, so the
     //    next step's challenger sees the new champion. The committed TL tracks
     //    the adopted best, so the diff flags only the walked task (|diff|==1).
-    for (const SerializedTaskQueueEntry& entry : queue) {
-        if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
-            // Type-E: sub-incremental re-search at the committed TL (no TL walk).
-            // et_increased = the env-move direction carried on the entry.
-            current_config_sp = EvaluateTimeLimitConfig_SubIncremental(
-                K, starting_time_limits, static_cast<size_t>(entry.task_id),
-                entry.et_increased);
-            starting_time_limits = ReconstructTimeLimitVecFromResOpt();
-        } else {
-            // Type-L: TL walk, each step calling the sub-incremental eval.
-            current_config_sp = OptimizeOneTaskTimeLimit(
-                K, static_cast<size_t>(entry.task_id), starting_time_limits,
-                current_config_sp, starting_time_limits[entry.task_id], patience);
-        }
-    }
+    current_config_sp = WalkSerializedTaskQueue(queue, K, starting_time_limits,
+                                                current_config_sp, patience);
     opt_pa_ = res_opt_.priority_vec;
     opt_sp_ = res_opt_.sp_opt;
 }
@@ -547,34 +560,12 @@ void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
     // weight-sorted) — the SAME queue the incremental path uses — so env-changed
     // tasks with no perf pair are reached via their Type-E entry. The legacy arm
     // walks sorted_indices (Type-L only; {-1}-only tasks skipped at line below).
-    std::vector<SerializedTaskQueueEntry> serialized_queue;
     if (use_subincremental_walk) {
-        serialized_queue = BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
-    }
-
-    auto walk_serialized_entry =
-        [&](const SerializedTaskQueueEntry& entry) {
-            if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
-                // Type-E: sub-incremental re-search at the committed TL (no TL
-                // walk). et_increased = the env-move direction carried on the
-                // entry. Identical to the incremental path's Type-E handler.
-                current_config_sp = EvaluateTimeLimitConfig_SubIncremental(
-                    K, starting_time_limits,
-                    static_cast<size_t>(entry.task_id), entry.et_increased);
-                starting_time_limits = ReconstructTimeLimitVecFromResOpt();
-            } else {
-                // Type-L: TL walk, each step calling the sub-incremental eval.
-                current_config_sp = OptimizeOneTaskTimeLimit(
-                    K, static_cast<size_t>(entry.task_id), starting_time_limits,
-                    current_config_sp,
-                    starting_time_limits[entry.task_id], patience);
-            }
-        };
-
-    if (use_subincremental_walk) {
-        for (const SerializedTaskQueueEntry& entry : serialized_queue) {
-            walk_serialized_entry(entry);
-        }
+        std::vector<SerializedTaskQueueEntry> serialized_queue =
+            BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
+        current_config_sp = WalkSerializedTaskQueue(
+            serialized_queue, K, starting_time_limits, current_config_sp,
+            patience);
     } else {
         for (size_t idx : sorted_indices) {
             // Skip {-1}-only tasks (no perf pairs → no TL freedom).

@@ -42,28 +42,48 @@
 
 ## Phase 1 — Unified descent body
 
-- [ ] **1a. Introduce `RunIntervalDescent(K, tl, mode, dag_prev_pre_tl)`** —
-  parameterized over `mode ∈ {Incremental, Reopt}`. Body = the merged table in
-  goal.md (baseline seed / queue / walk arm / patience / cache-active all selected
-  by `mode`).
-- [ ] **1b. Route `OptimizeIntervalIncremental` → `RunIntervalDescent(Incremental)`.**
-- [ ] **1c. Route `OptimizeIntervalFromScratch` → `RunIntervalDescent(Reopt)`**
-  (interval-0 RM-Fast bootstrap stays at the entry, before the descent).
-- [ ] **1d. Delete `RunReoptTLDescent` + `RunIncrementalTLDescent`** once both
-  callers route through `RunIntervalDescent`.
+> Real symbol map (design docs use non-existent renamed symbols — do NOT trust
+> them): incremental descent body = `PerformSerializedTaskQueueOptimization`;
+> reopt descent body = `PerformCoordinateDescentForTaskConfigOpt`; incremental
+> entry = `OptimizeIncre_w_TL`; reopt entry = `ReOptimizePeriodic`; legacy
+> full-beam walk wrapper = `OptimizeSingleTaskTimeLimit`; PA-reopt eval =
+> `EvaluateTimeLimitConfig_ScratchOrIncre`.
+
+- [x] **1a. Extract shared per-entry dispatch → `WalkSerializedTaskQueue`**
+  (behavior-neutral dedup). The Type-E/Type-L per-entry loop was duplicated
+  inline in `PerformSerializedTaskQueueOptimization` AND as a local lambda in
+  the `PerformCoordinateDescentForTaskConfigOpt` flag-on arm; both now call one
+  helper. **DONE 2026-07-25** — 17/17 ctest green (incl. `testIncreOpt_w_TL`
+  which pins both the incremental serialized walk + the Phase 3b Type-E reopt
+  reach test). Bit-identity gate: flag OFF (default) → incremental path only;
+  the extracted body is byte-identical to the inline loop it replaced.
+- [ ] **1b. Unify the two descent bodies into one `RunIntervalDescent(K, tl,
+  mode, dag_prev_pre_tl)`** parameterized over `mode ∈ {Incremental, Reopt}`.
+  Body selects by `mode`: baseline seed (dedicated re-score vs
+  `EvaluateTimeLimitConfig_ScratchOrIncre` upfront re-opt), patience (0 vs 1),
+  cache-active (true both, but reopt arms via the upfront `AdoptChampion` block).
+  The walk is now shared via 1a's helper, so the remaining delta is the setup
+  preamble + the legacy-arm fallback.
+- [ ] **1c. Route `OptimizeIncre_w_TL` → `RunIntervalDescent(Incremental)`.**
+- [ ] **1d. Route `ReOptimizePeriodic` → `RunIntervalDescent(Reopt)`** (interval-0
+  RM-Fast bootstrap stays at the entry, before the descent).
+- [ ] **1e. Delete `PerformSerializedTaskQueueOptimization` +
+  `PerformCoordinateDescentForTaskConfigOpt`** once both callers route through
+  `RunIntervalDescent`.
 
 ## Phase 2 — Delete the legacy reopt arm + P2.9 flag
 
-- [ ] **2a. Delete `WalkOneTaskTimeLimit_FullBeam`** (reopt-only legacy arm).
-  `EvaluateTimeLimitConfig_PAReopt` STAYS — it is still the one upfront
-  baseline re-opt step in reopt mode.
+> Only AFTER the Phase 5 A/B accepts the merge.
+
+- [ ] **2a. Delete `OptimizeSingleTaskTimeLimit`** (reopt-only legacy full-beam
+  walk wrapper). `EvaluateTimeLimitConfig_ScratchOrIncre` STAYS — it is still
+  the one upfront baseline re-opt step in reopt mode.
 - [ ] **2b. Delete the `ReoptimizationUseSubIncrementalWalk` flag** + its
   `Parameters.h`/`parameters.yaml` entries + the 2 P2.9 `CounterDispatcherSynthetic`
   tests' flag-dispatch assertions (keep the `subincremental_calls` counter — it
   now asserts reopt ALWAYS hits the sub-incremental arm).
-- [ ] **2c. Update `RunReoptTLDescent`→`RunIntervalDescent` comments** in
-  `Parameters.h` + `OptimizeSP_TL_Incre.h` (the flag comment repointed in P2.10
-  Phase 3b now points at the unified body).
+- [ ] **2c. Update comments** in `Parameters.h` + `OptimizeSP_TL_Incre.h` (the
+  flag comment repointed in P2.10 Phase 3b now points at the unified body).
 
 ## Phase 3 — Type-E in the reopt queue (reading (a) only)
 
