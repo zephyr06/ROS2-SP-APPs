@@ -244,3 +244,27 @@ fixture → pos k == task k).
 
 Phase 2 → Phase 3: pytest SP-regression check + benchmark recompute savings.
 
+## 2026-07-24 — Task CLOSED
+
+Rule A (Task ET Changed: prefix reuse) + Rule B (Pure Priority Move: window-
+bounded reuse) landed in `RTACache::ClassifyReusePerTask` and committed at
+`09d1fca9`. Gate = safe-upper-bound (cached miss-prob >= true), NOT bit-identity;
+bottom-reuse (pos > p_max) safe because all RTA ops are stochastically
+conservative (Convolve lossless; CompressDistribution uses max value "never
+underestimate"; etc.).
+
+Verification:
+- 17/17 ctest + 63/63 testRTA green (incl. both new Rule B tests
+  `ClassifyReusePerTask_PriorityMoveMiddle_WindowNoReuseBottomFullReuse` +
+  `Evaluate_PriorityMoveMiddle_BottomReuseSafeUpperBound_RuleB`).
+- 3a2 SUPERSEDED: python unit suite is pure-mock subprocess-stub, cannot observe
+  C++ SP — pytest green would prove nothing about Rule B.
+- 3b was a perf-only nicety (savings = K−|jump|−1 per priority-move candidate,
+  zero on adjacent swaps), deferred to a P1.23-style e2e optimizer-binary run.
+  **User ran e2e verification of the optimizer binary 2026-07-24 and results were
+  acceptable** — the end-to-end SP signal 3a2 said was required is now supplied.
+  Formal recompute-count instrumentation not measured (deferred indefinitely; not
+  a gate).
+
+All gates satisfied. Task moved to `finished_tasks/`.
+

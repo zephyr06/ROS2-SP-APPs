@@ -2323,3 +2323,21 @@ confirm the flip on the loaded tasksets.
 
 **P1.11 — Task migrated from P1.9 and simplified 2026-07-18.** Migrated the Incremental RTA Patching records from `P1_9_incremental_rta_patching` to `P1_11_incremental_rta_patching` and simplified `goal.md`, `tasks.md`, and `dev_log.md` to focus purely on the active rev-3 single-champion cache design. Updated `agents/overall_tasks.md` to map P1.11 to the new folder and relocated Partial Task-Subset Optimization to P3.11. Deleted the old P1.9 folder.
 
+
+> ## 2026-07-24 — P1.18 ClassifyReusePerTask fine-grained reuse (Rule A + Rule B): DONE + CLOSED
+>
+> `RTACache::ClassifyReusePerTask` (single-champion cache's reuse classifier)
+> now applies fine-grained per-task reuse instead of the v1 whole-core fallback.
+> **Rule A** (Task ET Changed, `has_et_diff==true`): `pos < p_min → FullReuse`,
+> `pos >= p_min → NoReuse`. **Rule B** (Pure Priority Move, `has_et_diff==false`):
+> `pos < p_min → FullReuse`, `[p_min,p_max] → NoReuse`, `pos > p_max → FullReuse`.
+> **Gate reframed** from bit-identity to a SAFE UPPER BOUND (cached miss-prob >=
+> true; SP_Func monotonically DEcreases in miss-prob, so over-estimating is
+> conservative) — this is why Rule B bottom-reuse is safe: every RTA op is
+> stochastically conservative (Convolve lossless; `CompressDistribution` uses the
+> max value "never underestimate"; etc.). Committed `09d1fca9`. TDD: pinned each
+> verdict with a differential test pre-impl (RED→GREEN). 17/17 ctest + 63/63
+> testRTA green. 3a2 SUPERSEDED (python suite is pure-mock subprocess-stub, can't
+> observe C++ SP); 3b (perf-only recompute-savings benchmark) deferred then
+> closed by the user's e2e optimizer-binary verification (results acceptable).
+> Full record: `agents/finished_tasks/P1_18_classify_reuse_per_task_more_types/`.

@@ -18,3 +18,28 @@ Iterative modifications by AI agents have introduced bloated, multi-paragraph co
 - `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`
 - `sources/Optimization/OptimizeSP_Incre.{h,cpp}`
 - `sources/Safety_Performance_Metric/PrioritySwitchAnalysis.h`
+
+## 2026-07-24 — Phase 1b (audit) + Phase 2a (`RTA_Cache.{h,cpp}`) DONE
+
+### Audit results (1b)
+Task-tag counts via `grep -cE 'P[0-9]\.[0-9]'`:
+- `RTA_Cache.h` = 6, `RTA_Cache.cpp` = 6 (now 0/0 after 2a)
+- `PrioritySwitchAnalysis.h` = 3
+- `OptimizeSP_TL_Incre.h` = 13, `OptimizeSP_TL_Incre.cpp` = 24 (heaviest — P1.10/P1.14/P1.25
+  changelog narratives)
+- `OptimizeSP_Incre.h` = 8, `OptimizeSP_Incre.cpp` = 7
+
+### Phase 2a — `RTA_Cache.{h,cpp}`
+- Stripped every task tag. Biggest rewrites: the `champion_` private-member comment block (10-line
+  `D1=(b)` / `EvaluateTimeLimitConfig_SubIncremental` changelog → 8 lines stating the
+  drift-proof-by-construct invariant + the "raw triple consumed at bake time, not stored" rule) and
+  the `ChampionState` docstring (dropped the P1.25 reject-path anecdote, kept the
+  "candidate_rta_ is scratch, never needs copying" WHY).
+- **Preserved** the high-value WHY comments verbatim: the safe-upper-bound gate rationale in
+  `ClassifyReusePerTask` Rule B, the reindex-by-task-id invariant in `Evaluate`, the 3-arg vs 2-arg
+  `GetRTA_OneTask` bit-identity reasoning, the `PerCoreOrderFromPa` id==index invariant.
+- No code/behavior change. `cmake --build build_test --target check.SP_OPT -j5` → 17/17 ctest green.
+
+### Next
+Phase 2b: `OptimizeSP_TL_Incre.{h,cpp}` (37 tags — the heaviest; expect the most narrative
+condensing, esp. the P1.10/P1.14/P1.25 changelog blocks in the .cpp).
