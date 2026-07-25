@@ -23,18 +23,19 @@
 
 ## Phase 2 — Implementation: Rule B (Pure Priority Move: Window-Bounded Reuse)
 
-- [ ] **2a. (TDD, RED)** Add differential test in `testRTA.cpp` for priority move (no ET change) on core with $\ge 4$ tasks.
-  - Assert that tasks at positions $< p_{\min}$ AND tasks at positions $> p_{\max}$ get `FullReuse`.
-- [ ] **2b. Update `ClassifyReusePerTask` for Rule B**
-  - Assign `NoReuse` strictly to tasks in range $[p_{\min}, p_{\max}]$.
-  - Assign `FullReuse` to tasks at $pos < p_{\min}$ and $pos > p_{\max}$.
-- [ ] **2c. Update `Evaluate` Dispatch**
-  - Skip `GetRTA_OneTask` recomputations for tasks at $pos > p_{\max}$.
-  - Pass differential tests.
+- [x] **2a. (TDD, RED)** Add differential test in `testRTA.cpp` for priority move (no ET change) on core with $\ge 4$ tasks.
+  - `ClassifyReusePerTask_PriorityMoveMiddle_WindowNoReuseBottomFullReuse` (4-task wide-ET, middle-pair swap pa {0,2,1,3}, p_min=1 p_max=2: t0→FullReuse, t1/t2→NoReuse, t3→FullReuse). Pinned RED pre-impl (v1 marked whole core NoReuse → t0/t3 wrong).
+  - `Evaluate_PriorityMoveMiddle_BottomReuseSafeUpperBound_RuleB` — the safety pin: for every priority-position slot, `GetDDL_MissProbability(rtas_eval[k], deadline) >= oracle`. Green under v1 (t3 recomputed = trivially safe); stays green after Rule B (t3 reused → champion value dominates oracle). Reference = lossy oracle, NOT the unreachable "true" RTA.
+- [x] **2b. Update `ClassifyReusePerTask` for Rule B**
+  - Replaced the v1-safe fallback (whole changed core NoReuse) with the window-bounded verdict: `p_min <= pos <= p_max → NoReuse`, `pos < p_min OR pos > p_max → FullReuse`.
+- [x] **2c. Update `Evaluate` Dispatch**
+  - NO loop change needed — the existing verdict-driven fold (skip FullReuse, recompute NoReuse, fold every task's ET into the rolling prefix) already handles bottom-reuse: the FullReuse bottom task keeps its seeded (reindexed-by-task-id) champion RTA while the window tasks recompute against the rolling prefix. Verified by `Evaluate_PriorityMoveMiddle_BottomReuseSafeUpperBound_RuleB`.
 
 ## Phase 3 — Verification & Benchmarking
 
-- [ ] **3a. Run Full Test Suite (`ctest` & `pytest`)**
-  - Confirm 17/17 C++ tests and 308/308 Python tests pass without failure.
+- [x] **3a. Run Full C++ Test Suite (`ctest`)**
+  - 17/17 ctest green + 63/63 testRTA green after Rule B (no existing test broke; the v1 whole-core-NoReuse `Evaluate_*PriorityMove*` tests still pass because recomputing a slot the oracle also recomputes stays bit-identical / safe-upper-bound).
+- [ ] **3a2. Run Full Python Test Suite (`pytest`)**
+  - Confirm no SP-level regression (cache path is exercised end-to-end via the optimizer).
 - [ ] **3b. Benchmark Recompute Savings in `OptimizePA_Incre`**
   - Measure reduction in `GetRTA_OneTask` call counts during sub-incremental walks.

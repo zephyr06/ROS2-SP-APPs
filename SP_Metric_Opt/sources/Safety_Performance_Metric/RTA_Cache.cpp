@@ -411,13 +411,25 @@ std::vector<RTAReusePerTask> RTACache::ClassifyReusePerTask(
         return result;
     }
 
-    // Rule B (Pure Priority Move): v1-safe fallback — recompute the whole changed
-    // core. The fine-grained [p_min, p_max] window + bottom reuse is refined in
-    // Phase 2 (gated on a lossy-Compress differential test: Compress is NOT
-    // order-invariant once convolved support > Granularity, so bottom reuse can
-    // diverge from the oracle; defaulting to NoReuse is the correctness-safe path).
-    for (int tid : changed_core_tasks) {
-        result[tid] = RTAReusePerTask::NoReuse;
+    // Rule B (Pure Priority Move): the move only PERMUTES the HP set of every
+    // task on this core within [p_min, p_max] — set membership and ETs are
+    // unchanged. The true RTA depends on the HP SET (convolution is commutative),
+    // so the bottom task's true RTA is identical between champion and candidate.
+    // Reusing the champion RTA is a SAFE UPPER BOUND: every RTA op is stochastically
+    // conservative (Convolve lossless; CompressDistribution moves mass to the max
+    // value in each bucket — "never underestimate"; CompressDeadlineMissProbability
+    // preserves above-deadline mass exactly), so the champion-built RTA for the
+    // same HP set is >= the true RTA -> cached miss-prob >= true miss-prob. The
+    // correctness gate is safe-upper-bound, NOT bit-identity to the oracle.
+    //   pos < p_min             -> FullReuse (HP set untouched, top of the core);
+    //   p_min <= pos <= p_max   -> NoReuse   (inside the priority-shift window);
+    //   pos > p_max             -> FullReuse (bottom: HP set is the same set,
+    //                              only permuted within [p_min, p_max]).
+    for (int pos = 0; pos < static_cast<int>(changed_core_tasks.size()); pos++) {
+        int tid = changed_core_tasks[pos];
+        bool inside_window = (pos >= p_min && pos <= p_max);
+        result[tid] = inside_window ? RTAReusePerTask::NoReuse
+                                    : RTAReusePerTask::FullReuse;
     }
     return result;
 }

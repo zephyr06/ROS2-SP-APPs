@@ -792,7 +792,178 @@ class TaskSetForTest_3tasks_1core_wideET : public ::testing::Test {
     DAG_Model dag_tasks;
 };
 
-// P1.12 2b BLOCKER: RTACache::Evaluate's NoReuse recompute path must be
+// P1.18 Phase 2 PROBE fixture — 4 tasks on ONE core with wide Gaussians, so a
+// MIDDLE priority-move window [p_min,p_max] leaves a real bottom task at
+// pos > p_max (the 3-task fixture can only swap the top two, the only shape with
+// a bottom task, and it matches). Four tasks let us swap the MIDDLE pair
+// (t1<->t2, window [1,2]) leaving t3 at pos 3 as the bottom-reuse candidate —
+// the shape that actually distinguishes order-invariance of the rolled prefix.
+class TaskSetForTest_4tasks_1core_wideET : public ::testing::Test {
+   public:
+    void SetUp() override {
+        GlobalVariables::Granularity = 10;
+        FiniteDist dist_wide0 =
+            FiniteDist(GaussianDist(50, 8), 20, 80, 5);
+        FiniteDist dist_wide1 =
+            FiniteDist(GaussianDist(55, 8), 20, 80, 5);
+        FiniteDist dist_wide2 =
+            FiniteDist(GaussianDist(60, 8), 20, 80, 5);
+        FiniteDist dist_wide3 =
+            FiniteDist(GaussianDist(65, 8), 20, 80, 5);
+        tasks.push_back(Task(0, dist_wide0, 200, 200, 0));
+        tasks.push_back(Task(1, dist_wide1, 400, 400, 1));
+        tasks.push_back(Task(2, dist_wide2, 800, 800, 2));
+        tasks.push_back(Task(3, dist_wide3, 1600, 1600, 3));
+        for (int i = 0; i < 4; i++) tasks[i].processorId = 0;
+        priority_vec = {0, 1, 2, 3};
+        time_limits = {-1, -1, -1, -1};
+        dag_tasks = DAG_Model(tasks, {}, {1e9});
+    }
+    TaskSet tasks;
+    PriorityVec priority_vec;
+    std::vector<double> time_limits;
+    DAG_Model dag_tasks;
+};
+
+// P1.18 Phase 2 PROBE (4-task) — does a priority move leave EVERY bottom task's
+// (pos > p_max) champion RTA == its oracle RTA under the permuted HP order? For
+// each candidate PA, find the moved task (the one not in champion per-core
+// position), compute p_min/p_max, then check every task at pos > p_max. If ALL
+// match across shapes, the rolled prefix is empirically order-invariant here; if
+// ANY diverges, bottom-reuse is unsafe and Phase 2 must keep pos > p_max NoReuse.
+TEST_F(TaskSetForTest_4tasks_1core_wideET,
+       PROBE_RuleB_MiddleWindow_BottomReuse_WideET) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);  // champion {0,1,2,3}
+    const std::vector<FiniteDist>& rtas_champion = cache.Rta();
+
+    // Candidate PAs, each a single priority move vs champion {0,1,2,3}.
+    std::vector<std::pair<PriorityVec, std::string>> cases = {
+        {{0, 2, 1, 3}, "swap t1<->t2 (window[1,2])"},
+        {{1, 0, 2, 3}, "swap t0<->t1 (window[0,1])"},
+        {{0, 1, 3, 2}, "swap t2<->t3 (window[2,3])"},
+        {{0, 3, 2, 1}, "move t3->pos1 (window[1,3])"},
+        {{3, 1, 2, 0}, "move t3->front (window[0,3])"},
+    };
+    int diverged = 0, checked = 0;
+    for (const auto& [pa, label] : cases) {
+        // Candidate per-core order (one core): pa sorted by priority value gives
+        // the priority order; here pa[i]=priority of task i, so order = argsort.
+        std::vector<int> cand_order(tasks.size());
+        for (size_t i = 0; i < tasks.size(); i++) cand_order[i] = static_cast<int>(i);
+        std::sort(cand_order.begin(), cand_order.end(),
+                  [&](int a, int b) { return pa[a] < pa[b]; });
+        // Champion order is {0,1,2,3} (id order). Find the moved task + window.
+        std::vector<int> champ_order = {0, 1, 2, 3};
+        int moved = -1, old_pos = -1, new_pos = -1;
+        for (size_t i = 0; i < cand_order.size(); i++)
+            if (cand_order[i] != static_cast<int>(i)) {
+                moved = cand_order[i]; new_pos = static_cast<int>(i); break;
+            }
+        for (size_t i = 0; i < champ_order.size(); i++)
+            if (champ_order[i] == moved) { old_pos = static_cast<int>(i); break; }
+        int p_min = std::min(old_pos, new_pos), p_max = std::max(old_pos, new_pos);
+
+        std::vector<FiniteDist> rtas_oracle =
+            OracleRtas(dag_tasks, pa, time_limits);
+        std::cout << "PROBE4 [" << label << "] moved=t" << moved
+                  << " window[" << p_min << "," << p_max << "] bottom tasks:";
+        for (int pos = p_max + 1; pos < static_cast<int>(cand_order.size()); pos++) {
+            int tid = cand_order[pos];
+            bool match = (rtas_champion[tid] == rtas_oracle[tid]);
+            std::cout << " t" << tid << "("
+                      << (match ? "MATCH" : "DIVERGE") << ")";
+            checked++;
+            if (!match) diverged++;
+        }
+        std::cout << "\n";
+    }
+    std::cout << "PROBE4 summary: " << diverged << " divergence(s) across "
+              << checked << " bottom-task checks.\n";
+    EXPECT_TRUE(true);
+}
+
+// P1.18 Phase 2 PROBE fixture — 4 tasks on ONE core with DISSIMILAR ET shapes
+// (a point-mass ET mixed with wide Gaussians). This is the shape most likely to
+// expose order-dependence in the lossy Compress: a point-mass convolve is a pure
+// shift (no support growth), while a wide-Gaussian convolve grows support past
+// Granularity, so the intermediate Compress buckets differ sharply depending on
+// whether the point-mass or the Gaussian is folded first. If bottom-reuse still
+// MATCHes here, the empirical case for Rule B bottom-reuse is much stronger.
+class TaskSetForTest_4tasks_1core_mixedET : public ::testing::Test {
+   public:
+    void SetUp() override {
+        GlobalVariables::Granularity = 10;
+        // t0: point-mass at 30 (a TL-pinned task). t1,t2: wide Gaussians.
+        // t3: bottom task (wide Gaussian), whose HP set is the permuted mix.
+        FiniteDist dist_point = FiniteDist({Value_Proba(30, 1.0)});
+        FiniteDist dist_wide1 = FiniteDist(GaussianDist(50, 8), 20, 80, 5);
+        FiniteDist dist_wide2 = FiniteDist(GaussianDist(60, 8), 20, 80, 5);
+        FiniteDist dist_wide3 = FiniteDist(GaussianDist(70, 8), 20, 80, 5);
+        tasks.push_back(Task(0, dist_point, 200, 200, 0));
+        tasks.push_back(Task(1, dist_wide1, 400, 400, 1));
+        tasks.push_back(Task(2, dist_wide2, 800, 800, 2));
+        tasks.push_back(Task(3, dist_wide3, 1600, 1600, 3));
+        for (int i = 0; i < 4; i++) tasks[i].processorId = 0;
+        priority_vec = {0, 1, 2, 3};
+        time_limits = {-1, -1, -1, -1};
+        dag_tasks = DAG_Model(tasks, {}, {1e9});
+    }
+    TaskSet tasks;
+    PriorityVec priority_vec;
+    std::vector<double> time_limits;
+    DAG_Model dag_tasks;
+};
+
+// P1.18 Phase 2 PROBE (mixed ET) — same bottom-reuse check as PROBE4 but on the
+// dissimilar-shape fixture. A divergence here would settle that bottom-reuse is
+// unsafe in general; a match strengthens the empirical case.
+TEST_F(TaskSetForTest_4tasks_1core_mixedET,
+       PROBE_RuleB_MiddleWindow_BottomReuse_MixedET) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);
+    const std::vector<FiniteDist>& rtas_champion = cache.Rta();
+
+    std::vector<std::pair<PriorityVec, std::string>> cases = {
+        {{0, 2, 1, 3}, "swap t1<->t2 (window[1,2])"},
+        {{1, 0, 2, 3}, "swap t0<->t1 (window[0,1])"},
+        {{1, 2, 3, 0}, "move t0->end (window[0,3])"},
+    };
+    int diverged = 0, checked = 0;
+    for (const auto& [pa, label] : cases) {
+        std::vector<int> cand_order(tasks.size());
+        for (size_t i = 0; i < tasks.size(); i++) cand_order[i] = static_cast<int>(i);
+        std::sort(cand_order.begin(), cand_order.end(),
+                  [&](int a, int b) { return pa[a] < pa[b]; });
+        std::vector<int> champ_order = {0, 1, 2, 3};
+        int moved = -1, old_pos = -1, new_pos = -1;
+        for (size_t i = 0; i < cand_order.size(); i++)
+            if (cand_order[i] != static_cast<int>(i)) {
+                moved = cand_order[i]; new_pos = static_cast<int>(i); break;
+            }
+        for (size_t i = 0; i < champ_order.size(); i++)
+            if (champ_order[i] == moved) { old_pos = static_cast<int>(i); break; }
+        int p_min = std::min(old_pos, new_pos), p_max = std::max(old_pos, new_pos);
+
+        std::vector<FiniteDist> rtas_oracle =
+            OracleRtas(dag_tasks, pa, time_limits);
+        std::cout << "PROBEMIX [" << label << "] moved=t" << moved
+                  << " window[" << p_min << "," << p_max << "] bottom tasks:";
+        for (int pos = p_max + 1; pos < static_cast<int>(cand_order.size()); pos++) {
+            int tid = cand_order[pos];
+            bool match = (rtas_champion[tid] == rtas_oracle[tid]);
+            std::cout << " t" << tid << "("
+                      << (match ? "MATCH" : "DIVERGE") << ")";
+            checked++;
+            if (!match) diverged++;
+        }
+        std::cout << "\n";
+    }
+    std::cout << "PROBEMIX summary: " << diverged << " divergence(s) across "
+              << checked << " bottom-task checks.\n";
+    EXPECT_TRUE(true);
+}
+
 // bit-identical to the oracle (ProbabilisticRTA_TaskSet) even when the convolved
 // ET support crosses Granularity with ≥2 HP tasks. On HEAD this FAILS: Evaluate's
 // NoReuse path (RTA_Cache.cpp:458) calls the 2-arg GetRTA_OneTask(task, hp_tasks),
@@ -1063,6 +1234,141 @@ TEST_F(TaskSetForTest_3tasks_1core_wideET,
         EXPECT_TRUE(rtas_oracle[i] == rtas_eval[i])
             << "rtas[" << i << "] diverged on Rule A middle-task TL change";
     }
+}
+
+// P1.18 Phase 2 Rule B (TDD, RED) — ClassifyReusePerTask must narrow the
+// recompute to the priority-move window [p_min, p_max] instead of the whole
+// changed core. Wide-ET 4-task single-core fixture: champion pa {0,1,2,3},
+// candidate is a pure priority move swapping the MIDDLE pair t1<->t2
+// (pa {0,2,1,3}, no ET change). The moved task (t2) goes old_pos=2 -> new_pos=1,
+// so p_min=1, p_max=2. Rule B:
+//   t0 (pos 0 < p_min 1)       -> FullReuse (HP set untouched);
+//   t1 (pos 1 in [p_min,p_max]) -> NoReuse   (inside the move window);
+//   t2 (pos 2 in [p_min,p_max]) -> NoReuse   (inside the move window);
+//   t3 (pos 3 > p_max 2)        -> FullReuse (its HP set is the same set of tasks,
+//                                only permuted within [p_min,p_max]; the cached
+//                                champion RTA is a safe upper bound — see the
+//                                Evaluate safe-upper-bound test below).
+// This is the case v1 got WRONG (v1 marked all four on the changed core NoReuse).
+// Pinned RED before implementing the verdict change.
+//
+// CORRECTNESS GATE (reframed 2026-07-24): the cache's job is NOT bit-identity to
+// the oracle. It is to return a SAFE UPPER BOUND — a per-task RTA whose deadline-
+// miss probability is >= the oracle's (true) miss probability. Over-estimating
+// miss-prob is conservative (lower SP -> optimizer never over-claims safety);
+// under-estimating is the only bug. So the bottom task reusing the champion RTA
+// is safe iff cached miss-prob >= true miss-prob, NOT iff cached == oracle. The
+// classifier verdict here is a pure locator assertion (which slots reuse vs
+// recompute); the safety of reusing pos>p_max is pinned in the Evaluate test.
+TEST_F(TaskSetForTest_4tasks_1core_wideET,
+       ClassifyReusePerTask_PriorityMoveMiddle_WindowNoReuseBottomFullReuse) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);  // champion {0,1,2,3}
+
+    // Pure priority move: swap the middle pair t1<->t2 (no ET change).
+    // Candidate order on core 0: {t0, t2, t1, t3}. moved=t2, old_pos=2, new_pos=1
+    // -> p_min=1, p_max=2.
+    PriorityVec pa_cand = {0, 2, 1, 3};
+    std::vector<RTAReusePerTask> r =
+        cache.ClassifyReusePerTask(dag_tasks, pa_cand, time_limits);
+    ASSERT_EQ(r.size(), tasks.size());
+    // Indexed by TASK ID (ClassifyReusePerTask result[i] = task i).
+    EXPECT_EQ(r[0], RTAReusePerTask::FullReuse);  // t0: pos 0 < p_min 1
+    EXPECT_EQ(r[1], RTAReusePerTask::NoReuse);    // t1: pos 1 in [1,2]
+    EXPECT_EQ(r[2], RTAReusePerTask::NoReuse);    // t2: pos 2 in [1,2] (moved task)
+    EXPECT_EQ(r[3], RTAReusePerTask::FullReuse);  // t3: pos 3 > p_max 2 (bottom)
+}
+
+// P1.18 Phase 2 Rule B (TDD, RED) — Evaluate under Rule B must keep the bottom
+// task (pos > p_max) a SAFE UPPER BOUND on the oracle RTA. Same middle-swap
+// move as the classifier test above (pa {0,2,1,3}, p_min=1, p_max=2). The bottom
+// task t3 reuses the champion RTA verbatim (champion order {0,1,2,3}); the two
+// window tasks t1,t2 recompute. The gate (reframed 2026-07-24) is NOT bit-
+// identity: it is cached miss-prob >= oracle miss-prob for EVERY task, AND for
+// the bottom task in particular (the reused slot). Because all RTA ops are
+// stochastically conservative (Convolve lossless; CompressDistribution moves
+// mass to the max value in each bucket — "never underestimate"; CompressDeadline-
+// MissProbability preserves above-deadline mass exactly), the champion's RTA for
+// the bottom task is an oracle output for the SAME HP set (the move only
+// permutes the HP set within [p_min,p_max], the set membership is unchanged, and
+// convolution is commutative) -> a valid upper bound on the true (order-
+// independent) RTA -> cached miss-prob >= true miss-prob.
+//
+// rtas_oracle and rtas_eval are both PRIORITY-POSITION indexed (UpdateTaskSet-
+// Priorities re-sorts by pa), so slot k = the task at candidate priority-position
+// k. The bottom task t3 is at candidate priority-position 3 (it didn't move).
+TEST_F(TaskSetForTest_4tasks_1core_wideET,
+       Evaluate_PriorityMoveMiddle_BottomReuseSafeUpperBound_RuleB) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);  // champion {0,1,2,3}
+
+    PriorityVec pa_cand = {0, 2, 1, 3};  // swap middle pair t1<->t2
+    std::vector<FiniteDist> rtas_oracle =
+        OracleRtas(dag_tasks, pa_cand, time_limits);
+    const std::vector<FiniteDist>& rtas_eval =
+        cache.Evaluate(dag_tasks, pa_cand, time_limits);
+
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    // SAFE-UPPER-BOUND GATE: for every priority-position slot, the cached RTA's
+    // deadline-miss probability must be >= the oracle's (never under-estimate).
+    for (size_t k = 0; k < rtas_oracle.size(); k++) {
+        double deadline_k = tasks[k].deadline;  // identity pa fixture: pos k == task k
+        double miss_oracle = GetDDL_MissProbability(rtas_oracle[k], deadline_k);
+        double miss_cached = GetDDL_MissProbability(rtas_eval[k], deadline_k);
+        EXPECT_GE(miss_cached, miss_oracle - 1e-9)
+            << "slot " << k << ": cached miss-prob " << miss_cached
+            << " UNDER-estimates oracle " << miss_oracle
+            << " (Rule B bottom reuse would be unsafe)";
+    }
+}
+
+// P1.18 Phase 2 PROBE — is Rule B bottom-reuse (pos > p_max -> FullReuse) safe on
+// WIDE-ET input? For each candidate PA below (a pure priority move vs champion
+// {0,1,2}), the bottom task is whichever sits at pos > p_max. Bottom-reuse would
+// KEEP that task's champion-built RTA. This probe checks, for several move
+// shapes, whether the champion-built bottom RTA == the oracle-built bottom RTA
+// under the permuted HP order. The result (printed) drives the Phase 2 design:
+// if ANY diverges, the lossy interleaved Compress in RollPrefix is order-
+// dependent and bottom-reuse must NOT be emitted (Phase 2 keeps pos > p_max as
+// NoReuse); if ALL match across these shapes, bottom-reuse is empirically safe
+// on this fixture family (still not a proof for arbitrary task sets).
+TEST_F(TaskSetForTest_3tasks_1core_wideET,
+       PROBE_RuleB_BottomReuse_WideET_DoesChampionRtaMatchOracle) {
+    RTACache cache;
+    cache.Initialize(dag_tasks, priority_vec, time_limits);  // champion {0,1,2}
+    const std::vector<FiniteDist>& rtas_champion = cache.Rta();
+
+    // Each entry: {candidate PA, label, id of the bottom task (pos > p_max)}.
+    struct MoveCase {
+        PriorityVec pa;
+        std::string label;
+        int bottom_id;
+    };
+    std::vector<MoveCase> cases = {
+        {{1, 0, 2}, "swap t0<->t1 (window[0,1], bottom=t2)", 2},
+        {{0, 2, 1}, "swap t1<->t2 (window[1,2], bottom=NONE)", -1},
+        {{2, 1, 0}, "move t2->front (window[0,2], bottom=NONE)", -1},
+        {{1, 2, 0}, "move t0->end (window[0,2], bottom=NONE)", -1},
+    };
+
+    int diverged = 0;
+    for (const MoveCase& mc : cases) {
+        std::vector<FiniteDist> rtas_oracle =
+            OracleRtas(dag_tasks, mc.pa, time_limits);
+        if (mc.bottom_id < 0) {
+            std::cout << "PROBE [" << mc.label << "]: no bottom task (window "
+                      << "covers the tail) — skip.\n";
+            continue;
+        }
+        bool match = (rtas_champion[mc.bottom_id] == rtas_oracle[mc.bottom_id]);
+        std::cout << "PROBE [" << mc.label << "]: bottom t" << mc.bottom_id
+                  << " champion-vs-oracle "
+                  << (match ? "MATCH" : "DIVERGE") << "\n";
+        if (!match) diverged++;
+    }
+    std::cout << "PROBE summary: " << diverged << " divergence(s) across "
+              << cases.size() << " move shapes.\n";
+    EXPECT_TRUE(true);
 }
 
 // No champion → ClassifyReusePerTask returns all-NoReuse; ComputeTaskSetDifference

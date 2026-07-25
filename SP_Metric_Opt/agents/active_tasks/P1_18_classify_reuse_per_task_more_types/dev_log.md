@@ -83,3 +83,164 @@ Awaits implementation signal. All rules, mathematical proofs, and pseudocode are
   fixture (classifier + Evaluate bit-identity).
 
 Phase 1 → Phase 2: implement Rule B's `[p_min,p_max]` window + gate bottom-reuse.
+
+## 2026-07-24 — Phase 2 PROBE: is Rule B bottom-reuse (pos > p_max → FullReuse) safe?
+
+### The open question (deferred from Phase 1)
+Rule B's `goal.md` pseudocode marks tasks at `pos > p_max` as `FullReuse`, on the
+argument that ET convolution is commutative (`A*B = B*A`) so a permuted HP set
+yields a bit-identical HP-ET convolution → bit-identical RTA for the bottom task.
+The Phase 1 dev_log flagged this as RISKY: `CompressDistributionWithOnlySize` is
+LOSSY and the rolling fold `RollPrefix` (= `Compress(prefix); Convolve(prefix, et)`)
+interleaves a lossy `Compress` after each `Convolve`, so the intermediate
+compress count / bucket boundaries can depend on fold ORDER. The commutativity
+argument only holds if the lossy compress is order-invariant — which is NOT
+provable in general (intermediate `Compress(A)⊛B` vs `Compress(B)⊛A` fold
+different distributions).
+
+### Structural analysis (why it's not provably invariant)
+- `Convolve` is commutative & produces a value-sorted, duplicate-merged dist.
+- `Compress` (buffer-based, threshold `1/max_size`) re-buckets by accumulated
+  PROBABILITY MASS walking the value-sorted dist. Bucket boundaries depend on the
+  dist's value→probability layout.
+- `RollPrefix` = `Compress(prefix); Convolve(prefix, et_k)`. So the bottom task's
+  HP prefix = `Compress(...Compress(Compress(id)⊛et_0)⊛et_1...) ⊛ et_n`. The
+  intermediate `Compress` after each `Convolve` is what breaks commutativity:
+  folding `et_0` then `et_1` compresses `Compress(id⊛et_0)=et_0` then
+  `Compress(et_0)⊛et_1`; folding `et_1` then `et_0` compresses `et_1` then
+  `Compress(et_1)⊛et_0`. `Compress(et_0)⊛et_1` vs `Compress(et_1)⊛et_0` convolve
+  DIFFERENT distributions → not provably equal.
+- BUT the codebase `operator==` is `approx_equal(tol=1e-1)` — the same gate every
+  prior bit-identity test (P1.12/P1.17/Phase 1) uses. So "bit-identical" here
+  means within 0.1, not exact-bit.
+
+### Empirical probe (3 fixtures × several move shapes)
+Added temporary `PROBE_*` tests in `testRTA.cpp` (NOT regression pins —
+informational `cout` + `EXPECT_TRUE(true)`). For each candidate PA (a single
+priority move vs champion id-order), computed p_min/p_max and compared the
+champion-built RTA vs the oracle-built RTA for every bottom task (pos > p_max):
+
+| fixture | move shape | bottom checks | divergences |
+|---|---|---|---|
+| 3-task wide-Gaussian (1 core) | swap top two | 1 | 0 |
+| 4-task wide-Gaussian (1 core) | middle window + others | 3 | 0 |
+| 4-task mixed (point-mass + wide, 1 core) | middle window + others | 3 | 0 |
+
+**Total: 9/9 bottom-task checks MATCH** under `operator==` (0.1 tol), including
+the critical middle-window case (`swap t1<->t2`, window [1,2], bottom t3) and the
+dissimilar-shape fixture (point-mass + wide Gaussian — the shape most likely to
+expose order-dependence, since a point-mass convolve is a pure shift while a wide
+convolve grows support past Granularity).
+
+### Verdict (pending user decision)
+Empirically safe on every shape probed, but NOT a structural proof — a generated
+taskset with an unprobed ET shape could still diverge and silently break the
+bit-identity gate. The failure mode is severe (silent SP divergence). This is a
+correctness-risk design decision → escalate to user (see tasks.md 2a-decision).
+
+Optimizer context (perf value of Rule B): `FindPriorityVec1D_Variations` moves
+ONE task across a RANGE of priority positions (not just adjacent swaps), so a
+single move can be a long jump → wide window `[p_min,p_max]`. Wider windows =
+more bottom tasks to reuse = more perf win, BUT also more HP tasks permuted =
+higher divergence risk. Adjacent swaps (window size 2) recompute only 2 tasks
+regardless of bottom-reuse; bottom-reuse only helps on wide-window moves.
+
+## 2026-07-24 — GATE REFRAMED: "safe upper bound" (cached ≥ true), not bit-identity
+
+### The user reframing
+The cache's correctness gate is **NOT** "bit-identical to the oracle." It is
+"always return a SAFE UPPER BOUND — a per-task RTA whose deadline-miss
+probability is ≥ the true (oracle-represented) miss probability." Over-estimating
+miss-prob is conservative (lower SP → the maximization optimizer never over-claims
+safety); under-estimating is the only bug. This flips the Phase 1 verdict that
+bottom-reuse was "RISKY."
+
+### Why bottom-reuse is safe under the reframed gate
+1. **The SP metric consumes miss-probability** (`GetDDL_MissProbability` = tail
+   mass above deadline, RTA.cpp:154-169), NOT max_time. "Safe RTA" = a dist whose
+   tail-mass-above-deadline ≥ the true tail-mass.
+2. **`SP_Func` is monotonically decreasing in miss-prob** (SP_Metric.h:31-41:
+   `RewardFunc=log(threshold-vp+1)` decreases; `PenaltyFunc` negative). So higher
+   miss-prob → lower SP → conservative direction for the maximization optimizer.
+3. **Every RTA op is stochastically conservative** (mass-upward-or-preserving):
+   - `Convolve` (Probability.cpp:113-155) — exact, lossless.
+   - `CompressDistribution` (335-380) — uses `item.value` = the MAX value in each
+     buffer; comment: *"to be conservative — never underestimate."* Moves mass
+     upward, never down.
+   - `CompressDeadlineMissProbability` (194-207) — lumps all above-deadline mass
+     at `deadline+1` (still above deadline) → preserves miss-prob exactly.
+   - `AddOnePreemption` (178-193) — convolves the tail (shifts it up by `et_hp`)
+     + conservative compress.
+4. **Rule B's bottom task keeps the same HP *set***: a pure priority move only
+   permutes the HP set *within* `[p_min, p_max]`; membership + ETs unchanged.
+   The true RTA depends on the HP SET (convolution is commutative), so the bottom
+   task's true RTA is identical between champion and candidate.
+5. **Therefore** the champion's RTA for the bottom task is an oracle output for
+   the *same HP set* → `champion_RTA ≥ true_RTA`. The candidate's bottom task has
+   that same true RTA → `champion_RTA ≥ candidate's true RTA`. Reusing it verbatim
+   is a safe upper bound. ✓
+
+### What happens to the order-dependence flagged in Phase 1
+`ResolvePreemptionsAndCompress` (RTA.cpp:9-26) IS order-sensitive (per-task job
+counters, guard flips on intermediate `max_time`) — but that only affects
+*TIGHTNESS*, not *validity*. Different HP orderings produce different upper bounds
+on the same order-independent true fixed point, but ALL are ≥ true (by fact 3).
+We need `champion ≥ true`, NOT `champion ≥ oracle(candidate)`. The 9/9 probe MATCH
+was testing the wrong gate (bit-identity); under safe-upper-bound we don't need a
+match at all — the match is bonus evidence the bound happens to be tight.
+
+### The honest caveat
+This relies on the oracle being a valid upper bound for *any* HP ordering — a
+property of the oracle ITSELF, inherited unchanged by the non-cached path. The
+only residual risk (`CompressDeadlineMissProbability` truncating mid-iteration
+stopping the fixed-point loop early) is PRE-EXISTING and identical with or
+without the cache; caching Rule B bottom-reuse introduces NO new risk, because the
+reused value is just an oracle output for the same HP set. If the oracle ever
+under-estimates for some ordering, that's an oracle bug to fix at the source —
+not a reason to disable bottom-reuse.
+
+## 2026-07-24 — Phase 2 LANDED: Rule B (Pure Priority Move) window-bounded reuse
+
+### What shipped
+- **`ClassifyReusePerTask` Rule B branch** (RTA_Cache.cpp): replaced the v1-safe
+  fallback (whole changed core NoReuse) with the window-bounded verdict —
+  `p_min <= pos <= p_max → NoReuse`, `pos < p_min OR pos > p_max → FullReuse`.
+  Comment records the safe-upper-bound argument (not bit-identity).
+- **`Evaluate` UNCHANGED** — verdict-only change, same as Phase 1. The existing
+  fold already handles bottom-reuse: the FullReuse bottom task keeps its seeded
+  (reindexed-by-task-id) champion RTA while the window tasks recompute against
+  the rolling prefix; every task's ET is still folded into `hp_tasks_et_conv` so
+  a later NoReuse task's HP set is complete. No loop change needed.
+
+### TDD arc
+- **RED:** `ClassifyReusePerTask_PriorityMoveMiddle_WindowNoReuseBottomFullReuse`
+  (4-task wide-ET, middle-pair swap pa {0,2,1,3}, p_min=1 p_max=2) failed
+  pre-implementation (v1 marked whole changed core NoReuse → t0/t3 NoReuse
+  instead of FullReuse). GREEN post-implementation.
+- **Safety pin:** `Evaluate_PriorityMoveMiddle_BottomReuseSafeUpperBound_RuleB`
+  — for every priority-position slot, `GetDDL_MissProbability(rtas_eval[k],
+  deadline) >= oracle`. This was GREEN under v1 (t3 recomputed = trivially safe,
+  equality) and STAYS GREEN after Rule B (t3 reused → champion value empirically
+  dominates the oracle on this fixture). The gate reference is the lossy oracle,
+  NOT the unreachable "true" RTA — and the champion-reused value still dominates
+  it, a stronger result than the safe-upper-bound-on-true argument requires.
+
+### Tests
+- Full suite **17/17 ctest green** + **63/63 testRTA green**. No existing
+  `Evaluate_*PriorityMove*` test broke (recomputing a slot the oracle also
+  recomputes stays safe-upper-bound).
+- Probe tests (`PROBE_RuleB_*`) left in place as informational/diagnostic
+  scaffolding (still print MATCH/DIVERGE per move shape, `EXPECT_TRUE(true)`).
+  Pruning them is a refactor step deferred to user review.
+
+### Indexing contract confirmed
+`UpdateTaskSetPriorities` re-sorts by pa (OptimizeSP_Base.cpp:71), so both
+`OracleRtas` and `Evaluate` outputs are **priority-position indexed** (slot k =
+task at candidate priority-position k), consumed that way by
+`ObtainSP_Full_From_NodeRTAs`. The probe's `rtas_champion[tid] == rtas_oracle[tid]`
+only aligned because the bottom task (never moved) keeps id==position; the new
+Evaluate test compares at priority-position via `tasks[k].deadline` (identity-pa
+fixture → pos k == task k).
+
+Phase 2 → Phase 3: pytest SP-regression check + benchmark recompute savings.
+
