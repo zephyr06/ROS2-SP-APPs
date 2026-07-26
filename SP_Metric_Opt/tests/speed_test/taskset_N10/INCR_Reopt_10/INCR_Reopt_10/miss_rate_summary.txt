@@ -1,0 +1,2 @@
+total_jobs,missed_jobs,miss_rate
+24851,9230,0.371414
