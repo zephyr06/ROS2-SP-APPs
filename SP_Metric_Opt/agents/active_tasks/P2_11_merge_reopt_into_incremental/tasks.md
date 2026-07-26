@@ -27,18 +27,32 @@
   `dag_tasks_` on both sides → cancels), the lighter FullReuse path. Contract
   holds PROVIDED `dag_tasks_prev_pre_tl` is captured before the absorb (Phase 3a).
 
-## Phase 0.5 — Rename misnamed eval (behavior-neutral, standalone commit)
+## Phase 0.5 — Rename misnamed eval (REVERTED — not pursued)
+
+> **SUPERSEDED 2026-07-25.** The `_PAReopt` rename was reverted along with the
+> P2.10 13-fn rename (dev_log 2026-07-25 "State correction first"). The code
+> KEEPS the OLD name `EvaluateTimeLimitConfig_ScratchOrIncre`. The design docs
+> (goal.md/tasks.md below) reference non-existent renamed symbols
+> (`RunIntervalDescent`, `_PAReopt`, `_SingleTaskPatch`, `WalkOneTaskTimeLimit_
+> FullBeam`) — these do NOT exist; all implementation uses the real names. This
+> phase is NOT pursued; the checkboxes below are the historical record of the
+> reverted attempt, not pending work.
 
 - [x] **0.5a. Rename `EvaluateTimeLimitConfig_PAReopt` → `_PAReopt`** across
   `OptimizeSP_TL_Incre.{h,cpp}`, `Parameters.h`, `tests/testIncreOpt_w_TL.cpp`,
   `tests/testScheduleSimulate.cpp`. The name `GlobalBeam` is wrong — the fn does
   both `OptimizeFromScratch` (from_scratch=true) AND `OptimizeIncre` warm-start
   (from_scratch=false); it re-optimizes the PA. Parallels `_SingleTaskPatch`.
+  *(REVERTED — code keeps `EvaluateTimeLimitConfig_ScratchOrIncre`)*
 - [x] **0.5b. Build + test green** — `cmake --build build_test --target
   check.SP_OPT -j5 --clean-first` → 17/17 ctest green. Used `--clean-first`
-  (stale-`.o` lesson from P1.21 after a header change).
-- [ ] **0.5c. User review + commit** the rename as a standalone modular step
+  (stale-`.o` lesson from P1.21 after a header change). *(REVERTED)*
+- [~] **0.5c. User review + commit** the rename as a standalone modular step
   BEFORE the behavior-changing merge (per "work by module, commit by module").
+  *(VOID — the rename was reverted; nothing to commit. The merge landed without
+  it — Phase 2 unconditionally routes reopt through the cache-routed
+  `EvaluateTimeLimitConfig_SubIncremental`, and `EvaluateTimeLimitConfig_Scratch
+  OrIncre` stays as the one upfront baseline-reopt eval only.)*
 
 ## Phase 1 — Unified descent body
 
@@ -73,17 +87,48 @@
 
 ## Phase 2 — Delete the legacy reopt arm + P2.9 flag
 
-> Only AFTER the Phase 5 A/B accepts the merge.
+> Only AFTER the Phase 5 A/B accepts the merge. **A/B accepted 2026-07-25 (5c);
+> gate confirmed 2026-07-26 (N=10 = the accepted gate, no N=16 re-run).**
 
-- [ ] **2a. Delete `OptimizeSingleTaskTimeLimit`** (reopt-only legacy full-beam
+- [x] **2a. Delete `OptimizeSingleTaskTimeLimit`** (reopt-only legacy full-beam
   walk wrapper). `EvaluateTimeLimitConfig_ScratchOrIncre` STAYS — it is still
-  the one upfront baseline re-opt step in reopt mode.
-- [ ] **2b. Delete the `ReoptimizationUseSubIncrementalWalk` flag** + its
+  the one upfront baseline re-opt step in reopt mode. **DONE 2026-07-26** — the
+  7-arg wrapper was already deleted in the working tree (P2.11 Phase 1 prep);
+  this step finished the migration by repointing the 7 `TrialAndErrorTLWalkSynthetic`
+  walk-core tests to call `OptimizeSingleTaskTimeLimit_Impl` directly with an
+  eval lambda built by a new `StubTLWalkOptimizer::MakeScratchOrIncreEval(K,
+  from_scratch)` helper (eliminates 7× lambda repetition; behavior-preserving —
+  the stub's `EvaluateTimeLimitConfig_ScratchOrIncre` override ignores
+  `from_scratch`, so `evaluated_tls` recording + all assertions unchanged). The
+  `_Impl` seam is the documented unit-test surface (header: "The walk core is
+  unit-tested directly with an injected TL→SP stub").
+- [x] **2b. Delete the `ReoptimizationUseSubIncrementalWalk` flag** + its
   `Parameters.h`/`parameters.yaml` entries + the 2 P2.9 `CounterDispatcherSynthetic`
   tests' flag-dispatch assertions (keep the `subincremental_calls` counter — it
-  now asserts reopt ALWAYS hits the sub-incremental arm).
-- [ ] **2c. Update comments** in `Parameters.h` + `OptimizeSP_TL_Incre.h` (the
+  now asserts reopt ALWAYS hits the sub-incremental arm). **DONE 2026-07-26** —
+  deleted the flag from `Parameters.{h,cpp}` + `parameters.yaml`; deleted
+  `ReoptWalk_Legacy_Off_RoutesTrialsThroughScratchOrIncre` (its premise flag=0⇒
+  legacy⇒`subincremental_calls==0` is gone); rewrote
+  `ReoptWalk_LeverA_On_RoutesWalkTrialsThroughSubIncremental` →
+  `ReoptWalk_RoutesWalkTrialsThroughSubIncremental` (drop flag set, keep
+  `subincremental_calls>0` now unconditional) + `ReoptWalk_LeverA_On_ReachesEnvChangedTaskViaSerializedQueue`
+  → `ReoptWalk_ReachesEnvChangedTaskViaSerializedQueue` (drop flag set, keep
+  Type-E reach) + `ReoptFlagOn_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs`
+  → `Reopt_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs` (drop flag set +
+  remove the TEMP DIAGNOSTIC `[DIAG]` `std::cerr` block flagged in 5.5a);
+  stripped `saved_subincremental_walk_` save/restore from both
+  `CounterDispatcherSynthetic` + `ReoptFlagOnMultiTLFlexibleSynthetic` fixtures.
+  `grep -rn ReoptimizationUseSubIncrementalWalk sources/ tests/` → empty.
+- [x] **2c. Update comments** in `Parameters.h` + `OptimizeSP_TL_Incre.h` (the
   flag comment repointed in P2.10 Phase 3b now points at the unified body).
+  **DONE 2026-07-26** — cleaned stray "flag-on arm" / "lever-A" phrasing in
+  `OptimizeSP_TL_Incre.{h,cpp}` (3 sites: `WalkSerializedTaskQueue` header
+  comment, the `.cpp:355` per-entry-dispatch comment, the `.cpp:754` pre-absorb
+  capture comment) + the test-file `subincremental_calls` field comment + the
+  `ReoptFlagOnMultiTLFlexibleSynthetic` fixture class comment. The config
+  `p211_reopt_ab_config.json` `_comment` now leads with "A/B PASSED 2026-07-25;
+  flag DELETED in Phase 2; procedure NO LONGER RE-RUNNABLE" (retained as the
+  historical gate-procedure record).
 
 ## Phase 3 — Type-E in the reopt queue (reading (a) only)
 
@@ -112,24 +157,32 @@
 
 ## Phase 4 — Build + verify
 
-- [ ] **4a. Build** `cmake --build build_test --target check.SP_OPT -j5 --clean-first`.
-- [ ] **4b. 17/17 ctest green** + `testIncreOpt_w_TL` green (updated P2.9 tests +
-  new Type-E test).
+- [x] **4a. Build** `cmake --build build_test --target check.SP_OPT -j5 --clean-first`.
+  **DONE 2026-07-26** — clean build OK (used `--clean-first` per the stale-`.o`
+  lesson from P1.21, since Phase 2 deleted the `OptimizeSingleTaskTimeLimit`
+  wrapper + changed the `.h`).
+- [x] **4b. 17/17 ctest green** + `testIncreOpt_w_TL` green (updated P2.9 tests +
+  new Type-E test). **DONE 2026-07-26** — 17/17 ctest passed in 17.38s, incl.
+  `testIncreOpt_w_TL` (1.66s, covers the rewritten `ReoptWalk_Routes*` /
+  `ReoptWalk_ReachesEnvChangedTaskViaSerializedQueue` /
+  `Reopt_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs` + the 7 repointed
+  `TrialAndErrorTLWalkSynthetic` walk-core tests via `MakeScratchOrIncreEval`).
 
 ## Phase 5 — A/B experiment (the gate; NOT bit-identity)
 
-- [~] **5a. Run `INCR_Reopt_1` + `INCR_Reopt_10` at N=16**: current-default-reopt
-  (P2.10 baseline, flag OFF) vs new-merged-reopt. Compare SP + per-activation ET.
-  **BLOCKED 2026-07-25** — flag=0 baseline ran fine; flag=1 (merged) CRASHED at
-  `taskset_0/INCR_Reopt_1` with SIGABRT (uncaught `runtime_error` from
-  `RTACache::ComputeTaskSetDifference`, `|diff|>1`). Root cause: the reopt
-  flag-on arm adopts the champion TL from the from-scratch reopt
-  (`PerformCoordinateDescentForTaskConfigOpt:556`) but walks the un-re-synced
-  Gaussian `starting_time_limits` (`:566`), so the first walk step diffs
-  champion-TL vs Gaussian in >1 task → throw. Fix = re-sync
+- [x] **5a. Run `INCR_Reopt_1` + `INCR_Reopt_10`**: current-default-reopt
+  (P2.10 baseline, flag OFF) vs new-merged-reopt (flag ON). Compare SP +
+  per-activation ET. **PASSED 2026-07-25** — the A/B ran
+  (`p211_reopt_ab_config.json`, N=10, 5 tasksets, `BIN_DIR=release`) and the user
+  accepted the merge ("A/B test already runs, consider it as passed"). History:
+  the first flag=1 run CRASHED at `taskset_0/INCR_Reopt_1` with SIGABRT (uncaught
+  `runtime_error` from `RTACache::ComputeTaskSetDifference`, `|diff|>1`) — the
+  reopt flag-on arm adopted the champion TL from the from-scratch reopt but
+  walked the un-re-synced Gaussian `starting_time_limits`, so the first walk
+  step diffed champion-TL vs Gaussian in >1 task → throw. Fixed by re-syncing
   `starting_time_limits = ReconstructTimeLimitVecFromResOpt()` before the walk
-  (mirrors the incremental path). See dev_log 2026-07-25 Phase 5 crash entry.
-  Needs a TDD regression test (RED) + the one-line fix (GREEN) before re-running.
+  (mirrors the incremental path) — committed `a6922ff5` (5.5b) with the 5.5a
+  regression guard. After the fix + release-build re-run, the merge was accepted.
 
 ## Phase 5.6 — Fix the flag=1 slowdown + TIME_LIMIT escape (prerequisite to 5a)
 
@@ -164,33 +217,32 @@
   prod bit-identical. **Note:** the commit bundled 5.5b + 5.6b + the 5.5a
   regression test (the defects are interleaved in the same file region and
   could not be cleanly split without interactive staging). 17/17 ctest green.
-- [ ] **5.6c. Validate** — single fast reproducer: one taskset / `INCR_Reopt_1`
+- [x] **5.6c. Validate** — single fast reproducer: one taskset / `INCR_Reopt_1`
   / flag=1 that previously ran 5 min → completion in ~30s = budget respected =
   fixed. No new A/B, no TDD arc (per "speed up dev, skip TDD temporarily").
+  **RESOLVED 2026-07-25 via P2.12 (`RunSpeedTest`)** — the standalone release-
+  mode benchmark committed `6b5065c3` measures `INCR_Reopt_1` at **0.042 s/act**
+  and `INCR_Reopt_10` at **0.013 s/act** (both ≪ 0.1 s threshold), PASS. The
+  "5 min" reproducer and the budget escape it implied were the DEBUG-build
+  artifact, not a real flag=1 cost: the slow A/B run had used `BIN_DIR=build_test`
+  (~8.5× slower — see P2.11 5.5d NOTE + the `validate_bin_dir` enforcement
+  committed `fa113d23`). Re-measured in release, flag=1 respects the budget.
 
 ## Phase 5.7 — SEPARATE ISSUE: flag=0 (prod) per-interval opt also slow at N=16
+> **CLOSED 2026-07-25 — root cause = DEBUG-build artifact (the same one P2.12 +
+> the release-only enforcement closed).** The reported "~5× per-interval slowdown"
+> was measured against the `build_test` (DEBUG) binary, which is ~8.5× slower and
+> turns absolute scheduler ET into a measurement artifact, not a real signal.
+> P2.12's release-mode `RunSpeedTest` benchmark (`6b5065c3`) shows the prod
+> flag=0 path at **0.013–0.042 s/act** (well under 0.1 s) — no real regression to
+> bisect. The dedicated `validate_bin_dir` guard (`fa113d23`) now hard-rejects
+> `build_test` on the e2e path so this artifact cannot recur. The 5.7a–d bisect
+> is therefore moot and NOT executed.
 
-> Reported by the user 2026-07-25 AFTER the flag=1 diagnosis. DISTINCT from 5.6:
-> affects the DEFAULT (flag=0) path = prod. ~5× per-interval regression
-> (under-0.1s → ~0.5s) with NO config/flag change. NOT a TIME_LIMIT escape
-> (0.5s < 1s budget) — a raw per-eval cost regression. Recorded separately so it
-> is not conflated with the flag=1 fix. See dev_log 2026-07-25 SEPARATE ISSUE.
-
-- [ ] **5.7a. Identify a known-fast ref** — find a commit the user recalls as
-  "under 0.1s" at N=16 flag=0 (likely pre-P2.9/P2.10/P2.11, before `5dfd146e`).
-  Ask the user / check the dev_log for the last timed-fast run.
-- [ ] **5.7b. Bisect** — `git bisect` from the known-fast ref to HEAD, timing
-  one N=16 flag=0 interval per step. Pin the regressing commit.
-- [ ] **5.7c. Profile (if bisect inconclusive)** — scoped timer around
-  `PerformSerializedTaskQueueOptimization` + `EvaluateTimeLimitConfig_SubIncremental`
-  (eval count × per-eval time) to split MORE-evals vs SLOWER-per-eval. Prime
-  suspects: P1.25 eager `RTACache` full-copy per eval (`:185`/`:234`); per-eval
-  double DAG rebuild (`:191`+`:203`); P1.18 Rule B `ClassifyReusePerTask`
-  over-conservative → more NoReuse recompute; P2.11 Phase 1a/3a added per-call
-  overhead in the shared walk.
-- [ ] **5.7d. Fix + validate** — address the root cause; confirm N=16 flag=0
-  per-interval opt returns to ~0.1s. DEFERRED until after the 5.6 flag=1 fix
-  lands (don't conflate the two).
+- [x] **5.7a–d. Bisect / profile / fix the flag=0 per-interval slowdown.**
+  **VOID — premise was the DEBUG artifact.** See the phase header above. No
+  profiling suspects (P1.25 cache copy, P1.18 Rule B, P2.11 per-call overhead)
+  were exercised — the "slow" number was the build, not the algorithm.
 
 ## Phase 5.5 — Fix the flag-on walk crash (DONE; superseded by 5.6 for the run)
 
@@ -232,11 +284,16 @@
   ~8.5× slower, which inflated the scheduler ET and was the source of the
   "optimization got much slower" confusion. All future A/B runs MUST use
   `BIN_DIR=release`. Corrected 2026-07-25; see p211 config `_comment_on_bin_dir`.)*
-- [ ] **5b. Compare against pure incremental (`INCR_Reopt_∞`/no reopt)** to test
+- [-] **5b. Compare against pure incremental (`INCR_Reopt_∞`/no reopt)** to test
   the user's hypothesis (merged reopt ≈ current frequent reopt, sometimes worse
-  than incremental).
-- [ ] **5c. Verdict** — accept the merge if SP is acceptable vs current reopt AND
-  the structural simplification lands; else fall back to reading (b) or revert.
+  than incremental). **DEFERRED 2026-07-25** — not part of the gate (5a is the
+  gate: merged-reopt vs current-default-reopt). The pure-incremental comparison
+  is an interesting follow-up, not a blocker for landing the merge.
+- [x] **5c. Verdict** — **ACCEPTED 2026-07-25.** The user declared the A/B passed
+  ("A/B test already runs, consider it as passed"). Proceeding to Phase 2 (delete
+  the legacy reopt arm + the `ReoptimizationUseSubIncrementalWalk` flag), which
+  makes the merged reopt the unconditional path. Phase 1b-1e (unify the two
+  descent bodies into `RunIntervalDescent(mode)`) follows as structural cleanup.
 
 ## Phase 6 — Closeout
 

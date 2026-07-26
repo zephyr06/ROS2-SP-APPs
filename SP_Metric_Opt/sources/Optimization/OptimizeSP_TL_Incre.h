@@ -97,7 +97,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // OptimizeFromScratch (the bootstrap). Otherwise warm-starts from a throwaway
     // challenger rebuilt from res_opt_ (BuildChallengerFromIncumbent) + OptimizeIncre;
     // requires an incumbent.
-    // Virtual so OptimizeSingleTaskTimeLimit's walk can be unit-tested with a
+    // Virtual so the reopt descent's baseline beam can be unit-tested with a
     // TL→SP stub; the indirection is one call per candidate (negligible vs ObtainSP_DAG).
     virtual double EvaluateTimeLimitConfig_ScratchOrIncre(
         int K, const std::vector<double>& time_limits, bool from_scratch);
@@ -134,8 +134,8 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // interval-0 fallback only (no incumbent).
     // `dag_tasks_prev_pre_tl` is the pre-absorb DAG captured before
     // ReOptimizePeriodic absorbed dag_tasks_update; it is the Type-E diff source
-    // for BuildSerializedTaskQueue on the flag-on (sub-incremental) arm. Unused
-    // on the legacy (full-beam) arm, which walks sorted_indices.
+    // for BuildSerializedTaskQueue on the reopt descent (the incremental descent
+    // captures its own prev_pre_tl in OptimizeIncre_w_TL).
     void PerformCoordinateDescentForTaskConfigOpt(
         int K, std::vector<double>& starting_time_limits, bool from_scratch,
         const DAG_Model& dag_tasks_prev_pre_tl);
@@ -149,14 +149,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // patience: 0 = strict break on first non-improving step (incremental, SP-vs-
     // TL ~unimodal); 1 = tolerate one non-improving step (reopt, can be
     // non-unimodal).
-    double OptimizeSingleTaskTimeLimit(
-        size_t task_idx, int K, std::vector<double>& time_limits,
-        double current_sp, double baseline_val, int step, bool from_scratch,
-        int patience);
-
-    // Walk core with an injected eval; identical walk to the 7-arg overload.
-    // Factored out so the serialized Type-L step reuses it with a sub-incremental
-    // eval (skips the redundant re-score the legacy eval pays each step).
+    // The walk core is unit-tested directly with an injected TL→SP stub.
     double OptimizeSingleTaskTimeLimit_Impl(
         size_t task_idx, std::vector<double>& time_limits, double current_sp,
         double baseline_val, int step, int patience,
@@ -167,9 +160,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // (step=-1) then forward (step=+1) passes over OptimizeSingleTaskTimeLimit_Impl,
     // finally syncing the working TL vector to the adopted champion. Shared by the
     // incremental serialized queue (PerformSerializedTaskQueueOptimization Type-L
-    // body) and the reopt sub-incremental arm (PerformCoordinateDescentForTaskConfigOpt
-    // when ReoptimizationUseSubIncrementalWalk is on) — both ran this exact block
-    // inline, differing only in the task_idx source.
+    // body) and the reopt descent (PerformCoordinateDescentForTaskConfigOpt) —
+    // both ran this exact block inline before P2.11 Phase 1, differing only in the
+    // task_idx source.
     double OptimizeOneTaskTimeLimit(
         int K, size_t task_idx, std::vector<double>& starting_time_limits,
         double current_config_sp, double baseline_val, int patience);
@@ -194,9 +187,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // re-search at the committed TL (no TL walk); Type-L → OptimizeOneTaskTimeLimit
     // TL walk. Each step adopts into res_opt_, so the next step's challenger sees
     // the new champion and the diff flags only the walked task (|diff|<=1).
-    // Shared by PerformSerializedTaskQueueOptimization (incremental) and the
-    // PerformCoordinateDescentForTaskConfigOpt flag-on arm (reopt) — both ran this
-    // exact loop inline before P2.11 Phase 1. Returns the final SP; syncs
+    // Shared by PerformSerializedTaskQueueOptimization (incremental) and
+    // PerformCoordinateDescentForTaskConfigOpt (reopt) — both ran this exact
+    // loop inline before P2.11 Phase 1. Returns the final SP; syncs
     // starting_time_limits to the adopted champion.
     double WalkSerializedTaskQueue(
         const std::vector<SerializedTaskQueueEntry>& queue, int K,

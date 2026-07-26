@@ -26,10 +26,6 @@ int IncrementalTimeLimitSearchPatience =
 int ReoptimizationTimeLimitSearchPatience =
     loaded_doc["ReoptimizationTimeLimitSearchPatience"].as<int>();
 
-// P2.9 lever A: route the reopt TL walk through the sub-incremental eval.
-int ReoptimizationUseSubIncrementalWalk =
-    loaded_doc["ReoptimizationUseSubIncrementalWalk"].as<int>();
-
 // simulation export controls
 int EXPORT_DETAIL_LEVEL = 3;               // default to FULL for backward compatibility
 int METRIC_SAMPLE_INTERVAL_SECONDS = 0;    // default to 0 (all intervals)

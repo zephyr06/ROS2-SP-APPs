@@ -714,3 +714,86 @@ one-line fix sketched in the 2026-07-25 crash entry; flag-gated default OFF.
   `RunIntervalDescent(K, tl, mode, dag_prev_pre_tl)`.
 - **Phase 2** (post-A/B): delete `OptimizeSingleTaskTimeLimit` + the P2.9 flag.
 - **Phase 6**: closeout (overall_tasks.md, memory pointer, P2.9+P2.10 records).
+
+---
+
+## 2026-07-26 — Phase 2 landed (working tree, uncommitted); Phase 4 verified GREEN
+
+### Where we are
+HEAD `2250ebfd`. The Phase 2 behavior change (delete the legacy reopt full-beam
+arm + the P2.9 flag → merged reopt is the unconditional path) is **landed in the
+working tree but NOT committed**. Phase 4 (build + 17/17 ctest) just verified
+GREEN. This is the gate before handing to the user for review + commit.
+
+### Phase 2 summary (what's in the working tree, 8 files)
+- **2a — delete `OptimizeSingleTaskTimeLimit` (the 7-arg reopt-only wrapper).**
+  The 7 `TrialAndErrorTLWalkSynthetic` walk-core tests now call
+  `OptimizeSingleTaskTimeLimit_Impl` directly with an eval lambda built by a new
+  `StubTLWalkOptimizer::MakeScratchOrIncreEval(K, from_scratch)` helper
+  (eliminates 7× lambda repetition; behavior-preserving — the stub's
+  `EvaluateTimeLimitConfig_ScratchOrIncre` override ignores `from_scratch`, so
+  `evaluated_tls` recording + all assertions unchanged). The `_Impl` seam is the
+  documented unit-test surface (header: "The walk core is unit-tested directly
+  with an injected TL→SP stub").
+- **2b — delete the `ReoptimizationUseSubIncrementalWalk` flag** from
+  `Parameters.{h,cpp}` + `parameters.yaml`. Rewrote the 2 P2.9 flag-dispatch
+  tests: deleted `ReoptWalk_Legacy_Off_RoutesTrialsThroughScratchOrIncre`
+  (premise flag=0⇒legacy gone); renamed `ReoptWalk_LeverA_On_*` →
+  `ReoptWalk_Routes*` / `ReoptWalk_ReachesEnvChangedTaskViaSerializedQueue`
+  (drop the flag set, keep `subincremental_calls>0` now unconditional);
+  `ReoptFlagOn_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs` →
+  `Reopt_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs`. Stripped the
+  `saved_subincremental_walk_` save/restore from both fixtures.
+  `grep -rn ReoptimizationUseSubIncrementalWalk sources/ tests/` → empty.
+- **2c — comments cleaned.** Removed "flag-on arm" / "lever-A" / "sub-incremental
+  walk flag" phrasing in `OptimizeSP_TL_Incre.{h,cpp}` (5 sites) + the test-file
+  `subincremental_calls` field comment + the `ReoptFlagOnMultiTLFlexibleSynthetic`
+  fixture class comment. The `.cpp` `PerformCoordinateDescentForTaskConfigOpt`
+  body is now ONE unconditional path (no `if (use_subincremental_walk)` branch):
+  reset → baseline beam → arm cache → re-sync TL → `WalkSerializedTaskQueue` →
+  disarm. The legacy `sorted_indices` + `OptimizeSingleTaskTimeLimit` arm is
+  deleted. The config `p211_reopt_ab_config.json` `_comment` now leads with
+  "A/B PASSED; flag DELETED in Phase 2; procedure NO LONGER RE-RUNNABLE".
+- **`TIME_LIMIT` in `parameters.yaml`** stays at `10` (the global default); the
+  A/B used `time_limit_seconds: 1` via config override, which is a separate
+  config-value concern, not part of this commit's core purpose.
+
+### Phase 4 — build + verify (the gate)
+- `cmake --build build_test --target check.SP_OPT -j5 --clean-first` →
+  **17/17 ctest passed in 17.38s**, incl. `testIncreOpt_w_TL` (1.66s). Used
+  `--clean-first` (Phase 2 deleted a wrapper + changed the `.h`; stale-`.o`
+  lesson from P1.21).
+- All 17 test binaries green. No new failures, no regressions vs HEAD.
+
+### Scope of the proposed commit (Phase 2 + Phase 4 records)
+- `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}` — the unconditional merged
+  reopt path + comment cleanup.
+- `sources/Utils/Parameters.{h,cpp}` + `sources/parameters.yaml` — flag deletion.
+- `tests/testIncreOpt_w_TL.cpp` — test rewrites + `MakeScratchOrIncreEval`.
+- `simulation_experiments/configs/p211_reopt_ab_config.json` — `_comment` update.
+- `agents/active_tasks/P2_11_merge_reopt_into_incremental/{tasks,dev_log}.md` —
+  Phase 2 + 4 record (this entry + the checkbox updates).
+Excluded (unrelated / untracked): `Gen_Taskset/task_sets_config/taskset_cfg_paper_16.json`,
+`agents/active_tasks/P2_13_important_task_ddl_vs_sp_metric/`, `../_perf_old_ecbed896`.
+
+### NOT done (remaining P2.11)
+- **Phase 1b-1e** — unify the two full descent bodies
+  (`PerformSerializedTaskQueueOptimization` + `PerformCoordinateDescentForTaskConfigOpt`)
+  into one `RunIntervalDescent(K, tl, mode, dag_prev_pre_tl)` parameterized over
+  `mode ∈ {Incremental, Reopt}`, then route both entries through it + delete the
+  originals. The walk core is already shared (`WalkSerializedTaskQueue`); the
+  remaining delta is the setup preamble (baseline seed: dedicated re-score vs
+  upfront `ScratchOrIncre` re-opt) + the patience knob. **Structural-only,
+  behavior-neutral if done right** — the two bodies now differ only in the
+  preamble + patience, both already factored. Can be a follow-up commit; NOT a
+  blocker for landing Phase 2 (the merge is functionally complete).
+- **Phase 5b** — compare vs pure incremental (`INCR_Reopt_∞`/no reopt). DEFERRED
+  (not the gate; 5a was the gate).
+- **Phase 6** — closeout: `overall_tasks.md`, memory pointer, P2.9+P2.10 records.
+
+### Status
+Awaiting user review + commit of Phase 2 (+ Phase 4 record) as a standalone
+modular commit. Per agent_coding_rules.md "work by module, commit by module."
+The merged reopt (sub-incremental walk + Type-E in the serialized queue,
+patience+1) becomes the unconditional reopt path; the legacy full-beam arm +
+the P2.9 flag are gone.

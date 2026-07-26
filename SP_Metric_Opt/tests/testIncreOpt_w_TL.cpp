@@ -1065,11 +1065,11 @@ class CounterDispatcherSynthetic : public ::testing::Test {
        public:
         std::vector<bool> from_scratch_flags;
         int serialized_entries = 0;
-        // P2.9 lever A: counts per-candidate evals routed through the
-        // sub-incremental (cache-routed, |diff|<=1) eval. The legacy reopt walk
-        // never calls this for its TL trials (it uses ScratchOrIncre); the
-        // lever-A walk routes every trial here. So subincremental_calls>0 after
-        // a reopt descent is the lever-A routing signal.
+        // Counts per-candidate evals routed through the sub-incremental
+        // (cache-routed, |diff|<=1) eval. Since the P2.11 merge the reopt walk
+        // routes every trial here (the pre-merge legacy arm used ScratchOrIncre
+        // for its TL trials; that arm is deleted). So subincremental_calls>0
+        // after a reopt descent is the merged-routing signal.
         int subincremental_calls = 0;
         // P2.11: the task_idx of every sub-incremental call, in call order. The
         // reopt sub-incremental arm historically walked sorted_indices and
@@ -1127,34 +1127,29 @@ class CounterDispatcherSynthetic : public ::testing::Test {
 
         saved_period_ = GlobalVariables::ReoptimizationPeriod;
         GlobalVariables::ReoptimizationPeriod = 10;
-        saved_subincremental_walk_ =
-            GlobalVariables::ReoptimizationUseSubIncrementalWalk;
     }
 
     void TearDown() override {
         GlobalVariables::ReoptimizationPeriod = saved_period_;
-        GlobalVariables::ReoptimizationUseSubIncrementalWalk =
-            saved_subincremental_walk_;
     }
 
     MAP_Prev mapPrev;
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
     int saved_period_;
-    int saved_subincremental_walk_;
 };
 
-// P2.11 Phase 5.5 — regression for the flag-ON reopt interval-0 crash. The
-// flag-on reopt arm (PerformCoordinateDescentForTaskConfigOpt with
-// use_subincremental_walk=true) adopted the cache champion from the from-scratch
-// reopt's TL (champion_tl = ReconstructTimeLimitVecFromResOpt(), after the
-// upfront EvaluateTimeLimitConfig_ScratchOrIncre from-scratch call overwrites
-// res_opt_) but then walked the UN-re-synced starting_time_limits — which at
-// interval 0 is the Gaussian-mean seed (InitializeTimeLimitsFromETConfig). When
-// the from-scratch reopt moves >=2 TL-flexible tasks off the Gaussian seed, the
-// first walk step's candidate DAG (Gaussian with one task stepped) differs from
-// the champion DAG (reopt TL) in >1 task -> RTACache::ComputeTaskSetDifference
-// throws |diff|>1 -> std::terminate -> SIGABRT.
+// P2.11 Phase 5.5 — regression for the interval-0 reopt crash. The reopt arm
+// (PerformCoordinateDescentForTaskConfigOpt) adopted the cache champion from the
+// from-scratch reopt's TL (champion_tl = ReconstructTimeLimitVecFromResOpt(),
+// after the upfront EvaluateTimeLimitConfig_ScratchOrIncre from-scratch call
+// overwrites res_opt_) but then walked the UN-re-synced starting_time_limits —
+// which at interval 0 is the Gaussian-mean seed
+// (InitializeTimeLimitsFromETConfig). When the from-scratch reopt moves >=2
+// TL-flexible tasks off the Gaussian seed, the first walk step's candidate DAG
+// (Gaussian with one task stepped) differs from the champion DAG (reopt TL) in
+// >1 task -> RTACache::ComputeTaskSetDifference throws |diff|>1 ->
+// std::terminate -> SIGABRT.
 //
 // The existing CounterDispatcherSynthetic fixture has only ONE TL-flexible task,
 // so the reopt can move at most one TL off the seed -> |diff|<=1 holds by
@@ -1220,32 +1215,22 @@ class ReoptFlagOnMultiTLFlexibleSynthetic : public ::testing::Test {
         TaskSet tasks = {t_perf_a, t_perf_b, t_noise};
         dag_tasks = DAG_Model(tasks, mapPrev, 0, 0);
         sp_parameters = SP_Parameters(dag_tasks);
-
-        saved_subincremental_walk_ =
-            GlobalVariables::ReoptimizationUseSubIncrementalWalk;
-    }
-
-    void TearDown() override {
-        GlobalVariables::ReoptimizationUseSubIncrementalWalk =
-            saved_subincremental_walk_;
     }
 
     MAP_Prev mapPrev;
     DAG_Model dag_tasks;
     SP_Parameters sp_parameters;
-    int saved_subincremental_walk_;
 };
 
-// The crash regression: a flag-ON reopt at interval 0 (count==0, no incumbent ->
-// the Gaussian-seed path) on a DAG with >=2 TL-flexible tasks must NOT throw.
-// Today it throws std::runtime_error from RTACache::ComputeTaskSetDifference
+// The crash regression: an interval-0 reopt (count==0, no incumbent -> the
+// Gaussian-seed path) on a DAG with >=2 TL-flexible tasks must NOT throw. Before
+// the re-sync fix it threw std::runtime_error from RTACache::ComputeTaskSetDifference
 // (|diff|>1) -> std::terminate -> SIGABRT, because the walk starts from the
 // Gaussian seed while the champion was adopted from the from-scratch reopt's TL
 // (which moved both TL-flexible tasks off the seed). The fix re-syncs the walk's
 // starting TL to the champion TL before WalkSerializedTaskQueue.
 TEST_F(ReoptFlagOnMultiTLFlexibleSynthetic,
-       ReoptFlagOn_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs) {
-    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 1;
+       Reopt_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
 
     // The Gaussian seed (InitializeTimeLimitsFromETConfig) is the interval-0
@@ -1257,12 +1242,12 @@ TEST_F(ReoptFlagOnMultiTLFlexibleSynthetic,
 
     // Interval-0 reopt: no incumbent -> InitializeTimeLimitsFromETConfig seeds
     // the Gaussian-mean TL (200 for both T_perf_a and T_perf_b); the from-scratch
-    // reopt then moves both to a higher-TL optimum; the flag-on walk must re-sync
-    // to the champion TL before stepping, else the first step throws |diff|>1.
+    // reopt then moves both to a higher-TL optimum; the walk must re-sync to the
+    // champion TL before stepping, else the first step throws |diff|>1.
     // EXPECT_NO_THROW catches the runtime_error the buggy path raises and turns
     // the crash into a clean test failure (RED) instead of SIGABRT.
     EXPECT_NO_THROW(opt.ReOptimizePeriodic(dag_tasks, 2))
-        << "P2.11 Phase 5.5: a flag-ON reopt at interval 0 must not throw when "
+        << "P2.11 Phase 5.5: an interval-0 reopt must not throw when "
         << "the from-scratch reopt moves multiple TL-flexible tasks off the "
         << "Gaussian seed. The walk must re-sync starting_time_limits to the "
         << "champion TL before WalkSerializedTaskQueue (mirrors the incremental "
@@ -1283,20 +1268,11 @@ TEST_F(ReoptFlagOnMultiTLFlexibleSynthetic,
         << "seed and the from-scratch reopt's champion; otherwise |diff|<=1 "
         << "holds by accident and this test cannot reproduce the crash.";
 
-    // TEMP DIAGNOSTIC (remove once the crash reproduction is understood): stderr
-    // is NOT suppressed by gtest on PASS, so this surfaces unconditionally.
-    std::cerr << "[DIAG] gaussian_seed =";
-    for (double v : gaussian_seed) std::cerr << " " << v;
-    std::cerr << "\n[DIAG] champion_tl   =";
-    for (double v : champion_tl) std::cerr << " " << v;
-    std::cerr << "\n[DIAG] divergent = " << divergent
-              << "  subincremental_calls = " << opt.subincremental_calls << "\n";
-
-    // Secondary signal: the flag-on walk actually ran (the sub-incremental arm
-    // was reached). If this is 0 the walk never started, masking a throw.
+    // Secondary signal: the walk actually ran (the sub-incremental arm was
+    // reached). If this is 0 the walk never started, masking a throw.
     EXPECT_GT(opt.subincremental_calls, 0)
-        << "the flag-on reopt walk must route its per-candidate trials through "
-        << "the sub-incremental eval; zero calls means the walk never ran.";
+        << "the reopt walk must route its per-candidate trials through the "
+        << "sub-incremental eval; zero calls means the walk never ran.";
 }
 
 // The counter advances by 1 after every dispatch and never resets. Three
@@ -1372,50 +1348,24 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
         << "(reopt ran instead).";
 }
 
-// P2.9 lever A — default-OFF routing. With ReoptimizationUseSubIncrementalWalk=0
-// (the production default), the reopt descent's TL walk evaluates every trial TL
-// through the legacy full-beam EvaluateTimeLimitConfig_ScratchOrIncre
-// (from_scratch=true). The sub-incremental eval is the incremental path's
-// primitive; the legacy reopt walk must NOT touch it. So after a count==0 reopt
-// dispatch, subincremental_calls==0 (no walk trial routed through it) while the
-// from-scratch flags are non-empty (the baseline beam + every walk trial).
+// P2.11 merge — reopt routing is now unconditional. The reopt descent runs ONE
+// baseline beam through EvaluateTimeLimitConfig_ScratchOrIncre(from_scratch=true)
+// to establish the champion, then switches the TL walk's per-candidate eval to
+// the cache-routed EvaluateTimeLimitConfig_SubIncremental (|diff|<=1 single-task
+// re-search). So after a count==0 reopt dispatch: from_scratch_flags is non-empty
+// (the one baseline beam) AND subincremental_calls>0 (the walk trials). The walk
+// trials must NOT appear as from_scratch flags — only the baseline beam does.
+// (Before the merge this was the flag-ON arm; the flag is gone and the merged
+// path is the only path, so the assertion is now unconditional.)
 TEST_F(CounterDispatcherSynthetic,
-       ReoptWalk_Legacy_Off_RoutesTrialsThroughScratchOrIncre) {
-    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 0;
-    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
-
-    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // count==0 → reopt
-
-    ASSERT_FALSE(opt.from_scratch_flags.empty())
-        << "count==0 reopt must evaluate candidates through "
-        << "EvaluateTimeLimitConfig_ScratchOrIncre (baseline beam + walk trials).";
-    for (bool fs : opt.from_scratch_flags) {
-        EXPECT_TRUE(fs) << "legacy reopt walk must evaluate every trial with "
-                        << "from_scratch=true; saw a false flag.";
-    }
-    EXPECT_EQ(0, opt.subincremental_calls)
-        << "legacy reopt walk (flag OFF) must NOT route any trial through the "
-        << "sub-incremental eval; that is the incremental path's primitive.";
-}
-
-// P2.9 lever A — flag-ON routing. With ReoptimizationUseSubIncrementalWalk=1,
-// the reopt descent still runs ONE baseline beam through
-// EvaluateTimeLimitConfig_ScratchOrIncre(from_scratch=true) to establish the
-// champion, then switches the TL walk's per-candidate eval to the cache-routed
-// EvaluateTimeLimitConfig_SubIncremental (|diff|<=1 single-task re-search). So
-// after a count==0 reopt dispatch: from_scratch_flags is non-empty (the one
-// baseline beam) AND subincremental_calls>0 (the walk trials). The walk trials
-// must NOT appear as from_scratch flags — only the baseline beam does.
-TEST_F(CounterDispatcherSynthetic,
-       ReoptWalk_LeverA_On_RoutesWalkTrialsThroughSubIncremental) {
-    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 1;
+       ReoptWalk_RoutesWalkTrialsThroughSubIncremental) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
 
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // count==0 → reopt
 
     // The baseline beam still runs through ScratchOrIncre(from_scratch=true).
     ASSERT_FALSE(opt.from_scratch_flags.empty())
-        << "lever-A reopt must still run the one baseline beam through "
+        << "reopt must still run the one baseline beam through "
         << "EvaluateTimeLimitConfig_ScratchOrIncre.";
     for (bool fs : opt.from_scratch_flags) {
         EXPECT_TRUE(fs);
@@ -1424,9 +1374,8 @@ TEST_F(CounterDispatcherSynthetic,
     // 10-option TL set; on this monotonic SP landscape the walk takes ≥1 step
     // before patience stops it, so subincremental_calls>0.
     EXPECT_GT(opt.subincremental_calls, 0)
-        << "lever-A reopt walk must route its per-candidate trials through the "
-        << "sub-incremental eval; saw zero calls (the walk did not run, or ran "
-        << "through the legacy ScratchOrIncre path instead).";
+        << "reopt walk must route its per-candidate trials through the "
+        << "sub-incremental eval; saw zero calls (the walk did not run).";
 }
 
 // P2.11 reading (a) — Type-E in the reopt queue. The merged reopt path walks the
@@ -1434,10 +1383,10 @@ TEST_F(CounterDispatcherSynthetic,
 // so an env-changed task with NO perf pair (T_noise, task 1) is reached via its
 // Type-E entry and re-searched through EvaluateTimeLimitConfig_SubIncremental.
 //
-// The legacy reopt sub-incremental arm walks sorted_indices and skips {-1}-only
-// tasks (T_noise has no perf pair → {-1}-only → skipped), so it NEVER reaches an
-// env-changed T_noise. This test pins the merge: after a flag-ON reopt on a DAG
-// whose T_noise ET changed since the previous interval, the recorded
+// The pre-merge reopt sub-incremental arm walked sorted_indices and skipped
+// {-1}-only tasks (T_noise has no perf pair → {-1}-only → skipped), so it NEVER
+// reached an env-changed T_noise. This test pins the merge: after a reopt on a
+// DAG whose T_noise ET changed since the previous interval, the recorded
 // subincremental_task_idx must contain T_noise's index (1). Today it does not
 // (legacy arm skips it, AND ReOptimizePeriodic does not even capture the pre-
 // absorb DAG for the Type-E diff) → fails RED until both gaps close.
@@ -1449,13 +1398,12 @@ TEST_F(CounterDispatcherSynthetic,
 // previous interval's dag_tasks_ is the original DAG, the reopt's update is the
 // env-changed DAG → FindEnvTaskWithDifferentEt flags T_noise as Type-E.
 TEST_F(CounterDispatcherSynthetic,
-       ReoptWalk_LeverA_On_ReachesEnvChangedTaskViaSerializedQueue) {
-    GlobalVariables::ReoptimizationUseSubIncrementalWalk = 1;
+       ReoptWalk_ReachesEnvChangedTaskViaSerializedQueue) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
 
-    // Bootstrap the incumbent on the original DAG (T_noise ET ~ 50). With the
-    // flag ON this already uses the sub-incremental arm; on the bootstrap there
-    // is no env change (prev == update), so only T_perf's Type-L walk runs.
+    // Bootstrap the incumbent on the original DAG (T_noise ET ~ 50). On the
+    // bootstrap there is no env change (prev == update), so only T_perf's
+    // Type-L walk runs.
     opt.ReOptimizePeriodic(dag_tasks, 2);
     ASSERT_TRUE(opt.IfInitialized());
 
@@ -1484,10 +1432,10 @@ TEST_F(CounterDispatcherSynthetic,
         if (idx == 1) reached_t_noise = true;
     }
     EXPECT_TRUE(reached_t_noise)
-        << "P2.11 merge: a flag-ON reopt on a DAG with an env-changed T_noise "
+        << "P2.11 merge: a reopt on a DAG with an env-changed T_noise "
         << "(no perf pair, Type-E) must reach T_noise via the E+L serialized "
         << "queue's Type-E handler (SubIncremental call with task_idx==1). The "
-        << "legacy reopt arm skips {-1}-only tasks and never reaches it. "
+        << "pre-merge reopt arm skipped {-1}-only tasks and never reached it. "
         << "Recorded subincremental_task_idx: "
         << ::testing::PrintToString(opt.subincremental_task_idx);
 }
@@ -1924,7 +1872,7 @@ TEST(RecordCloseTimeLimitOptions_DynamicRadius, Vanilla) {
 // extracted from the trial-and-error coordinate-descent rewrite. They take no
 // optimizer state, so they can be unit-tested in isolation without constructing
 // a DAG / SP_Parameters. Each helper's contract is checked independently below
-// before the higher-level OptimizeSingleTaskTimeLimit walk is exercised.
+// before the higher-level OptimizeSingleTaskTimeLimit_Impl walk is exercised.
 
 // FindTimeLimitOptionIndex: linear scan for a value in the option vector.
 // Returns options.size() (the off-the-end sentinel) when the value is absent,
@@ -1981,7 +1929,7 @@ TEST(IsBetterTimeLimitOptionTest, NearEqualWithinToleranceIsTie) {
     EXPECT_FALSE(IsBetterTimeLimitOption(1.6 + 1e-12, 1.6, /*step=*/1));
 }
 
-// --- Trial-and-Error TL walk: OptimizeSingleTaskTimeLimit + rewritten
+// --- Trial-and-Error TL walk: OptimizeSingleTaskTimeLimit_Impl + rewritten
 // PerformCoordinateDescentForTaskConfigOpt ---
 //
 // The walk replaces the exhaustive per-task enumeration with a unidirectional
@@ -2013,6 +1961,18 @@ class StubTLWalkOptimizer : public OptimizePA_Incre_with_TimeLimits {
         evaluated_tls.push_back(tl);
         auto it = tl_to_sp.find(tl);
         return it == tl_to_sp.end() ? -1.0 : it->second;
+    }
+
+    // Build the eval lambda the walk core expects, binding the stub's
+    // EvaluateTimeLimitConfig_ScratchOrIncre override. Mirrors the deleted
+    // OptimizeSingleTaskTimeLimit wrapper's lambda so the walk-core tests
+    // exercise the identical code path: the override ignores `from_scratch`
+    // (it reads time_limits[walked_task_idx_] → SP map), so `evaluated_tls`
+    // recording and all assertions are unchanged.
+    auto MakeScratchOrIncreEval(int K, bool from_scratch) {
+        return [this, K, from_scratch](const std::vector<double>& tl) {
+            return EvaluateTimeLimitConfig_ScratchOrIncre(K, tl, from_scratch);
+        };
     }
 
     // The walk operates on one task at a time; the stub needs to know which
@@ -2076,10 +2036,10 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     auto opt = MakeStub(sp);
 
     std::vector<double> time_limits = {600.0, -1.0};
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        /*task_idx=*/0, /*K=*/2, time_limits,
-        /*current_sp=*/sp[600.0], /*baseline_val=*/600.0,
-        /*step=*/1, /*from_scratch=*/true, /*patience=*/0);
+    auto eval = opt.MakeScratchOrIncreEval(/*K=*/2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        /*task_idx=*/0, time_limits, /*current_sp=*/sp[600.0],
+        /*baseline_val=*/600.0, /*step=*/1, /*patience=*/0, eval);
 
     EXPECT_DOUBLE_EQ(1.8, final_sp);
     EXPECT_DOUBLE_EQ(1000.0, time_limits[0]);
@@ -2102,9 +2062,9 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     auto opt = MakeStub(sp);
 
     std::vector<double> time_limits = {600.0, -1.0};
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        0, 2, time_limits, sp[600.0], 600.0, /*step=*/1, /*from_scratch=*/true,
-        /*patience=*/0);
+    auto eval = opt.MakeScratchOrIncreEval(2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        0, time_limits, sp[600.0], 600.0, /*step=*/1, /*patience=*/0, eval);
 
     EXPECT_DOUBLE_EQ(1.9, final_sp);
     EXPECT_DOUBLE_EQ(600.0, time_limits[0]);
@@ -2128,9 +2088,9 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     auto opt = MakeStub(sp);
 
     std::vector<double> time_limits = {600.0, -1.0};
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        0, 2, time_limits, sp[600.0], 600.0, /*step=*/1, /*from_scratch=*/true,
-        /*patience=*/1);
+    auto eval = opt.MakeScratchOrIncreEval(2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        0, time_limits, sp[600.0], 600.0, /*step=*/1, /*patience=*/1, eval);
 
     EXPECT_DOUBLE_EQ(1.8, final_sp);
     EXPECT_DOUBLE_EQ(1000.0, time_limits[0]);
@@ -2151,9 +2111,9 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     auto opt = MakeStub(sp);
 
     std::vector<double> time_limits = {600.0, -1.0};
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        0, 2, time_limits, sp[600.0], 600.0, /*step=*/1, /*from_scratch=*/true,
-        /*patience=*/1);
+    auto eval = opt.MakeScratchOrIncreEval(2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        0, time_limits, sp[600.0], 600.0, /*step=*/1, /*patience=*/1, eval);
 
     EXPECT_DOUBLE_EQ(1.9, final_sp);
     EXPECT_DOUBLE_EQ(600.0, time_limits[0]);
@@ -2175,9 +2135,9 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     auto opt = MakeStub(sp);
 
     std::vector<double> time_limits = {600.0, -1.0};
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        0, 2, time_limits, sp[600.0], 600.0, /*step=*/-1, /*from_scratch=*/true,
-        /*patience=*/0);
+    auto eval = opt.MakeScratchOrIncreEval(2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        0, time_limits, sp[600.0], 600.0, /*step=*/-1, /*patience=*/0, eval);
 
     EXPECT_DOUBLE_EQ(400.0, time_limits[0]);
     // Walked 600→400 backward: 400 is the only trial eval (600 is baseline).
@@ -2196,9 +2156,10 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     opt.time_limit_option_for_each_task_[0] = {-1.0};
 
     std::vector<double> time_limits = {-1.0, -1.0};
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        0, 2, time_limits, /*current_sp=*/1.5, /*baseline_val=*/-1.0,
-        /*step=*/1, /*from_scratch=*/true, /*patience=*/0);
+    auto eval = opt.MakeScratchOrIncreEval(2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        0, time_limits, /*current_sp=*/1.5, /*baseline_val=*/-1.0,
+        /*step=*/1, /*patience=*/0, eval);
 
     EXPECT_DOUBLE_EQ(1.5, final_sp);
     EXPECT_TRUE(opt.evaluated_tls.empty());
@@ -2217,9 +2178,10 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     auto opt = MakeStub(sp);
 
     std::vector<double> time_limits = {700.0, -1.0};  // 700 not in opts
-    double final_sp = opt.OptimizeSingleTaskTimeLimit(
-        0, 2, time_limits, /*current_sp=*/1.5, /*baseline_val=*/700.0,
-        /*step=*/1, /*from_scratch=*/true, /*patience=*/0);
+    auto eval = opt.MakeScratchOrIncreEval(2, /*from_scratch=*/true);
+    double final_sp = opt.OptimizeSingleTaskTimeLimit_Impl(
+        0, time_limits, /*current_sp=*/1.5, /*baseline_val=*/700.0,
+        /*step=*/1, /*patience=*/0, eval);
 
     EXPECT_DOUBLE_EQ(1.5, final_sp);
     EXPECT_TRUE(opt.evaluated_tls.empty());

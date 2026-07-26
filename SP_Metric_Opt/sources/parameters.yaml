@@ -30,21 +30,6 @@ ReoptimizationPeriod: 10
 IncrementalTimeLimitSearchPatience: 0
 ReoptimizationTimeLimitSearchPatience: 1
 
-# P2.9 lever A: route the reopt TL coordinate walk through the sub-incremental
-# eval (cache-routed, |diff|<=1 single-task re-search) instead of the legacy
-# full-beam eval (one OptimizeFromScratch per trial TL). After the ONE baseline
-# from-scratch beam commits its champion, the cache is re-armed and the per-task
-# TL walk reuses the same EvaluateTimeLimitConfig_SubIncremental the incremental
-# path uses — cutting ~O(N) full beam searches per reopt activation down to 1.
-# Quality-preserving in the common case (a single-task TL change rarely shifts
-# the global optimum PA by >1 task — the same bet the incremental path makes),
-# but NOT bit-identical to the legacy from-scratch-per-candidate walk: reopt's
-# PA search can be non-unimodal at high utilization, so a TL option whose
-# optimum PA is >1 task-shifted away may be missed by the 1D re-search. Hence
-# default OFF; enable only after an A/B confirms parity. 0 = legacy (default),
-# 1 = sub-incremental walk.
-ReoptimizationUseSubIncrementalWalk: 0
-
 # simulation export granularity controls:
 # 0: interval SP metrics only (smallest disk usage)
 # 1: + per-task miss-rate summary
