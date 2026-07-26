@@ -24,7 +24,7 @@
     },
     "prod_mode": {
         "_comment": "Production / paper-grade parameters. Adjust manually for final experiments.",
-        "num_tasks_for_cross_task_comparison": [4, 6, 8, 10, 12, 14, 16, 18],
+        "num_tasks_for_cross_task_comparison": [4, 6, 8, 10, 12, 14, 16],
         "num_tasks_for_single_task_figures": 10,
         "num_tasksets_to_generate": 10,
         "simulation_duration_seconds": 600,
@@ -58,7 +58,7 @@
         "figure_height_inches_grouped": 6,
         "enable_statistical_annotation": false,
         "output_format_list": ["png", "pdf"],
-        "run_name_prefix": ""
+        "run_name_prefix": "paper_full"
     },
 
     "analysis": {

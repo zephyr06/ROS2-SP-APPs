@@ -5,11 +5,11 @@
     "test_mode": {
         "_comment": "Fast smoke-test mode for CI and quick pipeline validation. Duration must be >= 2x the max hyper-period (66s, driven by periods 1000 & 33 ms), so >= 70s.",
         "num_tasks_for_cross_task_comparison": [4, 6],
-        "num_tasks_for_single_task_figures": 4,
-        "num_tasksets_to_generate": 2,
-        "simulation_duration_seconds": 70,
+        "num_tasks_for_single_task_figures": 0,
+        "num_tasksets_to_generate": 10,
+        "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
-        "time_limit_seconds": 1,
+        "time_limit_seconds": 10,
         "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
         "ablation_scheduler_list": ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET"],
         "interval_sweep_seconds_list": [5, 10],
@@ -51,7 +51,7 @@
         "figure_height_inches_grouped": 6,
         "enable_statistical_annotation": false,
         "output_format_list": ["png", "pdf"],
-        "run_name_prefix": ""
+        "run_name_prefix": "compare_against_bf"
     },
 
     "analysis": {
