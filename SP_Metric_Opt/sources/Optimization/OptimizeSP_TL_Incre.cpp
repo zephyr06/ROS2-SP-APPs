@@ -131,8 +131,8 @@ bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     return should_update;
 }
 
-double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
-    int K, const std::vector<double>& time_limits, bool from_scratch) {
+double OptimizePA_Incre_with_TimeLimits::CallOptimizerGivenTimeLimits(
+    int beam_search_width, const std::vector<double>& time_limits, bool from_scratch) {
     eval_count_++;
     DAG_Model dag_tasks_cur =
         UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
@@ -141,7 +141,7 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
     if (from_scratch) {
         // Reopt: ignore warm state, re-search the full beam.
         OptimizePA_Incre optimizer(dag_tasks_cur, sp_parameters_);
-        optimizer.OptimizeFromScratch(K);
+        optimizer.OptimizeFromScratch(beam_search_width);
         current_sp = optimizer.opt_sp_;
         UpdateRecords(optimizer, time_limits);
     } else if (IfInitialized()) {
@@ -156,7 +156,7 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
         // warm-start from, but none exists yet. Bootstrap with a from_scratch
         // call (e.g. ReOptimizePeriodic) first.
         CoutError(
-            "EvaluateTimeLimitConfig_ScratchOrIncre: incremental path "
+            "CallOptimizerGivenTimeLimits: incremental path "
             "(from_scratch=false) requested but no incumbent is initialized. "
             "Bootstrap with a from_scratch call first "
             "(e.g. ReOptimizePeriodic).");
@@ -164,11 +164,10 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_ScratchOrIncre(
     return current_sp;
 }
 
-double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
-    int K, const std::vector<double>& time_limits, size_t task_idx,
+double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
+    const std::vector<double>& time_limits, size_t task_idx,
     bool et_increased) {
     eval_count_++;
-    (void)K;  // unused: the primitive re-searches one task's 1D positions (no beam)
 
     // In-walk AdoptChampion calls advance the champion speculatively to trial
     // PAs the walk may not commit. On a REJECT the champion must be reverted,
@@ -188,7 +187,7 @@ double OptimizePA_Incre_with_TimeLimits::EvaluateTimeLimitConfig_SubIncremental(
     // res_opt_). Fail loudly rather than silently mis-seeding.
     if (!IfInitialized()) {
         CoutError(
-            "EvaluateTimeLimitConfig_SubIncremental: no incumbent is "
+            "OptimizeIncreSingleTask: no incumbent is "
             "initialized. The serialized path requires a prior from-scratch "
             "solve (ReOptimizePeriodic) to warm-start from.");
     }
@@ -342,7 +341,7 @@ OptimizePA_Incre_with_TimeLimits::BuildSerializedTaskQueue(
 }
 
 double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
-    const std::vector<SerializedTaskQueueEntry>& queue, int K,
+    const std::vector<SerializedTaskQueueEntry>& queue,
     std::vector<double>& starting_time_limits, double current_config_sp,
     int patience) {
     // Shared per-entry dispatch for the incremental + reopt arms (P2.11 Phase 1
@@ -360,14 +359,14 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
         if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
             // Type-E: sub-incremental re-search at the committed TL (no TL walk).
             // et_increased = the env-move direction carried on the entry.
-            current_config_sp = EvaluateTimeLimitConfig_SubIncremental(
-                K, starting_time_limits, static_cast<size_t>(entry.task_id),
+            current_config_sp = OptimizeIncreSingleTask(
+                starting_time_limits, static_cast<size_t>(entry.task_id),
                 entry.et_increased);
             starting_time_limits = ReconstructTimeLimitVecFromResOpt();
         } else {
             // Type-L: TL walk, each step calling the sub-incremental eval.
-            current_config_sp = OptimizeOneTaskTimeLimit(
-                K, static_cast<size_t>(entry.task_id), starting_time_limits,
+            current_config_sp = OptimizeOneTaskWithTimeLimit(
+                static_cast<size_t>(entry.task_id), starting_time_limits,
                 current_config_sp, starting_time_limits[entry.task_id], patience);
         }
     }
@@ -375,10 +374,9 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
 }
 
 double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
-    int K, std::vector<double>& starting_time_limits, IntervalDescentMode mode) {
-    // Reset + baseline seed + cache arm/adopt/re-sync. The two branches are
-    // RELOCATED VERBATIM from the old PerformSerializedTaskQueueOptimization
-    // (incremental) and PerformCoordinateDescentForTaskConfigOpt (reopt)
+    int beam_search_width, std::vector<double>& starting_time_limits, IntervalDescentMode mode) {
+    // Reset + baseline seed + cache arm/adopt/re-sync. The two branches are the
+    // old PerformSerializedTaskQueueOptimization (incremental) and reopt descent
     // baselines — no logic change, just gathered into one helper so
     // RunIntervalDescent has no mode-conditional cache code.
     if (mode == IntervalDescentMode::Incremental) {
@@ -408,8 +406,8 @@ double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
     // would make RTACache::ComputeTaskSetDifference throw |diff|>1 → SIGABRT if
     // the cache were armed. Arming happens AFTER, for the walk only.
     ResetIncumbentBaseline(/*from_scratch=*/true);
-    double current_config_sp = EvaluateTimeLimitConfig_ScratchOrIncre(
-        K, starting_time_limits, /*from_scratch=*/true);
+    double current_config_sp = CallOptimizerGivenTimeLimits(
+        beam_search_width, starting_time_limits, /*from_scratch=*/true);
 
     // Re-arm the cache: the baseline beam above committed its champion via
     // CommitIncumbent, but with rta_cache_active_ false (ResetIncumbentBaseline
@@ -438,7 +436,7 @@ double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
 }
 
 void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
-    int K, std::vector<double>& starting_time_limits, IntervalDescentMode mode,
+    int beam_search_width, std::vector<double>& starting_time_limits, IntervalDescentMode mode,
     const DAG_Model& dag_tasks_prev_pre_tl) {
     // The ONE descent body shared by the incremental and reopt paths (P2.11
     // Phase 1b-1e unification). Patience is mode-selected; the baseline-seed
@@ -451,7 +449,7 @@ void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
                        : GlobalVariables::IncrementalTimeLimitSearchPatience;
 
     double current_config_sp =
-        SeedBaselineAndArmCache(K, starting_time_limits, mode);
+        SeedBaselineAndArmCache(beam_search_width, starting_time_limits, mode);
 
     // Build the merged + weight-sorted E+L queue, then walk serially: each step's
     // UpdateRecords adopts into res_opt_, so the next step's challenger sees the
@@ -459,7 +457,7 @@ void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
     // only the walked task (|diff|==1).
     std::vector<SerializedTaskQueueEntry> queue =
         BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
-    WalkSerializedTaskQueue(queue, K, starting_time_limits, current_config_sp,
+    WalkSerializedTaskQueue(queue, starting_time_limits, current_config_sp,
                             patience);
 
     // Unconditional disarm on the way out (bit-identical for SP: nothing reads
@@ -472,13 +470,13 @@ void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
 }
 
 void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
-    int K, std::vector<double>& starting_time_limits,
+    int beam_search_width, std::vector<double>& starting_time_limits,
     const DAG_Model& dag_tasks_prev_pre_tl) {
     // Thin delegating wrapper (P2.11 Phase 1b-1e). Kept virtual so the test stubs
     // (RecordingDispatcherOpt, StartTLStub) that override it to observe the entry
     // TL vector keep working unchanged — the parent now delegates to
     // RunIntervalDescent, so the real body still runs.
-    RunIntervalDescent(K, starting_time_limits, IntervalDescentMode::Incremental,
+    RunIntervalDescent(beam_search_width, starting_time_limits, IntervalDescentMode::Incremental,
                        dag_tasks_prev_pre_tl);
 }
 
@@ -499,7 +497,7 @@ OptimizePA_Incre_with_TimeLimits::InitializeTimeLimitsFromETConfig() {
     return time_limits;
 }
 
-double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit_Impl(
+double OptimizePA_Incre_with_TimeLimits::WalkOneTaskWithTimeLimitOptions(
     size_t task_idx, std::vector<double>& time_limits, double current_sp,
     double baseline_val, int step, int patience,
     std::function<double(const std::vector<double>&)> eval) {
@@ -549,25 +547,24 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeSingleTaskTimeLimit_Impl(
     return best_sp;
 }
 
-double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskTimeLimit(
-    int K, size_t task_idx, std::vector<double>& starting_time_limits,
+double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskWithTimeLimit(
+    size_t task_idx, std::vector<double>& starting_time_limits,
     double current_config_sp, double baseline_val, int patience) {
     // Sub-incremental walk: each trial TL calls the cache-routed
-    // EvaluateTimeLimitConfig_SubIncremental (re-scores the carried PA + 1D
-    // single-task re-search), reusing the incremental path's machinery.
+    // OptimizeIncreSingleTask (re-scores the carried PA + 1D single-task
+    // re-search), reusing the incremental path's machinery.
     // et_increased per step = sign of (trial TL − committed TL).
-    int K_cap = K;
-    auto eval = [this, K_cap, task_idx,
+    auto eval = [this, task_idx,
                  baseline_val](const std::vector<double>& tl) {
         bool et_up = tl[task_idx] > baseline_val;
-        return EvaluateTimeLimitConfig_SubIncremental(K_cap, tl, task_idx, et_up);
+        return OptimizeIncreSingleTask(tl, task_idx, et_up);
     };
     // Backward pass (tie-break toward smaller TL on SP ties via step<0), then a
     // forward pass from the same origin.
-    current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
+    current_config_sp = WalkOneTaskWithTimeLimitOptions(
         task_idx, starting_time_limits, current_config_sp, baseline_val,
         /*step=*/-1, patience, eval);
-    current_config_sp = OptimizeSingleTaskTimeLimit_Impl(
+    current_config_sp = WalkOneTaskWithTimeLimitOptions(
         task_idx, starting_time_limits, current_config_sp, baseline_val,
         /*step=*/1, patience, eval);
     // Keep the working TL vector tracking the committed best so the next task's
@@ -576,21 +573,8 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskTimeLimit(
     return current_config_sp;
 }
 
-void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
-    int K, std::vector<double>& starting_time_limits,
-    const DAG_Model& dag_tasks_prev_pre_tl) {
-    // Thin delegating wrapper (P2.11 Phase 1b-1e). The reopt descent body now
-    // lives in RunIntervalDescent(Reopt) + SeedBaselineAndArmCache(Reopt); this
-    // name is kept so the 5.5 regression-test comments and the ReOptimizePeriodic
-    // call site read naturally. The `from_scratch` arg is gone — it was always
-    // true at the sole caller, and IntervalDescentMode::Reopt carries the same
-    // info (the "reduce optional arguments" rule).
-    RunIntervalDescent(K, starting_time_limits, IntervalDescentMode::Reopt,
-                       dag_tasks_prev_pre_tl);
-}
-
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
-    const DAG_Model& dag_tasks_update, int K) {
+    const DAG_Model& dag_tasks_update, int beam_search_width) {
     // One shared TIME_LIMIT budget for this interval's INCR call (covers both
     // branches + the disable_time_limit_opt bypass). Fresh per call — the
     // orchestrator reuses incr_optimizer_ across intervals, so construction-time
@@ -608,25 +592,25 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     int period = GlobalVariables::ReoptimizationPeriod;
     bool trigger_reopt = (reoptimization_interval_count_ % period == 0);
     if (trigger_reopt) {
-        ReOptimizePeriodic(dag_tasks_update, K);
+        ReOptimizePeriodic(dag_tasks_update, beam_search_width);
     } else {
-        OptimizeIncre_w_TL(dag_tasks_update, K);
+        OptimizeIncre_w_TL(dag_tasks_update, beam_search_width);
     }
     reoptimization_interval_count_++;
     return opt_pa_;
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(
-    int K, std::vector<double>& time_limits, bool from_scratch) {
+    int beam_search_width, std::vector<double>& time_limits, bool from_scratch) {
     // Bypasses the descent, so the interval reset it would do must run here.
     ResetIncumbentBaseline(from_scratch);
     InitializeTimeLimitsToSmallest(time_limits);
-    EvaluateTimeLimitConfig_ScratchOrIncre(K, time_limits, from_scratch);
+    CallOptimizerGivenTimeLimits(beam_search_width, time_limits, from_scratch);
     return opt_pa_;
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
-    const DAG_Model& dag_tasks_update, int K) {
+    const DAG_Model& dag_tasks_update, int beam_search_width) {
     // Capture the pre-TL env DAG before the absorb — this is the T-1 env for the
     // Type-E diff (FindEnvTaskWithDifferentEt) consumed by the serialized queue.
     DAG_Model dag_tasks_prev_pre_tl = dag_tasks_;
@@ -640,13 +624,12 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     // are flagged as changed.
     std::vector<double> time_limits = ReconstructTimeLimitVecFromResOpt();
     if (GlobalVariables::disable_time_limit_opt) {
-        return OptimizeWithTimeLimitOptDisabled(K, time_limits,
+        return OptimizeWithTimeLimitOptDisabled(beam_search_width, time_limits,
                                                 /*from_scratch=*/false);
     }
-    // Serialized E+L queue — the incremental path's interval search (the legacy
-    // PerformCoordinateDescentForTaskConfigOpt remains the from-scratch/reopt
-    // descent; see ReOptimizePeriodic).
-    PerformSerializedTaskQueueOptimization(K, time_limits,
+    // Serialized E+L queue — the incremental path's interval search (the reopt
+    // path is RunIntervalDescent(Reopt); see ReOptimizePeriodic).
+    PerformSerializedTaskQueueOptimization(beam_search_width, time_limits,
                                            dag_tasks_prev_pre_tl);
     return opt_pa_;
 }
@@ -763,14 +746,14 @@ void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
-    const DAG_Model& dag_tasks_update, int K) {
+    const DAG_Model& dag_tasks_update, int beam_search_width) {
     // Compare-and-keep reopt: re-eval the incumbent under the new DAG, seed it
     // as baseline, then run a fresh from-scratch descent. UpdateRecords' strictly-
     // greater-SP guard (tie-break lower TL-sum) preserves the incumbent if the
     // search finds nothing better.
 
     // Capture the pre-absorb DAG before overwriting dag_tasks_ — it is the Type-E
-    // diff source for BuildSerializedTaskQueue in PerformCoordinateDescentForTaskConfigOpt
+    // diff source for BuildSerializedTaskQueue in RunIntervalDescent(Reopt)
     // (P2.11 merge: the reopt descent walks the same serialized E+L queue the
     // incremental path uses). Cheap to capture (copy on write via the absorb).
     DAG_Model dag_tasks_prev_pre_tl = dag_tasks_;
@@ -787,10 +770,10 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
                                           ? ReconstructTimeLimitVecFromResOpt()
                                           : InitializeTimeLimitsFromETConfig();
     if (GlobalVariables::disable_time_limit_opt) {
-        OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);
+        OptimizeWithTimeLimitOptDisabled(beam_search_width, time_limits, /*from_scratch=*/true);
     } else {
-        PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
-                                                  dag_tasks_prev_pre_tl);
+        RunIntervalDescent(beam_search_width, time_limits, IntervalDescentMode::Reopt,
+                           dag_tasks_prev_pre_tl);
     }
     return opt_pa_;
 }

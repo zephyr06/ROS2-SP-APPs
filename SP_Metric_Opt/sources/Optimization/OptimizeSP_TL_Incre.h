@@ -81,9 +81,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
         time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
     }
 
-    PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update, int K);
+    PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update, int beam_search_width);
 
-    PriorityVec ReOptimizePeriodic(const DAG_Model& dag_tasks_update, int K);
+    PriorityVec ReOptimizePeriodic(const DAG_Model& dag_tasks_update, int beam_search_width);
 
     // Counter-driven dispatcher: every ReoptimizationPeriod-th call re-runs the
     // TL search from scratch (ReOptimizePeriodic, compare-and-keep), else the
@@ -92,7 +92,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // and patience (0 vs 1). count==0 → ReOptimizePeriodic, which bootstraps the
     // interval-0 incumbent (RM+min-TL). Counter advances every call, never resets.
     PriorityVec Optimize_w_TL_ScratchOrIncre(const DAG_Model& dag_tasks_update,
-                                             int K);
+                                             int beam_search_width);
 
     void ApplyWCETAblationIfRequired(DAG_Model& dag_tasks);
 
@@ -105,20 +105,19 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // requires an incumbent.
     // Virtual so the reopt descent's baseline beam can be unit-tested with a
     // TL→SP stub; the indirection is one call per candidate (negligible vs ObtainSP_DAG).
-    virtual double EvaluateTimeLimitConfig_ScratchOrIncre(
-        int K, const std::vector<double>& time_limits, bool from_scratch);
+    virtual double CallOptimizerGivenTimeLimits(
+        int beam_search_width, const std::vector<double>& time_limits, bool from_scratch);
 
-    // Serialized-queue SP-eval: like the incremental branch above but calls the
-    // |diff|==1 primitive OptimizeIncre_SingleTask.
+    // Serialized-queue SP-eval: runs the incremental optimizer under one TL vector
+    // honoring the |diff|<=1 single-change invariant (routes through the RTA cache).
     // `task_idx`: the one task whose ET differs from the champion (Type-E: env-
     // changed task, committed TL; Type-L: walked task, trial TL). `et_increased`:
     // caller-supplied ET direction vs the champion — drives half-range pruning in
     // the primitive (wrong direction prunes the wrong half), so the caller MUST
-    // supply it. `K` is carried for signature symmetry only (no beam in a 1D
-    // re-search).
+    // supply it. No beam: the primitive re-searches one task's 1D positions.
     // Virtual so the serialized walk can be unit-tested with a TL→SP stub.
-    virtual double EvaluateTimeLimitConfig_SubIncremental(
-        int K, const std::vector<double>& time_limits, size_t task_idx,
+    virtual double OptimizeIncreSingleTask(
+        const std::vector<double>& time_limits, size_t task_idx,
         bool et_increased);
 
     // Assert the single-change invariant on the serialized path (debugMode-only).
@@ -142,13 +141,6 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // ReOptimizePeriodic absorbed dag_tasks_update; it is the Type-E diff source
     // for BuildSerializedTaskQueue on the reopt descent (the incremental descent
     // captures its own prev_pre_tl in OptimizeIncre_w_TL).
-    // Thin delegating wrapper around RunIntervalDescent(Reopt). Kept (not deleted)
-    // so the reopt path has a named entry the 5.5 regression test comments refer
-    // to; the `from_scratch` arg is gone (always true at the sole caller, and the
-    // mode enum carries the same info).
-    void PerformCoordinateDescentForTaskConfigOpt(
-        int K, std::vector<double>& starting_time_limits,
-        const DAG_Model& dag_tasks_prev_pre_tl);
 
     // The ONE interval-descent body shared by the incremental and reopt paths.
     // Patience is mode-selected (inc=IncrementalTimeLimitSearchPatience,
@@ -157,7 +149,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // (BuildSerializedTaskQueue + WalkSerializedTaskQueue + unconditional cache
     // disarm) is mode-independent. `dag_tasks_prev_pre_tl` is the pre-absorb DAG
     // (Type-E diff source for the serialized queue).
-    void RunIntervalDescent(int K, std::vector<double>& starting_time_limits,
+    void RunIntervalDescent(int beam_search_width, std::vector<double>& starting_time_limits,
                             IntervalDescentMode mode,
                             const DAG_Model& dag_tasks_prev_pre_tl);
 
@@ -172,7 +164,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // without it the first walk step diffs champion-TL vs seed-TL >1 → throw).
     // `ResetIncumbentBaseline(mode==Reopt)` clears the cache, so the reopt beam
     // starts disarmed regardless of the arm ordering inside this helper.
-    double SeedBaselineAndArmCache(int K,
+    double SeedBaselineAndArmCache(int beam_search_width,
                                    std::vector<double>& starting_time_limits,
                                    IntervalDescentMode mode);
 
@@ -186,27 +178,27 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // TL ~unimodal); 1 = tolerate one non-improving step (reopt, can be
     // non-unimodal).
     // The walk core is unit-tested directly with an injected TL→SP stub.
-    double OptimizeSingleTaskTimeLimit_Impl(
+    double WalkOneTaskWithTimeLimitOptions(
         size_t task_idx, std::vector<double>& time_limits, double current_sp,
         double baseline_val, int step, int patience,
         std::function<double(const std::vector<double>&)> eval);
 
     // One task's sub-incremental TL walk: builds the sub-incremental eval lambda
-    // (binding EvaluateTimeLimitConfig_SubIncremental) and runs the backward
-    // (step=-1) then forward (step=+1) passes over OptimizeSingleTaskTimeLimit_Impl,
-    // finally syncing the working TL vector to the adopted champion. Shared by the
+    // (binding OptimizeIncreSingleTask) and runs the backward (step=-1) then
+    // forward (step=+1) passes over WalkOneTaskWithTimeLimitOptions, finally
+    // syncing the working TL vector to the adopted champion. Shared by the
     // incremental serialized queue (PerformSerializedTaskQueueOptimization Type-L
-    // body) and the reopt descent (PerformCoordinateDescentForTaskConfigOpt) —
-    // both ran this exact block inline before P2.11 Phase 1, differing only in the
-    // task_idx source.
-    double OptimizeOneTaskTimeLimit(
-        int K, size_t task_idx, std::vector<double>& starting_time_limits,
+    // body) and the reopt descent (RunIntervalDescent(Reopt)) — both ran this
+    // exact block inline before P2.11 Phase 1, differing only in the task_idx
+    // source.
+    double OptimizeOneTaskWithTimeLimit(
+        size_t task_idx, std::vector<double>& starting_time_limits,
         double current_config_sp, double baseline_val, int patience);
 
     // Fast path when disable_time_limit_opt is set: pin every TL to its smallest
     // option and evaluate that single config (no descent).
     PriorityVec OptimizeWithTimeLimitOptDisabled(
-        int K, std::vector<double>& time_limits, bool from_scratch);
+        int beam_search_width, std::vector<double>& time_limits, bool from_scratch);
 
     // Type-L set: task IDs whose option set is NOT the {-1}-only sentinel (pure query).
     std::vector<int> CollectTLFlexibleTaskIds() const;
@@ -219,28 +211,28 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     std::vector<SerializedTaskQueueEntry> BuildSerializedTaskQueue(
         const DAG_Model& dag_tasks_prev_pre_tl) const;
 
-    // Walks the merged E+L serialized queue in place. Type-E → SubIncremental
-    // re-search at the committed TL (no TL walk); Type-L → OptimizeOneTaskTimeLimit
+    // Walks the merged E+L serialized queue in place. Type-E → OptimizeIncreSingleTask
+    // re-search at the committed TL (no TL walk); Type-L → OptimizeOneTaskWithTimeLimit
     // TL walk. Each step adopts into res_opt_, so the next step's challenger sees
     // the new champion and the diff flags only the walked task (|diff|<=1).
     // Shared by PerformSerializedTaskQueueOptimization (incremental) and
-    // PerformCoordinateDescentForTaskConfigOpt (reopt) — both ran this exact
-    // loop inline before P2.11 Phase 1. Returns the final SP; syncs
-    // starting_time_limits to the adopted champion.
+    // RunIntervalDescent(Reopt) — both ran this exact loop inline before P2.11
+    // Phase 1. Returns the final SP; syncs starting_time_limits to the adopted
+    // champion.
     double WalkSerializedTaskQueue(
-        const std::vector<SerializedTaskQueueEntry>& queue, int K,
+        const std::vector<SerializedTaskQueueEntry>& queue,
         std::vector<double>& starting_time_limits, double current_config_sp,
         int patience);
 
-    // Serialized loop driver — the incremental-path replacement for
-    // PerformCoordinateDescentForTaskConfigOpt. Resets the baseline, re-scores the
-    // champion under the new env (dedicated re-score, NOT ScratchOrIncre — must
-    // not optimize before the queue's order is honored), builds the E+L queue, and
-    // walks it serially. `dag_tasks_prev_pre_tl` is the pre-TL DAG captured before
-    // the absorb (Type-E diff source).
+    // Serialized loop driver — the incremental-path entry (the reopt path is
+    // RunIntervalDescent(Reopt)). Resets the baseline, re-scores the champion
+    // under the new env (dedicated re-score, NOT CallOptimizerGivenTimeLimits —
+    // must not optimize before the queue's order is honored), builds the E+L
+    // queue, and walks it serially. `dag_tasks_prev_pre_tl` is the pre-TL DAG
+    // captured before the absorb (Type-E diff source).
     // Virtual so the path can be unit-tested with an observing stub.
     virtual void PerformSerializedTaskQueueOptimization(
-        int K, std::vector<double>& starting_time_limits,
+        int beam_search_width, std::vector<double>& starting_time_limits,
         const DAG_Model& dag_tasks_prev_pre_tl);
 
     // Compare-and-keep helpers (see ReOptimizePeriodic).
