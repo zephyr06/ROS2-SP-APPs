@@ -110,3 +110,17 @@ draw. P2.15 does NOT block P2.13's config edit (independent keys:
 **Status:** IMPLEMENTED, working tree (NOT committed). Awaits user review.
 `git add` staged on user go; no `git commit` (per standing guardrail).
 
+## 2026-07-25 — CLOSED (committed `771be079`; moved to finished_tasks)
+
+- **Status updated:** the prior entry's "working tree, NOT committed" is superseded —
+  P2.15 was committed at `771be079` (code + `taskset_generator.py` + 5 configs + 9
+  inline-config test edits + this folder's 3 records). `pytest Gen_Taskset/tests
+  tests/python` → 372/372 green; the "importance is now random" sanity check
+  (top-weight task = non-perf) holds.
+- **Moved to `agents/finished_tasks/P2_15_sp_weight_randomization/`.**
+- **Cross-link reminder (carried forward to P2.13):** P2.13's D1 feasibility check
+  (perf-task clamp gap in `feasibility_clamp.py`) should be re-run against randomized-
+  weight tasksets — under P2.15 the "important" (top-`sp_weight`) task is no longer
+  by-construction a perf task, so the clamp gap may or may not bite depending on the
+  random draw.
+

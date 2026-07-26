@@ -29,6 +29,6 @@
 - [x] Run `pytest Gen_Taskset/tests tests/python` and verify all tests pass. *(61/61 SP-threshold-relevant tests pass in isolation. 2 full-suite failures are pre-existing flakiness — `test_integration_pipeline` has no `RANDOM_SEED`, `test_trajectory.test_generate_path_only` is unseeded + cross-module RNG-pollution sensitive — reproduced on the stashed baseline WITHOUT these changes.)*
 - [x] Run `ctest --test-dir build --output-on-failure` and verify C++ suite passes. *(N/A: P2.14 is Python-only — no `SP_THRESHOLD` reference exists in `sources/` C++ code, and no C++ test consumes any of the 5 edited JSON configs. C++ suite is structurally independent of this change.)*
 
-## Step 5 — Empirical Analysis & Records
-- [ ] Compute per-task analytic `ddl_miss_chance` vs `sp_threshold` for important tasks.
-- [ ] Record findings and mean relative difference in `dev_log.md`.
+## Step 5 — Empirical Analysis & Records — DEFERRED TO P2.13
+- [-] Compute per-task analytic `ddl_miss_chance` vs `sp_threshold` for important tasks. — **DEFERRED to P2.13** (the empirical safety study is owned by P2.13; P2.14 closed as code-complete).
+- [-] Record findings and mean relative difference in `dev_log.md`. — **DEFERRED to P2.13.**

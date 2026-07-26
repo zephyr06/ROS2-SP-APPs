@@ -215,3 +215,77 @@
   *Detail: `trial_and_error_tl_opt_task.md`.*
 - **Status: committed @ `88af2c54` + `fa0b857f`** (P0.1 commit group c).
   `testIncreOpt_w_TL` 43/43 + `ctest` 16/16 green.
+
+## P2.12 — C++ Executable Speed Test Benchmark (RunSpeedTest) — CLOSED 2026-07-25
+
+- **Disposition: closed, done.** Added `tests/RunSpeedTest.cpp` — a release-mode
+  benchmark that runs `INCR_Reopt_1` + `INCR_Reopt_10` via
+  `FixedTaskPrioritySchedulingOrchestrator` on `tests/speed_test/taskset_N8`,
+  records scheduler ET, and reports PASS/FAIL vs a threshold (default 0.1 s/act).
+  Registered as a `tests/CMakeLists.txt` target; built + run in **Release**.
+- **Results (release):** `INCR_Reopt_1` 0.042 s/act, `INCR_Reopt_10` 0.013 s/act
+  → both ≪ 0.1 s threshold → **PASS**.
+- **Commits:** `55285fc0` (taskset) + `6b5065c3` (RunSpeedTest).
+- **Why it matters:** the standing "optimization got much slower" worry is
+  resolved here — release-mode timing shows the optimizer is fast; the apparent
+  slowdown was the DEBUG (`build_test`) build, closed by the `validate_bin_dir`
+  release-only enforcement (`fa113d23`).
+  *Detail: `agents/finished_tasks/P2_12_reopt_speed_test/`.*
+
+## P2.9 — Speed Up Re-Optimization — CLOSED 2026-07-25 as superseded / moot
+
+- **Disposition: closed, not as originally specified.** P2.9's premise — reopt
+  costing ~0.8 s/activation at N=16 — was the **DEBUG-build artifact**: that
+  figure came from `BIN_DIR=build_test` (~8.5× slower), not the algorithm.
+  Release-mode measurement (P2.12 `RunSpeedTest`) shows `INCR_Reopt_1` at
+  **0.042 s/act** — the speed problem P2.9 was opened to fix does not exist in
+  release. The release-only `validate_bin_dir` guard (`fa113d23`) now prevents
+  the artifact from recurring.
+- **Lever A (route reopt TL walk through sub-incremental eval) — code landed,
+  NOT adopted into prod.** The `ReoptimizationUseSubIncrementalWalk` flag
+  (default OFF) was added `5dfd146e`; the walk switch + `ReconstructTimeLimitVec`
+  re-sync + budget polls landed `52e29e90` / `a6922ff5`; TDD green. The flag
+  stays default-OFF and its A/B is **subsumed by P2.11** (P2.11's behavior-
+  changing merge IS lever A's walk; P2.9's A/B becomes P2.11's Phase 5 A/B).
+- **No prod behavior change.** Default-OFF → prod bit-identical. Flag removal
+  is deferred to P2.11 Phase 2 (post-A/B).
+  *Detail: `agents/finished_tasks/P2_9_speed_up_reoptimization/`.*
+
+## P2.14 — Remove SP_THRESHOLDS_SET & SP_THRESHOLD_RANGE Harmonization — CLOSED 2026-07-25 (code-complete)
+
+- **Disposition: closed as code-complete; Step 5 empirical analysis deferred to P2.13.**
+  Eliminated `SP_THRESHOLDS_SET` from `REQUIRED_CONFIG_PARAMS`, configs, and tests;
+  harmonized `sp_threshold` generation to continuous sampling from the sole knob
+  `SP_THRESHOLD_RANGE: [0.001, 0.9]`. The `1.0` entry in `SP_THRESHOLDS_SET`
+  (treating 100% DDL miss as "safe"/unpenalizable) is gone — the threshold-side
+  absurdity P2.13 flagged.
+- **Steps 1–4 done** (code + 5 configs + 9 inline-config test edits + verification):
+  committed at `5c782bad`. `pytest` SP-threshold-relevant tests pass (2 full-suite
+  failures pre-existing & reproduced on stashed baseline — `test_integration_pipeline`
+  missing `RANDOM_SEED`, `test_generate_path_only` unseeded RNG pollution). C++ ctest
+  N/A — P2.14 is Python-only (no `SP_THRESHOLD` reference in `sources/` C++).
+- **Step 5 (empirical `ddl_miss_chance` vs `sp_threshold` for important tasks) DEFERRED
+  to P2.13** — that study is owned by P2.13; doing it under P2.14 would duplicate.
+  `tasks.md` Step 5 marked `[ ]`→`[-]` DEFERRED.
+- **Threshold-side twin of P2.15.** `goal.md` + `dev_log.md` were untracked through
+  `5c782bad`; both `git add`-ed as part of the move.
+  *Detail: `agents/finished_tasks/P2_14_sp_threshold_set_removal/`.*
+
+## P2.15 — Randomize sp_weight per Task — CLOSED 2026-07-25 (committed `771be079`)
+
+- **Disposition: closed, done.** Added `SP_WEIGHT_RANGE: [0.1, 1.0]` (parallel to
+  `SP_THRESHOLD_RANGE`); sample `sp_weight = random.uniform(0.1, 1.0)` per task;
+  removed the hardcoded `sp_weight_base = 2.0` (perf) / `1.0` (normal/env) 2:1 split;
+  kept `SP_WEIGHTS_SUM` normalization (scale contract). "Important" (top-`sp_weight`
+  task, the P2.13 subject) is now random, decoupled from task type — sanity check:
+  top-weight task was a non-perf task while the perf task was mid-range.
+- **Generator-only / ctest N/A:** `sp_weight` is a pure LINEAR multiplier in C++
+  (`ObtainSP × weight` `SP_Metric.cpp:12-16`; `effective_weight = weight*perf_coeff`
+  `OptimizeSP_Incre.cpp:81-87`; `sum_sp_weights` ceiling `:154-159`) — no `sources/`
+  code assumes the 2:1 ratio. `pytest Gen_Taskset/tests tests/python` → **372/372 green**
+  (was 331/41-fail before the 9 inline-config test edits; all 41 were the integrity
+  gate raising on the missing `SP_WEIGHT_RANGE` key).
+- **Weight-side twin of P2.14.** Cross-link carried to P2.13: P2.13's D1 feasibility
+  check (perf-task clamp gap in `feasibility_clamp.py`) should be re-run against
+  randomized-weight tasksets — the "important" task is no longer by-construction perf.
+  *Detail: `agents/finished_tasks/P2_15_sp_weight_randomization/`.*
