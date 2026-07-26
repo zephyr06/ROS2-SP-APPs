@@ -289,3 +289,83 @@
   check (perf-task clamp gap in `feasibility_clamp.py`) should be re-run against
   randomized-weight tasksets — the "important" task is no longer by-construction perf.
   *Detail: `agents/finished_tasks/P2_15_sp_weight_randomization/`.*
+
+## P1.8 — INCR_WCET outperforms INCR — CLOSED 2026-07-26 (clamp shipped `84a99ef5`)
+
+- **Disposition: closed for code.** The "INCR_WCET beats INCR" verdict was a
+  generator ET-feasibility defect, not an optimizer property: INCR collapsed on
+  unschedulable tasksets (generated with WCET > deadline), while the degraded
+  INCR_WCET ablation happened to dodge them. Fix = `Gen_Taskset/lib/feasibility_clamp.py`
+  + tests, TDD-verified 2026-07-12, committed `84a99ef5`.
+- **No optimizer code change** — the SP metric and both arms were correct on
+  schedulable inputs; the fix lives entirely in the taskset generator.
+- *Detail: `agents/finished_tasks/P1_8_incr_wcet_outperforms_incr/`; memory
+  `p18-incr-wcet-outperforms-incr.md`.*
+
+## P1.14 — BF time-limit violation — CODE CLOSED 2026-07-26 (`ecf0c597`+`bfbec7e5`)
+
+- **Disposition: code closed; Phase 3 A/B re-run DEFERRED (measurement only).**
+  Root cause = a fresh `OptimizePA_BF` constructed per TL-leaf reset
+  `start_time_`, and `ifTimeout` was checked only at recursion boundaries → the
+  budget guard fired against a stale horizon on deep leaves. Phase 2 BF fix
+  `ecf0c597` + Phase 2b INCR mirror `bfbec7e5` (`BFDLSharedBudget` guard) land
+  the structural fix on both arms.
+- **Phase 3 = re-run the P25 A/B** on the fixed binary to record the true
+  BF-vs-INCR_Reopt_X verdict; no code work remains. Blocked on P1.15's crash
+  fix (resolved via P1.16) — now unblocked.
+- *Detail: `agents/finished_tasks/P1_14_bf_time_limit_violation/`; memory
+  `p114-bf-time-limit-violation.md`.*
+
+## P1.15 — Silent sim failure inflates aggregate — CODE CLOSED 2026-07-26
+
+- **Disposition: code closed; Phase 3 A/B re-run DEFERRED (measurement only).**
+  Two independent layers, both done:
+  - **Layer A (harness):** worker exceptions now propagate
+    (`ThreadPoolExecutor` + `fut.result()`); `run_single_simulation` always
+    captures binary stdout+stderr to per-arm `run.log` (raises on non-zero exit);
+    `analyze_single_instance` raises on missing/empty `interval_sp_metrics.txt`;
+    on ANY crash `compare_optimizers.main()` writes only `crash_report.txt` +
+    `taskset_arm_status.csv` and exits non-zero — NO partial
+    `comparison_summary.csv`, NO plots. 9/9 `test_compare_optimizers_crash.py` green.
+  - **Layer B (C++ crash, via P1.16):** `UpdateRecords` returns `bool`;
+    `OptimizeIncreSingleTask` backs up `rta_cache_` at entry and reverts it when
+    the candidate is not adopted → speculative champion updates no longer
+    desynchronize on rejected walks. Reproduced `taskset_3 INCR_Reopt_5/10/30/60`
+    → all exit 0 (was 134/SIGABRT).
+- **The false verdict** (BF 0.6129 "losing" to INCR_Reopt_5+ ~0.622) was a
+  harness artifact: Reopt_5+ silently dropped the hard tasksets (empty input →
+  `np.mean([])→0.0`), so BF's mean was dragged down by tasksets Reopt_5+ never ran.
+- **Phase 3 = re-run the P25 A/B** on fixed binary + fixed harness; no code work.
+- *Detail: `agents/finished_tasks/P1_15_silent_sim_failure_inflates_agg/`; memory
+  `p115-silent-sim-failure-inflates-agg.md`.*
+
+## P1.17 — RTA cache + opt redundant ops — CLOSED/superseded 2026-07-26 by P1.23
+
+- **Disposition: closed as superseded.** The RTA cache shipped + benchmarked
+  via **P1.23** (~36% faster at N=10, SP bit-identical), which subsumed the
+  redundant-ops refactor this task was filed to drive. No standalone P1.17
+  commit — its scope was folded into the P1.23 cache work.
+- *Detail: `agents/finished_tasks/P1_17_rta_cache_and_opt_redundant_ops/`;
+  memory `p117-rta-cache-and-opt-redundant-ops.md`; sibling P1.18 (closed
+  `09d1fca9`).*
+
+## P1.10 — Serialized single-task incremental opt — DEFERRED 2026-07-26 (awaiting A/B)
+
+- **Disposition: deferred — design complete, flag off, awaiting A/B.** Design
+  docs landed in `86c811ac` (api_design/dev_log/goal/tasks). The deliverable is
+  a compile-time flag `use_serialized_incremental_opt` (default OFF, NOT
+  YAML-backed): Phase 1 D1 committed (`33b2270c`+`3d2f9b28`), D2 filter
+  committed (`3380f18e`); Phase 2 serialized loop + Phase 3 invariant proof
+  complete behind the flag, 16/16 ctest green.
+- **Invariant:** `|diff| <= 1` at every serialized SP-eval (Type-L: 1, Type-E:
+  0) — the P1.9 unblock condition is MET. The flag stays OFF in prod until an
+  A/B decides whether to enable.
+- *Detail: `agents/finished_tasks/P1_10_serialized_incremental_optimization/`;
+  memory `p1-10-serialized-incremental-optimization.md`.*
+
+## P1.2 — Reopt incumbent degradation — DEFERRED 2026-07-26 (P3, known hazard)
+
+- **Disposition: deferred / let go — P3, out of immediate scope, kept as a
+  known theoretical hazard.** No code work landed or planned this stage.
+- *Detail: `agents/active_tasks/P3_2_reopt_incumbent_degradation/`; memory
+  `p12-reopt-incumbent-degradation.md`.*
