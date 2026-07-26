@@ -63,6 +63,15 @@ struct SerializedTaskQueueEntry {
     bool et_increased = false;
 };
 
+// Which descent `RunIntervalDescent` runs. The two modes share ONE descent body
+// + ONE walk arm; the only deltas are (1) patience (inc=0, reopt=1) and (2) the
+// baseline-seed preamble (inc: dedicated re-score; reopt: the one upfront
+// from-scratch beam), which `SeedBaselineAndArmCache` branches on. The modes are
+// coupled to their call sites (inc ← OptimizeIncre_w_TL, reopt ← ReOptimizePeriodic),
+// so an enum (not loose bools) is the right shape — it cannot express an invalid
+// combination.
+enum class IntervalDescentMode { Incremental, Reopt };
+
 class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
    public:
     OptimizePA_Incre_with_TimeLimits() {};
@@ -136,9 +145,39 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // ReOptimizePeriodic absorbed dag_tasks_update; it is the Type-E diff source
     // for BuildSerializedTaskQueue on the reopt descent (the incremental descent
     // captures its own prev_pre_tl in OptimizeIncre_w_TL).
+    // Thin delegating wrapper around RunIntervalDescent(Reopt). Kept (not deleted)
+    // so the reopt path has a named entry the 5.5 regression test comments refer
+    // to; the `from_scratch` arg is gone (always true at the sole caller, and the
+    // mode enum carries the same info).
     void PerformCoordinateDescentForTaskConfigOpt(
-        int K, std::vector<double>& starting_time_limits, bool from_scratch,
+        int K, std::vector<double>& starting_time_limits,
         const DAG_Model& dag_tasks_prev_pre_tl);
+
+    // The ONE interval-descent body shared by the incremental and reopt paths.
+    // Patience is mode-selected (inc=IncrementalTimeLimitSearchPatience,
+    // reopt=ReoptimizationTimeLimitSearchPatience); the baseline-seed preamble +
+    // cache arming live in SeedBaselineAndArmCache(mode); the tail
+    // (BuildSerializedTaskQueue + WalkSerializedTaskQueue + unconditional cache
+    // disarm) is mode-independent. `dag_tasks_prev_pre_tl` is the pre-absorb DAG
+    // (Type-E diff source for the serialized queue).
+    void RunIntervalDescent(int K, std::vector<double>& starting_time_limits,
+                            IntervalDescentMode mode,
+                            const DAG_Model& dag_tasks_prev_pre_tl);
+
+    // Reset + baseline seed + cache arm/adopt/re-sync. Returns the baseline SP.
+    // Encapsulates the cache-arming ASYMMETRY so RunIntervalDescent has no
+    // cache if/else: the incremental branch arms the cache FIRST (its baseline
+    // is a |diff|==0 FullReuse — same PA+TL re-scored under the new DAG — safe to
+    // route through the cache); the reopt branch runs the one upfront from-
+    // scratch beam DISARMED (the beam is a memoryless >1 change that would make
+    // RTACache::ComputeTaskSetDifference throw |diff|>1), then arms + AdoptChampion
+    // + re-syncs starting_time_limits to the champion TL (the 5.5 crash fix —
+    // without it the first walk step diffs champion-TL vs seed-TL >1 → throw).
+    // `ResetIncumbentBaseline(mode==Reopt)` clears the cache, so the reopt beam
+    // starts disarmed regardless of the arm ordering inside this helper.
+    double SeedBaselineAndArmCache(int K,
+                                   std::vector<double>& starting_time_limits,
+                                   IntervalDescentMode mode);
 
     // Unidirectional trial-and-error walk for one task's TL. Steps outward from
     // `baseline_val` (a member of the option set, else no-op) in direction

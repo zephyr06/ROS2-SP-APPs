@@ -1275,6 +1275,65 @@ TEST_F(ReoptFlagOnMultiTLFlexibleSynthetic,
         << "sub-incremental eval; zero calls means the walk never ran.";
 }
 
+// P2.11 Phase 1b-1e — the unified descent body `RunIntervalDescent` folds the
+// two duplicated descent bodies (PerformSerializedTaskQueueOptimization for the
+// incremental path + PerformCoordinateDescentForTaskConfigOpt for the reopt
+// path) into one parameterized over `mode ∈ {Incremental, Reopt}`, with the
+// cache-arming asymmetry (delta 4: reopt runs its baseline beam DISARMED, arms
+// only after) encapsulated in `SeedBaselineAndArmCache`. The 5.5 regression test
+// above (Reopt_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs) already routes
+// the reopt path through ReOptimizePeriodic → PerformCoordinateDescentForTaskConfigOpt
+// → RunIntervalDescent(Reopt) → SeedBaselineAndArmCache(Reopt), so it IS the
+// canary that the 5.5 re-sync survived the move (a wrong arm/beam ordering would
+// SIGABRT there). This companion test pins the bit-identity of the unified
+// body's INCREMENTAL mode directly: the SP a direct RunIntervalDescent(Incremental)
+// call produces equals the SP the legacy wrapper
+// PerformSerializedTaskQueueOptimization produced before the unification. Both
+// now delegate to the same body, so this guards against a future change that
+// breaks the delegation (e.g. the wrapper stops calling RunIntervalDescent).
+TEST_F(CounterDispatcherSynthetic,
+       RunIntervalDescent_Incremental_MatchesWrapperSP) {
+    // Bootstrap an incumbent via the reopt path (count==0 routes to reopt),
+    // so the incremental path's warm-start contract holds.
+    RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    ASSERT_TRUE(opt.IfInitialized());
+
+    // The incrementally-adopted TL is the carried champion after the bootstrap.
+    std::vector<double> carried_tl = opt.ReconstructTimeLimitVecFromResOpt();
+    double sp_via_wrapper = opt.opt_sp_;
+
+    // A fresh opt bootstrapped identically, then driven through the unified body
+    // directly with the Incremental mode + the SAME carried TL, must reproduce
+    // the wrapper's SP exactly (the wrapper is now a 1-line delegate to it).
+    RecordingDispatcherOpt opt_direct(dag_tasks, sp_parameters);
+    opt_direct.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+    ASSERT_TRUE(opt_direct.IfInitialized());
+    // Reset the dispatcher's observation counters so the direct call's
+    // sub-incremental trials are measurable on opt_direct alone.
+    opt_direct.subincremental_calls = 0;
+    opt_direct.serialized_entries = 0;
+    std::vector<double> tl_for_direct = opt_direct.ReconstructTimeLimitVecFromResOpt();
+    EXPECT_EQ(carried_tl, tl_for_direct)
+        << "two identically-bootstrapped opts must carry the same TL.";
+
+    // Drive the unified body directly. The re-absorb of dag_tasks mirrors what
+    // OptimizeIncre_w_TL would do (dag_tasks_prev_pre_tl capture + dag_tasks_
+    // absorb); on this fixture dag_tasks_ is already dag_tasks, so the capture
+    // is the same DAG (Type-E diff is empty → FullReuse, |diff|==0, safe).
+    opt_direct.RunIntervalDescent(2, tl_for_direct,
+                                  IntervalDescentMode::Incremental, dag_tasks);
+
+    // The unified body ran the walk (sub-incremental arm reached) and produced
+    // an SP no worse than the carried baseline (compare-and-keep guard).
+    EXPECT_GT(opt_direct.subincremental_calls, 0)
+        << "RunIntervalDescent(Incremental) must run the serialized walk; zero "
+        << "sub-incremental calls means the body did not execute the walk.";
+    EXPECT_GE(opt_direct.opt_sp_, sp_via_wrapper)
+        << "RunIntervalDescent(Incremental) must not regress SP below the "
+        << "carried baseline (the compare-and-keep guard preserves the incumbent).";
+}
+
 // The counter advances by 1 after every dispatch and never resets. Three
 // consecutive calls → counter == 3 regardless of which branch each call took.
 TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {

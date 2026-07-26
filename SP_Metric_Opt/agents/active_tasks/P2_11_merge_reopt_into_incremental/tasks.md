@@ -71,19 +71,50 @@
   which pins both the incremental serialized walk + the Phase 3b Type-E reopt
   reach test). Bit-identity gate: flag OFF (default) → incremental path only;
   the extracted body is byte-identical to the inline loop it replaced.
-- [ ] **1b. Unify the two descent bodies into one `RunIntervalDescent(K, tl,
+- [x] **1b. Unify the two descent bodies into one `RunIntervalDescent(K, tl,
   mode, dag_prev_pre_tl)`** parameterized over `mode ∈ {Incremental, Reopt}`.
   Body selects by `mode`: baseline seed (dedicated re-score vs
   `EvaluateTimeLimitConfig_ScratchOrIncre` upfront re-opt), patience (0 vs 1),
   cache-active (true both, but reopt arms via the upfront `AdoptChampion` block).
   The walk is now shared via 1a's helper, so the remaining delta is the setup
-  preamble + the legacy-arm fallback.
-- [ ] **1c. Route `OptimizeIncre_w_TL` → `RunIntervalDescent(Incremental)`.**
-- [ ] **1d. Route `ReOptimizePeriodic` → `RunIntervalDescent(Reopt)`** (interval-0
-  RM-Fast bootstrap stays at the entry, before the descent).
-- [ ] **1e. Delete `PerformSerializedTaskQueueOptimization` +
+  preamble + the legacy-arm fallback. **DONE 2026-07-26 (working tree, NOT
+  committed)** — `RunIntervalDescent` holds the ONE shared tail
+  (`BuildSerializedTaskQueue` + `WalkSerializedTaskQueue` + unconditional
+  `rta_cache_active_ = false`); the mode-selected setup preamble + cache-arming
+  asymmetry (delta 4: incremental arms FIRST on a |diff|==0 FullReuse baseline;
+  reopt runs its from-scratch beam DISARMED then arms + `AdoptChampion` + re-syncs
+  `starting_time_limits` to the champion TL — the 5.5 crash fix) lives in the new
+  `SeedBaselineAndArmCache(mode)`. Patience = `IntervalDescentMode::Reopt ?
+  ReoptimizationTimeLimitSearchPatience : IncrementalTimeLimitSearchPatience`.
+  New `enum class IntervalDescentMode { Incremental, Reopt }` (enum, not loose
+  bools — cannot express an invalid combination). **Bit-identity verified**:
+  `CommitIncumbent` (single writer, `:699`) keeps `opt_pa_`/`opt_sp_` mirrored to
+  `res_opt_` on every accepted walk step → the OLD incremental body's trailing
+  `opt_pa_ = res_opt_.priority_vec; opt_sp_ = res_opt_.sp_opt;` was redundant
+  (re-assigning identical values), so dropping it in the unified body is
+  bit-identical. 17/17 ctest green (clean build, `--clean-first`); new TDD guard
+  `RunIntervalDescent_Incremental_MatchesWrapperSP` pins the delegation.
+- [x] **1c. Route `OptimizeIncre_w_TL` → `RunIntervalDescent(Incremental)`.**
+  **DONE 2026-07-26** — `PerformSerializedTaskQueueOptimization` is now a 1-line
+  delegate to `RunIntervalDescent(..., Incremental, ...)`.
+- [x] **1d. Route `ReOptimizePeriodic` → `RunIntervalDescent(Reopt)`**
+  (interval-0 RM-Fast bootstrap stays at the entry, before the descent).
+  **DONE 2026-07-26** — `PerformCoordinateDescentForTaskConfigOpt` is now a 1-line
+  delegate to `RunIntervalDescent(..., Reopt, ...)`; the `from_scratch` arg is
+  gone (always true at the sole caller; `IntervalDescentMode::Reopt` carries the
+  same info — "reduce optional arguments" rule). `ReOptimizePeriodic` callsite
+  updated to the 3-arg signature.
+- [~] **1e. Delete `PerformSerializedTaskQueueOptimization` +
   `PerformCoordinateDescentForTaskConfigOpt`** once both callers route through
-  `RunIntervalDescent`.
+  `RunIntervalDescent`. **REFRAMED 2026-07-26** — kept as THIN virtual
+  delegating wrappers (NOT deleted). Both are load-bearing test seams:
+  `RecordingDispatcherOpt`/`CounterDispatcherSynthetic`/`StartTLStub`
+  (`testIncreOpt_w_TL.cpp:1100,1612`) `override` `PerformSerializedTaskQueue-
+  Optimization` to count entries (`++serialized_entries`) + observe the entry TL
+  vector, then call the parent. Deleting them would break the stubs and lose the
+  observation surface. Per "ruthlessly prune unused features" the bodies ARE
+  pruned (the duplicates are gone); the named wrappers earn their keep as the
+  documented unit-test surface, paralleling `OptimizeSingleTaskTimeLimit_Impl`.
 
 ## Phase 2 — Delete the legacy reopt arm + P2.9 flag
 

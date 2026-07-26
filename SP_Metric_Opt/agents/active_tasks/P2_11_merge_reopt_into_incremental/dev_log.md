@@ -797,3 +797,67 @@ modular commit. Per agent_coding_rules.md "work by module, commit by module."
 The merged reopt (sub-incremental walk + Type-E in the serialized queue,
 patience+1) becomes the unconditional reopt path; the legacy full-beam arm +
 the P2.9 flag are gone.
+
+## 2026-07-26 (2) — Phase 2 COMMITTED (`76c45114`); Phase 1b-1e verified GREEN in working tree
+
+### Status correction first
+The prior entry (2026-07-26) described Phase 2 as "working tree, uncommitted."
+**Phase 2 is now COMMITTED as `76c45114`** ("delete legacy reopt arm, merge
+ReoptimizationUseSubIncrementalWalk") — 9 files: the unconditional merged reopt
+path + comment cleanup (`OptimizeSP_TL_Incre.{h,cpp}`), flag deletion
+(`Parameters.{h,cpp}` + `parameters.yaml`), test rewrites + `MakeScratchOrIncreEval`
+(`testIncreOpt_w_TL.cpp`), the `_comment` update (`p211_reopt_ab_config.json`), and
+this task record. 17/17 ctest green at commit.
+
+### Phase 1b-1e (the structural unification) — in working tree, verified GREEN
+A prior session left Phase 1b-1e in-flight in the working tree (uncommitted). This
+session picked it up and VERIFIED it: `cmake --build build_test --target
+check.SP_OPT -j5 --clean-first` → **17/17 ctest passed in 19.09s** (incl.
+`testIncreOpt_w_TL` 1.99s). The 4 working-tree files:
+- `sources/Optimization/OptimizeSP_TL_Incre.h` — new `enum class
+  IntervalDescentMode { Incremental, Reopt }`; declarations of
+  `RunIntervalDescent` + `SeedBaselineAndArmCache`; `PerformCoordinateDescent-
+  ForTaskConfigOpt` drops the `from_scratch` arg (3-arg now).
+- `sources/Optimization/OptimizeSP_TL_Incre.cpp` — the two descent bodies
+  (`PerformSerializedTaskQueueOptimization` + `PerformCoordinateDescentForTaskConfigOpt`)
+  collapse to 1-line virtual delegating wrappers; the shared body lives in
+  `RunIntervalDescent` (tail: queue + walk + `rta_cache_active_ = false`), the
+  mode-selected setup preamble + cache arming in `SeedBaselineAndArmCache(mode)`.
+- `tests/testIncreOpt_w_TL.cpp` — new TDD guard
+  `RunIntervalDescent_Incremental_MatchesWrapperSP` (pins the delegation:
+  `RunIntervalDescent(Incremental)` SP >= carried baseline, runs the walk).
+- `agents/agent_coding_rules.md` — test-command hygiene tweak (unrelated; keep
+  out of the P2.11 commit).
+
+### Bit-identity verification (the key safety check)
+The OLD `PerformSerializedTaskQueueOptimization` ended with
+`opt_pa_ = res_opt_.priority_vec; opt_sp_ = res_opt_.sp_opt;`. The NEW unified
+body DROPS those two lines. Confirmed bit-identical: `CommitIncumbent`
+(`OptimizeSP_TL_Incre.cpp:699`, the single writer) sets `opt_sp_ = sp; opt_pa_ =
+pa; res_opt_.SaveTimeLimits(...); res_opt_.UpdatePriorityVec(opt_pa_);
+res_opt_.sp_opt = opt_sp_;` on EVERY accepted walk step (via `UpdateRecords` →
+`CommitIncumbent`). So the mirrors are already in sync with `res_opt_` at walk
+end; the trailing assignment was redundant (re-assigning identical values).
+Dropping it changes nothing observable. The reopt body's only tail was
+`rta_cache_active_ = false;`, which the unified body keeps. → SP bit-identical,
+confirmed by 17/17 ctest + the new bit-identity guard.
+
+### Phase 1e reframed (delete → keep thin wrappers)
+Original 1e said "delete `PerformSerializedTaskQueueOptimization` +
+`PerformCoordinateDescentForTaskConfigOpt`." Reframed to KEEP them as thin
+virtual delegating wrappers: both are load-bearing test seams. Three test stubs
+(`RecordingDispatcherOpt` `:1100`, `CounterDispatcherSynthetic` via the same
+fixture, `StartTLStub` `:1612`) `override` `PerformSerializedTaskQueueOptimization`
+to count entries (`++serialized_entries`) + observe the entry TL vector, then call
+the parent. Deleting them would break the stubs and lose the observation surface.
+Per "ruthlessly prune unused features" the DUPLICATE BODIES are pruned (the
+unification's whole point); the named wrappers earn their keep as the documented
+unit-test surface, paralleling `OptimizeSingleTaskTimeLimit_Impl` (the walk-core
+seam).
+
+### Remaining (P2.11)
+- **Phase 1b-1e** → awaiting user review + commit (standalone structural commit;
+  behavior-neutral; the natural follow-up to `76c45114`).
+- **Phase 5b** — vs pure incremental. DEFERRED (not the gate).
+- **Phase 6** — closeout: `overall_tasks.md` P2.11 row + memory pointer +
+  P2.9/P2.10 cross-links. NOT started.

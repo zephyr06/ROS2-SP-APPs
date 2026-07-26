@@ -381,42 +381,112 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
     return current_config_sp;
 }
 
+double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
+    int K, std::vector<double>& starting_time_limits, IntervalDescentMode mode) {
+    // Reset + baseline seed + cache arm/adopt/re-sync. The two branches are
+    // RELOCATED VERBATIM from the old PerformSerializedTaskQueueOptimization
+    // (incremental) and PerformCoordinateDescentForTaskConfigOpt (reopt)
+    // baselines — no logic change, just gathered into one helper so
+    // RunIntervalDescent has no mode-conditional cache code.
+    if (mode == IntervalDescentMode::Incremental) {
+        // 1. Gate reset (incremental: opt_sp_=-1.0 so the first UpdateRecords
+        //    force-commits), then re-arm the cache for this walk body. |diff|<=1
+        //    holds for every CommitIncumbent while true, so AdoptChampion stays
+        //    consistent with res_opt_ and Evaluate never throws.
+        ResetIncumbentBaseline(/*from_scratch=*/false);
+        rta_cache_active_ = true;
+
+        // 2. Baseline = dedicated re-score (NO optimization). Must not route
+        //    through ScratchOrIncre (which would OptimizeIncre before the queue's
+        //    order is honored). Seeds opt_sp_ for the compare-and-keep guard.
+        //    Arms FIRST: this baseline is |diff|==0 FullReuse (same PA+TL re-scored
+        //    under the new DAG) — safe to route through the cache via CommitIncumbent.
+        DAG_Model dag_baseline =
+            UpdateExtDistBasedOnTimeLimit(dag_tasks_, starting_time_limits);
+        double current_config_sp =
+            EvaluateSPWithPriorityVec(dag_baseline, sp_parameters_, opt_pa_);
+        CommitIncumbent(opt_pa_, current_config_sp, starting_time_limits);
+        return current_config_sp;
+    }
+
+    // Reopt. ResetIncumbentBaseline(true) CLEARS the cache (rta_cache_ = RTACache();
+    // rta_cache_active_ = false), so the one upfront from-scratch beam below runs
+    // DISARMED. The beam is memoryless OptimizeFromScratch — a >1 change that
+    // would make RTACache::ComputeTaskSetDifference throw |diff|>1 → SIGABRT if
+    // the cache were armed. Arming happens AFTER, for the walk only.
+    ResetIncumbentBaseline(/*from_scratch=*/true);
+    double current_config_sp = EvaluateTimeLimitConfig_ScratchOrIncre(
+        K, starting_time_limits, /*from_scratch=*/true);
+
+    // Re-arm the cache: the baseline beam above committed its champion via
+    // CommitIncumbent, but with rta_cache_active_ false (ResetIncumbentBaseline
+    // cleared it), so the cache was NOT adopted. Adopt the committed triple now
+    // (|diff|==0 → Evaluate's FullReuse path, zero-cost) and arm the gate so every
+    // subsequent accepted walk step re-adopts via CommitIncumbent. This makes the
+    // |diff|<=1 single-change invariant hold for the whole walk.
+    rta_cache_active_ = true;
+    std::vector<double> champion_tl = ReconstructTimeLimitVecFromResOpt();
+    const std::vector<FiniteDist>& champ_rtas =
+        rta_cache_.Evaluate(dag_tasks_, opt_pa_, champion_tl);
+    rta_cache_.AdoptChampion(dag_tasks_, opt_pa_, champion_tl, champ_rtas);
+
+    // Re-sync the walk vector to the adopted champion TL (5.5 crash fix). The
+    // upfront from-scratch reopt committed a TL that can diverge from the
+    // incoming starting_time_limits (Gaussian seed at interval 0) by >1 task on
+    // a real taskset. Without this re-sync the first walk step would diff
+    // champion-TL vs seed-TL in >1 task → RTACache::ComputeTaskSetDifference
+    // throws |diff|>1 → SIGABRT. champion_tl IS that committed TL (the cache's
+    // Evaluate/AdoptChampion above only touch rta_cache_, never res_opt_), so
+    // reuse it instead of a redundant second ReconstructTimeLimitVecFromResOpt.
+    // NOT added to the incremental branch: its baseline commit already
+    // establishes champion-TL == walk-start TL.
+    starting_time_limits = champion_tl;
+    return current_config_sp;
+}
+
+void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
+    int K, std::vector<double>& starting_time_limits, IntervalDescentMode mode,
+    const DAG_Model& dag_tasks_prev_pre_tl) {
+    // The ONE descent body shared by the incremental and reopt paths (P2.11
+    // Phase 1b-1e unification). Patience is mode-selected; the baseline-seed
+    // preamble + cache arming live in SeedBaselineAndArmCache(mode); the tail
+    // (BuildSerializedTaskQueue + WalkSerializedTaskQueue + unconditional cache
+    // disarm) is mode-independent. Behavior-neutral: SP bit-identical to the two
+    // bodies this replaces.
+    int patience = (mode == IntervalDescentMode::Reopt)
+                       ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
+                       : GlobalVariables::IncrementalTimeLimitSearchPatience;
+
+    double current_config_sp =
+        SeedBaselineAndArmCache(K, starting_time_limits, mode);
+
+    // Build the merged + weight-sorted E+L queue, then walk serially: each step's
+    // UpdateRecords adopts into res_opt_, so the next step's challenger sees the
+    // new champion. The committed TL tracks the adopted best, so the diff flags
+    // only the walked task (|diff|==1).
+    std::vector<SerializedTaskQueueEntry> queue =
+        BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
+    WalkSerializedTaskQueue(queue, K, starting_time_limits, current_config_sp,
+                            patience);
+
+    // Unconditional disarm on the way out (bit-identical for SP: nothing reads
+    // rta_cache_active_ between this return and the next ResetIncumbentBaseline —
+    // only CommitIncumbent reads it, and it is called only inside the descent).
+    // The old reopt body disarmed explicitly; the old incremental body relied on
+    // the next interval's reset clearing it. Unifying on an explicit disarm makes
+    // the tail mode-independent and scopes the cache gate to exactly this descent.
+    rta_cache_active_ = false;
+}
+
 void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
     int K, std::vector<double>& starting_time_limits,
     const DAG_Model& dag_tasks_prev_pre_tl) {
-    // Serialized loop replacing the legacy coordinate descent for the INCREMENTAL
-    // path: a dedicated baseline re-score (no optimization) seeds opt_sp_, then
-    // the queue walk does all optimization in weight order.
-
-    int patience = GlobalVariables::IncrementalTimeLimitSearchPatience;
-
-    // 1. Gate reset (incremental: opt_sp_=-1.0 so the first UpdateRecords
-    //    force-commits), then re-arm the cache for this walk body. |diff|<=1
-    //    holds for every CommitIncumbent while true, so AdoptChampion stays
-    //    consistent with res_opt_ and Evaluate never throws.
-    ResetIncumbentBaseline(/*from_scratch=*/false);
-    rta_cache_active_ = true;
-
-    // 2. Baseline = dedicated re-score (NO optimization). Must not route through
-    //    ScratchOrIncre (which would OptimizeIncre before the queue's order is
-    //    honored). Seeds opt_sp_ for the compare-and-keep guard.
-    DAG_Model dag_baseline =
-        UpdateExtDistBasedOnTimeLimit(dag_tasks_, starting_time_limits);
-    double current_config_sp =
-        EvaluateSPWithPriorityVec(dag_baseline, sp_parameters_, opt_pa_);
-    CommitIncumbent(opt_pa_, current_config_sp, starting_time_limits);
-
-    // 3. Build the merged + weight-sorted E+L queue.
-    std::vector<SerializedTaskQueueEntry> queue =
-        BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
-
-    // 4. Walk serially: each step's UpdateRecords adopts into res_opt_, so the
-    //    next step's challenger sees the new champion. The committed TL tracks
-    //    the adopted best, so the diff flags only the walked task (|diff|==1).
-    current_config_sp = WalkSerializedTaskQueue(queue, K, starting_time_limits,
-                                                current_config_sp, patience);
-    opt_pa_ = res_opt_.priority_vec;
-    opt_sp_ = res_opt_.sp_opt;
+    // Thin delegating wrapper (P2.11 Phase 1b-1e). Kept virtual so the test stubs
+    // (RecordingDispatcherOpt, StartTLStub) that override it to observe the entry
+    // TL vector keep working unchanged — the parent now delegates to
+    // RunIntervalDescent, so the real body still runs.
+    RunIntervalDescent(K, starting_time_limits, IntervalDescentMode::Incremental,
+                       dag_tasks_prev_pre_tl);
 }
 
 std::vector<double>
@@ -514,60 +584,16 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskTimeLimit(
 }
 
 void OptimizePA_Incre_with_TimeLimits::PerformCoordinateDescentForTaskConfigOpt(
-    int K, std::vector<double>& starting_time_limits, bool from_scratch,
+    int K, std::vector<double>& starting_time_limits,
     const DAG_Model& dag_tasks_prev_pre_tl) {
-    // Patience: incremental (warm-started, ~unimodal) uses 0; reopt (full
-    // re-search, can be non-unimodal) uses 1. From YAML globals.
-    int patience = from_scratch
-                       ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
-                       : GlobalVariables::IncrementalTimeLimitSearchPatience;
-
-    // P2.11 merge: the reopt descent walks the SAME merged E+L serialized queue
-    // the incremental path uses (BuildSerializedTaskQueue), instead of the legacy
-    // full-beam per-candidate eval over sorted_indices. The queue's Type-E entries
-    // (env-changed tasks with no perf pair, which the legacy sorted_indices walk
-    // skipped as {-1}-only) are reached via the sub-incremental handler — strictly
-    // more targeted than the legacy arm, which never saw them. After the ONE
-    // upfront from-scratch reopt beam commits its champion, the per-task TL walk
-    // reuses the cache-routed EvaluateTimeLimitConfig_SubIncremental the
-    // incremental path uses. This is the unconditional landing of the merge (A/B
-    // accepted 2026-07-25); the P2.9 flag that previously gated it is gone.
-    ResetIncumbentBaseline(from_scratch);
-    double current_config_sp = EvaluateTimeLimitConfig_ScratchOrIncre(
-        K, starting_time_limits, from_scratch);
-
-    // Re-arm the cache: the baseline beam above committed its champion via
-    // CommitIncumbent, but with rta_cache_active_ false (ResetIncumbentBaseline
-    // clears it), so the cache was NOT adopted. Adopt the committed triple now
-    // (|diff|==0 → Evaluate's FullReuse path, zero-cost) and arm the gate so every
-    // subsequent accepted walk step re-adopts via CommitIncumbent — mirroring
-    // PerformSerializedTaskQueueOptimization's setup. This makes the |diff|<=1
-    // single-change invariant hold for the whole walk.
-    rta_cache_active_ = true;
-    std::vector<double> champion_tl = ReconstructTimeLimitVecFromResOpt();
-    const std::vector<FiniteDist>& champ_rtas =
-        rta_cache_.Evaluate(dag_tasks_, opt_pa_, champion_tl);
-    rta_cache_.AdoptChampion(dag_tasks_, opt_pa_, champion_tl, champ_rtas);
-
-    // Re-sync the walk vector to the adopted champion TL. The upfront from-scratch
-    // reopt (EvaluateTimeLimitConfig_ScratchOrIncre above) + AdoptChampion
-    // committed a TL that can diverge from the incoming starting_time_limits
-    // (Gaussian seed at interval 0) by >1 task on a real taskset. Without this
-    // re-sync the first walk step would diff champion-TL vs seed-TL in >1 task →
-    // RTACache::ComputeTaskSetDifference throws |diff|>1 → SIGABRT. Mirrors the
-    // incremental path, which establishes champion-TL == walk-start TL via
-    // CommitIncumbent; the walk then refines the champion, as intended.
-    starting_time_limits = ReconstructTimeLimitVecFromResOpt();
-
-    std::vector<SerializedTaskQueueEntry> serialized_queue =
-        BuildSerializedTaskQueue(dag_tasks_prev_pre_tl);
-    current_config_sp = WalkSerializedTaskQueue(
-        serialized_queue, K, starting_time_limits, current_config_sp, patience);
-
-    // Disarm the cache gate on the way out so the reopt path does not leave it
-    // armed for the next interval's reset (ResetIncumbentBaseline clears it too,
-    // but this keeps the gate scoped to this descent exactly).
-    rta_cache_active_ = false;
+    // Thin delegating wrapper (P2.11 Phase 1b-1e). The reopt descent body now
+    // lives in RunIntervalDescent(Reopt) + SeedBaselineAndArmCache(Reopt); this
+    // name is kept so the 5.5 regression-test comments and the ReOptimizePeriodic
+    // call site read naturally. The `from_scratch` arg is gone — it was always
+    // true at the sole caller, and IntervalDescentMode::Reopt carries the same
+    // info (the "reduce optional arguments" rule).
+    RunIntervalDescent(K, starting_time_limits, IntervalDescentMode::Reopt,
+                       dag_tasks_prev_pre_tl);
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
@@ -770,8 +796,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     if (GlobalVariables::disable_time_limit_opt) {
         OptimizeWithTimeLimitOptDisabled(K, time_limits, /*from_scratch=*/true);
     } else {
-        PerformCoordinateDescentForTaskConfigOpt(
-            K, time_limits, /*from_scratch=*/true, dag_tasks_prev_pre_tl);
+        PerformCoordinateDescentForTaskConfigOpt(K, time_limits,
+                                                  dag_tasks_prev_pre_tl);
     }
     return opt_pa_;
 }
