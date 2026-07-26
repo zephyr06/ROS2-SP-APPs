@@ -49,11 +49,12 @@ struct BenchmarkResult {
     size_t num_intervals;
     double avg_et_s;
     double threshold_s;
+    double avg_sp;
     bool passed;
 };
 
 int main(int argc, char** argv) {
-    std::string taskset_dir = GlobalVariables::PROJECT_PATH + "tests/speed_test/taskset_N8";
+    std::string taskset_dir = GlobalVariables::PROJECT_PATH + "tests/speed_test/taskset_N10";
     double threshold_reopt1 = 0.1;
     double threshold_reopt10 = 0.1;
 
@@ -115,15 +116,25 @@ int main(int argc, char** argv) {
 
         double wall_time_s = std::chrono::duration<double>(wall_end - wall_start).count();
         double sched_time_s = orchestrator.GetSchedulerExecutionTime();
-        size_t num_intervals = orchestrator.GetIntervalSPMetrics().size();
+        const std::vector<double>& sp_metrics = orchestrator.GetIntervalSPMetrics();
+        size_t num_intervals = sp_metrics.size();
         double avg_et = (num_intervals > 0) ? (sched_time_s / num_intervals) : 0.0;
         bool passed = (avg_et <= threshold);
+
+        // Mean of per-interval SP metrics (analytic, in [0,1]). The first
+        // interval uses the seed/un-optimized priority vector; subsequent
+        // intervals reflect the optimizer's chosen priority + time-limit.
+        double sp_sum = 0.0;
+        for (double sp : sp_metrics) {
+            sp_sum += sp;
+        }
+        double avg_sp = (num_intervals > 0) ? (sp_sum / static_cast<double>(num_intervals)) : 0.0;
 
         if (!passed) {
             all_passed = false;
         }
 
-        results.push_back({mode, wall_time_s, sched_time_s, num_intervals, avg_et, threshold, passed});
+        results.push_back({mode, wall_time_s, sched_time_s, num_intervals, avg_et, threshold, avg_sp, passed});
     }
 
     std::cout << "\n==================================================\n";
@@ -136,6 +147,7 @@ int main(int argc, char** argv) {
         std::cout << "  Total Scheduler ET      : " << std::fixed << std::setprecision(6) << res.total_sched_time_s << " s\n";
         std::cout << "  Simulated Intervals     : " << res.num_intervals << "\n";
         std::cout << "  Avg ET per Interval     : " << std::fixed << std::setprecision(6) << res.avg_et_s << " s\n";
+        std::cout << "  Average SP Metric       : " << std::fixed << std::setprecision(6) << res.avg_sp << "\n";
         std::cout << "  Target Threshold        : " << std::fixed << std::setprecision(6) << res.threshold_s << " s\n";
         std::cout << "  Status                  : " << (res.passed ? "PASS" : "FAIL") << "\n";
         std::cout << "--------------------------------------------------\n";
