@@ -127,13 +127,6 @@ bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
         // CommitIncumbent owns res_opt_ + mirrors; the `optimizer` arg is a
         // throwaway, only its adopted {pa, sp, tl} survives.
         CommitIncumbent(optimizer.opt_pa_, optimizer.opt_sp_, time_limits);
-
-        if (GlobalVariables::debugMode) {
-            std::cout << "Time limit: \n";
-            for (double time : time_limits) std::cout << time << " ";
-            std::cout << "TraverseTimeLimitOptions: "
-                      << "opt_sp_ = " << opt_sp_ << std::endl;
-        }
     }
     return should_update;
 }

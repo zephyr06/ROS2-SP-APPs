@@ -81,9 +81,6 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
         time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
     }
 
-    void TraverseTimeLimitOptions(int K, uint task_id,
-                                  std::vector<double>& time_limits);
-
     PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update, int K);
 
     PriorityVec ReOptimizePeriodic(const DAG_Model& dag_tasks_update, int K);
