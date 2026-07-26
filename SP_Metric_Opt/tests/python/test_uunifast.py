@@ -50,6 +50,7 @@ class TestUUniFast(unittest.TestCase):
             "PERF_RECORD_TASK_PROBABILITY": 0.5,
             "N_GMM_COMPONENTS_PER_TASK": 2,
             "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_WEIGHT_RANGE": [0.1, 1.0],
             "FIXED_TASK_SIGMA_RATIO": 0.001,
             "MAX_TIME_LIMIT_OPTIONS": 10,
             "SP_WEIGHTS_SUM": 5.0,

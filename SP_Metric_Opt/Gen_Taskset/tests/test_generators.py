@@ -29,6 +29,7 @@ def test_taskset_parameters_generation():
         "RO_2_Et_RANGE": [-0.2, 0.2],
         "N_GMM_COMPONENTS_PER_TASK": 4,
         "SP_THRESHOLD_RANGE": [0.5, 0.9],
+        "SP_WEIGHT_RANGE": [0.1, 1.0],
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "PERIODS_MS": [1000, 100, 50, 20],
         "N_TASKS": 4,

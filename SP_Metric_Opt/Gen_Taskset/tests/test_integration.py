@@ -33,6 +33,7 @@ def test_integration_pipeline():
         "D2_RANGE": [0, 360],
         "N_GMM_COMPONENTS_PER_TASK": 2,
         "SP_THRESHOLD_RANGE": [0.5, 0.9],
+        "SP_WEIGHT_RANGE": [0.1, 1.0],
         "CPU_UTIL_RANDOM_RANGE": [0.5, 0.5],
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "SP_WEIGHTS_SUM": 10.0,      # Custom weight sum limit

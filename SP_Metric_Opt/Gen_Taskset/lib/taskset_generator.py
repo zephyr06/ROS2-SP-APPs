@@ -33,6 +33,7 @@ REQUIRED_CONFIG_PARAMS = [
     {"key": "SP_THRESHOLD_RANGE",         "suggest": [0.001, 0.9],             "desc": "SP threshold range (continuous uniform sampling per task)"},
     {"key": "FIXED_TASK_SIGMA_RATIO",     "suggest": 0.001,                    "desc": "sigma/mean ratio for perf (near-deterministic) tasks"},
     {"key": "MAX_TIME_LIMIT_OPTIONS",     "suggest": 10,                       "desc": "number of time-limit options generated for perf tasks"},
+    {"key": "SP_WEIGHT_RANGE",            "suggest": [0.1, 1.0],               "desc": "SP weight range (continuous uniform sampling per task, pre-normalization)"},
     {"key": "SP_WEIGHTS_SUM",             "suggest": 5.0,                      "desc": "total SP weight sum tasks are normalized to"},
     {"key": "Et_OVER_PERIOD_RANGE",       "suggest": [0.1, 0.3],               "desc": "ET/period sampling range"},
     {"key": "SIGMA_OVER_Et_RANGE",        "suggest": [0.5, 0.6],               "desc": "sigma/ET sampling range"},
@@ -538,8 +539,16 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     trd_min = cfgs['SP_THRESHOLD_RANGE'][0]  # presence enforced by validate_config_integrity
     trd_max = cfgs['SP_THRESHOLD_RANGE'][1]
 
+    # P2.15: sp_weight is sampled continuously and uniformly from SP_WEIGHT_RANGE
+    # for every task, replacing the former hardcoded 2:1 perf/non-perf base split
+    # (sp_weight_base = 2.0 for time_limit_task, 1.0 otherwise). "Importance" is
+    # now a random per-task property, decoupled from task type. SP_WEIGHTS_SUM
+    # normalization below preserves the scale contract; only the ratios change.
+    wt_min = cfgs['SP_WEIGHT_RANGE'][0]  # presence enforced by validate_config_integrity
+    wt_max = cfgs['SP_WEIGHT_RANGE'][1]
+
     for i in range(n_tasks):
-        taskset_param[i].sp_weight = 1.0
+        taskset_param[i].sp_weight = random.uniform(wt_min, wt_max)
         taskset_param[i].sp_threshold = random.uniform(trd_min, trd_max)
 
     # 4. Core Allocation (Processor ID assignment)
@@ -591,12 +600,10 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
                 t_s += step
             perf_records_time_str = " ".join(f"{x:.3f}" for x in perf_time)
             perf_records_perf_str = " ".join(f"{x:.1f}" for x in perf_perf)
-            sp_weight_base = 2.0
         else:
             # Normal and env tasks: min/max = mean ± 2*sigma (Gaussian distribution bounds)
             execution_time_min = max(1.0, t.et_mean - 2.0 * t.et_sigma)
             execution_time_max = max(1.0, t.et_mean + 2.0 * t.et_sigma)
-            sp_weight_base = 1.0
 
         tasks_dict_list.append({
             'weights': t.weights,
@@ -611,7 +618,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
             'D2_sigma': float(t.d2_sigma),
             'Et_mean': float(t.et_mean),
             'Et_sigma': float(t.et_sigma),
-            'sp_weight': float(sp_weight_base),
+            'sp_weight': float(t.sp_weight),
             'sp_threshold': float(t.sp_threshold),
             'processorId': int(getattr(t, 'processorId', 0)),
             'env_dependent': bool(getattr(t, 'env_dependent', False)),

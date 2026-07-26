@@ -30,6 +30,7 @@ def test_config_specifications_validation():
         "MAX_UTIL_PER_TASK": 0.95,
         "MIN_PERIOD_ENV_DEPENDENT": 0,
         "SP_THRESHOLD_RANGE": [0.5, 0.9],
+        "SP_WEIGHT_RANGE": [0.1, 1.0],
         "PERF_RECORD_TASK_PROBABILITY": 0.5,
         "FIXED_TASK_SIGMA_RATIO": 0.001,
         "MAX_TIME_LIMIT_OPTIONS": 10,
