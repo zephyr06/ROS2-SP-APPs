@@ -29,7 +29,6 @@ def test_taskset_parameters_generation():
         "RO_2_Et_RANGE": [-0.2, 0.2],
         "N_GMM_COMPONENTS_PER_TASK": 4,
         "SP_THRESHOLD_RANGE": [0.5, 0.9],
-        "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "PERIODS_MS": [1000, 100, 50, 20],
         "N_TASKS": 4,
@@ -47,4 +46,7 @@ def test_taskset_parameters_generation():
     assert len(taskset["tasks"]) == 4
     for task in taskset["tasks"]:
         assert len(task["tasks"]) == 4  # 4 components
-        assert task["sp_threshold"] in cfgs["SP_THRESHOLDS_SET"]
+        # P2.14: SP_THRESHOLDS_SET removed -- sp_threshold is sampled uniformly
+        # from SP_THRESHOLD_RANGE, so assert range membership instead.
+        trd = cfgs["SP_THRESHOLD_RANGE"]
+        assert trd[0] <= task["sp_threshold"] <= trd[1]

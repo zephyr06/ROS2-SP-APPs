@@ -23,7 +23,6 @@ def test_config_specifications_validation():
         "D1_RANGE": [-20, 20],
         "D2_RANGE": [0, 360],
         "N_GMM_COMPONENTS_PER_TASK": 2,
-        "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
         "CPU_UTIL_RANDOM_RANGE": [1.6, 1.6],
         "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
         "N_CORES": 2,
@@ -197,13 +196,10 @@ def test_all_configurations_specifications(config_path):
         assert 0 <= t["processorId"] < n_cores
         assert 0.5 * t["period"] <= t["deadline"] <= t["period"]
         
-        # Verify SP thresholds bounds
-        sp_thresholds_set = cfgs.get("SP_THRESHOLDS_SET")
-        if sp_thresholds_set:
-            assert t["sp_threshold"] in sp_thresholds_set
-        else:
-            trd_range = cfgs.get("SP_THRESHOLD_RANGE", [0.5, 0.9])
-            assert trd_range[0] <= t["sp_threshold"] <= trd_range[1]
+        # Verify SP thresholds bounds (P2.14: SP_THRESHOLDS_SET removed;
+        # sp_threshold is sampled uniformly from SP_THRESHOLD_RANGE).
+        trd_range = cfgs.get("SP_THRESHOLD_RANGE", [0.5, 0.9])
+        assert trd_range[0] <= t["sp_threshold"] <= trd_range[1]
             
     # Verify trace files constraints
     step_size = cfgs.get("ROBOT_STEP_SIZE", 5.0)

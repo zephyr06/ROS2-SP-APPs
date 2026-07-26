@@ -28,14 +28,13 @@ class TestTasksetGenerator(unittest.TestCase):
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "CPU_UTIL_RANDOM_RANGE": [1.2, 1.2],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "RANDOM_SEED": 42,
             "MAX_UTIL_PER_TASK": 0.95,
             "MIN_PERIOD_ENV_DEPENDENT": 0,
             "PERF_RECORD_TASK_PROBABILITY": 0.5,
             "N_GMM_COMPONENTS_PER_TASK": 4,
-            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_THRESHOLD_RANGE": [0.001, 0.9],
             "FIXED_TASK_SIGMA_RATIO": 0.001,
             "MAX_TIME_LIMIT_OPTIONS": 10,
             "SP_WEIGHTS_SUM": 5.0,
@@ -85,8 +84,10 @@ class TestTasksetGenerator(unittest.TestCase):
                 self.assertGreater(c["Et_mean"], 0)
                 self.assertGreater(c["Et_sigma"], 0)
                 
-            # 5. SP constraints boundaries consistency
-            self.assertTrue(0.0 <= t["sp_threshold"] <= 1.0)
+            # 5. SP constraints boundaries consistency (P2.14: SP_THRESHOLDS_SET
+            # removed; sp_threshold is sampled uniformly from SP_THRESHOLD_RANGE,
+            # here [0.001, 0.9]).
+            self.assertTrue(0.001 <= t["sp_threshold"] <= 0.9)
             self.assertGreater(t["sp_weight"], 0.0)
 
             # 6. GMM Mixture Execution Time mean consistency
@@ -228,14 +229,13 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "RANDOM_SEED": 42,
             "MAX_UTIL_PER_TASK": 0.95,
             "MIN_PERIOD_ENV_DEPENDENT": 0,
             "PERF_RECORD_TASK_PROBABILITY": 0.5,
             "N_GMM_COMPONENTS_PER_TASK": 4,
-            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_THRESHOLD_RANGE": [0.001, 0.9],
             "FIXED_TASK_SIGMA_RATIO": 0.001,
             "MAX_TIME_LIMIT_OPTIONS": 10,
             "SP_WEIGHTS_SUM": 5.0,
@@ -318,7 +318,6 @@ class TestP19UnifiedPoolTasksets(unittest.TestCase):
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "RANDOM_SEED": 42,
         }
@@ -372,7 +371,6 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "RANDOM_SEED": 42,
             "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
@@ -380,7 +378,7 @@ class TestP14RandomCpuUtilRange(unittest.TestCase):
             "MIN_PERIOD_ENV_DEPENDENT": 0,
             "PERF_RECORD_TASK_PROBABILITY": 0.5,
             "N_GMM_COMPONENTS_PER_TASK": 4,
-            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_THRESHOLD_RANGE": [0.001, 0.9],
             "FIXED_TASK_SIGMA_RATIO": 0.001,
             "MAX_TIME_LIMIT_OPTIONS": 10,
             "SP_WEIGHTS_SUM": 5.0,
@@ -490,14 +488,13 @@ class TestEnvDependentTasksRatio(unittest.TestCase):
             "RO_1_Et_RANGE": [-0.9, -0.7],
             "RO_2_Et_RANGE": [-0.1, 0.1],
             "FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9],
-            "SP_THRESHOLDS_SET": [0.2, 0.4, 0.6, 0.8, 1.0],
             "N_CORES": 2,
             "CPU_UTIL_RANDOM_RANGE": [0.9, 0.9],
             "MAX_UTIL_PER_TASK": 0.95,
             "MIN_PERIOD_ENV_DEPENDENT": 0,
             "PERF_RECORD_TASK_PROBABILITY": 0.5,
             "N_GMM_COMPONENTS_PER_TASK": 4,
-            "SP_THRESHOLD_RANGE": [0.5, 0.9],
+            "SP_THRESHOLD_RANGE": [0.001, 0.9],
             "FIXED_TASK_SIGMA_RATIO": 0.001,
             "MAX_TIME_LIMIT_OPTIONS": 10,
             "SP_WEIGHTS_SUM": 5.0,

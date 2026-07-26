@@ -30,8 +30,7 @@ REQUIRED_CONFIG_PARAMS = [
     {"key": "PERF_RECORD_TASK_PROBABILITY", "suggest": 0.5,                    "desc": "probability a non-env task becomes a perf-record task"},
     {"key": "N_GMM_COMPONENTS_PER_TASK",  "suggest": 4,                        "desc": "GMM components per task"},
     {"key": "FINAL_Et_OVER_PERIOD_RANGE", "suggest": [0.05, 0.9],              "desc": "final ET/period range for perf-task time-limit options"},
-    {"key": "SP_THRESHOLD_RANGE",         "suggest": [0.5, 0.9],               "desc": "fallback SP threshold range (used when SP_THRESHOLDS_SET is empty)"},
-    {"key": "SP_THRESHOLDS_SET",          "suggest": [0.2, 0.4, 0.6, 0.8, 1.0], "desc": "SP threshold option set sampled per task"},
+    {"key": "SP_THRESHOLD_RANGE",         "suggest": [0.001, 0.9],             "desc": "SP threshold range (continuous uniform sampling per task)"},
     {"key": "FIXED_TASK_SIGMA_RATIO",     "suggest": 0.001,                    "desc": "sigma/mean ratio for perf (near-deterministic) tasks"},
     {"key": "MAX_TIME_LIMIT_OPTIONS",     "suggest": 10,                       "desc": "number of time-limit options generated for perf tasks"},
     {"key": "SP_WEIGHTS_SUM",             "suggest": 5.0,                      "desc": "total SP weight sum tasks are normalized to"},
@@ -532,16 +531,16 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     for i in range(n_tasks):
         taskset_param[i].deadline = int(round(taskset_param[i].period * random.uniform(0.5, 1.0)))
 
+    # P2.14: SP_THRESHOLDS_SET removed -- sp_threshold is now sampled continuously
+    # and uniformly from SP_THRESHOLD_RANGE for every task. The former discrete
+    # option set (which also carried 1.0 = 100% DDL-miss tolerated as "safe")
+    # is gone, so no task can be marked unpenalizable.
     trd_min = cfgs['SP_THRESHOLD_RANGE'][0]  # presence enforced by validate_config_integrity
     trd_max = cfgs['SP_THRESHOLD_RANGE'][1]
-    sp_thresholds_set = cfgs["SP_THRESHOLDS_SET"]
 
     for i in range(n_tasks):
         taskset_param[i].sp_weight = 1.0
-        if sp_thresholds_set:
-            taskset_param[i].sp_threshold = float(np.random.choice(sp_thresholds_set))
-        else:
-            taskset_param[i].sp_threshold = random.uniform(trd_min, trd_max)
+        taskset_param[i].sp_threshold = random.uniform(trd_min, trd_max)
 
     # 4. Core Allocation (Processor ID assignment)
     indexed_tasks = [(i, taskset_param[i]) for i in range(n_tasks)]
