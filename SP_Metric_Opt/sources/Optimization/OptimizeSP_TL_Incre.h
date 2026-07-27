@@ -94,6 +94,24 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     PriorityVec Optimize_w_TL_ScratchOrIncre(const DAG_Model& dag_tasks_update,
                                              int beam_search_width);
 
+    // P3.6 INCR_NO_REOPT arm — pure incremental, RM-fast bootstrap, no periodic
+    // reopt. count==0 → BootstrapIncumbentFromRMFast (seed the RM+min-TL
+    // incumbent, NO from-scratch descent); count>0 → OptimizeIncre_w_TL (warm-
+    // started from the carried incumbent). Never calls ReOptimizePeriodic, so
+    // the memoryless from-scratch search (the suspected P1.2 structural-corruption
+    // vector) never runs — the incumbent evolves only through the 1-D incremental
+    // walk. Contrast with INCR_Reopt_X (reopts every Xth interval). Counter
+    // advances every call (uniform with Optimize_w_TL_ScratchOrIncre).
+    PriorityVec OptimizePureIncremental(const DAG_Model& dag_tasks_update,
+                                        int beam_search_width);
+
+    // P3.6 interval-0 bootstrap: seed the incumbent from the RM-fast heuristic
+    // (RM priorities via RateMonotonicPriorityVec + smallest TL via
+    // SmallestTimeLimitVec), commit it, and STOP — no descent. This is the
+    // ResetIncumbentBaseline(true) interval-0 seed step in isolation, without
+    // the RunIntervalDescent walk ReOptimizePeriodic runs afterwards.
+    void BootstrapIncumbentFromRMFast(const DAG_Model& dag_tasks_update);
+
     void ApplyWCETAblationIfRequired(DAG_Model& dag_tasks);
 
     bool UpdateRecords(const OptimizePA_Incre& optimizer,
@@ -128,6 +146,14 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     void AssertSingleChangeInvariant(const DAG_Model& champion_dag,
                                      const DAG_Model& candidate_dag,
                                      size_t task_idx) const;
+
+    // Absorb the interval's updated DAG into the optimizer state: overwrite
+    // dag_tasks_, apply the WCET ablation if the arm requires it, and refresh the
+    // per-task TL option set the descent walks. Shared by all three interval-entry
+    // methods (OptimizeIncre_w_TL, ReOptimizePeriodic, BootstrapIncumbentFromRMFast)
+    // so the absorb + WCET ablation + option-set refresh stay in sync. Callers that
+    // need the pre-absorb DAG for the Type-E diff capture it BEFORE calling this.
+    void AbsorbUpdatedDAG(const DAG_Model& dag_tasks_update);
 
     std::vector<double> InitializeTimeLimitsFromETConfig();
     void InitializeTimeLimitsToSmallest(std::vector<double>& time_limits);
@@ -247,6 +273,17 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // !from_scratch (incremental): set opt_sp_=-1.0 so the first UpdateRecords
     // force-commits.
     void ResetIncumbentBaseline(bool from_scratch);
+
+    // Interval-0 RM-fast seed: RM priorities (RateMonotonicPriorityVec) + every
+    // task at its smallest TL option (SmallestTimeLimitVec), scored under the
+    // current dag_tasks_ and committed as the incumbent. The shared bootstrap
+    // used by ResetIncumbentBaseline's interval-0 else-branch (reopt's first
+    // interval, reached via SeedBaselineAndArmCache) AND BootstrapIncumbentFromRMFast
+    // (the INCR_NO_REOPT arm's interval-0 entry) — the two arms bootstrap
+    // identically through this one primitive. Caller owns the cache state:
+    // ResetIncumbentBaseline clears it first; BootstrapIncumbentFromRMFast runs
+    // only at interval 0 on a fresh optimizer (nothing to clear).
+    void SeedIncumbentFromRMFast();
 
     // Incumbent-state helpers. res_opt_ is the single durable store;
     // CommitIncumbent is its only writer. BuildChallengerFromIncumbent rebuilds a

@@ -296,7 +296,8 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
     // per-interval calls rebind dag_tasks_ and rebuild that cache, but res_opt_
     // — the reason the optimizer is persistent — survives those rebinds.
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_) ||
-        scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET") {
+        scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET" ||
+        scheduler_mode_ == "INCR_NO_REOPT") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
     }
@@ -323,6 +324,15 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     ResourceOptResult res;
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_)) {
         incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
+            dag_tasks,
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        res = incr_optimizer_.CollectResults();
+    } else if (scheduler_mode_ == "INCR_NO_REOPT") {
+        // P3.6: pure incremental — RM-fast bootstrap at interval 0 (seed only,
+        // no from-scratch descent), then OptimizeIncre_w_TL every interval,
+        // never ReOptimizePeriodic. Contrasts with INCR_Reopt_X (periodic
+        // reopt). Uses the persistent incr_optimizer_ (carries the incumbent).
+        incr_optimizer_.OptimizePureIncremental(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();

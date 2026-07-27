@@ -64,3 +64,11 @@
 ### 2026-07-25 — P2.14 & P2.15 Schema Harmonization & Weight Randomization
 - **P2.14**: Removed `SP_THRESHOLDS_SET` from generator schema; standardized on continuous `SP_THRESHOLD_RANGE: [0.001, 0.9]`.
 - **P2.15**: Replaced hardcoded 2:1 weight split (`sp_weight_base` 2.0 / 1.0) with continuous `SP_WEIGHT_RANGE: [0.1, 1.0]` sampling while preserving `SP_WEIGHTS_SUM` normalization. 372/372 Python tests green.
+
+### 2026-07-26 — P3.6 INCR_NO_REOPT Baseline (IMPL DONE — awaiting user review)
+- **Summary**: New scheduler arm `INCR_NO_REOPT` — pure incremental with RM-fast bootstrap at interval 0 (no from-scratch descent), `OptimizeIncre_w_TL` every interval after, NEVER `ReOptimizePeriodic`. Contrasts `INCR_Reopt_10` (production arm, reopts every 10th interval): does periodic reopt earn its cost? Paper-grade baseline, NOT an E3 gate.
+- **Behavior**: interval 0 = seed incumbent from RM-fast (`RateMonotonicPriorityVec` + `SmallestTimeLimitVec` via `ResetIncumbentBaseline(true)`, NO descent); intervals 1+ = `OptimizeIncre_w_TL` (warm-started from carried incumbent); persistent `incr_optimizer_` (like `INCR`), never fresh-each-interval.
+- **Code**: `OptimizePureIncremental(dag, beam)` + `BootstrapIncumbentFromRMFast(dag)` in `OptimizeSP_TL_Incre.{h,cpp}`; `INCR_NO_REOPT` construction condition + dispatch branch in `SimulationOrchestrator.cpp`; `INCR_NO_REOPT` in `ablation_scheduler_list` (test_mode + prod_mode) of `paper_simulation_config.json`.
+- **TDD**: 3 tests in `testIncreOpt_w_TL.cpp` under `CompareAndKeepSynthetic` (`Interval0IsSeedOnly`, `AdvancesCounterOncePerCall`, `NeverReoptsEvenAtPeriodOne`). "No descent" pin = `eval_count_==0` after interval 0.
+- **Verify**: `cmake --build build_test --target check.SP_OPT -j5` → 17/17 ctest green (16.20s). SP bit-identical for existing arms (additive change; `Optimize_w_TL_ScratchOrIncre` untouched).
+- **Status**: NOT committed (`git add`-only, user's standing rule). Awaits user review + `git commit`, rebuild `release/`, re-run the A/B. Full record in `agents/active_tasks/P3_6_incr_only_baseline/`.

@@ -600,6 +600,53 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     return opt_pa_;
 }
 
+void OptimizePA_Incre_with_TimeLimits::AbsorbUpdatedDAG(
+    const DAG_Model& dag_tasks_update) {
+    // Shared interval-entry absorb: overwrite the DAG, apply the WCET ablation if
+    // the arm requires it, refresh the per-task TL option set. Called by
+    // OptimizeIncre_w_TL, ReOptimizePeriodic, and BootstrapIncumbentFromRMFast so
+    // the three stay in lockstep — the option set the descent walks must match the
+    // DAG the incumbent was scored under, else unchanged perf-pair tasks mis-flag.
+    // Callers needing the pre-absorb DAG (Type-E diff source) capture it first.
+    dag_tasks_ = dag_tasks_update;
+    ApplyWCETAblationIfRequired(dag_tasks_);
+    time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
+}
+
+void OptimizePA_Incre_with_TimeLimits::BootstrapIncumbentFromRMFast(
+    const DAG_Model& dag_tasks_update) {
+    // P3.6 interval-0 seed-only bootstrap. Absorb the new DAG (shared absorb keeps
+    // the incumbent + option set consistent for the interval-1+ incremental walk),
+    // then run ONLY the RM-fast seed step (shared with ResetIncumbentBaseline's
+    // interval-0 else-branch). The from-scratch descent (RunIntervalDescent) that
+    // ReOptimizePeriodic runs afterwards is SKIPPED — that is the whole point of
+    // the arm. SeedIncumbentFromRMFast calls EvaluateSPWithPriorityVec directly
+    // (not CallOptimizerGivenTimeLimits), so eval_count_ stays 0: a measurable
+    // guarantee no descent ran. This runs only at interval 0 on a fresh persistent
+    // incr_optimizer_ (count==0), so the cache is already default-constructed and
+    // the gate already false — no ResetIncumbentBaseline preamble needed.
+    AbsorbUpdatedDAG(dag_tasks_update);
+    SeedIncumbentFromRMFast();
+}
+
+PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizePureIncremental(
+    const DAG_Model& dag_tasks_update, int beam_search_width) {
+    // P3.6 INCR_NO_REOPT dispatcher. count==0 → seed-only RM-fast bootstrap
+    // (no descent); count>0 → warm-started incremental walk. Never
+    // ReOptimizePeriodic. One shared TIME_LIMIT budget for this interval's call
+    // (same rationale as Optimize_w_TL_ScratchOrIncre: the orchestrator reuses
+    // incr_optimizer_ across intervals, so a construction-time start_time_ would
+    // bound the whole simulation, not one interval).
+    BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
+    if (reoptimization_interval_count_ == 0) {
+        BootstrapIncumbentFromRMFast(dag_tasks_update);
+    } else {
+        OptimizeIncre_w_TL(dag_tasks_update, beam_search_width);
+    }
+    reoptimization_interval_count_++;
+    return opt_pa_;
+}
+
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeWithTimeLimitOptDisabled(
     int beam_search_width, std::vector<double>& time_limits, bool from_scratch) {
     // Bypasses the descent, so the interval reset it would do must run here.
@@ -614,11 +661,7 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     // Capture the pre-TL env DAG before the absorb — this is the T-1 env for the
     // Type-E diff (FindEnvTaskWithDifferentEt) consumed by the serialized queue.
     DAG_Model dag_tasks_prev_pre_tl = dag_tasks_;
-    dag_tasks_ = dag_tasks_update;
-    ApplyWCETAblationIfRequired(dag_tasks_);
-    // Full per-task option set; the walk stops on patience-bounded non-improvement
-    // (no radius cap, so a better option beyond the old wall is reachable).
-    time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
+    AbsorbUpdatedDAG(dag_tasks_update);
     // Seed from the carried adopted TL in res_opt_, NOT the Gaussian-mean TL:
     // both diff sides must carry the adopted TL, else unchanged perf-pair tasks
     // are flagged as changed.
@@ -707,6 +750,21 @@ OptimizePA_Incre_with_TimeLimits::BuildChallengerFromIncumbent() {
     return challenger;
 }
 
+// Interval-0 RM-fast seed: RM priorities + every task at its smallest TL option,
+// scored under the current dag_tasks_ and committed as the incumbent baseline.
+// Shared by ResetIncumbentBaseline's interval-0 else-branch (reopt's first
+// interval, via SeedBaselineAndArmCache) and BootstrapIncumbentFromRMFast (the
+// INCR_NO_REOPT arm's interval-0 entry) — both arms bootstrap identically.
+void OptimizePA_Incre_with_TimeLimits::SeedIncumbentFromRMFast() {
+    std::vector<double> tl_min = SmallestTimeLimitVec();
+    PriorityVec pa_rm = RateMonotonicPriorityVec();
+    DAG_Model dag_with_tl_min =
+        UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_min);
+    double sp_rm = EvaluateSPWithPriorityVec(dag_with_tl_min, sp_parameters_,
+                                             pa_rm);
+    SeedStateFromIncumbent(dag_with_tl_min, pa_rm, sp_rm, tl_min);
+}
+
 // Reset the incumbent baseline before the descent's baseline eval.
 // from_scratch (reopt): re-eval the carried {pa, tl} under the new DAG (or
 // RM+min-TL at interval 0) and commit it, so opt_sp_ holds the compare-and-keep
@@ -731,14 +789,8 @@ void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
             SeedStateFromIncumbent(dag_new_with_tl_prev, pa_prev, sp_prev_new,
                                    tl_prev);
         } else {
-            // Interval 0: RM priorities + every task at its smallest TL option.
-            std::vector<double> tl_min = SmallestTimeLimitVec();
-            PriorityVec pa_rm = RateMonotonicPriorityVec();
-            DAG_Model dag_with_tl_min =
-                UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_min);
-            double sp_rm = EvaluateSPWithPriorityVec(dag_with_tl_min,
-                                                     sp_parameters_, pa_rm);
-            SeedStateFromIncumbent(dag_with_tl_min, pa_rm, sp_rm, tl_min);
+            // Interval 0: RM priorities + smallest TL (the shared RM-fast seed).
+            SeedIncumbentFromRMFast();
         }
     } else {
         opt_sp_ = -1.0;
@@ -757,10 +809,7 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
     // (P2.11 merge: the reopt descent walks the same serialized E+L queue the
     // incremental path uses). Cheap to capture (copy on write via the absorb).
     DAG_Model dag_tasks_prev_pre_tl = dag_tasks_;
-    dag_tasks_ = dag_tasks_update;
-    ApplyWCETAblationIfRequired(dag_tasks_);
-    // Full per-task option set (see OptimizeIncre_w_TL for the no-radius-cap walk).
-    time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
+    AbsorbUpdatedDAG(dag_tasks_update);
 
     // The baseline reset (re-eval carried {pa, tl}, or RM+min-TL at interval 0)
     // runs inside the descent via ResetIncumbentBaseline(true). Seed from the

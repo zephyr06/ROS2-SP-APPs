@@ -966,6 +966,105 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_EQ(pa, opt.opt_pa_);
 }
 
+// --- P3.6: INCR_NO_REOPT (pure incremental, RM-fast bootstrap, no reopt) ---
+//
+// New arm (agent_coding_rules TDD: tests first, red before green). Behavior:
+//   interval 0: bootstrap the incumbent from RM-fast (RM priorities + smallest
+//                TL option) with NO from-scratch descent;
+//   interval 1+: OptimizeIncre_w_TL (warm-started from the carried incumbent)
+//                every interval, NEVER ReOptimizePeriodic.
+//
+// These tests assert that contract directly. They FAIL on the current code
+// (the methods don't exist yet) — the red that Step 2 turns green.
+
+// Bootstrap-only contract: interval 0 seeds the RM-fast incumbent (RM priorities
+// + smallest TL) and runs ZERO descent evals. eval_count_ is incremented only
+// inside CallOptimizerGivenTimeLimits / OptimizeIncreSingleTask (the per-task
+// re-search the descent walk drives); ResetIncumbentBaseline(true) — the
+// interval-0 seed — calls EvaluateSPWithPriorityVec directly and does NOT touch
+// eval_count_. So eval_count_==0 after the bootstrap proves no descent ran.
+TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_Interval0IsSeedOnly) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    ASSERT_FALSE(opt.IfInitialized());
+    ASSERT_EQ(0, opt.eval_count_);
+
+    // Expected RM-fast baseline, computed with the same primitives the bootstrap
+    // uses internally.
+    PriorityVec pa_rm = opt.RateMonotonicPriorityVec();
+    std::vector<double> tl_min = opt.SmallestTimeLimitVec();
+    DAG_Model dag_min = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_min);
+    double expected_sp = EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_rm);
+
+    opt.OptimizePureIncremental(dag_tasks, 2);
+
+    EXPECT_TRUE(opt.IfInitialized());
+    EXPECT_EQ(0, opt.eval_count_) << "interval 0 must not run any descent eval";
+    EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
+    EXPECT_EQ(pa_rm, opt.opt_pa_);
+    // Min-TL baseline: T_perf=400, T_noise=-1.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
+}
+
+// Counter advances exactly once per call (mirrors Optimize_w_TL_ScratchOrIncre,
+// so the orchestrator's interval bookkeeping is uniform across arms).
+TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_AdvancesCounterOncePerCall) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    ASSERT_EQ(0, opt.reoptimization_interval_count_);
+
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    EXPECT_EQ(1, opt.reoptimization_interval_count_);
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    EXPECT_EQ(2, opt.reoptimization_interval_count_);
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    EXPECT_EQ(3, opt.reoptimization_interval_count_);
+}
+
+// No-reopt contract: even with ReoptimizationPeriod=1 (which under
+// Optimize_w_TL_ScratchOrIncre would route EVERY interval to ReOptimizePeriodic),
+// OptimizePureIncremental must take the incremental path at interval 1+. The
+// from-scratch descent (Reopt) is memoryless OptimizeFromScratch — if it ran, it
+// would touch eval_count_ via CallOptimizerGivenTimeLimits(from_scratch=true).
+// So interval 1+ producing eval_count_ > 0 via the INCREMENTAL path (not reopt)
+// + the incumbent being CARRIED (interval 1's seed reuses interval 0's adopted
+// TL, not the Gaussian-mean TL) is the "pure incremental, no reopt" signature.
+TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_NeverReoptsEvenAtPeriodOne) {
+    GlobalVariables::ReoptimizationPeriod = 1;  // would force reopt every interval
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Interval 0: bootstrap (seed only, no descent).
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    ASSERT_EQ(0, opt.eval_count_);
+    ASSERT_EQ(1, opt.reoptimization_interval_count_);
+
+    // The incumbent is carried: interval 0 committed the RM-fast incumbent, so
+    // the optimizer is initialized and the adopted TL is in res_opt_.
+    ASSERT_TRUE(opt.IfInitialized());
+    ASSERT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[0]);
+
+    // Interval 1: the incremental path runs (eval_count_ grows). The walk
+    // warm-starts from the carried incumbent and may IMPROVE the TL beyond the
+    // cheap RM-fast seed (400) — that is the arm doing its job, not a reopt.
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    EXPECT_GT(opt.eval_count_, 0) << "interval 1 must take the incremental path";
+    EXPECT_EQ(2, opt.reoptimization_interval_count_);
+    EXPECT_TRUE(opt.IfInitialized());
+
+    // The "never reopt" pin: with ReoptimizationPeriod=1, the reopt dispatcher
+    // (Optimize_w_TL_ScratchOrIncre) would route interval 0 to ReOptimizePeriodic,
+    // whose from-scratch beam (CallOptimizerGivenTimeLimits(from_scratch=true) in
+    // SeedBaselineAndArmCache) increments eval_count_ BEFORE the walk. The pure
+    // arm's interval-0 bootstrap skips that beam entirely. So after interval 0
+    // alone, the pure arm has STRICTLY FEWER evals than the reopt arm — the
+    // behavioral signature that no from-scratch descent ran.
+    OptimizePA_Incre_with_TimeLimits opt_reopt(dag_tasks, sp_parameters);
+    opt_reopt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // interval 0: reopt
+    EXPECT_GT(opt_reopt.eval_count_, 0)
+        << "reopt dispatcher runs a from-scratch beam at interval 0";
+    EXPECT_LT(opt.eval_count_, opt_reopt.eval_count_)
+        << "pure arm must skip the from-scratch descent the reopt arm runs";
+}
+
 // Issue (5) — baseline-overwrites-res_opt_ invariant. The baseline eval at the
 // top of RunIntervalDescent(Reopt)
 //   current_config_sp = CallOptimizerGivenTimeLimits(K, time_limits, from_scratch);
