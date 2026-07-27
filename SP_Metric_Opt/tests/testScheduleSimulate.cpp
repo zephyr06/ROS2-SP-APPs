@@ -198,11 +198,6 @@ TEST(OrchestratorTest, RateMonotonicPriorityAssignment) {
     const auto& history = orchestrator.GetJobHistory();
     ASSERT_FALSE(history.empty());
 
-    // RM does not enforce time limits → never overruns.
-    for (const auto& r : history) {
-        EXPECT_FALSE(r.isOverrun);
-    }
-
     // Deterministic interval SP metrics (probabilistic RTA on the fixed dists).
     // i0: Task0 avg ET=2 → perf=0.6; others perf=1.0. Task3 schedulable.
     //     SP = 0.6 + 1.0 + 1.0 + 1.0 = 3.6
@@ -237,12 +232,29 @@ public:
 
 static std::vector<JobRecord> GetMockJobHistory() {
     std::vector<JobRecord> history;
-    // Task 0: 2 jobs (1 overrun)
-    history.push_back({0, 0, 0, 10, 15, 5.0, false});
-    history.push_back({0, 1, 1000, 1010, 1025, 15.0, true});
-    // Task 1: 2 jobs (0 overrun)
-    history.push_back({1, 0, 0, 15, 25, 10.0, false});
-    history.push_back({1, 1, 2000, 2010, 2025, 15.0, false});
+    // Task 0 (deadline 20): 2 jobs, 1 deadline miss.
+    //   job 0: RT = 15 - 0   = 15  <= 20 -> not missed
+    //   job 1: RT = 1025-1000 = 25  >  20 -> MISSED
+    history.push_back({0, 0, 0, 10, 15, 5.0, 20.0, false});
+    history.push_back({0, 1, 1000, 1010, 1025, 15.0, 20.0, true});
+    // Task 1 (deadline 30): 2 jobs, 0 deadline misses (both RT = 25 <= 30).
+    history.push_back({1, 0, 0, 15, 25, 10.0, 30.0, false});
+    history.push_back({1, 1, 2000, 2010, 2025, 15.0, 30.0, false});
+    return history;
+}
+
+// Mock history isolating the deadline-miss metric. This is the fig3 bug's
+// core contradiction (RM_FAST: short RT but "100% missed"; RM_SLOW: huge RT
+// but "0% missed") reduced to a unit case: only the long-RT job is a miss.
+// Counts are deliberately asymmetric (1 deadline miss among 3 jobs) so the
+// overall miss_rate is a meaningful Level-0 regression check, not just Level-1.
+static std::vector<JobRecord> GetMockJobHistoryDeadlineMiss() {
+    std::vector<JobRecord> history;
+    // Task 0 (deadline 10): job 0 RT=15 > 10 -> MISSED.
+    history.push_back({0, 0, 0, 10, 15, 5.0, 10.0, true});
+    // Task 1 (deadline 30): two jobs, each RT=25 <= 30 -> not missed.
+    history.push_back({1, 0, 0, 15, 25, 25.0, 30.0, false});
+    history.push_back({1, 1, 1000, 1015, 1025, 25.0, 30.0, false});
     return history;
 }
 
@@ -348,6 +360,83 @@ TEST(OrchestratorTest, ExportResultsLevel1) {
     GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
 }
 
+// P2.14: miss_rate must be a DEADLINE miss rate (RT > deadline), not a
+// TL-overrun rate (ET >= time_limit). Uses GetMockJobHistoryDeadlineMiss where
+// the only deadline miss is the long-RT job — miss_rate must count that one.
+TEST(OrchestratorTest, ExportResultsLevel0_DeadlineMiss) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_l0_dlm";
+    std::filesystem::remove_all(output_dir);
+
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 0;
+
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistoryDeadlineMiss(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
+    std::string summary_file = output_dir + "/RM/miss_rate_summary.txt";
+    std::ifstream file(summary_file);
+    std::string line;
+    ASSERT_TRUE(std::getline(file, line));  // header
+    ASSERT_TRUE(std::getline(file, line));
+    std::stringstream ss(line);
+    int total_jobs = 0, missed_jobs = -1;
+    double miss_rate = -1.0;
+    char comma;
+    ASSERT_TRUE(ss >> total_jobs >> comma >> missed_jobs >> comma >> miss_rate);
+    EXPECT_EQ(3, total_jobs);
+    // Exactly one deadline miss (task 0 job 0: RT 15 > deadline 10). The two
+    // TL-overrun jobs (task 1) must NOT be counted as misses.
+    EXPECT_EQ(1, missed_jobs);
+    // 1/3 written to text at default precision then parsed back — tolerate
+    // the round-trip error (the value is not exactly representable).
+    EXPECT_NEAR(1.0 / 3.0, miss_rate, 1e-6);
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+}
+
+// RED for P2.14: per-task miss_rate must reflect deadline misses. Task 0 has
+// the only deadline miss (1/1 = 1.0); task 1 has a TL overrun but no deadline
+// miss (0/1 = 0.0).
+TEST(OrchestratorTest, ExportResultsLevel1_DeadlineMiss) {
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_export_l1_dlm";
+    std::filesystem::remove_all(output_dir);
+
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 1;
+
+    MockOrchestrator orchestrator(output_dir, 1000);
+    orchestrator.PopulateData(GetMockJobHistoryDeadlineMiss(), GetMockSPMetrics());
+    orchestrator.CallExportResults("RM");
+
+    std::string per_task_miss_file = output_dir + "/RM/miss_rate_per_task.txt";
+    std::ifstream file(per_task_miss_file);
+    std::string line;
+    ASSERT_TRUE(std::getline(file, line));  // header
+
+    std::unordered_map<int, std::vector<double>> task_stats;
+    int t_id, total, missed;
+    double mr, avg_rt, max_rt;
+    char comma;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        std::stringstream ss(line);
+        ASSERT_TRUE(ss >> t_id >> comma >> total >> comma >> missed >> comma >>
+                    mr >> comma >> avg_rt >> comma >> max_rt);
+        task_stats[t_id] = {static_cast<double>(total),
+                            static_cast<double>(missed), mr, avg_rt, max_rt};
+    }
+    ASSERT_EQ(2u, task_stats.size());
+    EXPECT_EQ(1, task_stats[0][1]);                  // task 0 missed (1 of 1)
+    EXPECT_DOUBLE_EQ(1.0, task_stats[0][2]);         // task 0 miss rate
+    EXPECT_EQ(0, task_stats[1][1]);                  // task 1 missed (TL overruns, no ddl miss)
+    EXPECT_DOUBLE_EQ(0.0, task_stats[1][2]);         // task 1 miss rate
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
+}
+
 TEST(OrchestratorTest, ExportResultsLevel2) {
     std::string output_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_output_export_l2";
@@ -421,20 +510,19 @@ TEST(OrchestratorTest, ExportResultsLevel3) {
     std::ifstream file(response_file);
     std::string line;
     ASSERT_TRUE(std::getline(file, line));
-    EXPECT_EQ("jobId,release_time,start_time,finish_time,response_time,execution_time,is_overrun", line);
+    EXPECT_EQ("jobId,release_time,start_time,finish_time,response_time,execution_time", line);
 
     // Job 0
     ASSERT_TRUE(std::getline(file, line));
     std::stringstream ss0(line);
-    int jobId, is_overrun;
+    int jobId;
     LLint release_time, start_time, finish_time, response_time;
     double execution_time;
     char comma;
-    ASSERT_TRUE(ss0 >> jobId >> comma >> release_time >> comma >> start_time >> comma >> finish_time >> comma >> response_time >> comma >> execution_time >> comma >> is_overrun);
+    ASSERT_TRUE(ss0 >> jobId >> comma >> release_time >> comma >> start_time >> comma >> finish_time >> comma >> response_time >> comma >> execution_time);
     EXPECT_EQ(0, jobId);
     EXPECT_EQ(0, release_time);
     EXPECT_EQ(15 - 0, response_time);
-    EXPECT_EQ(0, is_overrun);
 
     GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
 }
@@ -487,11 +575,6 @@ TEST(OrchestratorTest, CFSOrchestration) {
 
     const auto& history = orchestrator.GetJobHistory();
     ASSERT_FALSE(history.empty());
-
-    // CFS does not enforce time limits → never overruns.
-    for (const auto& r : history) {
-        EXPECT_FALSE(r.isOverrun);
-    }
 
     // Interval SP metrics come from probabilistic RTA using the unchanged dists
     // (same as RM because both evaluate the same raw distributions without TLs).
@@ -597,16 +680,83 @@ TEST(OrchestratorTest, UnitRecordFinishedJobs) {
     JobStartFinish jsf(0, 2, 2);
     rq.schedule_[job] = jsf;
 
-    ResourceOptResult res;
-    res.id2time_limit[0] = 1.0;  // Overrun threshold 1.0 < execution time 2
-
-    orchestrator.RecordFinishedJobs(2, rq, res, dags[0]);
+    orchestrator.RecordFinishedJobs(2, rq, dags[0]);
     const auto& history = orchestrator.GetJobHistory();
     ASSERT_EQ(1, history.size());
     EXPECT_EQ(0, history[0].taskId);
     EXPECT_EQ(0, history[0].jobId);
     EXPECT_EQ(2, history[0].finishTime);
-    EXPECT_TRUE(history[0].isOverrun);
+    // RT = finish 2 - release 0 = 2 < task-0 deadline 10 → not a deadline miss.
+    EXPECT_FALSE(history[0].isDeadlineMiss);
+}
+
+// P2.14: RecordFinishedJobs must set isDeadlineMiss from
+// (finishTime - releaseTime) > task.deadline. RecordFinishedJobs only records
+// jobs whose finish == time_now, so we use two tasks that both finish at 15
+// but have different deadlines:
+//   task 0 (deadline 10): release 0, finish 15 -> RT 15 > 10 -> MISS
+//   task 1 (deadline 20): release 0, finish 15 -> RT 15 <= 20 -> no miss
+TEST(OrchestratorTest, UnitRecordFinishedJobs_DeadlineMiss) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    orchestrator.TestLoadConfigs();
+
+    auto dags = orchestrator.GetDagTasks();
+    ASSERT_FALSE(dags.empty());
+    EXPECT_DOUBLE_EQ(10.0, dags[0].tasks[0].deadline);
+    EXPECT_DOUBLE_EQ(20.0, dags[0].tasks[1].deadline);
+
+    RunQueue rq(dags[0].tasks);
+    JobCEC job_task0(0, 0);  // RT 15 > deadline 10 -> miss
+    JobCEC job_task1(1, 0);  // RT 15 <= deadline 20 -> no miss
+    rq.schedule_[job_task0] = JobStartFinish(0, 15, 15);
+    rq.schedule_[job_task1] = JobStartFinish(0, 15, 15);
+
+    orchestrator.RecordFinishedJobs(15, rq, dags[0]);
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_EQ(2u, history.size());
+
+    // Locate records by task id (history order follows schedule_ iteration).
+    const JobRecord* rec0 = nullptr;
+    const JobRecord* rec1 = nullptr;
+    for (const auto& r : history) {
+        if (r.taskId == 0) rec0 = &r;
+        else if (r.taskId == 1) rec1 = &r;
+    }
+    ASSERT_NE(nullptr, rec0);
+    ASSERT_NE(nullptr, rec1);
+
+    // Each record carries its task's deadline.
+    EXPECT_DOUBLE_EQ(10.0, rec0->deadline);
+    EXPECT_DOUBLE_EQ(20.0, rec1->deadline);
+    // Only task 0 (RT 15 > deadline 10) is a deadline miss.
+    EXPECT_TRUE(rec0->isDeadlineMiss);
+    EXPECT_FALSE(rec1->isDeadlineMiss);
+}
+
+// P2.14: CFS must record real deadline misses. A CFS job whose RT exceeds the
+// deadline is a deadline miss even though CFS enforces no time-limit budget.
+TEST(OrchestratorTest, CFS_RecordsDeadlineMisses) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    TestCFSOrchestrator orchestrator(input_dir, "", 100);
+    orchestrator.TestLoadConfigs();
+
+    auto dags = orchestrator.GetDagTasks();
+    ASSERT_FALSE(dags.empty());
+    EXPECT_DOUBLE_EQ(10.0, dags[0].tasks[0].deadline);
+
+    RunQueue rq(dags[0].tasks);
+    JobCEC job_late(0, 0);  // release 0, finish 15 -> RT 15 > deadline 10
+    rq.schedule_[job_late] = JobStartFinish(0, 15, 15);
+
+    orchestrator.RecordFinishedJobsCFS(15, rq, dags[0]);
+    const auto& history = orchestrator.GetJobHistory();
+    ASSERT_EQ(1u, history.size());
+    EXPECT_DOUBLE_EQ(10.0, history[0].deadline);
+    // RT 15 > deadline 10 → a deadline miss.
+    EXPECT_TRUE(history[0].isDeadlineMiss);
 }
 
 TEST(OrchestratorTest, UnitReleaseJobs) {
@@ -772,14 +922,12 @@ TEST(OrchestratorTest, DISABLED_INCR_NO_TL_Integration) {
     ASSERT_FALSE(history.empty());
 
     // With TL optimization disabled, Task0 gets the smallest option (TL=1).
-    // Every Task0 job is clamped to execution_time=1 and flagged as overrun.
+    // Every Task0 job is clamped to execution_time=1.
     int task0_count = 0;
     for (const auto& r : history) {
         if (r.taskId == 0) {
             EXPECT_EQ(1, r.executionTime)
                 << "Task0 should be clamped to the smallest TL=1";
-            EXPECT_TRUE(r.isOverrun)
-                << "Task0 should always overrun with TL=1";
             task0_count++;
         }
     }
@@ -817,37 +965,36 @@ TEST(OrchestratorTest, DISABLED_INCR_WCET_Integration) {
     ASSERT_FALSE(history.empty());
 
     // Interval 0: WCET ablation sets Task0 ET to 3. The optimizer chooses TL=3,
-    // so jobs with trace values [2,3,3] (rounded) are overrun only when exec==3.
-    int task0_overrun_i0 = 0;
-    int task0_not_overrun_i0 = 0;
+    // so jobs with trace values [2,3,3] (rounded) are exec==3 only when the
+    // trace hits the WCET; otherwise clamped to 2.
+    int task0_exec3_i0 = 0;
+    int task0_exec2_i0 = 0;
     for (const auto& r : history) {
         if (r.taskId == 0 && r.releaseTime < 100) {
             EXPECT_TRUE(r.executionTime == 2 || r.executionTime == 3)
                 << "Interval 0 Task0 exec should be 2 or 3 with TL=3";
-            if (r.isOverrun) {
-                EXPECT_EQ(3, r.executionTime);
-                task0_overrun_i0++;
+            if (r.executionTime == 3) {
+                task0_exec3_i0++;
             } else {
                 EXPECT_EQ(2, r.executionTime);
-                task0_not_overrun_i0++;
+                task0_exec2_i0++;
             }
         }
     }
-    EXPECT_EQ(6, task0_overrun_i0);
-    EXPECT_EQ(4, task0_not_overrun_i0);
+    EXPECT_EQ(6, task0_exec3_i0);
+    EXPECT_EQ(4, task0_exec2_i0);
 
     // Interval 1: WCET for Task0 becomes 4. The optimizer chooses TL=2, which
-    // clamps all trace values to exactly 2 after rounding, so every job overruns.
-    int task0_overrun_i1 = 0;
+    // clamps all trace values to exactly 2 after rounding.
+    int task0_clamped_i1 = 0;
     for (const auto& r : history) {
         if (r.taskId == 0 && r.releaseTime >= 100) {
             EXPECT_EQ(2, r.executionTime)
                 << "Interval 1 Task0 exec should be clamped to 2 with TL=2";
-            EXPECT_TRUE(r.isOverrun);
-            task0_overrun_i1++;
+            task0_clamped_i1++;
         }
     }
-    EXPECT_EQ(10, task0_overrun_i1);
+    EXPECT_EQ(10, task0_clamped_i1);
 
     // Deterministic interval SP metrics.
     // i0: TL=3 → Task0 perf=1.0, total SP=4.0.

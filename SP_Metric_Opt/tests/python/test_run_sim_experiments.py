@@ -46,14 +46,14 @@ class TestRunSimExperiments(unittest.TestCase):
         try:
             # task 0: 2 jobs, rt=100 and rt=200, deadline=150
             with open(os.path.join(temp_dir, "response_times_task_0.txt"), "w") as f:
-                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time,is_overrun\n")
-                f.write("0,100,100,200,100,100,0\n")
-                f.write("1,500,500,700,200,200,0\n")
+                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time\n")
+                f.write("0,100,100,200,100,100\n")
+                f.write("1,500,500,700,200,200\n")
             # task 1: 2 jobs, rt=50 and rt=150, deadline=100
             with open(os.path.join(temp_dir, "response_times_task_1.txt"), "w") as f:
-                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time,is_overrun\n")
-                f.write("0,0,0,50,50,50,0\n")
-                f.write("1,200,200,350,150,150,0\n")
+                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time\n")
+                f.write("0,0,0,50,50,50\n")
+                f.write("1,200,200,350,150,150\n")
 
             task_deadlines = {0: 150.0, 1: 100.0}
             # Expected misses: task0 job1 (200>150), task1 job1 (150>100)
@@ -409,13 +409,13 @@ class TestComputeMissRateByTask(unittest.TestCase):
         temp_dir = tempfile.mkdtemp()
         try:
             with open(os.path.join(temp_dir, "response_times_task_0.txt"), "w") as f:
-                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time,is_overrun\n")
-                f.write("0,0,0,200,200,200,0\n")
-                f.write("1,100,100,300,200,200,0\n")
+                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time\n")
+                f.write("0,0,0,200,200,200\n")
+                f.write("1,100,100,300,200,200\n")
             with open(os.path.join(temp_dir, "response_times_task_1.txt"), "w") as f:
-                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time,is_overrun\n")
-                f.write("0,0,0,80,80,80,0\n")
-                f.write("1,100,100,120,120,120,0\n")
+                f.write("jobId,release_time,start_time,finish_time,response_time,execution_time\n")
+                f.write("0,0,0,80,80,80\n")
+                f.write("1,100,100,120,120,120\n")
             task_deadlines = {0: 150.0, 1: 100.0}
             result = compute_miss_rate_by_task(temp_dir, task_deadlines)
             # task 0: both jobs rt=200 > 150 => 1.0

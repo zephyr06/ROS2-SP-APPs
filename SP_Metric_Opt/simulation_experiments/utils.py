@@ -61,11 +61,14 @@ except ImportError:
 
 
 def compute_miss_rate(response_dir, task_deadlines):
-    """Computes deadline miss rate.
+    """Computes the deadline miss rate (fraction of jobs whose response time
+    exceeded the task deadline: ``response_time > deadline``).
 
     If ``miss_rate_summary.txt`` exists (produced by export detail level 0+),
-    returns the overall miss rate directly.
-    Otherwise, falls back to scanning ``response_times_task_*.txt`` files.
+    returns the overall miss rate the C++ sim pre-computed (a true deadline
+    miss rate, NOT a time-limit budget overrun rate).
+    Otherwise, falls back to scanning ``response_times_task_*.txt`` files and
+    counting ``rt > deadline`` per job.
     """
     if not os.path.exists(response_dir):
         return 0.0
@@ -115,10 +118,13 @@ def compute_miss_rate(response_dir, task_deadlines):
 
 
 def compute_miss_rate_by_task(response_dir, task_deadlines):
-    """Return per-task miss rate as a dict ``{task_id: miss_rate}``.
+    """Return per-task deadline miss rate as a dict ``{task_id: miss_rate}``,
+    where a miss is ``response_time > deadline`` (NOT a time-limit overrun).
 
-    Tries to read ``miss_rate_per_task.txt`` (export detail level 1+).
-    Falls back to ``response_times_task_*.txt`` files (export detail level 3).
+    Tries to read ``miss_rate_per_task.txt`` (export detail level 1+), whose
+    ``miss_rate`` column the C++ sim now computes as a true deadline miss rate.
+    Falls back to ``response_times_task_*.txt`` files (export detail level 3),
+    counting ``rt > deadline`` per job.
     """
     per_task_mr = {}
     if not os.path.exists(response_dir):

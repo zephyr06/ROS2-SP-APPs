@@ -137,11 +137,12 @@ void BaseSimulationOrchestrator::ExportResults(
         metrics_file << i << "," << interval_sp_metrics_[i] << "\n";
     }
 
-    // Compute overall miss rate from job_history_
+    // Compute overall miss rate from job_history_. "miss" = deadline miss
+    // (response_time > deadline), NOT TL-budget overrun.
     LLint total_jobs = 0;
     LLint missed_jobs = 0;
     for (const auto& r : job_history_) {
-        if (r.isOverrun) {
+        if (r.isDeadlineMiss) {
             missed_jobs++;
         }
         total_jobs++;
@@ -180,7 +181,7 @@ void BaseSimulationOrchestrator::ExportResults(
                 double rt = static_cast<double>(r.finishTime - r.releaseTime);
                 sum_rt += rt;
                 if (rt > max_rt) max_rt = rt;
-                if (r.isOverrun) t_missed++;
+                if (r.isDeadlineMiss) t_missed++;
             }
             double avg_rt = (t_total > 0) ? (sum_rt / t_total) : 0.0;
             double mr = (t_total > 0)
@@ -217,7 +218,7 @@ void BaseSimulationOrchestrator::ExportResults(
                         double rt = static_cast<double>(r.finishTime - r.releaseTime);
                         sum_rt += rt;
                         if (rt > max_rt) max_rt = rt;
-                        if (r.isOverrun) int_missed++;
+                        if (r.isDeadlineMiss) int_missed++;
                         count++;
                     }
                 }
@@ -236,13 +237,12 @@ void BaseSimulationOrchestrator::ExportResults(
                                     std::to_string(task_id) + ".txt";
             std::ofstream outfile(file_path);
             outfile << "jobId,release_time,start_time,finish_time,response_time,"
-                       "execution_time,is_overrun\n";
+                       "execution_time\n";
             for (const auto& r : records) {
                 outfile << r.jobId << "," << r.releaseTime << ","
                         << r.startTime << "," << r.finishTime << ","
                         << (r.finishTime - r.releaseTime) << ","
-                        << r.executionTime << ","
-                        << (r.isOverrun ? 1 : 0) << "\n";
+                        << r.executionTime << "\n";
             }
         }
     }
@@ -253,14 +253,13 @@ void BaseSimulationOrchestrator::PrintHyperperiodSchedule(
     std::cout << "--- Schedule within hyperperiod [" << start_time << ", "
               << end_time << "] ---\n";
     std::cout << "taskId,jobId,releaseTime,startTime,finishTime,executionTime,"
-                 "responseTime,isOverrun\n";
+                 "responseTime\n";
     for (const auto& r : job_history_) {
         if (r.releaseTime >= start_time && r.releaseTime < end_time) {
             std::cout << r.taskId << "," << r.jobId << "," << r.releaseTime
                       << "," << r.startTime << "," << r.finishTime << ","
                       << r.executionTime << ","
-                      << (r.finishTime - r.releaseTime) << ","
-                      << (r.isOverrun ? 1 : 0) << "\n";
+                      << (r.finishTime - r.releaseTime) << "\n";
         }
     }
     std::cout << "--------------------------------------------\n";
@@ -426,8 +425,7 @@ void FixedTaskPrioritySchedulingOrchestrator::ApplyTaskConfigurations(
 }
 
 void FixedTaskPrioritySchedulingOrchestrator::RecordFinishedJobs(
-    LLint time_now, RunQueue& run_queue, const ResourceOptResult& res,
-    const DAG_Model& dag_tasks) {
+    LLint time_now, RunQueue& run_queue, const DAG_Model& dag_tasks) {
     for (const auto& job : run_queue.schedule_) {
         if (job.second.finish == time_now) {
             JobRecord record;
@@ -439,13 +437,15 @@ void FixedTaskPrioritySchedulingOrchestrator::RecordFinishedJobs(
             record.finishTime = job.second.finish;
             record.executionTime = job.second.executionTime;
 
-            double time_limit = -1.0;
-            auto it_limit = res.id2time_limit.find(record.taskId);
-            if (it_limit != res.id2time_limit.end()) {
-                time_limit = it_limit->second;
-            }
-            record.isOverrun =
-                (record.executionTime >= time_limit && time_limit > 0);
+            // Deadline miss (what "miss_rate" reports): response time exceeded
+            // the task deadline. (Execution time was already clamped to the
+            // time-limit budget upstream, so the deadline check sees the
+            // realized RT.) Deadline travels on the record so the export path
+            // is self-contained.
+            record.deadline = dag_tasks.tasks[record.taskId].deadline;
+            record.isDeadlineMiss =
+                static_cast<double>(record.finishTime - record.releaseTime) >
+                record.deadline;
 
             auto it = std::find_if(job_history_.begin(), job_history_.end(),
                                    [&](const JobRecord& r) {
@@ -556,7 +556,7 @@ void FixedTaskPrioritySchedulingOrchestrator::SimulateInterval(int interval_idx,
             RunQueue& run_queue = *run_queues[q];
             int processor_id = processor_ids[q];
             run_queue.RemoveFinishedJob(time_now);
-            RecordFinishedJobs(time_now, run_queue, res, dag_tasks);
+            RecordFinishedJobs(time_now, run_queue, dag_tasks);
             ReleaseJobs(time_now, end_time, dag_tasks, res, run_queue, traces,
                         trace_indices, processor_id);
             run_queue.RunJobHigestPriority(time_now);
@@ -632,7 +632,15 @@ void CFSSimulationOrchestrator::RecordFinishedJobsCFS(
             record.startTime = job.second.start;
             record.finishTime = job.second.finish;
             record.executionTime = job.second.executionTime;
-            record.isOverrun = false;
+
+            // CFS enforces no time-limit budget, but jobs still have real
+            // deadlines: a job whose response time exceeds the task deadline is
+            // a deadline miss. (This lets CFS show non-zero miss_rate when it
+            // actually misses deadlines.)
+            record.deadline = dag_tasks.tasks[record.taskId].deadline;
+            record.isDeadlineMiss =
+                static_cast<double>(record.finishTime - record.releaseTime) >
+                record.deadline;
 
             auto it = std::find_if(job_history_.begin(), job_history_.end(),
                                    [&](const JobRecord& r) {

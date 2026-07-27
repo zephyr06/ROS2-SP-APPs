@@ -14,7 +14,12 @@ struct JobRecord {
     LLint startTime;
     LLint finishTime;
     double executionTime;
-    bool isOverrun;
+    // Task deadline (copied from dag_tasks.tasks[taskId].deadline at record
+    // time) so the miss decision is self-contained on the record.
+    double deadline;
+    // True deadline miss: response_time (finishTime - releaseTime) exceeded the
+    // task deadline. This is what "miss_rate" reports.
+    bool isDeadlineMiss;
 };
 
 class BaseSimulationOrchestrator {
@@ -74,7 +79,7 @@ public:
     // Refactored helper functions for unit testing and cleaner SimulateInterval
     ResourceOptResult DeterminePrioritiesAndBudgets(DAG_Model& dag_tasks, const SP_Parameters& sp_parameters);
     void ApplyTaskConfigurations(DAG_Model& dag_tasks, const ResourceOptResult& res);
-    void RecordFinishedJobs(LLint time_now, RunQueue& run_queue, const ResourceOptResult& res, const DAG_Model& dag_tasks);
+    void RecordFinishedJobs(LLint time_now, RunQueue& run_queue, const DAG_Model& dag_tasks);
     void ReleaseJobs(LLint time_now, LLint end_time, const DAG_Model& dag_tasks, const ResourceOptResult& res,
                      RunQueue& run_queue, std::unordered_map<int, std::vector<float>>& traces,
                      std::unordered_map<int, size_t>& trace_indices, int processor_id = -1);
