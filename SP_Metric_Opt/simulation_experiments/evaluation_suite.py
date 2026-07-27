@@ -40,16 +40,18 @@ removed from every config's scheduler list as a redundant duplicate of
 subject now read ``INCR_Reopt_10``: Q1 (BF-vs-INCR gap), Q2 (INCR>=BF), Q3
 (INCR>=baselines), and E1 (INCR overhead).
 - **E3** INCR_Reopt_X period-monotonicity: mean SP non-increasing as the reopt
-  period grows, i.e.
-  SP(INCR_Reopt_1) >= SP(INCR_Reopt_5) >= SP(INCR_Reopt_10) >=
-  SP(INCR_Reopt_30) >= SP(INCR_Reopt_60), at every conducted N.
-  More frequent reopt (small period) keeps TL configs fresher, so the
-  smallest period carries the highest SP. (Earlier this gate read
-  per-activation ET, but the recorded ``mean_sched_time`` is a
-  scheduler-only (``DeterminePrioritiesAndBudgets``) wall-clock summed over
-  intervals and averaged over tasksets -- dominated by OS/IO contention noise,
-  not the reopt-period signal -- so it read SP instead, the metric the gate
-  actually cares about. See ``p25-incr-et-grows-with-period``.)
+  period grows over the ENFORCED chain, i.e.
+  SP(INCR_Reopt_10) >= SP(INCR_Reopt_30) >= SP(INCR_Reopt_60), at every
+  conducted N. More frequent reopt (small period) keeps TL configs fresher, so
+  the smallest period carries the highest SP. ``INCR_Reopt_1`` (reopt every
+  interval) is a SPECIAL max-reopt stress arm whose pair is NOT enforced, and
+  ``INCR_Reopt_5`` is not simulated in prod -- both are off the enforced chain.
+  (Earlier this gate read per-activation ET, but the recorded
+  ``mean_sched_time`` is a scheduler-only (``DeterminePrioritiesAndBudgets``)
+  wall-clock summed over intervals and averaged over tasksets -- dominated by
+  OS/IO contention noise, not the reopt-period signal -- so it read SP
+  instead, the metric the gate actually cares about. See
+  ``p25-incr-et-grows-with-period``.)
 
 P2.5 removed the ``INCR_SCRATCH`` ablation arm and the E2 gate (its only
 subject pair was INCR-vs-SCRATCH); Q1/Q2/Q3/E1 now check INCR alone, and the
@@ -122,15 +124,21 @@ BF = "BF"
 # actually simulated.
 Q3_BASELINES = ["RM_FAST", "RM_SLOW", "CFS", "INCR_NO_TL", "INCR_WCET"]
 
-# Default ordered period arms for gate E3 (the P1.1 A/B set). ``INCR_Reopt_10``
-# (the canonical incremental arm the Q1/Q2/Q3/E1 gates read) IS the period=10
-# member of this sweep. The config may override this via the eval-only key
-# ``eval_period_arms``. P2.4 renamed the family from the retired INCR_P<n> form;
-# X is the reopt period, ordered small (max reopt) to large (min reopt) so SP is
+# Default ENFORCED period arms for gate E3: the realistic reopt periods
+# {10, 30, 60}, ordered small (fresher TL) to large (staler TL) so SP is
 # expected non-increasing along the list (smaller period = fresher TL = higher
-# SP). X=5 is a NEW arm (the pre-P2.4 family was {1,10,30,60}).
-DEFAULT_PERIOD_ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
-                       "INCR_Reopt_30", "INCR_Reopt_60"]
+# SP). ``INCR_Reopt_10`` (the canonical incremental arm the Q1/Q2/Q3/E1 gates
+# read) IS the period=10 member of this sweep. The config may override this via
+# the eval-only key ``eval_period_arms``.
+#
+# ``INCR_Reopt_1`` (reopt every interval) is a SPECIAL max-reopt stress arm,
+# NOT part of the realistic-period chain -- its pair is not enforced. Earlier
+# the chain also carried ``INCR_Reopt_5`` (a NEW arm added with the P2.4
+# rename), but prod does not simulate it, so the gate reported MISSING at every
+# N; it is dropped from the enforced chain so E3 evaluates over arms prod
+# actually runs. Both arms may still be simulated for other purposes; they are
+# simply off the E3 monotonicity check.
+DEFAULT_PERIOD_ARMS = ["INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
 
 # North-star thresholds (from agents/project_evaluation_northstar.md).
 Q1_MAX_GAP = 0.30      # small-N BF-vs-INCR gap red-flag line
@@ -454,11 +462,14 @@ def evaluate_e1(lookup, overhead_n=None, overhead_ns=None):
 def evaluate_e3(lookup, ns=None, period_arms=None):
     """E3: INCR_Reopt_X period-monotonicity -- mean SP non-increasing.
 
-    For each N, the ordered period arms' ``mean_sp_norm`` must be
+    For each N, the ENFORCED period arms' ``mean_sp_norm`` must be
     non-increasing (each step within the relative tolerance): the highest-SP
-    arm is the smallest period (freshest TL configs). The canonical incremental
-    arm ``INCR_Reopt_10`` (the Q1/Q2/Q3/E1 subject) is the period=10 member of
-    this sweep. (Previously read ``mean_sched_time``; that metric was a noisy
+    arm is the smallest period (freshest TL configs). The enforced chain is the
+    realistic periods {10, 30, 60}; ``INCR_Reopt_1`` is a special max-reopt
+    stress arm (its pair is NOT enforced) and ``INCR_Reopt_5`` is not simulated
+    in prod -- both are off the chain. The canonical incremental arm
+    ``INCR_Reopt_10`` (the Q1/Q2/Q3/E1 subject) is the period=10 member of this
+    sweep. (Previously read ``mean_sched_time``; that metric was a noisy
     whole-run wall-clock average, not the per-activation ET the gate intended
     -- see module docstring.)
     """

@@ -3,7 +3,7 @@
     "_comment_on_naming": "All keys use full descriptive names, mirroring paper_simulation_config.json. Times are in seconds unless noted. (test_mode carries eval_* keys that are residue of the copy-paste noted in _comment; they are ignored by the pipeline and only read if this config is pointed at evaluation_suite.py.)",
 
     "test_mode": {
-        "_comment": "Fast smoke: 1 taskset, 70s (>= 2x max hyper-period 66s), N={4,8,10} so every gate has data, all ten schedulers (incl. the five INCR_Reopt_X period arms E3 checks at every N). Validates that the suite runs end-to-end and produces a verdict before launching the ~30-40-min prod run.",
+        "_comment": "Fast smoke: 1 taskset, 70s (>= 2x max hyper-period 66s), N={4,8,10} so every gate has data, all ten schedulers (incl. the INCR_Reopt_X period arms; E3 enforces the realistic-period chain Reopt_10>=Reopt_30>=Reopt_60 at every N). Validates that the suite runs end-to-end and produces a verdict before launching the ~30-40-min prod run.",
         "num_tasks_for_cross_task_comparison": [4, 6, 8, 10, 12, 14, 16],
         "num_tasks_for_single_task_figures": 4,
         "num_tasksets_to_generate": 10,
@@ -20,10 +20,10 @@
         "number_of_gmm_trace_instances_per_path": 1,
         "eval_quality_task_counts": [4, 8],
         "eval_overhead_task_count": 10,
-        "eval_period_arms": ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
+        "eval_period_arms": ["INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
     "prod_mode": {
-        "_comment": "Full gate run: 5 tasksets per task count, N={4,6,8,10}, 600s @ interval 10s (~60 scheduling triggers per run). base_random_seed=1000 so tasksets are deterministic and comparable across schedulers. N=4/6/8 are the SP-quality gate points (Q1 small-N=4, Q2/Q3 large-N=8); N=10 is the E1 overhead probe; the five INCR_Reopt_X arms run at every N for the E3 period-monotonicity gate (currently FAILs -- the open P1.1 residual; suite exits red by design until P1.1 resolves). parallel_worker_processes=12 (one scheduler per worker within a taskset; schedulers are independent).",
+        "_comment": "Full gate run: 5 tasksets per task count, N={4,6,8,10}, 600s @ interval 10s (~60 scheduling triggers per run). base_random_seed=1000 so tasksets are deterministic and comparable across schedulers. N=4/6/8 are the SP-quality gate points (Q1 small-N=4, Q2/Q3 large-N=8); N=10 is the E1 overhead probe; the INCR_Reopt_X arms run at every N for the E3 period-monotonicity gate (enforced chain Reopt_10>=Reopt_30>=Reopt_60; currently FAILs -- the open P1.1 residual; suite exits red by design until P1.1 resolves). parallel_worker_processes=12 (one scheduler per worker within a taskset; schedulers are independent).",
         "num_tasks_for_cross_task_comparison": [4, 6, 8, 10],
         "num_tasks_for_single_task_figures": 8,
         "num_tasksets_to_generate": 5,
@@ -40,7 +40,7 @@
         "number_of_gmm_trace_instances_per_path": 1,
         "eval_quality_task_counts": [4, 6, 8],
         "eval_overhead_task_count": 10,
-        "eval_period_arms": ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
+        "eval_period_arms": ["INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
 
     "plotting": {

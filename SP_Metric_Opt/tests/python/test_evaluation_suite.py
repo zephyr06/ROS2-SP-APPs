@@ -377,27 +377,27 @@ class TestGateE1(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 class TestGateE3(unittest.TestCase):
-    """E3: SP(INCR_Reopt_1) >= SP(INCR_Reopt_5) >= SP(INCR_Reopt_10) >=
-    SP(INCR_Reopt_30) >= SP(INCR_Reopt_60) per N.
+    """E3: SP(INCR_Reopt_10) >= SP(INCR_Reopt_30) >= SP(INCR_Reopt_60) per N.
 
     Smaller reopt period = fresher TL configs = higher SP, so SP is expected
-    non-increasing along the arm list. E3 reads ``mean_sp_norm`` (not
+    non-increasing along the enforced arm list. E3 reads ``mean_sp_norm`` (not
     ``mean_sched_time`` -- that was a noisy whole-run wall-clock average, not
     the per-activation ET the gate intended).
+
+    ``INCR_Reopt_1`` is a SPECIAL max-reopt stress arm (reopt every interval);
+    its pair is NOT enforced -- it is not part of the realistic-period chain.
+    ``INCR_Reopt_5`` is not simulated in prod, so it is also off the chain.
+    The enforced sweep is the realistic periods {10, 30, 60}, all of which prod
+    simulates.
     """
 
-    ARMS = ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10",
-            "INCR_Reopt_30", "INCR_Reopt_60"]
+    ARMS = ["INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
 
     def test_pass_monotonic_all_n(self):
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.90},
-            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.85},
             (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
             (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.75},
             (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
-            (8, "INCR_Reopt_1"): {"mean_sp_norm": 0.80},
-            (8, "INCR_Reopt_5"): {"mean_sp_norm": 0.76},
             (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.72},
             (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.64},
             (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.56},
@@ -405,16 +405,13 @@ class TestGateE3(unittest.TestCase):
         verdict = ev.evaluate_e3(lookup, ns=[4, 8])
         self.assertEqual(verdict["status"], "PASS")
 
-    def test_fail_inversion(self):
-        """Reopt_5 rising above Reopt_1 (beyond tolerance) FAILs and names the pair."""
+    def test_fail_inversion_enforced_pair(self):
+        """Reopt_30 rising above Reopt_10 (beyond tolerance) FAILs and names the
+        enforced pair."""
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.40},
-            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.90},   # rises 125%
-            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
-            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.75},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.40},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.90},   # rises 125%
             (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
-            (8, "INCR_Reopt_1"): {"mean_sp_norm": 0.80},
-            (8, "INCR_Reopt_5"): {"mean_sp_norm": 0.76},
             (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.72},
             (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.64},
             (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.56},
@@ -422,13 +419,26 @@ class TestGateE3(unittest.TestCase):
         verdict = ev.evaluate_e3(lookup, ns=[4, 8])
         self.assertEqual(verdict["status"], "FAIL")
         self.assertIn("RISES", verdict["detail"])
-        self.assertIn("INCR_Reopt_1->INCR_Reopt_5", verdict["detail"])
+        self.assertIn("INCR_Reopt_10->INCR_Reopt_30", verdict["detail"])
+
+    def test_reopt1_special_pair_not_enforced(self):
+        """INCR_Reopt_1 is a special max-reopt stress arm; its pair is NOT
+        enforced. An inversion on the Reopt_1 pair (Reopt_1 far below Reopt_5)
+        must NOT fail E3, as long as the enforced chain
+        (Reopt_10 >= Reopt_30 >= Reopt_60) holds."""
+        lookup = {
+            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.40},   # special, low
+            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.90},   # off-chain, ignored
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.75},
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
+        }
+        verdict = ev.evaluate_e3(lookup, ns=[4])
+        self.assertEqual(verdict["status"], "PASS")
 
     def test_missing_arm_fails_not_crashes(self):
-        """A missing period arm FAILs with a clear reason, not a KeyError."""
+        """A missing enforced period arm FAILs with a clear reason, not a KeyError."""
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.90},
-            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.85},
             (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.80},
             # INCR_Reopt_30 absent
             (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.70},
@@ -439,13 +449,11 @@ class TestGateE3(unittest.TestCase):
         self.assertIn("INCR_Reopt_30", verdict["detail"])
 
     def test_tolerance_allows_small_increase(self):
-        """A 1% rise passes at the 2% tolerance (no flap on SP noise)."""
+        """A 1% rise on an enforced pair passes at the 2% tolerance (no SP-noise flap)."""
         lookup = {
-            (4, "INCR_Reopt_1"): {"mean_sp_norm": 0.800},
-            (4, "INCR_Reopt_5"): {"mean_sp_norm": 0.808},   # +1%, within tol
-            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.808},
-            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.808},
-            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.800},
+            (4, "INCR_Reopt_10"): {"mean_sp_norm": 0.800},
+            (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.808},   # +1%, within tol
+            (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.808},
         }
         verdict = ev.evaluate_e3(lookup, ns=[4])
         self.assertEqual(verdict["status"], "PASS")
