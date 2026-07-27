@@ -22,28 +22,38 @@ Usage
 Figures produced
 ----------------
 Main group (INCR, BF, RM, CFS) -- paper figures:
-    fig1a_mean_sp_vs_tasks_main.{png,pdf}
     fig1c_mean_exec_time_vs_tasks_main.{png,pdf}    (log y-axis)
+    fig1a_mean_sp_vs_tasks_main.{png,pdf}           (raw, when normalize_sp off)
+    fig1a_mean_sp_normalized_vs_tasks_main.{png,pdf} (when normalize_sp on)
 
 Main group -- debug figures:
-    fig1b_std_sp_vs_tasks_main.{png,pdf}
+    fig1b_std_sp_vs_tasks_main.{png,pdf}            (raw, when normalize_sp off)
+    fig1b_std_sp_normalized_vs_tasks_main.{png,pdf}  (when normalize_sp on)
     fig1d_mean_miss_rate_vs_tasks_main.{png,pdf}
     fig1e_std_miss_rate_vs_tasks_main.{png,pdf}
 
-Main group -- optional (when analysis.normalize_sp is true):
-    fig1a_mean_sp_normalized_vs_tasks_main.{png,pdf}
-    fig1b_std_sp_normalized_vs_tasks_main.{png,pdf}   (debug)
+When analysis.normalize_sp is true, the SP figures (1A mean, 1B std) emit ONLY
+their normalized variants -- the raw figures are the same type (same shape,
+just an unscaled y-axis), so plotting both is redundant. The non-SP figures
+(1C exec time, 1D/1E miss rate) are unaffected. If normalization is requested
+but no ideal-SP ceiling can be computed, normalize_records_sp returns the
+records unchanged and the raw-stem SP figures are emitted as a fallback.
 
-Ablation group (BF, INCR, INCR_NO_TL, INCR_WCET):
-    fig_ablation_mean_sp_vs_tasks.{png,pdf}
+Ablation group (BF, INCR_Reopt_10, INCR_NO_TL, INCR_WCET, ...):
+    fig_ablation_mean_sp_vs_tasks.{png,pdf}         (raw, when normalize_sp off)
+    fig_ablation_mean_sp_normalized_vs_tasks.{png,pdf} (when normalize_sp on)
     fig_ablation_mean_exec_time_vs_tasks.{png,pdf}  (log y-axis)
 
-Ablation group -- optional (when analysis.normalize_sp is true):
-    fig_ablation_mean_sp_normalized_vs_tasks.{png,pdf}
+Same raw-vs-normalized toggle as the main group: only the normalized ablation
+SP figure is emitted when normalize_sp is on.
 
 Standalone distribution (single fixed task count):
-    fig1f_sp_distribution_boxplot.{png,pdf}
-    fig1f_sp_distribution_boxplot_normalized.{png,pdf}  (when normalize_sp)
+    fig1f_sp_distribution_boxplot.{png,pdf}             (raw, fallback)
+    fig1f_sp_distribution_boxplot_normalized.{png,pdf}  (when normalize_sp on)
+
+When normalize_sp is on AND the ideal-SP ceiling is available, only the
+normalized boxplot is emitted; the raw is the fallback when normalization is
+off or the ceiling could not be computed.
 """
 import argparse
 import copy
@@ -579,18 +589,9 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
     os.makedirs(figures_dir, exist_ok=True)
 
-    # Fig 1A: Mean SP (raw -- always produced)
-    build_line_chart(
-        records, scheduler_list,
-        "mean_sp", "std_sp",
-        "Mean SP-Metric",
-        "Mean SP-Metric vs. Number of Tasks",
-        os.path.join(figures_dir, "fig1a_mean_sp_vs_tasks_main"),
-    )
-
     # Normalize SP to [0,1] per task count (when enabled). Computed once here
-    # and reused for every normalized SP variant in this group so all SP
-    # figures use the identical transform (raw_SP / ideal_SP, ideal_SP =
+    # and reused for every SP variant in this group so all SP figures use the
+    # identical transform (raw_SP / ideal_SP, ideal_SP =
     # Σ sp_weight × perf_coefficient ~5.0 -> 1.0 = all deadlines met
     # perfectly). Raw SP scales with the (constant) weight-sum ceiling, so the
     # normalized view is the fair cross-N comparison. Raw values are unchanged
@@ -599,36 +600,43 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     norm_records = (normalize_records_sp(records, cfg)
                     if analysis.get("normalize_sp", False) else None)
 
-    # Fig 1A-norm: Mean SP normalized to [0,1] per task count (when enabled).
-    if norm_records is not None:
-        build_line_chart(
-            norm_records, scheduler_list,
-            "mean_sp", "std_sp",
-            "Mean SP-Metric (normalized)",
-            "Mean SP-Metric vs. Number of Tasks (Normalized)",
-            os.path.join(figures_dir, "fig1a_mean_sp_normalized_vs_tasks_main"),
-        )
-
-    # Fig 1B: Std SP (debug)
+    # Fig 1A: Mean SP. When normalization is on, emit ONLY the normalized
+    # variant -- the raw mean-SP figure is the same type (same shape, just an
+    # unscaled y-axis), so plotting both is redundant. Raw is the fallback
+    # when normalization is off (or no ceiling could be computed, in which
+    # case normalize_records_sp returns the records unchanged).
+    sp_records_1a = norm_records if norm_records is not None else records
+    sp_1a_ylabel = ("Mean SP-Metric (normalized)" if norm_records is not None
+                     else "Mean SP-Metric")
+    sp_1a_title = ("Mean SP-Metric vs. Number of Tasks (Normalized)"
+                   if norm_records is not None
+                   else "Mean SP-Metric vs. Number of Tasks")
+    sp_1a_stem = ("fig1a_mean_sp_normalized_vs_tasks_main"
+                  if norm_records is not None
+                  else "fig1a_mean_sp_vs_tasks_main")
     build_line_chart(
-        records, scheduler_list,
-        "std_sp", "std_sp",
-        "Std SP-Metric",
-        "Std SP-Metric vs. Number of Tasks (Debug)",
-        os.path.join(figures_dir, "fig1b_std_sp_vs_tasks_main"),
+        sp_records_1a, scheduler_list,
+        "mean_sp", "std_sp",
+        sp_1a_ylabel, sp_1a_title,
+        os.path.join(figures_dir, sp_1a_stem),
     )
 
-    # Fig 1B-norm: Std SP normalized (debug). normalize_records_sp scales
-    # std_sp by the same per-N reference divisor as mean_sp, so the normalized
-    # std is directly comparable across task counts.
-    if norm_records is not None:
-        build_line_chart(
-            norm_records, scheduler_list,
-            "std_sp", "std_sp",
-            "Std SP-Metric (normalized)",
-            "Std SP-Metric vs. Number of Tasks (Normalized, Debug)",
-            os.path.join(figures_dir, "fig1b_std_sp_normalized_vs_tasks_main"),
-        )
+    # Fig 1B: Std SP (debug). Same raw-vs-normalized toggle as 1A.
+    sp_records_1b = norm_records if norm_records is not None else records
+    sp_1b_ylabel = ("Std SP-Metric (normalized)" if norm_records is not None
+                     else "Std SP-Metric")
+    sp_1b_title = ("Std SP-Metric vs. Number of Tasks (Normalized, Debug)"
+                   if norm_records is not None
+                   else "Std SP-Metric vs. Number of Tasks (Debug)")
+    sp_1b_stem = ("fig1b_std_sp_normalized_vs_tasks_main"
+                  if norm_records is not None
+                  else "fig1b_std_sp_vs_tasks_main")
+    build_line_chart(
+        sp_records_1b, scheduler_list,
+        "std_sp", "std_sp",
+        sp_1b_ylabel, sp_1b_title,
+        os.path.join(figures_dir, sp_1b_stem),
+    )
 
     # Fig 1C: Mean execution time (log y -- times span orders of magnitude
     # between the optimizer search cost and fast baselines like RM/CFS).
@@ -741,27 +749,30 @@ def generate_ablation_group_figures(records, cfg, figures_dir=None):
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
     os.makedirs(figures_dir, exist_ok=True)
 
-    # Ab-A: Mean SP (raw -- always produced)
+    # Ab-A: Mean SP. When normalization is on, emit ONLY the normalized
+    # variant -- the raw mean-SP figure is the same type (same shape, just an
+    # unscaled y-axis), so plotting both is redundant. Raw is the fallback when
+    # normalization is off (or no ceiling could be computed, in which case
+    # normalize_records_sp returns the records unchanged). Same transform as
+    # the main group so all SP figures are consistent.
+    analysis = cfg.get("analysis", {})
+    norm_records = (normalize_records_sp(records, cfg)
+                    if analysis.get("normalize_sp", False) else None)
+    sp_records = norm_records if norm_records is not None else records
+    sp_ylabel = ("Mean SP-Metric (normalized)" if norm_records is not None
+                 else "Mean SP-Metric")
+    sp_title = ("Mean SP-Metric vs. Number of Tasks (Ablation, Normalized)"
+                if norm_records is not None
+                else "Mean SP-Metric vs. Number of Tasks (Ablation)")
+    sp_stem = ("fig_ablation_mean_sp_normalized_vs_tasks"
+               if norm_records is not None
+               else "fig_ablation_mean_sp_vs_tasks")
     build_line_chart(
-        records, scheduler_list,
+        sp_records, scheduler_list,
         "mean_sp", "std_sp",
-        "Mean SP-Metric",
-        "Mean SP-Metric vs. Number of Tasks (Ablation)",
-        os.path.join(figures_dir, "fig_ablation_mean_sp_vs_tasks"),
+        sp_ylabel, sp_title,
+        os.path.join(figures_dir, sp_stem),
     )
-
-    # Ab-A-norm: normalized variant (when enabled). Same transform as the main
-    # group so all SP figures are consistent (raw_SP / ideal_SP -> 1.0 = all
-    # deadlines met perfectly).
-    if cfg.get("analysis", {}).get("normalize_sp", False):
-        norm_records = normalize_records_sp(records, cfg)
-        build_line_chart(
-            norm_records, scheduler_list,
-            "mean_sp", "std_sp",
-            "Mean SP-Metric (normalized)",
-            "Mean SP-Metric vs. Number of Tasks (Ablation, Normalized)",
-            os.path.join(figures_dir, "fig_ablation_mean_sp_normalized_vs_tasks"),
-        )
 
     # Ab-B: Mean execution time (log y)
     build_line_chart(
@@ -858,13 +869,7 @@ def generate_distribution_boxplot(cfg, figures_dir=None, run_root=None):
         print(f"No interval SP data found in {exp_dir}; skipping Fig 1F.")
         return
 
-    _draw_sp_boxplot(
-        boxplot_data, labels, "SP-Metric Value",
-        f"SP-Metric Distribution ({target_tasks} Tasks)",
-        os.path.join(figures_dir, "fig1f_sp_distribution_boxplot"),
-    )
-
-    # Normalized variant (when enabled): divide every SP value by the ideal
+    # Normalization (when enabled): divide every SP value by the ideal
     # (theoretical-ceiling) SP -- Σ sp_weight × perf_coefficient, i.e. the SP if
     # every task met its deadline. This is a *constant ceiling* (~5.0 here),
     # NOT a per-scheduler mean, so every point stays in [0, 1] with 1.0 =
@@ -873,18 +878,30 @@ def generate_distribution_boxplot(cfg, figures_dir=None, run_root=None):
     # 1.0, since a point can legitimately exceed the mean; a constant ceiling
     # cannot be exceeded.)
     analysis = cfg.get("analysis", {})
-    if analysis.get("normalize_sp", False):
-        ideal_sp = compute_sp_upper_bound(exp_dir)
-        if ideal_sp is not None and ideal_sp > 0:
-            norm_data = [[v / ideal_sp for v in vals] for vals in boxplot_data]
-            _draw_sp_boxplot(
-                norm_data, labels, "SP-Metric Value (normalized)",
-                f"SP-Metric Distribution ({target_tasks} Tasks, Normalized)",
-                os.path.join(figures_dir, "fig1f_sp_distribution_boxplot_normalized"),
-            )
-        else:
+    do_normalize = analysis.get("normalize_sp", False)
+    ideal_sp = compute_sp_upper_bound(exp_dir) if do_normalize else None
+    can_normalize = ideal_sp is not None and ideal_sp > 0
+
+    # Emit ONLY the normalized boxplot when normalization is on and the
+    # ceiling is available; the raw boxplot is the same type (same shape, just
+    # an unscaled y-axis), so plotting both is redundant. Fall back to the raw
+    # boxplot when normalization is off OR the ceiling could not be computed.
+    if can_normalize:
+        norm_data = [[v / ideal_sp for v in vals] for vals in boxplot_data]
+        _draw_sp_boxplot(
+            norm_data, labels, "SP-Metric Value (normalized)",
+            f"SP-Metric Distribution ({target_tasks} Tasks, Normalized)",
+            os.path.join(figures_dir, "fig1f_sp_distribution_boxplot_normalized"),
+        )
+    else:
+        if do_normalize:
             print(f"Could not compute ideal-SP ceiling for {exp_dir}; "
-                  f"skipping normalized Fig 1F.")
+                  f"falling back to raw Fig 1F.")
+        _draw_sp_boxplot(
+            boxplot_data, labels, "SP-Metric Value",
+            f"SP-Metric Distribution ({target_tasks} Tasks)",
+            os.path.join(figures_dir, "fig1f_sp_distribution_boxplot"),
+        )
 
 
 def _draw_sp_boxplot(boxplot_data, labels, ylabel, title, output_stem):

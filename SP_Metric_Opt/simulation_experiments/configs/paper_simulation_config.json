@@ -23,7 +23,7 @@
         "eval_period_arms": ["INCR_Reopt_1", "INCR_Reopt_5", "INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
     "prod_mode": {
-        "_comment": "Production / paper-grade parameters. Adjust manually for final experiments. ablation_scheduler_list carries INCR_NO_REOPT (P3.6: pure incremental, RM-fast bootstrap at interval 0, no periodic reopt) to contrast with INCR_Reopt_10 — does periodic reopt earn its cost?",
+        "_comment": "Production / paper-grade parameters. Adjust manually for final experiments. ablation_scheduler_list leads with INCR_Reopt_10 (the production arm) as the reference baseline every ablation arm is contrasted against, then carries INCR_NO_REOPT (P3.6: pure incremental, RM-fast bootstrap at interval 0, no periodic reopt) to answer 'does periodic reopt earn its cost?' vs that baseline. INCR_Reopt_10 is also in main_scheduler_list; build_scheduler_union de-duplicates, so it is simulated once.",
         "num_tasks_for_cross_task_comparison": [4, 6, 8, 10, 12, 14, 16],
         "num_tasks_for_single_task_figures": 10,
         "num_tasksets_to_generate": 10,
@@ -31,7 +31,7 @@
         "scheduler_trigger_interval_seconds": 10,
         "time_limit_seconds": 1,
         "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
-        "ablation_scheduler_list": ["INCR_NO_TL", "INCR_WCET", "INCR_Reopt_1", "INCR_Reopt_30", "INCR_Reopt_60", "INCR_NO_REOPT"],
+        "ablation_scheduler_list": ["INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET", "INCR_Reopt_1", "INCR_Reopt_30", "INCR_Reopt_60", "INCR_NO_REOPT"],
         "interval_sweep_seconds_list": [5, 10, 30, 60],
         "_comment_interval_sweep": "Min sweep interval must be >= 2x the max task period, else the trace-generation guard raises. Max period is 1000ms (PERIODS_MS in Gen_Taskset/task_sets_config/templates/taskset_cfg_paper_base.json), so the floor is 2s. With number_of_gmm_trace_instances_per_path=1, the slowest (1000ms) task yields exactly `interval_s` samples per interval: interval=1 -> 1 sample -> orchestrator.py's `>=2 samples per task per interval` guard fires FATALY at interval 0 (raises 'Cannot compute primary taskset_characteristics'); interval=2 is the exact boundary (2 samples, brittle to int-truncation); interval=5 gives a safe 5 samples. So 1 was dropped (previously [1,5,10,30,60]). Raising number_of_gmm_trace_instances_per_path would also fix it but doubles prod cost; keep it at 1.",
         "parallel_worker_processes": 12,

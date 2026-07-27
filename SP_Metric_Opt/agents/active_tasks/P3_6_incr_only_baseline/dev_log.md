@@ -328,3 +328,45 @@
   `Interval0IsSeedOnly` test still pins `eval_count_==0`).
 - **Staged** `OptimizeSP_TL_Incre.{h,cpp}` (`git add`). No commit (standing rule).
   Pure refactor — no behavior change, no new tests needed.
+
+## 2026-07-26 (plotting fixes — ablation reference baseline + drop redundant raw SP figures)
+
+- **User:** the exported `fig_ablation_mean_sp_normalized_vs_tasks.png` must also
+  carry `INCR_Reopt_10` — "only adding baseline is useless" (no contrast). And
+  for exported figures of the same type, keep ONLY the normalized SP variant —
+  no need to also plot the raw one (e.g. drop `fig_ablation_mean_sp_vs_tasks.png`).
+- **Fix 1 (ablation reference baseline):** `prod_mode.ablation_scheduler_list`
+  led with `INCR_NO_TL` and omitted `INCR_Reopt_10` (it lived only in
+  `main_scheduler_list`), so the ablation figure plotted `INCR_NO_REOPT` with no
+  reference. Added `INCR_Reopt_10` at the HEAD of `prod_mode.ablation_scheduler_list`
+  (test_mode already had it). `build_scheduler_union` (run_end_to_end_experiments.py)
+  de-duplicates main+ablation, so `INCR_Reopt_10` is simulated ONCE — config-only,
+  no re-simulation. Run-id is built from mode/dur/interval/seed/task-counts (NOT
+  scheduler lists), so the existing prod run dir is reused; re-aggregated in place.
+  Updated the `_comment` on prod_mode to record the rationale.
+- **Fix 2 (drop redundant raw SP figures):** TDD. Wrote failing tests first in
+  `tests/python/test_aggregate.py` (`test_figures_normalized_replaces_raw_1a_and_1b`,
+  `test_ablation_normalized_replaces_raw_sp`, rewrote `test_boxplot_normalized_emitted`)
+  + `tests/python/test_interval_sweep.py` (`test_emits_only_normalized_when_on`).
+  Confirmed red (4 fail, 50 pass), then green.
+- **Code:** `aggregate_across_tasks.py` `generate_main_group_figures` (1A mean SP,
+  1B std SP) + `generate_ablation_group_figures` (ablation mean SP) +
+  `generate_distribution_boxplot` (Fig 1F) now emit ONLY the normalized variant
+  when `normalize_sp` is on, raw as the fallback when off. `interval_sweep.py`
+  `generate_interval_sweep_figure` (Fig 2) likewise. The non-SP figures (1C exec
+  time, 1D/1E miss rate, ablation exec time) are UNAFFECTED. Rule: when a
+  normalized SP figure of the same type is emitted, the raw one is dropped
+  (redundant — same shape, unscaled y-axis). Updated both module docstrings.
+- **Stale-file note:** the aggregator writes figures but does NOT delete ones it
+  no longer produces; the prior run's raw SP `.png`/`.pdf` stay on disk until
+  deleted. Deleted the 5 raw-SP stems (png+pdf) from the prod run's `figures/`
+  dir since the normalized variants now exist.
+- **Verify:** `pytest tests/python/test_aggregate.py tests/python/test_interval_sweep.py`
+  → 54/54 green. Full suite: 350 passed, 2 FAILED (`test_all_configs_carry_time_limit_seconds`,
+  `test_all_shipped_configs_readable_in_both_modes`) — PRE-EXISTING, unrelated to
+  this work: `compare_against_bf.json test_mode time_limit_seconds=10` (from
+  commit `8c547d85` "update exp config"), NOT touched by these changes.
+- **Staged** `paper_simulation_config.json`, `aggregate_across_tasks.py`,
+  `interval_sweep.py`, `test_aggregate.py`, `test_interval_sweep.py`,
+  `dev_log.md` (`git add`). No commit (standing rule). Plotting-only — no C++
+  or sim change.

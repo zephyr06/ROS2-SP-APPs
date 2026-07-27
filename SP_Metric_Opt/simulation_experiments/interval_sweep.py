@@ -245,9 +245,11 @@ def generate_interval_sweep_figure(data, cfg, output_path_stem, ideal_sp=None):
         Each dict has ``interval`` (int), ``scheduler``, ``mean_sp``, ``std_sp``.
     cfg : dict
         Loaded experiment config. When ``cfg["analysis"]["normalize_sp"]`` is
-        true, a second normalized figure is emitted alongside the raw one,
-        dividing each SP by the ideal (theoretical-ceiling) SP so 1.0 =
-        "all deadlines met perfectly".
+        true AND the ideal-SP ceiling is available, ONLY the normalized figure
+        is emitted (appending ``_normalized`` to the stem); the raw figure is
+        the same type (same shape, just an unscaled y-axis) and is dropped to
+        avoid redundancy. The raw figure is emitted as a fallback when
+        normalization is off or the ceiling could not be computed.
     output_path_stem : str
         Output path without extension; the normalized variant appends
         ``_normalized`` to the stem.
@@ -262,19 +264,29 @@ def generate_interval_sweep_figure(data, cfg, output_path_stem, ideal_sp=None):
         print("matplotlib not available; skipping Fig 2.")
         return
 
-    _draw_interval_sweep_variant(data, cfg, output_path_stem,
-                                 ylabel="Mean SP-Metric",
-                                 title="INCR SP-Metric vs. Optimizer Invocation Interval")
-
+    # Emit ONLY the normalized figure when normalization is on and the
+    # ideal-SP ceiling is available; the raw figure is the same type (same
+    # shape, just an unscaled y-axis), so plotting both is redundant. Fall back
+    # to the raw figure when normalization is off OR the ceiling could not be
+    # computed (_normalize_sweep_data returns None when ideal_sp is missing
+    # or <= 0).
     analysis = cfg.get("analysis", {})
-    if analysis.get("normalize_sp", False):
-        norm_data = _normalize_sweep_data(data, ideal_sp)
-        if norm_data is not None:
-            _draw_interval_sweep_variant(
-                norm_data, cfg, output_path_stem + "_normalized",
-                ylabel="Mean SP-Metric (normalized)",
-                title="INCR SP-Metric vs. Optimizer Invocation Interval (Normalized)",
-            )
+    do_normalize = analysis.get("normalize_sp", False)
+    norm_data = _normalize_sweep_data(data, ideal_sp) if do_normalize else None
+
+    if do_normalize and norm_data is not None:
+        _draw_interval_sweep_variant(
+            norm_data, cfg, output_path_stem + "_normalized",
+            ylabel="Mean SP-Metric (normalized)",
+            title="INCR SP-Metric vs. Optimizer Invocation Interval (Normalized)",
+        )
+    else:
+        if do_normalize:
+            print("Warning: ideal-SP ceiling unavailable for the sweep task count; "
+                  "falling back to raw Fig 2.")
+        _draw_interval_sweep_variant(data, cfg, output_path_stem,
+                                     ylabel="Mean SP-Metric",
+                                     title="INCR SP-Metric vs. Optimizer Invocation Interval")
 
 
 def _normalize_sweep_data(data, ideal_sp):

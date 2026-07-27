@@ -71,7 +71,12 @@ class TestIntervalSweepFigure(unittest.TestCase):
 
     @unittest.mock.patch("simulation_experiments.interval_sweep.MATPLOTLIB_AVAILABLE", True)
     @unittest.mock.patch("simulation_experiments.interval_sweep.save_figure")
-    def test_emits_raw_and_normalized_when_on(self, mock_save):
+    def test_emits_only_normalized_when_on(self, mock_save):
+        """With normalize_sp on + a ceiling, ONLY the normalized figure is drawn.
+
+        The raw SP figure is redundant alongside the normalized one (same type,
+        same shape, just an unscaled y-axis), so it is dropped -- plot less.
+        """
         cfg = {
             "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
             "analysis": {"normalize_sp": True,
@@ -79,7 +84,7 @@ class TestIntervalSweepFigure(unittest.TestCase):
         }
         with unittest.mock.patch.object(sweep, "FIGSIZE_SINGLE", (8, 6)):
             sweep.generate_interval_sweep_figure(_data(), cfg, "/tmp/fig2_test", ideal_sp=5.0)
-        self.assertEqual(mock_save.call_count, 2)
+        self.assertEqual(mock_save.call_count, 1)
         stems = [c.args[1] if len(c.args) > 1 else c.kwargs.get("output_path_stem")
                  for c in mock_save.call_args_list]
         self.assertTrue(any("normalized" in s for s in stems))

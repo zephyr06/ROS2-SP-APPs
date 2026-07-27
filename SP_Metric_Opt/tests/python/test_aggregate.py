@@ -552,8 +552,13 @@ class TestGenerateMainGroupFigures(unittest.TestCase):
 
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.MATPLOTLIB_AVAILABLE", True)
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.build_line_chart")
-    def test_figures_normalized_adds_1a_and_1b_variants(self, mock_build):
-        """With normalize_sp on, 1A-norm and 1B-norm are added (7 total)."""
+    def test_figures_normalized_replaces_raw_1a_and_1b(self, mock_build):
+        """With normalize_sp on, 1A/1B emit ONLY their normalized variants.
+
+        The raw mean/std SP figures are the same type as the normalized ones
+        (just an unscaled y-axis), so they are dropped to plot less. The
+        non-SP figures (1C exec time, 1D/1E miss rate) are unaffected.
+        """
         records = [
             {"num_tasks": 4, "scheduler": "BF", "mean_sp": 0.90, "std_sp": 0.05,
              "mean_miss_rate": 0.1, "std_miss_rate": 0.02, "mean_sched_time": 0.01, "std_sched_time": 0.001},
@@ -568,11 +573,13 @@ class TestGenerateMainGroupFigures(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.FIGURES_OUTPUT_DIR = tmpdir
             agg.generate_main_group_figures(records, cfg)
-            # 1A, 1A-norm, 1B, 1B-norm, 1C, 1D, 1E
-            self.assertEqual(mock_build.call_count, 7)
+            # 1A-norm, 1B-norm, 1C, 1D, 1E (raw 1A/1B dropped as redundant).
+            self.assertEqual(mock_build.call_count, 5)
             stems = [c.args[-1] for c in mock_build.call_args_list]
             self.assertTrue(any("fig1a_mean_sp_normalized" in s for s in stems))
             self.assertTrue(any("fig1b_std_sp_normalized" in s for s in stems))
+            self.assertFalse(any("fig1a_mean_sp_vs_tasks_main" in s for s in stems))
+            self.assertFalse(any("fig1b_std_sp_vs_tasks_main" in s for s in stems))
 
 
 class TestGenerateAblationFigures(unittest.TestCase):
@@ -589,6 +596,32 @@ class TestGenerateAblationFigures(unittest.TestCase):
             agg.FIGURES_OUTPUT_DIR = tmpdir
             agg.generate_ablation_group_figures(records, cfg)
             self.assertEqual(mock_build.call_count, 2)
+
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.MATPLOTLIB_AVAILABLE", True)
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.build_line_chart")
+    def test_ablation_normalized_replaces_raw_sp(self, mock_build):
+        """With normalize_sp on, the ablation SP figure emits ONLY normalized.
+
+        Raw mean-SP is the same type as the normalized variant (unscaled
+        y-axis), so it is dropped. Exec-time figure (different type) stays.
+        """
+        records = [
+            {"num_tasks": 4, "scheduler": "INCR", "mean_sp": 0.90, "std_sp": 0.05,
+             "mean_sched_time": 0.01, "std_sched_time": 0.001},
+        ]
+        cfg = {
+            "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"],
+            "analysis": {"normalize_sp": True,
+                         "sp_normalization_method": "upper_bound"},
+        }
+        with tempfile.TemporaryDirectory() as tmpdir:
+            agg.FIGURES_OUTPUT_DIR = tmpdir
+            agg.generate_ablation_group_figures(records, cfg)
+            # Only: ablation-SP-normalized + ablation-exec-time.
+            self.assertEqual(mock_build.call_count, 2)
+            stems = [c.args[-1] for c in mock_build.call_args_list]
+            self.assertTrue(any("fig_ablation_mean_sp_normalized" in s for s in stems))
+            self.assertFalse(any("fig_ablation_mean_sp_vs_tasks" in s for s in stems))
 
 
 class TestImportantTaskMissRateFigure(unittest.TestCase):
@@ -653,11 +686,13 @@ class TestGenerateDistributionBoxplot(unittest.TestCase):
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.MATPLOTLIB_AVAILABLE", True)
     @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.save_figure")
     def test_boxplot_normalized_emitted(self, mock_save):
-        """With normalize_sp on, the raw + normalized boxplots are both drawn.
+        """With normalize_sp on + a ceiling, ONLY the normalized boxplot is drawn.
 
-        Normalization divides each SP point by the ideal-SP ceiling (sum of
-        sp_weight from taskset_characteristics_interval_0.yaml), NOT by any
-        scheduler's mean, so every point stays <= 1.0.
+        The raw boxplot is the same type as the normalized one (unscaled
+        y-axis), so it is dropped. Normalization divides each SP point by the
+        ideal-SP ceiling (sum of sp_weight from
+        taskset_characteristics_interval_0.yaml), NOT by any scheduler's mean,
+        so every point stays <= 1.0.
         """
         temp_base = tempfile.mkdtemp()
         try:
@@ -687,8 +722,8 @@ class TestGenerateDistributionBoxplot(unittest.TestCase):
                              "sp_normalization_method": "upper_bound"},
             }
             agg.generate_distribution_boxplot(cfg)
-            # Two saves: raw + normalized.
-            self.assertEqual(mock_save.call_count, 2)
+            # Only the normalized boxplot is saved (raw dropped as redundant).
+            self.assertEqual(mock_save.call_count, 1)
             stems = [c.args[1] if len(c.args) > 1 else c.kwargs.get("output_path_stem")
                      for c in mock_save.call_args_list]
             self.assertTrue(any("boxplot_normalized" in s for s in stems))
