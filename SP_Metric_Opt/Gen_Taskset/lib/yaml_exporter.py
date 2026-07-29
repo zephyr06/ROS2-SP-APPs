@@ -66,6 +66,11 @@ def convert_taskset_parameters_to_cpp_yaml(
         t['name'] = task_data.get('name', f'task_{i+1}')
         t['sp_threshold'] = task_data['sp_threshold']
         t['sp_weight'] = task_data.get('sp_weight', 1.0)
+        # P0.6/P0.7/P0.8: important-task label, set by the generator (top
+        # IMPORTANT_TASK_RATIO by sp_weight). Emitted here so C++ ReadTaskSet
+        # reads it onto Task::is_important. Defaults false for tasksets that
+        # predate the label (e.g. reloaded taskset_param.yaml without it).
+        t['important'] = bool(task_data.get('is_important', False))
         t['total_running_time'] = task_data.get('total_running_time', (n_sec * 1000) if n_sec is not None else 100000)
 
         # 3. For performance-record tasks, ensure bounds span the full config range

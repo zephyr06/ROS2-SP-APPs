@@ -83,6 +83,8 @@ TaskSet ReadTaskSet(std::string path, int granulairty) {
                   tasksNode[i]["name"].as<std::string>());
         if (tasksNode[i]["processorId"])
             task.processorId = tasksNode[i]["processorId"].as<int>();
+        if (tasksNode[i]["important"])
+            task.is_important = tasksNode[i]["important"].as<bool>();
         if (tasksNode[i]["total_running_time"])
             task.total_running_time =
                 tasksNode[i]["total_running_time"].as<double>();
@@ -121,6 +123,7 @@ void WriteTaskSet(std::string path, const TaskSet &tasks) {
         task_node["period"] = std::to_string(task.period);
         task_node["deadline"] = std::to_string(task.deadline);
         task_node["name"] = task.name;
+        task_node["important"] = task.is_important;
         tasks_nodes.push_back(task_node);
     }
     YAML::Node nodeRoot;

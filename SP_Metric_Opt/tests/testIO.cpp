@@ -115,6 +115,48 @@ TEST(read_taskset, analyze_time_perf_paris) {
     EXPECT_EQ(939.5, res[9].time_limit);
     EXPECT_EQ(1, res[9].performance);
 }
+
+// P0.6/P0.7/P0.8: the important-task label persists across WriteTaskSet ->
+// ReadTaskSet as the per-task `important` YAML bool, read onto Task::
+// is_important. Every consumer (static-solution priority-lock, online fall-back
+// safety check, generation-time RTA, miss-rate analysis) reads this one field
+// instead of each recomputing a top-X% cut. Default is false for tasksets
+// generated before the label existed.
+TEST(read_write, is_important_round_trip) {
+    std::string path_out =
+        GlobalVariables::PROJECT_PATH + "TaskData/test_io_important.yaml";
+    TaskSet tasks = ReadTaskSet(
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v2.yaml", 5);
+    ASSERT_EQ(4, tasks.size());
+    // Mark the first two tasks important (mirrors the generator's top-50%-by-
+    // sp_weight rule) and leave the rest false.
+    tasks[0].is_important = true;
+    tasks[1].is_important = true;
+    tasks[2].is_important = false;
+    tasks[3].is_important = false;
+    WriteTaskSet(path_out, tasks);
+
+    TaskSet tasks_read = ReadTaskSet(path_out, 5);
+    ASSERT_EQ(4, tasks_read.size());
+    EXPECT_TRUE(tasks_read[0].is_important);
+    EXPECT_TRUE(tasks_read[1].is_important);
+    EXPECT_FALSE(tasks_read[2].is_important);
+    EXPECT_FALSE(tasks_read[3].is_important);
+}
+
+// A taskset YAML without the `important` field (every taskset generated before
+// the label) must still load, with is_important defaulting to false -- the read
+// path treats the field as optional, matching processorId's pattern.
+TEST(read_taskset, is_important_defaults_false_when_absent) {
+    // test_robotics_v2.yaml predates the label and carries no `important` key.
+    std::string path =
+        GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v2.yaml";
+    TaskSet tasks = ReadTaskSet(path, 5);
+    ASSERT_EQ(4, tasks.size());
+    for (uint i = 0; i < tasks.size(); i++) {
+        EXPECT_FALSE(tasks[i].is_important);
+    }
+}
 TEST(WriteTimeLimitToYamlOSM, V1) {
     WriteTimeLimitToYamlOSM(100);
     std::string path =

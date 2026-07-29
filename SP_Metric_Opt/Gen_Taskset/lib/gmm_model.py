@@ -79,6 +79,11 @@ class GMMTaskModel:
         # Scheduling parameters (will be overwritten/normalized later)
         self.sp_threshold = 0.5
         self.sp_weight = 1.0
+        # Important-task label (P0.6/P0.7/P0.8): set in generate_taskset_parameters
+        # after sp_weight sampling -- the top IMPORTANT_TASK_RATIO fraction of
+        # tasks by sp_weight are marked important. Default false here; the
+        # generator overwrites it for every task before serialization.
+        self.is_important = False
         
         # Performance record attributes
         self.performance_records_time = ""

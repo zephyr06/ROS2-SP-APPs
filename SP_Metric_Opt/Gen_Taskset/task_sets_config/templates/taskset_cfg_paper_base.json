@@ -37,6 +37,7 @@
         0.1,
         1.0
     ],
+    "IMPORTANT_TASK_RATIO": 0.5,
     "FINAL_Et_OVER_PERIOD_RANGE": [
         0.05,
         0.9

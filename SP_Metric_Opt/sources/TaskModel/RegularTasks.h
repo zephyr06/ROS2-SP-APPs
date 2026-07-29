@@ -102,6 +102,13 @@ class Task {
                           // off this field directly.
     double total_running_time;
     std::vector<TimePerfPair> timePerformancePairs;
+    // Important-task label (P0.6/P0.7/P0.8): set at generation time by the
+    // generator (top-50% by sp_weight) and persisted to YAML as `important`.
+    // Read back here so every consumer (static solution priority-lock, online
+    // fall-back safety check, generation-time RTA, miss-rate analysis) reads
+    // one source of truth instead of each recomputing a top-X% cut. Default
+    // false for tasksets generated before the label existed.
+    bool is_important = false;
 
    private:
     double executionTime;

@@ -35,6 +35,7 @@ REQUIRED_CONFIG_PARAMS = [
     {"key": "MAX_TIME_LIMIT_OPTIONS",     "suggest": 10,                       "desc": "number of time-limit options generated for perf tasks"},
     {"key": "SP_WEIGHT_RANGE",            "suggest": [0.1, 1.0],               "desc": "SP weight range (continuous uniform sampling per task, pre-normalization)"},
     {"key": "SP_WEIGHTS_SUM",             "suggest": 5.0,                      "desc": "total SP weight sum tasks are normalized to"},
+    {"key": "IMPORTANT_TASK_RATIO",       "suggest": 0.5,                     "desc": "fraction of tasks (by sp_weight) labeled important; persisted as Task::is_important (P0.6/P0.7/P0.8)"},
     {"key": "Et_OVER_PERIOD_RANGE",       "suggest": [0.1, 0.3],               "desc": "ET/period sampling range"},
     {"key": "SIGMA_OVER_Et_RANGE",        "suggest": [0.5, 0.6],               "desc": "sigma/ET sampling range"},
     {"key": "RO_1_Et_RANGE",              "suggest": [-0.9, -0.7],             "desc": "ro_1_Et correlation sampling range"},
@@ -551,6 +552,23 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         taskset_param[i].sp_weight = random.uniform(wt_min, wt_max)
         taskset_param[i].sp_threshold = random.uniform(trd_min, trd_max)
 
+    # P0.6/P0.7/P0.8: important-task labeling. The top IMPORTANT_TASK_RATIO
+    # fraction of tasks by sp_weight (pre-normalization -- ratios are invariant
+    # under the SP_WEIGHTS_SUM scaling below) are marked important. The label is
+    # a generation-time property persisted to YAML and read back by C++ Task::
+    # is_important, so every consumer (static-solution priority-lock, online
+    # fall-back safety check, generation-time RTA, miss-rate analysis) reads one
+    # source of truth instead of each recomputing a top-X% cut. sp_weight is
+    # sampled continuously uniform -> ties are measure-zero; if a tie ever lands
+    # exactly on the boundary, break by task index (deterministic). Count is
+    # ceil(N * ratio) = (N * ratio) rounded up, mirroring the old analysis-side
+    # int(N * pct + 0.9999) ceil; for the default ratio=0.5 this is (N+1)//2.
+    important_ratio = cfgs["IMPORTANT_TASK_RATIO"]
+    n_important = max(1, math.ceil(n_tasks * important_ratio))
+    order = sorted(range(n_tasks), key=lambda i: (taskset_param[i].sp_weight, i), reverse=True)
+    for rank, i in enumerate(order):
+        taskset_param[i].is_important = (rank < n_important)
+
     # 4. Core Allocation (Processor ID assignment)
     indexed_tasks = [(i, taskset_param[i]) for i in range(n_tasks)]
     indexed_tasks.sort(key=lambda item: item[1].et_mean / item[1].period, reverse=True)
@@ -620,6 +638,7 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
             'Et_sigma': float(t.et_sigma),
             'sp_weight': float(t.sp_weight),
             'sp_threshold': float(t.sp_threshold),
+            'is_important': bool(getattr(t, 'is_important', False)),
             'processorId': int(getattr(t, 'processorId', 0)),
             'env_dependent': bool(getattr(t, 'env_dependent', False)),
             'time_limit_task': bool(getattr(t, 'time_limit_task', False)),

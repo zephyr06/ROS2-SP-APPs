@@ -363,6 +363,25 @@ def standardize_config(config: dict) -> dict:
         )
     config["ENV_DEPENDENT_TASKS_RATIO"] = [float(e_low), float(e_high)]
 
+    # P0.6/P0.7/P0.8: fraction of tasks labeled important (top by sp_weight),
+    # persisted as Task::is_important and read back by every consumer. Default
+    # 0.5 (the resolved design rule: half the tasks are important). Default is
+    # injected here so legacy configs that predate the knob still label -- a
+    # missing key would otherwise mean zero important tasks, silently breaking
+    # the fall-back chain. Range-checked like the other ratio knobs.
+    if "IMPORTANT_TASK_RATIO" not in config:
+        config["IMPORTANT_TASK_RATIO"] = 0.5
+    itr = config["IMPORTANT_TASK_RATIO"]
+    if isinstance(itr, bool) or not isinstance(itr, (int, float)):
+        raise ValueError(
+            f"IMPORTANT_TASK_RATIO must be a number in (0.0, 1.0], got {itr!r}"
+        )
+    if not (0.0 < itr <= 1.0):
+        raise ValueError(
+            f"IMPORTANT_TASK_RATIO must be in (0.0, 1.0], got {itr!r}"
+        )
+    config["IMPORTANT_TASK_RATIO"] = float(itr)
+
     # Physical map dimensions: center both D1_RANGE (x) and D2_RANGE (y) at origin.
     # Cartesian coordinates: D1 = x, D2 = y.
     map_w = config.get("MAP_WIDTH_M", None)

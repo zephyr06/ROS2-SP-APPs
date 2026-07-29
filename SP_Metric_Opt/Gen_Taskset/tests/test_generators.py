@@ -39,9 +39,10 @@ def test_taskset_parameters_generation():
         "PERF_RECORD_TASK_PROBABILITY": 0.5,
         "FIXED_TASK_SIGMA_RATIO": 0.001,
         "MAX_TIME_LIMIT_OPTIONS": 10,
-        "SP_WEIGHTS_SUM": 5.0
+        "SP_WEIGHTS_SUM": 5.0,
+        "IMPORTANT_TASK_RATIO": 0.5
     }
-    
+
     taskset = generate_taskset_parameters(cfgs)
     assert taskset["n_tasks"] == 4
     assert len(taskset["tasks"]) == 4
@@ -51,3 +52,19 @@ def test_taskset_parameters_generation():
         # from SP_THRESHOLD_RANGE, so assert range membership instead.
         trd = cfgs["SP_THRESHOLD_RANGE"]
         assert trd[0] <= task["sp_threshold"] <= trd[1]
+
+    # P0.6/P0.7/P0.8: important-task labeling. The top IMPORTANT_TASK_RATIO
+    # fraction by sp_weight (pre-normalization -- ratios are scale-invariant)
+    # are marked important. For N=4, ratio=0.5 -> ceil(4*0.5)=2 important tasks.
+    n_imp = sum(1 for t in taskset["tasks"] if t["is_important"])
+    assert n_imp == 2
+    # The marked tasks are exactly the top-2 by sp_weight. tasks_dict_list
+    # preserves taskset_param order, so the list index is the stable identity.
+    indexed = list(enumerate(taskset["tasks"]))
+    by_weight = sorted(indexed, key=lambda kv: kv[1]["sp_weight"], reverse=True)
+    top2_idx = {by_weight[0][0], by_weight[1][0]}
+    imp_idx = {i for i, t in indexed if t["is_important"]}
+    assert imp_idx == top2_idx
+    # is_important is a bool on every task.
+    for t in taskset["tasks"]:
+        assert isinstance(t["is_important"], bool)
