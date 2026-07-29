@@ -94,8 +94,8 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     PriorityVec Optimize_w_TL_ScratchOrIncre(const DAG_Model& dag_tasks_update,
                                              int beam_search_width);
 
-    // P3.6 INCR_NO_REOPT arm — pure incremental, RM-fast bootstrap, no periodic
-    // reopt. count==0 → BootstrapIncumbentFromRMFast (seed the RM+min-TL
+    // P3.6 INCR_NO_REOPT arm — pure incremental, DM-fast bootstrap, no periodic
+    // reopt. count==0 → BootstrapIncumbentFromDMFast (seed the DM+min-TL
     // incumbent, NO from-scratch descent); count>0 → OptimizeIncre_w_TL (warm-
     // started from the carried incumbent). Never calls ReOptimizePeriodic, so
     // the memoryless from-scratch search (the suspected P1.2 structural-corruption
@@ -105,12 +105,12 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     PriorityVec OptimizePureIncremental(const DAG_Model& dag_tasks_update,
                                         int beam_search_width);
 
-    // P3.6 interval-0 bootstrap: seed the incumbent from the RM-fast heuristic
-    // (RM priorities via RateMonotonicPriorityVec + smallest TL via
+    // P3.6 interval-0 bootstrap: seed the incumbent from the DM-fast heuristic
+    // (DM priorities via DeadlineMonotonicPriorityVec + smallest TL via
     // SmallestTimeLimitVec), commit it, and STOP — no descent. This is the
     // ResetIncumbentBaseline(true) interval-0 seed step in isolation, without
     // the RunIntervalDescent walk ReOptimizePeriodic runs afterwards.
-    void BootstrapIncumbentFromRMFast(const DAG_Model& dag_tasks_update);
+    void BootstrapIncumbentFromDMFast(const DAG_Model& dag_tasks_update);
 
     void ApplyWCETAblationIfRequired(DAG_Model& dag_tasks);
 
@@ -150,7 +150,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // Absorb the interval's updated DAG into the optimizer state: overwrite
     // dag_tasks_, apply the WCET ablation if the arm requires it, and refresh the
     // per-task TL option set the descent walks. Shared by all three interval-entry
-    // methods (OptimizeIncre_w_TL, ReOptimizePeriodic, BootstrapIncumbentFromRMFast)
+    // methods (OptimizeIncre_w_TL, ReOptimizePeriodic, BootstrapIncumbentFromDMFast)
     // so the absorb + WCET ablation + option-set refresh stay in sync. Callers that
     // need the pre-absorb DAG for the Type-E diff capture it BEFORE calling this.
     void AbsorbUpdatedDAG(const DAG_Model& dag_tasks_update);
@@ -263,27 +263,37 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     // Compare-and-keep helpers (see ReOptimizePeriodic).
     std::vector<double> ReconstructTimeLimitVecFromResOpt();
-    PriorityVec RateMonotonicPriorityVec();
+    // Deadline-Monotonic + important-first group-locked priority vector (P0.9).
+    // Important tasks occupy the top slots (DM-ordered within the group — shorter
+    // deadline = higher priority); non-important fill the lower slots (DM-ordered
+    // within their group); every non-important task below every important task
+    // (the priority lock). Matches the Python RTA's
+    // ``_important_priority_order`` so P0.8's certification agrees with the
+    // scheduler's actual seed PA. Ties (equal deadline within a group) broken by
+    // avg ET ascending (deterministic). Replaces the former plain-RM
+    // ``RateMonotonicPriorityVec`` (period sort) — constrained deadlines
+    // (``deadline = period * U(0.5,1.0)``) make DM optimal.
+    PriorityVec DeadlineMonotonicPriorityVec();
     void SeedStateFromIncumbent(const DAG_Model& dag_with_tl,
                                 const PriorityVec& pa, double sp,
                                 const std::vector<double>& tl);
     // Reset the incumbent baseline before a new interval. from_scratch (reopt):
-    // re-eval the carried {pa, tl} under the new DAG (or RM+min-TL at interval 0)
+    // re-eval the carried {pa, tl} under the new DAG (or DM+min-TL at interval 0)
     // and commit it, so opt_sp_ holds the baseline for compare-and-keep.
     // !from_scratch (incremental): set opt_sp_=-1.0 so the first UpdateRecords
     // force-commits.
     void ResetIncumbentBaseline(bool from_scratch);
 
-    // Interval-0 RM-fast seed: RM priorities (RateMonotonicPriorityVec) + every
+    // Interval-0 DM-fast seed: DM priorities (DeadlineMonotonicPriorityVec) + every
     // task at its smallest TL option (SmallestTimeLimitVec), scored under the
     // current dag_tasks_ and committed as the incumbent. The shared bootstrap
     // used by ResetIncumbentBaseline's interval-0 else-branch (reopt's first
-    // interval, reached via SeedBaselineAndArmCache) AND BootstrapIncumbentFromRMFast
+    // interval, reached via SeedBaselineAndArmCache) AND BootstrapIncumbentFromDMFast
     // (the INCR_NO_REOPT arm's interval-0 entry) — the two arms bootstrap
     // identically through this one primitive. Caller owns the cache state:
-    // ResetIncumbentBaseline clears it first; BootstrapIncumbentFromRMFast runs
+    // ResetIncumbentBaseline clears it first; BootstrapIncumbentFromDMFast runs
     // only at interval 0 on a fresh optimizer (nothing to clear).
-    void SeedIncumbentFromRMFast();
+    void SeedIncumbentFromDMFast();
 
     // Incumbent-state helpers. res_opt_ is the single durable store;
     // CommitIncumbent is its only writer. BuildChallengerFromIncumbent rebuilds a

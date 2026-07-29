@@ -721,7 +721,7 @@ TEST_F(CompareAndKeepSynthetic,
 
 // --- Direct unit tests for the compare-and-keep helpers ---
 // Each new helper extracted during the refactor gets its own coverage below so
-// the seeded-baseline / RM-bootstrap contract is checked in isolation, not only
+// the seeded-baseline / DM-bootstrap contract is checked in isolation, not only
 // via the end-to-end Adopt/Keep paths above.
 
 TEST_F(CompareAndKeepSynthetic, SmallestTimeLimitVec) {
@@ -757,50 +757,76 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_DOUBLE_EQ(-1.0, tl[1]);
 }
 
-TEST(RateMonotonicPriorityVec, SortsByPeriodAscending) {
-    // Three tasks with distinct periods [100, 50, 200]. RM priority = period
-    // ascending, so index 1 (period 50) is highest priority (position 0),
-    // then index 0 (period 100), then index 2 (period 200). Distinct periods
-    // make the result deterministic regardless of sort stability.
+// P0.9: the seed PA is Deadline-Monotonic with an important-first group lock
+// (DeadlineMonotonicPriorityVec, formerly plain-RM RateMonotonicPriorityVec).
+// These two tests construct cases where DM-with-group-lock and plain RM
+// DIVERGE, so they discriminate the new behavior from the old.
+
+TEST(DeadlineMonotonicPriorityVec, RanksImportantGroupFirstThenDmOrdersEach) {
+    // DM + important-first group lock. Construct a taskset where (a) deadlines
+    // differ from periods (so DM ≠ RM) and (b) the important tasks are NOT the
+    // ones a plain period-sort would put first. Important tasks must occupy the
+    // TOP slots (the group lock), DM-ordered within the important group; non-
+    // important fill the bottom, DM-ordered within their group.
+    //
+    //   idx  period  deadline  is_important  ET
+    //   0    100      90       YES           10
+    //   1     50     180       YES           10   (long deadline, but important)
+    //   2    200     120       no            10
+    //   3     80      60       no            10   (shortest deadline overall,
+    //                                            but non-important → must NOT
+    //                                            jump above the important group)
+    //
+    // Expected order [important, DM asc] ++ [non-important, DM asc]:
+    //   T0 (ddl 90) < T1 (ddl 180)  |  T3 (ddl 60) < T2 (ddl 120)
+    //   → pa = [0, 1, 3, 2]
+    // Plain RM (period asc) would give [1, 3, 0, 2] — wrong on both the group
+    // lock and the within-group key, so this test is RED under the old code.
     std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
-    Task t0(0, d, 100, 100, 0, "T0");
-    Task t1(1, d, 50, 50, 1, "T1");
-    Task t2(2, d, 200, 200, 2, "T2");
+    Task t0(0, d, 100, 90, 0, "T0");
+    Task t1(1, d, 50, 180, 1, "T1");
+    Task t2(2, d, 200, 120, 2, "T2");
+    Task t3(3, d, 80, 60, 3, "T3");
+    t0.is_important = true;
+    t1.is_important = true;
     MAP_Prev mapPrev;
-    TaskSet tasks = {t0, t1, t2};
+    TaskSet tasks = {t0, t1, t2, t3};
     DAG_Model dag(tasks, mapPrev, 0, 0);
     SP_Parameters sp(dag);
 
     OptimizePA_Incre_with_TimeLimits opt(dag, sp);
-    PriorityVec pa = opt.RateMonotonicPriorityVec();
-    ASSERT_EQ(3u, pa.size());
-    EXPECT_EQ(1, pa[0]);
-    EXPECT_EQ(0, pa[1]);
-    EXPECT_EQ(2, pa[2]);
+    PriorityVec pa = opt.DeadlineMonotonicPriorityVec();
+    ASSERT_EQ(4u, pa.size());
+    EXPECT_EQ(0, pa[0]);  // important group, shortest deadline 90
+    EXPECT_EQ(1, pa[1]);  // important group, deadline 180
+    EXPECT_EQ(3, pa[2]);  // non-important group, shortest deadline 60
+    EXPECT_EQ(2, pa[3]);  // non-important group, deadline 120
 }
 
-TEST(RateMonotonicPriorityVec, BreaksPeriodTiesByExecutionTimeAscending) {
-    // Three tasks, two of which share period 100. ET tiebreaker: lower ET gets
-    // higher priority (earlier position). T0 (period 100, ET 30) and T1
-    // (period 100, ET 10) tie on period; T1's lower ET wins position 0, T0
-    // position 1. T2 (period 200) sorts last regardless of ET.
+TEST(DeadlineMonotonicPriorityVec, BreaksDeadlineTiesByExecutionTimeAscending) {
+    // Within a group, equal-deadline ties break by avg ET ascending (matches the
+    // former RM tie-break; deterministic). Two important tasks share deadline 100
+    // but differ in ET: T1 (ET 10) must rank above T0 (ET 30). T2 (non-important,
+    // deadline 100) stays below both regardless of ET (group lock).
     std::vector<Value_Proba> d0 = {Value_Proba(30.0, 1.0)};
     std::vector<Value_Proba> d1 = {Value_Proba(10.0, 1.0)};
     std::vector<Value_Proba> d2 = {Value_Proba(50.0, 1.0)};
     Task t0(0, d0, 100, 100, 0, "T0");
     Task t1(1, d1, 100, 100, 1, "T1");
-    Task t2(2, d2, 200, 200, 2, "T2");
+    Task t2(2, d2, 200, 100, 2, "T2");
+    t0.is_important = true;
+    t1.is_important = true;
     MAP_Prev mapPrev;
     TaskSet tasks = {t0, t1, t2};
     DAG_Model dag(tasks, mapPrev, 0, 0);
     SP_Parameters sp(dag);
 
     OptimizePA_Incre_with_TimeLimits opt(dag, sp);
-    PriorityVec pa = opt.RateMonotonicPriorityVec();
+    PriorityVec pa = opt.DeadlineMonotonicPriorityVec();
     ASSERT_EQ(3u, pa.size());
-    EXPECT_EQ(1, pa[0]);  // period 100, ET 10 — lower ET beats T0
-    EXPECT_EQ(0, pa[1]);  // period 100, ET 30
-    EXPECT_EQ(2, pa[2]);  // period 200
+    EXPECT_EQ(1, pa[0]);  // important, deadline 100, ET 10 — lower ET beats T0
+    EXPECT_EQ(0, pa[1]);  // important, deadline 100, ET 30
+    EXPECT_EQ(2, pa[2]);  // non-important, deadline 100
 }
 
 TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {
@@ -903,24 +929,24 @@ TEST_F(CompareAndKeepSynthetic, BuildChallengerFromIncumbent_ReconstructsAdopted
 }
 
 
-TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesRMAndMinTL) {
+TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesDMAndMinTL) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());
 
-    // Compute the expected interval-0 baseline — RM priorities + smallest TL —
+    // Compute the expected interval-0 baseline — DM priorities + smallest TL —
     // with the same primitives the helper uses internally, then verify the
     // helper seeds exactly that.
-    PriorityVec pa_rm = opt.RateMonotonicPriorityVec();
+    PriorityVec pa_dm = opt.DeadlineMonotonicPriorityVec();
     std::vector<double> tl_min = opt.SmallestTimeLimitVec();
     DAG_Model dag_min = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_min);
     double expected_sp =
-        EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_rm);
+        EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_dm);
 
     opt.ResetIncumbentBaseline(true);
 
     EXPECT_TRUE(opt.IfInitialized());
     EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
-    EXPECT_EQ(pa_rm, opt.opt_pa_);
+    EXPECT_EQ(pa_dm, opt.opt_pa_);
     // Min-TL baseline: T_perf=400, T_noise=-1.
     EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
@@ -933,7 +959,7 @@ TEST_F(CompareAndKeepSynthetic,
     // Establish an incumbent with TL=800 (NOT the min 400) so the
     // with-incumbent branch is distinguishable from the interval-0 min-TL
     // branch.
-    PriorityVec pa = opt.RateMonotonicPriorityVec();
+    PriorityVec pa = opt.DeadlineMonotonicPriorityVec();
     std::vector<double> tl_incumbent = {800.0, -1.0};
     DAG_Model dag_with_tl =
         UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_incumbent);
@@ -966,10 +992,10 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_EQ(pa, opt.opt_pa_);
 }
 
-// --- P3.6: INCR_NO_REOPT (pure incremental, RM-fast bootstrap, no reopt) ---
+// --- P3.6: INCR_NO_REOPT (pure incremental, DM-fast bootstrap, no reopt) ---
 //
 // New arm (agent_coding_rules TDD: tests first, red before green). Behavior:
-//   interval 0: bootstrap the incumbent from RM-fast (RM priorities + smallest
+//   interval 0: bootstrap the incumbent from DM-fast (DM priorities + smallest
 //                TL option) with NO from-scratch descent;
 //   interval 1+: OptimizeIncre_w_TL (warm-started from the carried incumbent)
 //                every interval, NEVER ReOptimizePeriodic.
@@ -977,7 +1003,7 @@ TEST_F(CompareAndKeepSynthetic,
 // These tests assert that contract directly. They FAIL on the current code
 // (the methods don't exist yet) — the red that Step 2 turns green.
 
-// Bootstrap-only contract: interval 0 seeds the RM-fast incumbent (RM priorities
+// Bootstrap-only contract: interval 0 seeds the DM-fast incumbent (DM priorities
 // + smallest TL) and runs ZERO descent evals. eval_count_ is incremented only
 // inside CallOptimizerGivenTimeLimits / OptimizeIncreSingleTask (the per-task
 // re-search the descent walk drives); ResetIncumbentBaseline(true) — the
@@ -988,19 +1014,19 @@ TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_Interval0IsSeedOnly) {
     ASSERT_FALSE(opt.IfInitialized());
     ASSERT_EQ(0, opt.eval_count_);
 
-    // Expected RM-fast baseline, computed with the same primitives the bootstrap
+    // Expected DM-fast baseline, computed with the same primitives the bootstrap
     // uses internally.
-    PriorityVec pa_rm = opt.RateMonotonicPriorityVec();
+    PriorityVec pa_dm = opt.DeadlineMonotonicPriorityVec();
     std::vector<double> tl_min = opt.SmallestTimeLimitVec();
     DAG_Model dag_min = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_min);
-    double expected_sp = EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_rm);
+    double expected_sp = EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_dm);
 
     opt.OptimizePureIncremental(dag_tasks, 2);
 
     EXPECT_TRUE(opt.IfInitialized());
     EXPECT_EQ(0, opt.eval_count_) << "interval 0 must not run any descent eval";
     EXPECT_DOUBLE_EQ(expected_sp, opt.opt_sp_);
-    EXPECT_EQ(pa_rm, opt.opt_pa_);
+    EXPECT_EQ(pa_dm, opt.opt_pa_);
     // Min-TL baseline: T_perf=400, T_noise=-1.
     EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[0]);
     EXPECT_DOUBLE_EQ(-1.0, opt.res_opt_.id2time_limit[1]);
@@ -1037,14 +1063,14 @@ TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_NeverReoptsEvenAtPeriodO
     ASSERT_EQ(0, opt.eval_count_);
     ASSERT_EQ(1, opt.reoptimization_interval_count_);
 
-    // The incumbent is carried: interval 0 committed the RM-fast incumbent, so
+    // The incumbent is carried: interval 0 committed the DM-fast incumbent, so
     // the optimizer is initialized and the adopted TL is in res_opt_.
     ASSERT_TRUE(opt.IfInitialized());
     ASSERT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[0]);
 
     // Interval 1: the incremental path runs (eval_count_ grows). The walk
     // warm-starts from the carried incumbent and may IMPROVE the TL beyond the
-    // cheap RM-fast seed (400) — that is the arm doing its job, not a reopt.
+    // cheap DM-fast seed (400) — that is the arm doing its job, not a reopt.
     opt.OptimizePureIncremental(dag_tasks, 2);
     EXPECT_GT(opt.eval_count_, 0) << "interval 1 must take the incremental path";
     EXPECT_EQ(2, opt.reoptimization_interval_count_);
