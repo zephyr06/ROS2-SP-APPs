@@ -232,9 +232,10 @@
   `time_limit_seconds: 10` was already in HEAD — = the P2.14-known pre-existing
   config failures, NOT introduced by P0.9); `cmake --build build_test --target
   check.SP_OPT -j5` = **17/17 green**.
-- **Remaining (Step 4 + 5 tail):** P0.6/P0.8 plan refs RM→DM; SP-shift note at the
+- **Remaining (Step 4 + 5 tail):** P0.6/P0.8 plan refs RM→DM (DONE); SP-shift note at the
   seed (D6 — a behavior change, but no prod A/B run by me); top-level
-  `agents/dev_log.md` milestone; `git add` staged for user review (no commit).
+  `agents/dev_log.md` milestone (DONE). Step 4 COMMITTED by user as `7dd1a7ac`
+  ("update task records", 9 files, 1297/11).
 
 ## 2026-07-28 (Step 4 records LANDED + Issue-2 review)
 
@@ -283,8 +284,8 @@
   are authoritative.
 - **Step 5 (records):** top-level `agents/dev_log.md` milestone appended (this task
   folder's dev_log entry = this one). Memory file `p09-dm-and-important-first-
-  priority.md` + `MEMORY.md` index updated (Step 4 done, Issue-2 verdict). Step 4
-  records staged for user review.
+  priority.md` + `MEMORY.md` index updated (Step 4 done, Issue-2 verdict, commit
+  `7dd1a7ac`).
 - **Commit-state correction (caught during staging):** the prior Step-2 entries here
   and the `tasks.md` said "NOT committed, `git add`-only" — that was true when
   written, but the user has SINCE committed Steps 1+2 in 3 commits: `0b9dae4a`
@@ -293,7 +294,17 @@
   via `git log` + `git show --stat` + `git diff HEAD` (the C++/orchestrator/config
   files are clean vs HEAD; only the Step-4 record files + unrelated pre-existing
   modifications remain uncommitted). Records above updated to reflect "Steps 1+2
-  COMMITTED; Step 4 staged."
+  COMMITTED; Step 4 staged." **Step 4 was then COMMITTED by the user as
+  `7dd1a7ac` ("update task records", 9 files, 1297/11, exactly the Step-4 record
+  paths, no unrelated files)** — so P0.9 is now fully committed (Steps 1+2+4).
+  Records re-updated to "FULLY COMMITTED".
+- **Unrelated ` M` files (racy-git / EOL artifact):** the 5 pre-existing modified
+  files (`important_task_rta.py`, `test_important_task_rta.py`, `test_io_v1.yaml`,
+  `agent_coding_rules.md`, `overall_tasks.md`) show ` M` in `git status` and have
+  working-tree blob SHAs that DIFFER from HEAD, but `git diff HEAD` / `--numstat` /
+  `--raw` all show ZERO content diff (clean/smudge or EOL normalization in
+  `.gitattributes` makes normalized content identical). 0 P0.9/DM/RM relevant
+  added lines. Correctly excluded from `7dd1a7ac`. Leave alone (user standing rule).
 - **Remaining (Step 5 tail):** D6 SP-shift note at the seed — this is a behavior
   change, but NO prod A/B run was done by me (user-go only). If global SP moves
   materially at review, flag for prod A/B.

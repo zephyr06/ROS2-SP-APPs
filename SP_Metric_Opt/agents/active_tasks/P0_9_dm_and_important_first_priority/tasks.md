@@ -150,11 +150,13 @@
       (Step 4 done, Issue-2 verdict); `p06-...`/`p08-...` topic files prepended
       with a P0.9-supersedence banner (descriptions RM→DM; bodies left as 2026-07-27
       design context); `MEMORY.md` p06/p08/p09 lines updated.
-- [x] **Steps 1+2 COMMITTED** by user (`0b9dae4a` Step1 C++ seed PA, `6a35080b`
-      Step2 C++ orchestrator, `352f13d5` Step2 configs/Python + this folder's
-      dev_log/tasks snapshot). **Step 4 records staged** (`git add`-only) for user
-      review (P0.6/P0.8 plan-doc relabels + dev_log pointers + top-level milestone).
-      NOTE: unrelated modified files in the tree (`important_task_rta.py`,
-      `test_important_task_rta.py`, `test_io_v1.yaml`, `agent_coding_rules.md`,
-      `overall_tasks.md`, `_perf_old_ecbed896`) are PRE-EXISTING (in the session-start
-      `gitStatus` before this session) and NOT staged — not P0.9 Step-4 work.
+- [x] **Steps 1+2+4 ALL COMMITTED** by user (`0b9dae4a` Step1 C++ seed PA,
+      `6a35080b` Step2 C++ orchestrator, `352f13d5` Step2 configs/Python + this folder's
+      dev_log/tasks snapshot, `7dd1a7ac` Step4 records — "update task records", 9 files,
+      1297/11, exactly the Step-4 record paths). NOTE: unrelated modified files in the
+      tree (`important_task_rta.py`, `test_important_task_rta.py`, `test_io_v1.yaml`,
+      `agent_coding_rules.md`, `overall_tasks.md`, `_perf_old_ecbed896`) are PRE-EXISTING
+      (in the session-start `gitStatus` before this session) and NOT committed (correctly
+      excluded from `7dd1a7ac`) — not P0.9 Step-4 work. Their ` M` flag is a racy-git /
+      EOL-normalization artifact: working-tree blob SHAs differ from HEAD but
+      `git diff HEAD` shows zero content diff (0 P0.9/DM/RM relevant lines); leave alone.
