@@ -24,7 +24,7 @@ using namespace SP_OPT_PA;
 // ERROR (mirror the P1.4 _ADOPTED pattern), NOT a silent alias — the P1.3
 // regression was exactly a stale config silently dispatching to an empty
 // result. The hard error prints to stderr and the mode falls through dispatch
-// to the RM baseline (degenerate), so the stale name is loud, not silent.
+// to the DM baseline (degenerate), so the stale name is loud, not silent.
 //
 // P1.4 history: an INCR_Reopt_X_ADOPTED suffix used to additionally set the
 // ReoptStartFromAdoptedTL flag so the reopt descent seeded from the carried
@@ -33,7 +33,7 @@ using namespace SP_OPT_PA;
 // _ADOPTED arms). Any trailing suffix after the digits (e.g. a stale _ADOPTED
 // arm in a config) is now a HARD ERROR rather than a silent fall-through.
 // Returns true if mode is an INCR_Reopt_X variant OR a retired INCR_P<n> form
-// (either way "claimed" so it falls through to the RM baseline, not silently
+// (either way "claimed" so it falls through to the DM baseline, not silently
 // aliased); false otherwise.
 static bool MaybeOverrideReoptPeriod(const std::string& mode) {
     const std::string prefix = "INCR_Reopt_";
@@ -86,14 +86,14 @@ static bool MaybeOverrideReoptPeriod(const std::string& mode) {
             // the new name. Covers INCR_P1, INCR_P10, and the doubly-stale
             // INCR_P<n>_ADOPTED (both the P2.4 rename and P1.4's suffix
             // removal). The period is NOT overridden, so the run falls through
-            // dispatch to the RM baseline (degenerate) — loud, not silent.
+            // dispatch to the DM baseline (degenerate) — loud, not silent.
             std::cerr << "Error: mode '" << mode
                       << "' uses the RETIRED INCR_P<n> name (P2.4 renamed it)."
                       << " The P<n> knob ran the wrong way for a reader (P1 ="
                       << " reopt every interval, the max-reopt extreme, NOT"
                       << " incremental). Use INCR_Reopt_<n> instead (same period,"
                       << " same dispatch). This is a HARD ERROR, not a silent"
-                      << " alias — the run will fall through to the RM baseline.\n";
+                      << " alias — the run will fall through to the DM baseline.\n";
             return true;
         }
         // INCR_P followed by a non-digit (e.g. the future INCR_PURE) is not a
@@ -108,8 +108,8 @@ int main(int argc, char** argv) {
         std::cerr << "Usage: " << argv[0]
                   << " <input_folder> <output_folder> <mode> <duration_ms>"
                   << " [export_level] [sample_interval_sec]\n";
-        std::cerr << "Modes: RM, BF, INCR, INCR_NO_TL, INCR_WCET, "
-                  << "RM_FAST, RM_SLOW\n";
+        std::cerr << "Modes: DM, BF, INCR, INCR_NO_TL, INCR_WCET, "
+                  << "DM_FAST, DM_SLOW\n";
         std::cerr << "  INCR_Reopt_X: INCR with ReoptimizationPeriod overridden to X "
                   << "(X = reopt period; X=1 reopts every interval, larger X = more"
                   << " incremental. e.g. INCR_Reopt_1, INCR_Reopt_5, INCR_Reopt_10,"

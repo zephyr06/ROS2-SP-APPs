@@ -30,7 +30,7 @@ namespace {
 // P2.4: the old INCR_P<n> name is RETIRED. A stale INCR_P<n> config is rejected
 // (HARD ERROR) in MaybeOverrideReoptPeriod and never reaches this function, so
 // the retired name is not aliased here — a stale config falls through dispatch
-// to the RM baseline, not to an INCR schedule.
+// to the DM baseline, not to an INCR schedule.
 //
 // P1.4 history: an INCR_Reopt_X_ADOPTED twin variant used to additionally set
 // the ReoptStartFromAdoptedTL flag; P1.4 made the adopted-TL seed the permanent,
@@ -318,7 +318,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     // RunOrchestrator writes to scheduler_execution_time.txt. Everything else
     // per interval — RTDA rollout, SP-metric, I/O — runs in SimulateInterval
     // OUTSIDE this function and is deliberately excluded. Captures every mode
-    // (INCR / BF / INCR_NO_TL / INCR_WCET / RM / RM_FAST / RM_SLOW) uniformly.
+    // (INCR / BF / INCR_NO_TL / INCR_WCET / DM / DM_FAST / DM_SLOW) uniformly.
     auto sched_start = std::chrono::high_resolution_clock::now();
     ResourceOptResult res;
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_)) {
@@ -327,7 +327,7 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();
     } else if (scheduler_mode_ == "INCR_NO_REOPT") {
-        // P3.6: pure incremental — RM-fast bootstrap at interval 0 (seed only,
+        // P3.6: pure incremental — DM-fast bootstrap at interval 0 (seed only,
         // no from-scratch descent), then OptimizeIncre_w_TL every interval,
         // never ReOptimizePeriodic. Contrasts with INCR_Reopt_X (periodic
         // reopt). Uses the persistent incr_optimizer_ (carries the incumbent).
@@ -353,24 +353,26 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
             GlobalVariables::Layer_Node_During_Incremental_Optimization);
         res = incr_optimizer_.CollectResults();
         GlobalVariables::use_wcet_execution_time = prev;
-    } else if (scheduler_mode_ == "RM") {
+    } else if (scheduler_mode_ == "DM") {
         std::vector<int> sorted_indices(dag_tasks.tasks.size());
         std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
         std::sort(
             sorted_indices.begin(), sorted_indices.end(), [&](int a, int b) {
-                return dag_tasks.tasks[a].period < dag_tasks.tasks[b].period;
+                return dag_tasks.tasks[a].deadline <
+                       dag_tasks.tasks[b].deadline;
             });
 
         for (size_t i = 0; i < sorted_indices.size(); i++) {
             res.priority_vec.push_back(sorted_indices[i]);
             res.id2time_limit[sorted_indices[i]] = -1.0;
         }
-    } else if (scheduler_mode_ == "RM_FAST") {
+    } else if (scheduler_mode_ == "DM_FAST") {
         std::vector<int> sorted_indices(dag_tasks.tasks.size());
         std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
         std::sort(
             sorted_indices.begin(), sorted_indices.end(), [&](int a, int b) {
-                return dag_tasks.tasks[a].period < dag_tasks.tasks[b].period;
+                return dag_tasks.tasks[a].deadline <
+                       dag_tasks.tasks[b].deadline;
             });
 
         for (size_t i = 0; i < sorted_indices.size(); i++) {
@@ -385,12 +387,13 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
                         .time_limit;
             }
         }
-    } else if (scheduler_mode_ == "RM_SLOW") {
+    } else if (scheduler_mode_ == "DM_SLOW") {
         std::vector<int> sorted_indices(dag_tasks.tasks.size());
         std::iota(sorted_indices.begin(), sorted_indices.end(), 0);
         std::sort(
             sorted_indices.begin(), sorted_indices.end(), [&](int a, int b) {
-                return dag_tasks.tasks[a].period < dag_tasks.tasks[b].period;
+                return dag_tasks.tasks[a].deadline <
+                       dag_tasks.tasks[b].deadline;
             });
 
         for (size_t i = 0; i < sorted_indices.size(); i++) {

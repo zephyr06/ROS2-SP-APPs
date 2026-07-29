@@ -163,7 +163,7 @@ class TestCFSOrchestrator : public CFSSimulationOrchestrator {
 TEST(OrchestratorTest, LoadIntervalConfigs) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
     orchestrator.TestLoadConfigs();
 
     const auto& dags = orchestrator.GetDagTasks();
@@ -176,7 +176,7 @@ TEST(OrchestratorTest, LoadIntervalConfigs) {
 TEST(OrchestratorTest, LoadJobExecutionTraces) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
 
     std::vector<float> traces = orchestrator.TestLoadTraces(0, 0, 0);
     ASSERT_EQ(3, traces.size());
@@ -185,14 +185,14 @@ TEST(OrchestratorTest, LoadJobExecutionTraces) {
     EXPECT_FLOAT_EQ(3.5f, traces[2]);
 }
 
-TEST(OrchestratorTest, RateMonotonicPriorityAssignment) {
+TEST(OrchestratorTest, DeadlineMonotonicPriorityAssignment) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
     std::string output_dir =
-        GlobalVariables::PROJECT_PATH + "tests/test_output_rm";
+        GlobalVariables::PROJECT_PATH + "tests/test_output_dm";
 
     FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                         "RM", 100);
+                                                         "DM", 100);
     orchestrator.RunSimulation();
 
     const auto& history = orchestrator.GetJobHistory();
@@ -244,7 +244,7 @@ static std::vector<JobRecord> GetMockJobHistory() {
 }
 
 // Mock history isolating the deadline-miss metric. This is the fig3 bug's
-// core contradiction (RM_FAST: short RT but "100% missed"; RM_SLOW: huge RT
+// core contradiction (DM_FAST: short RT but "100% missed"; DM_SLOW: huge RT
 // but "0% missed") reduced to a unit case: only the long-RT job is a miss.
 // Counts are deliberately asymmetric (1 deadline miss among 3 jobs) so the
 // overall miss_rate is a meaningful Level-0 regression check, not just Level-1.
@@ -272,13 +272,13 @@ TEST(OrchestratorTest, ExportResultsLevel0) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
-    std::string summary_file = output_dir + "/RM/miss_rate_summary.txt";
-    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
-    std::string per_task_miss_file = output_dir + "/RM/miss_rate_per_task.txt";
-    std::string aggregate_file = output_dir + "/RM/task_aggregate_0.txt";
+    std::string metrics_file = output_dir + "/DM/interval_sp_metrics.txt";
+    std::string summary_file = output_dir + "/DM/miss_rate_summary.txt";
+    std::string response_file = output_dir + "/DM/response_times_task_0.txt";
+    std::string per_task_miss_file = output_dir + "/DM/miss_rate_per_task.txt";
+    std::string aggregate_file = output_dir + "/DM/task_aggregate_0.txt";
 
     EXPECT_TRUE(std::filesystem::exists(metrics_file));
     EXPECT_TRUE(std::filesystem::exists(summary_file));
@@ -314,13 +314,13 @@ TEST(OrchestratorTest, ExportResultsLevel1) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
-    std::string summary_file = output_dir + "/RM/miss_rate_summary.txt";
-    std::string per_task_miss_file = output_dir + "/RM/miss_rate_per_task.txt";
-    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
-    std::string aggregate_file = output_dir + "/RM/task_aggregate_0.txt";
+    std::string metrics_file = output_dir + "/DM/interval_sp_metrics.txt";
+    std::string summary_file = output_dir + "/DM/miss_rate_summary.txt";
+    std::string per_task_miss_file = output_dir + "/DM/miss_rate_per_task.txt";
+    std::string response_file = output_dir + "/DM/response_times_task_0.txt";
+    std::string aggregate_file = output_dir + "/DM/task_aggregate_0.txt";
 
     EXPECT_TRUE(std::filesystem::exists(metrics_file));
     EXPECT_TRUE(std::filesystem::exists(summary_file));
@@ -373,9 +373,9 @@ TEST(OrchestratorTest, ExportResultsLevel0_DeadlineMiss) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistoryDeadlineMiss(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string summary_file = output_dir + "/RM/miss_rate_summary.txt";
+    std::string summary_file = output_dir + "/DM/miss_rate_summary.txt";
     std::ifstream file(summary_file);
     std::string line;
     ASSERT_TRUE(std::getline(file, line));  // header
@@ -409,9 +409,9 @@ TEST(OrchestratorTest, ExportResultsLevel1_DeadlineMiss) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistoryDeadlineMiss(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string per_task_miss_file = output_dir + "/RM/miss_rate_per_task.txt";
+    std::string per_task_miss_file = output_dir + "/DM/miss_rate_per_task.txt";
     std::ifstream file(per_task_miss_file);
     std::string line;
     ASSERT_TRUE(std::getline(file, line));  // header
@@ -447,9 +447,9 @@ TEST(OrchestratorTest, ExportResultsLevel2) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string aggregate_file = output_dir + "/RM/task_aggregate_0.txt";
+    std::string aggregate_file = output_dir + "/DM/task_aggregate_0.txt";
     EXPECT_TRUE(std::filesystem::exists(aggregate_file));
 
     // Verify task aggregate contents
@@ -502,9 +502,9 @@ TEST(OrchestratorTest, ExportResultsLevel3) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string response_file = output_dir + "/RM/response_times_task_0.txt";
+    std::string response_file = output_dir + "/DM/response_times_task_0.txt";
     EXPECT_TRUE(std::filesystem::exists(response_file));
 
     std::ifstream file(response_file);
@@ -540,9 +540,9 @@ TEST(OrchestratorTest, ExportResultsSampling) {
 
     MockOrchestrator orchestrator(output_dir, 1000);
     orchestrator.PopulateData(GetMockJobHistory(), GetMockSPMetrics());
-    orchestrator.CallExportResults("RM");
+    orchestrator.CallExportResults("DM");
 
-    std::string metrics_file = output_dir + "/RM/interval_sp_metrics.txt";
+    std::string metrics_file = output_dir + "/DM/interval_sp_metrics.txt";
     EXPECT_TRUE(std::filesystem::exists(metrics_file));
 
     std::ifstream file(metrics_file);
@@ -577,7 +577,7 @@ TEST(OrchestratorTest, CFSOrchestration) {
     ASSERT_FALSE(history.empty());
 
     // Interval SP metrics come from probabilistic RTA using the unchanged dists
-    // (same as RM because both evaluate the same raw distributions without TLs).
+    // (same as DM because both evaluate the same raw distributions without TLs).
     const auto& sp_metrics = orchestrator.GetIntervalSPMetrics();
     ASSERT_EQ(2, sp_metrics.size());
     EXPECT_NEAR(3.6, sp_metrics[0], 1e-4);
@@ -588,7 +588,7 @@ TEST(OrchestratorTest, CFSOrchestration) {
 TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -597,7 +597,8 @@ TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets) {
 
     ResourceOptResult res =
         orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
-    // RM sorts by period: Task0 (10), Task1 (20), Task2 (20), Task3 (40)
+    // DM sorts by deadline: Task0 (10), Task1 (20), Task2 (20), Task3 (40)
+    // (deadline == period in this fixture, so DM and RM agree here).
     // priority_vec stores sorted indices
     ASSERT_EQ(4, res.priority_vec.size());
     EXPECT_EQ(0, res.priority_vec[0]);  // Task0
@@ -605,10 +606,10 @@ TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets) {
     EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[0]);
 }
 
-TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_FAST) {
+TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_DM_FAST) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM_FAST", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM_FAST", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -618,18 +619,18 @@ TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_FAST) {
     ResourceOptResult res =
         orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
     ASSERT_EQ(4, res.priority_vec.size());
-    EXPECT_EQ(0, res.priority_vec[0]);  // Task0 shortest period
-    EXPECT_EQ(3, res.priority_vec[3]);  // Task3 longest period
+    EXPECT_EQ(0, res.priority_vec[0]);  // Task0 shortest deadline
+    EXPECT_EQ(3, res.priority_vec[3]);  // Task3 longest deadline
     // Task0 has perf records, shortest (first) time limit = 1
     EXPECT_DOUBLE_EQ(1.0, res.id2time_limit[0]);
     // Task1 has no perf records
     EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[1]);
 }
 
-TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_SLOW) {
+TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_DM_SLOW) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM_SLOW", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM_SLOW", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -639,8 +640,8 @@ TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_SLOW) {
     ResourceOptResult res =
         orchestrator.DeterminePrioritiesAndBudgets(dags[0], sp[0]);
     ASSERT_EQ(4, res.priority_vec.size());
-    EXPECT_EQ(0, res.priority_vec[0]);  // Task0 shortest period
-    EXPECT_EQ(3, res.priority_vec[3]);  // Task3 longest period
+    EXPECT_EQ(0, res.priority_vec[0]);  // Task0 shortest deadline
+    EXPECT_EQ(3, res.priority_vec[3]);  // Task3 longest deadline
     // Task0 has perf records, longest (last) time limit = 3
     EXPECT_DOUBLE_EQ(3.0, res.id2time_limit[0]);
     // Task1 has no perf records
@@ -650,7 +651,7 @@ TEST(OrchestratorTest, UnitDeterminePrioritiesAndBudgets_RM_SLOW) {
 TEST(OrchestratorTest, UnitApplyTaskConfigurations) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -669,7 +670,7 @@ TEST(OrchestratorTest, UnitApplyTaskConfigurations) {
 TEST(OrchestratorTest, UnitRecordFinishedJobs) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -699,7 +700,7 @@ TEST(OrchestratorTest, UnitRecordFinishedJobs) {
 TEST(OrchestratorTest, UnitRecordFinishedJobs_DeadlineMiss) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -762,7 +763,7 @@ TEST(OrchestratorTest, CFS_RecordsDeadlineMisses) {
 TEST(OrchestratorTest, UnitReleaseJobs) {
     std::string input_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
-    TestOrchestrator orchestrator(input_dir, "", "RM", 100);
+    TestOrchestrator orchestrator(input_dir, "", "DM", 100);
     orchestrator.TestLoadConfigs();
 
     auto dags = orchestrator.GetDagTasks();
@@ -792,16 +793,23 @@ TEST(OrchestratorTest, ExactResponseTimeValidation) {
         GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
     std::string output_dir =
         GlobalVariables::PROJECT_PATH + "tests/test_output_exact_val";
+    // Level 3 (full job traces) is required to emit response_times_task_*.txt,
+    // which this test reads. Clear the dir first so no stale artifacts (e.g. a
+    // leftover RM/ folder from a prior mode name) are read instead of the fresh
+    // DM/ export.
+    std::filesystem::remove_all(output_dir);
+    int old_level = GlobalVariables::EXPORT_DETAIL_LEVEL;
+    GlobalVariables::EXPORT_DETAIL_LEVEL = 3;
 
     FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                         "RM", 100);
+                                                         "DM", 100);
     orchestrator.RunSimulation();
 
     // Print hyperperiod schedule to stdout for manual verification
     orchestrator.PrintHyperperiodSchedule(0, 40);
 
     // Verify response times of Task0
-    std::string response_file_0 = output_dir + "/RM/response_times_task_0.txt";
+    std::string response_file_0 = output_dir + "/DM/response_times_task_0.txt";
     std::ifstream infile(response_file_0);
     std::string line;
     std::getline(infile, line);  // Header
@@ -809,11 +817,10 @@ TEST(OrchestratorTest, ExactResponseTimeValidation) {
     // Job 0
     std::getline(infile, line);
     std::stringstream ss0(line);
-    int jobId, release, start, finish, response, execution, overrun;
+    int jobId, release, start, finish, response, execution;
     char comma;
     ASSERT_TRUE(ss0 >> jobId >> comma >> release >> comma >> start >> comma >>
-                finish >> comma >> response >> comma >> execution >> comma >>
-                overrun);
+                finish >> comma >> response >> comma >> execution);
     EXPECT_EQ(0, jobId);
     EXPECT_EQ(0, release);
     EXPECT_EQ(0, start);
@@ -825,8 +832,7 @@ TEST(OrchestratorTest, ExactResponseTimeValidation) {
     std::getline(infile, line);
     std::stringstream ss1(line);
     ASSERT_TRUE(ss1 >> jobId >> comma >> release >> comma >> start >> comma >>
-                finish >> comma >> response >> comma >> execution >> comma >>
-                overrun);
+                finish >> comma >> response >> comma >> execution);
     EXPECT_EQ(1, jobId);
     EXPECT_EQ(10, release);
     EXPECT_EQ(10, start);
@@ -838,8 +844,7 @@ TEST(OrchestratorTest, ExactResponseTimeValidation) {
     std::getline(infile, line);
     std::stringstream ss2(line);
     ASSERT_TRUE(ss2 >> jobId >> comma >> release >> comma >> start >> comma >>
-                finish >> comma >> response >> comma >> execution >> comma >>
-                overrun);
+                finish >> comma >> response >> comma >> execution);
     EXPECT_EQ(2, jobId);
     EXPECT_EQ(20, release);
     EXPECT_EQ(20, start);
@@ -848,20 +853,21 @@ TEST(OrchestratorTest, ExactResponseTimeValidation) {
     EXPECT_EQ(4, execution);
 
     // Verify response times of Task1
-    std::string response_file_1 = output_dir + "/RM/response_times_task_1.txt";
+    std::string response_file_1 = output_dir + "/DM/response_times_task_1.txt";
     std::ifstream infile_1(response_file_1);
     std::getline(infile_1, line);  // Header
     std::getline(infile_1, line);  // Job 0
     std::stringstream ss_t1_j0(line);
     ASSERT_TRUE(ss_t1_j0 >> jobId >> comma >> release >> comma >> start >>
-                comma >> finish >> comma >> response >> comma >> execution >>
-                comma >> overrun);
+                comma >> finish >> comma >> response >> comma >> execution);
     EXPECT_EQ(0, jobId);
     EXPECT_EQ(0, release);
     EXPECT_EQ(2, start);
     EXPECT_EQ(5, finish);
     EXPECT_EQ(5, response);
     EXPECT_EQ(3, execution);
+
+    GlobalVariables::EXPORT_DETAIL_LEVEL = old_level;
 }
 
 TEST(OrchestratorTest, CFS_RunOrchestrator_Binary) {
@@ -1219,7 +1225,7 @@ TEST_F(RunQueueTestFixture, RunningJobIndex_CorrectAfterErase) {
 // P1.7 — runtime SimulateInterval must partition on processorId.
 //
 // Two tasks, equal period (10) and ET (2), but on DIFFERENT cores
-// (processorId 0 and 1). RM priority: Task0 < Task1.
+// (processorId 0 and 1). DM priority: Task0 < Task1.
 //
 // On the BUGGY single-queue simulator: at t=0 both jobs release into one
 // RunQueue; Task0 (higher priority) runs [0,2], then Task1 runs [2,4] —
@@ -1240,7 +1246,7 @@ TEST(OrchestratorTest, SimulateIntervalPartitionsByProcessorId) {
     std::filesystem::remove_all(output_dir);
 
     FixedTaskPrioritySchedulingOrchestrator orchestrator(input_dir, output_dir,
-                                                         "RM", 100);
+                                                         "DM", 100);
     orchestrator.RunSimulation();
 
     const auto& history = orchestrator.GetJobHistory();
