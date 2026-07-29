@@ -120,20 +120,41 @@
       regressions).
 
 ## 4. Records — P0.6/P0.8 plan refs RM → DM
-- [ ] `P0_6_static_solution/goal.md`: "RM-grouped"→"DM-grouped", "RM-ordered within
-      the group"→"DM-ordered within the group",
-      `AssignRMRespectingGroupOrder`→`AssignDMRespectingGroupOrder`. Seed point →
-      "DM-grouped + min-TL + WCET".
-- [ ] `P0_8_important_task_schedulability/goal.md` + `tasks.md`:
-      "RM-with-top-lock"→"DM-with-top-lock" / "DM-ordered within important group".
+- [x] `P0_6_static_solution/goal.md` + `tasks.md`: relabeled RM→DM system-wide
+      (sed bulk, 2026-07-28) — "RM-grouped"→"DM-grouped", "RM-ordered within the
+      group"→"DM-ordered within the group",
+      `AssignRMRespectingGroupOrder`→`AssignDMRespectingGroupOrder`,
+      `RateMonotonicPriorityVec`→`DeadlineMonotonicPriorityVec`,
+      `SeedIncumbentFromRMFast`→`...DMFast`, `BootstrapIncumbentFromRMFast`→`...DMFast`,
+      "RM period-sort"→"DM deadline-sort", `RM_FAST`/`RM_SLOW`→`DM_FAST`/`DM_SLOW`,
+      "Rate Monotonic"→"Deadline Monotonic". Seed point → "DM-grouped + min-TL + WCET".
+      Residual RM check = clean. Historical `dev_log.md` entries left as point-in-time
+      records (NOT rewritten — "don't falsify history"), each prepended with a dated
+      2026-07-28 P0.9-supersedence pointer noting the relabel.
+- [x] `P0_8_important_task_schedulability/goal.md` + `tasks.md`: relabeled RM→DM
+      system-wide (sed bulk, 2026-07-28) — "RM-with-top-priority-lock"→
+      "DM-with-top-priority-lock", "RM-ordered within the group"→"DM-ordered within the
+      group", "RM-ordering invariance"→"DM-ordering invariance", "RM-grouped"→
+      "DM-grouped", "under RM"→"under DM". Residual check = clean. `dev_log.md`
+      prepended with the same dated P0.9-supersedence pointer (historical entries left).
 
 ## 5. Verification + records
 - [x] `pytest Gen_Taskset/tests/` green (43 passed).
 - [x] `pytest tests/python/` green (351/353; 2 fails PRE-EXISTING config, not P0.9).
 - [x] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
 - [ ] Log any SP shift at the seed (D6); if global SP moves materially, flag for
-      prod A/B (user-go, NOT run unilaterally).
-- [ ] `dev_log.md` (this folder + top-level `agents/dev_log.md`) updated.
-- [ ] Memory: new `p09-dm-and-important-first-priority.md`; update `p06-...`,
-      `p08-...` cross-refs; add `p09-...` line to `MEMORY.md` index.
-- [ ] `git add` staged; user reviews (no commit).
+      prod A/B (user-go, NOT run unilaterally). [behavior change; NO prod A/B run
+      by me — user-go only]
+- [x] `dev_log.md` (this folder + top-level `agents/dev_log.md`) updated.
+- [x] Memory: `p09-dm-and-important-first-priority.md` + `MEMORY.md` index updated
+      (Step 4 done, Issue-2 verdict); `p06-...`/`p08-...` topic files prepended
+      with a P0.9-supersedence banner (descriptions RM→DM; bodies left as 2026-07-27
+      design context); `MEMORY.md` p06/p08/p09 lines updated.
+- [x] **Steps 1+2 COMMITTED** by user (`0b9dae4a` Step1 C++ seed PA, `6a35080b`
+      Step2 C++ orchestrator, `352f13d5` Step2 configs/Python + this folder's
+      dev_log/tasks snapshot). **Step 4 records staged** (`git add`-only) for user
+      review (P0.6/P0.8 plan-doc relabels + dev_log pointers + top-level milestone).
+      NOTE: unrelated modified files in the tree (`important_task_rta.py`,
+      `test_important_task_rta.py`, `test_io_v1.yaml`, `agent_coding_rules.md`,
+      `overall_tasks.md`, `_perf_old_ecbed896`) are PRE-EXISTING (in the session-start
+      `gitStatus` before this session) and NOT staged — not P0.9 Step-4 work.

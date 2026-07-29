@@ -236,3 +236,65 @@
   seed (D6 — a behavior change, but no prod A/B run by me); top-level
   `agents/dev_log.md` milestone; `git add` staged for user review (no commit).
 
+## 2026-07-28 (Step 4 records LANDED + Issue-2 review)
+
+- **Issue-2 review (user request "check these 2 notes found by another agent"):**
+  another agent flagged that `TestGateQ3` (`tests/python/test_evaluation_suite.py`)
+  uses a mock key `(8, "DM")` while `Q3_BASELINES` (`evaluation_suite.py:125`) lists
+  `DM_FAST`/`DM_SLOW` — claiming `evaluate_q3` therefore treats DM_FAST/DM_SLOW as
+  missing baselines and the test "passes structurally but doesn't actually evaluate
+  INCR against DM baseline entries". **Verified this is NOT a P0.9 regression:**
+  - `git show HEAD:SP_Metric_Opt/simulation_experiments/evaluation_suite.py` shows
+    HEAD already had `Q3_BASELINES = ["RM_FAST", "RM_SLOW", ...]` with the mock key
+    `(8, "RM")` — i.e. the bare mock key ALREADY did NOT match RM_FAST/RM_SLOW in
+    HEAD. The structural gap pre-dates P0.9.
+  - `_q3_at_n` (`evaluation_suite.py:315-343`) iterates ONLY `for b in Q3_BASELINES:
+    bsp = _sp(lookup, n, b)` — it NEVER reads the bare `(8, "DM")` key. So that key
+    is dead weight (never consumed), and DM_FAST/DM_SLOW are "missing baselines"
+    (noted in detail, NOT fatal per the gate's "missing-is-noted-not-fatal" design)
+    — exactly as RM_FAST/RM_SLOW were in HEAD. The rename faithfully carried bare
+    RM→bare DM. Test passes because INCR beats the PRESENT baselines
+    (CFS/INCR_NO_TL/INCR_WCET) in all 3 TestGateQ3 cases.
+  - The agent's RECOMMENDATION (populate the mock with real `(8, "DM_FAST")` /
+    `(8, "DM_SLOW")` keys so the test actually exercises the DM baseline comparison
+    instead of the missing-baseline path) is a legitimate **optional test-quality
+    improvement** — but OUT of P0.9 scope (P0.9 = the rename D4 + behavior-preserving
+    carry-forward; expanding it would violate "work by module, don't expand scope").
+    Filed as a P2 hygiene note for later.
+- **Issue-3 review:** `compare_against_bf.json time_limit_seconds: 10` vs expected
+  `1` (351/353 py, 2 fails). Confirmed PRE-EXISTING — proven via `git diff` that my
+  P0.9 edit touched only `main_scheduler_list`; `time_limit_seconds: 10` was already
+  in HEAD. = the P2.14-known config failures. No action.
+- **Step 4 LANDED (P0.6/P0.8 plan refs RM→DM):** relabeled `goal.md`+`tasks.md` in
+  BOTH `P0_6_static_solution/` and `P0_8_important_task_schedulability/` via sed bulk
+  (most-specific tokens first, bare `\bRM\b` last so it couldn't touch `RM_FAST`/
+  `RMFast`/`ARM`): `RateMonotonicPriorityVec`→`DeadlineMonotonicPriorityVec`,
+  `SeedIncumbentFromRMFast`→`...DMFast`, `BootstrapIncumbentFromRMFast`→`...DMFast`,
+  `AssignRMRespectingGroupOrder`→`AssignDMRespectingGroupOrder`, `RM_FAST`/`RM_SLOW`
+  →`DM_FAST`/`DM_SLOW`, "RM period-sort"→"DM deadline-sort", "RM PA"→"DM PA",
+  "Rate Monotonic"→"Deadline Monotonic", bare `RM`→`DM`. Residual RM check across all
+  4 files = CLEAN. P0.6's planned `AssignDMRespectingGroupOrder` extraction now
+  coherently wraps the now-deadline-based orchestrator sort (bare branches call it
+  with empty group = behavior-identical; static solution calls it with
+  `important_ids`). **Historical `dev_log.md` entries in both folders left as
+  point-in-time records** (NOT rewritten — same "don't falsify history" treatment as
+  the `p211_reopt_ab_config.json` leave); each prepended with a dated 2026-07-28
+  P0.9-supersedence pointer noting the relabel + that the relabeled plan docs above
+  are authoritative.
+- **Step 5 (records):** top-level `agents/dev_log.md` milestone appended (this task
+  folder's dev_log entry = this one). Memory file `p09-dm-and-important-first-
+  priority.md` + `MEMORY.md` index updated (Step 4 done, Issue-2 verdict). Step 4
+  records staged for user review.
+- **Commit-state correction (caught during staging):** the prior Step-2 entries here
+  and the `tasks.md` said "NOT committed, `git add`-only" — that was true when
+  written, but the user has SINCE committed Steps 1+2 in 3 commits: `0b9dae4a`
+  (Step 1 C++ seed PA), `6a35080b` (Step 2 C++ orchestrator), `352f13d5` (Step 2
+  configs/Python + a snapshot of THIS folder's `dev_log.md`/`tasks.md`). Verified
+  via `git log` + `git show --stat` + `git diff HEAD` (the C++/orchestrator/config
+  files are clean vs HEAD; only the Step-4 record files + unrelated pre-existing
+  modifications remain uncommitted). Records above updated to reflect "Steps 1+2
+  COMMITTED; Step 4 staged."
+- **Remaining (Step 5 tail):** D6 SP-shift note at the seed — this is a behavior
+  change, but NO prod A/B run was done by me (user-go only). If global SP moves
+  materially at review, flag for prod A/B.
+
