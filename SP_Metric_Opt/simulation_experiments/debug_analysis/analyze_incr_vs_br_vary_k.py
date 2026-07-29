@@ -72,7 +72,7 @@ def main():
         )
 
         row = {"taskset": ts_i}
-        for mode in ["INCR", "BF", "INCR_NO_TL", "INCR_WCET", "RM", "RM_FAST", "RM_SLOW"]:
+        for mode in ["INCR", "BF", "INCR_NO_TL", "INCR_WCET", "DM", "DM_FAST", "DM_SLOW"]:
             vals = run_mode(input_dir, output_dir, mode, duration_ms)
             if vals:
                 avg = sum(vals) / len(vals)
@@ -84,7 +84,7 @@ def main():
 
     # Print summary
     print("\n" + "=" * 90)
-    modes = ["INCR", "BF", "INCR_NO_TL", "INCR_WCET", "RM", "RM_FAST", "RM_SLOW"]
+    modes = ["INCR", "BF", "INCR_NO_TL", "INCR_WCET", "DM", "DM_FAST", "DM_SLOW"]
     header = f"{'TS':>3}" + "".join(f" | {m:>10}" for m in modes)
     print(header)
     print("-" * 90)

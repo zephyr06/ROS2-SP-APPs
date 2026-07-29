@@ -10,7 +10,7 @@
         "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
         "time_limit_seconds": 10,
-        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
+        "main_scheduler_list": ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"],
         "ablation_scheduler_list": ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET"],
         "interval_sweep_seconds_list": [5, 10],
         "parallel_worker_processes": 4,

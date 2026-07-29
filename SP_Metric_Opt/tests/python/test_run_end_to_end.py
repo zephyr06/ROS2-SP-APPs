@@ -31,12 +31,12 @@ class TestSchedulerUnion(unittest.TestCase):
 
     def test_union_dedup_preserves_order(self):
         cfg = {
-            "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+            "main_scheduler_list": ["INCR", "BF", "DM", "CFS"],
             "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"],
         }
         union = e2e.build_scheduler_union(cfg)
         # BF and INCR appear in both lists but only once in the union
-        self.assertEqual(union, ["INCR", "BF", "RM", "CFS",
+        self.assertEqual(union, ["INCR", "BF", "DM", "CFS",
                                  "INCR_NO_TL", "INCR_WCET"])
         self.assertEqual(len(union), len(set(union)), "union contains duplicates")
 

@@ -109,7 +109,7 @@ def plot_and_save_boxplot_sp(data, plot_file_path, csv_file_path, scheduler_name
     plt.close()
 
 
-def analyze_one_scheduler(scheduler_name = "RM"):
+def analyze_one_scheduler(scheduler_name = "DM"):
     exp_res_folder = os.path.join(OPT_SP_PROJECT_PATH, "../Experiments", scheduler_name )
     time_sp_pairs = process_tar_files_sp(exp_res_folder)
     plot_and_save_boxplot_sp(time_sp_pairs, os.path.join(exp_res_folder, "box_plot_of_all_data_" + scheduler_name + ".pdf"),

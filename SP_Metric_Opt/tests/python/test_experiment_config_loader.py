@@ -20,9 +20,9 @@ old names are not silently kept as aliases.
 
 Note on the gate-eval consequences of the fold (D1=alpha):
   `paper_simulation_config.json` carries the PAPER scheduler set (5 main:
-  INCR_Reopt_10, BF, RM_FAST, RM_SLOW, CFS) -- NOT the 10-scheduler gate set.
+  INCR_Reopt_10, BF, DM_FAST, DM_SLOW, CFS) -- NOT the 10-scheduler gate set.
   The gate eval therefore runs against those schedulers (main+ablation union).
-  Q1/Q2/Q3/E1 still evaluate (BF/INCR_Reopt_10/CFS/RM_FAST/RM_SLOW all
+  Q1/Q2/Q3/E1 still evaluate (BF/INCR_Reopt_10/CFS/DM_FAST/DM_SLOW all
   simulated); E3 (period-
   monotonicity) needs >=2 INCR_Reopt_X arms but only INCR_Reopt_10 is simulated,
   so E3 reports MISSING at every N (non-fatal) -- it loses the signal it had
@@ -162,7 +162,7 @@ class TestPaperConfigCarriesEvalKeys(unittest.TestCase):
         # Pin the consequence of the fold: paper config's main_scheduler_list is
         # the PAPER set (5 schedulers), NOT the 10-scheduler gate set. E3 will
         # therefore be MISSING-only under the gate eval (documented, accepted).
-        # RM was replaced by RM_FAST+RM_SLOW (the two RunOrchestrator time-limit
+        # DM was replaced by DM_FAST+DM_SLOW (the two RunOrchestrator time-limit
         # variants) in every config's main list, so the pin reflects both.
         import json
         with open(os.path.join(CONFIGS_DIR, "paper_simulation_config.json")) as f:
@@ -170,7 +170,7 @@ class TestPaperConfigCarriesEvalKeys(unittest.TestCase):
         for mode_key in ("test_mode", "prod_mode"):
             main = raw[mode_key]["main_scheduler_list"]
             self.assertEqual(
-                main, ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
+                main, ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"],
                 f"{mode_key} main_scheduler_list changed from the paper set: {main}")
 
 

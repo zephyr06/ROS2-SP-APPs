@@ -45,10 +45,10 @@ PARAMS_YAML = os.path.join(_REPO_ROOT, "sources/parameters.yaml")
 PARAMS_BACKUP = os.path.join(_REPO_ROOT, "sources/parameters.yaml.bak")
 
 BASE_MODES = [
-    "RM",
+    "DM",
     "BF",
-    "RM_FAST",
-    "RM_SLOW",
+    "DM_FAST",
+    "DM_SLOW",
 ]
 
 INCR_RADII = [2, 3, 4, 5, 6]

@@ -139,7 +139,7 @@ def reanalyze_experiment(exp_dir, schedulers, horizon_granularity=10):
 
 
 if __name__ == "__main__":
-    schedulers = ["INCR", "INCR_SWAP", "BF", "RM_FAST", "RM_SLOW"]
+    schedulers = ["INCR", "INCR_SWAP", "BF", "DM_FAST", "DM_SLOW"]
     for num_tasks in [4, 6, 8]:
         exp_dir = os.path.join(
             PROJECT_ROOT, "Gen_Taskset", "simulation_tasksets",

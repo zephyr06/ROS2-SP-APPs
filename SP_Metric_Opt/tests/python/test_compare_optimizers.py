@@ -76,7 +76,7 @@ class TestCompareOptimizers(unittest.TestCase):
         expected = {
             "INCR_Reopt_10", "BF",
             "INCR_NO_TL", "INCR_WCET",
-            "RM_FAST", "RM_SLOW",
+            "DM_FAST", "DM_SLOW",
             "CFS",
         }
         self.assertEqual(set(ALL_SCHEDULERS), expected)

@@ -57,7 +57,7 @@ class TestSetupPublicationStyle(unittest.TestCase):
 class TestGetSchedulerColorMap(unittest.TestCase):
 
     def test_color_map_length(self):
-        schedulers = ["INCR", "BF", "RM", "CFS"]
+        schedulers = ["INCR", "BF", "DM", "CFS"]
         cmap = get_scheduler_color_map(schedulers)
         self.assertEqual(len(cmap), 4)
         for s in schedulers:
@@ -137,7 +137,7 @@ class TestPublicationQualityFigures(unittest.TestCase):
     def test_line_chart(self):
         """Simulate Fig 1A-style multi-line chart."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            schedulers = ["INCR", "BF", "RM", "CFS"]
+            schedulers = ["INCR", "BF", "DM", "CFS"]
             color_map = get_scheduler_color_map(schedulers)
             num_tasks_list = [4, 6, 8]
 
@@ -171,7 +171,7 @@ class TestPublicationQualityFigures(unittest.TestCase):
         """Simulate Fig 1F-style box plot."""
         with tempfile.TemporaryDirectory() as tmpdir:
             import numpy as np
-            schedulers = ["INCR", "BF", "RM", "CFS"]
+            schedulers = ["INCR", "BF", "DM", "CFS"]
             color_map = get_scheduler_color_map(schedulers)
 
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -226,7 +226,7 @@ class TestPublicationQualityFigures(unittest.TestCase):
     def test_single_line_chart(self):
         """Simulate Fig 3-style single line chart."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            schedulers = ["INCR", "BF", "RM", "CFS"]
+            schedulers = ["INCR", "BF", "DM", "CFS"]
             color_map = get_scheduler_color_map(schedulers)
             means = [0.05, 0.08, 0.10, 0.12]
 

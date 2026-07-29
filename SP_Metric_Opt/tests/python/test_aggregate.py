@@ -419,7 +419,7 @@ class TestNormalizeRecordsSP(unittest.TestCase):
              "_experiment_dir": "x"},
             {"num_tasks": 4, "scheduler": "INCR", "mean_sp": 3.2, "std_sp": 0.2,
              "_experiment_dir": "x"},
-            {"num_tasks": 4, "scheduler": "RM", "mean_sp": 2.0, "std_sp": 0.05,
+            {"num_tasks": 4, "scheduler": "DM", "mean_sp": 2.0, "std_sp": 0.05,
              "_experiment_dir": "x"},
         ]
         cfg = {"analysis": {}}  # no method key -> default upper_bound
@@ -429,7 +429,7 @@ class TestNormalizeRecordsSP(unittest.TestCase):
         by = {r["scheduler"]: r["mean_sp"] for r in norm}
         self.assertAlmostEqual(by["BF"], 0.8)      # 4.0 / 5.0
         self.assertAlmostEqual(by["INCR"], 0.64)   # 3.2 / 5.0
-        self.assertAlmostEqual(by["RM"], 0.4)      # 2.0 / 5.0
+        self.assertAlmostEqual(by["DM"], 0.4)      # 2.0 / 5.0
         # std scales the same way
         std_by = {r["scheduler"]: r["std_sp"] for r in norm}
         self.assertAlmostEqual(std_by["INCR"], 0.04)  # 0.2 / 5.0
@@ -481,7 +481,7 @@ class TestNormalizeRecordsSP(unittest.TestCase):
              "_experiment_dir": "x"},
             {"num_tasks": 4, "scheduler": "BF", "mean_sp": 2.0, "std_sp": 0.2,
              "_experiment_dir": "x"},
-            {"num_tasks": 4, "scheduler": "RM", "mean_sp": 3.0, "std_sp": 0.0,
+            {"num_tasks": 4, "scheduler": "DM", "mean_sp": 3.0, "std_sp": 0.0,
              "_experiment_dir": "x"},
         ]
         cfg = {"analysis": {"sp_normalization_method": "minmax_per_task_count"}}
@@ -490,7 +490,7 @@ class TestNormalizeRecordsSP(unittest.TestCase):
         by = {r["scheduler"]: r["mean_sp"] for r in norm}
         self.assertAlmostEqual(by["INCR"], 1.0)
         self.assertAlmostEqual(by["BF"], 0.0)
-        self.assertAlmostEqual(by["RM"], 0.5)
+        self.assertAlmostEqual(by["DM"], 0.5)
 
     def test_minmax_degenerate_all_equal(self):
         """All schedulers equal at a task count -> max maps to 1.0."""
@@ -543,7 +543,7 @@ class TestGenerateMainGroupFigures(unittest.TestCase):
             {"num_tasks": 4, "scheduler": "INCR", "mean_sp": 0.90, "std_sp": 0.05,
              "mean_miss_rate": 0.1, "std_miss_rate": 0.02, "mean_sched_time": 0.01, "std_sched_time": 0.001},
         ]
-        cfg = {"main_scheduler_list": ["INCR", "BF", "RM", "CFS"]}
+        cfg = {"main_scheduler_list": ["INCR", "BF", "DM", "CFS"]}
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.FIGURES_OUTPUT_DIR = tmpdir
             agg.generate_main_group_figures(records, cfg)
@@ -566,7 +566,7 @@ class TestGenerateMainGroupFigures(unittest.TestCase):
              "mean_miss_rate": 0.1, "std_miss_rate": 0.02, "mean_sched_time": 0.01, "std_sched_time": 0.001},
         ]
         cfg = {
-            "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+            "main_scheduler_list": ["INCR", "BF", "DM", "CFS"],
             "analysis": {"normalize_sp": True,
                          "sp_normalization_method": "upper_bound"},
         }
@@ -632,10 +632,10 @@ class TestImportantTaskMissRateFigure(unittest.TestCase):
         records = [
             {"num_tasks": 6, "scheduler": "INCR", "important_miss_rate": 0.05, "non_important_miss_rate": 0.12},
             {"num_tasks": 6, "scheduler": "BF", "important_miss_rate": 0.08, "non_important_miss_rate": 0.15},
-            {"num_tasks": 6, "scheduler": "RM", "important_miss_rate": 0.10, "non_important_miss_rate": 0.18},
+            {"num_tasks": 6, "scheduler": "DM", "important_miss_rate": 0.10, "non_important_miss_rate": 0.18},
             {"num_tasks": 6, "scheduler": "CFS", "important_miss_rate": 0.12, "non_important_miss_rate": 0.20},
         ]
-        cfg = {"num_tasks_for_single_task_figures": 6, "main_scheduler_list": ["INCR", "BF", "RM", "CFS"]}
+        cfg = {"num_tasks_for_single_task_figures": 6, "main_scheduler_list": ["INCR", "BF", "DM", "CFS"]}
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.FIGURES_OUTPUT_DIR = tmpdir
             agg.generate_important_task_miss_rate_figure(records, cfg)
@@ -647,7 +647,7 @@ class TestImportantTaskMissRateFigure(unittest.TestCase):
         records = [
             {"num_tasks": 8, "scheduler": "INCR", "important_miss_rate": 0.05, "non_important_miss_rate": 0.12},
         ]
-        cfg = {"num_tasks_for_single_task_figures": 6, "main_scheduler_list": ["INCR", "BF", "RM", "CFS"]}
+        cfg = {"num_tasks_for_single_task_figures": 6, "main_scheduler_list": ["INCR", "BF", "DM", "CFS"]}
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.FIGURES_OUTPUT_DIR = tmpdir
             # Should not crash when target task count not present
@@ -888,7 +888,7 @@ class TestIntegrationStyleFigureGeneration(unittest.TestCase):
         for num_tasks in [4, 6]:
             exp_dir = os.path.join(self.temp_base, f"tasks{num_tasks}_test")
             rows = []
-            for sched in ["INCR", "BF", "RM", "CFS"]:
+            for sched in ["INCR", "BF", "DM", "CFS"]:
                 rows.append({
                     "scheduler": sched,
                     "mean_sp": 0.80 + (0.05 if sched == "INCR" else 0.0),
@@ -904,7 +904,7 @@ class TestIntegrationStyleFigureGeneration(unittest.TestCase):
         # Also create raw interval data for boxplot
         exp4 = os.path.join(self.temp_base, "tasks4_test")
         taskset_dir = os.path.join(exp4, "taskset_0")
-        for sched in ["INCR", "BF", "RM", "CFS"]:
+        for sched in ["INCR", "BF", "DM", "CFS"]:
             sched_dir = os.path.join(taskset_dir, sched, sched)
             os.makedirs(sched_dir, exist_ok=True)
             with open(os.path.join(sched_dir, "interval_sp_metrics.txt"), "w") as f:
@@ -916,7 +916,7 @@ class TestIntegrationStyleFigureGeneration(unittest.TestCase):
 
         cfg = {
             "num_tasks_for_single_task_figures": 4,
-            "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+            "main_scheduler_list": ["INCR", "BF", "DM", "CFS"],
             "ablation_scheduler_list": ["BF", "INCR", "INCR_NO_TL", "INCR_WCET"],
         }
 

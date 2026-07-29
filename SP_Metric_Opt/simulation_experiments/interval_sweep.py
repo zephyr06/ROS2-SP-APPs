@@ -316,7 +316,7 @@ def _normalize_sweep_data(data, ideal_sp):
 
 def _draw_interval_sweep_variant(data, cfg, output_path_stem, ylabel, title):
     """Draw one Figure 2 variant (raw or normalized) and save it."""
-    schedulers = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"])
+    schedulers = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"])
     color_map = get_scheduler_color_map(schedulers)
 
     intervals = sorted({d["interval"] for d in data})
@@ -431,7 +431,7 @@ def main():
     n_sec = args.n_sec if args.n_sec is not None else cfg.get("simulation_duration_seconds", 30)
     interval_list = cfg.get("interval_sweep_seconds_list", [5, 10])
     base_seed = cfg.get("base_random_seed", 1000)
-    main_schedulers = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"])
+    main_schedulers = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"])
     export_level = cfg.get("export_detail_level", 1)
     important_task_pct = cfg.get("analysis", {}).get("important_task_top_percentage", 0.10)
     num_workers = cfg.get("parallel_worker_processes", None)

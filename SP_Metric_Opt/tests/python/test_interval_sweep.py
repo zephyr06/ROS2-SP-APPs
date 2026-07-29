@@ -20,8 +20,8 @@ def _data():
         {"interval": 10, "scheduler": "BF", "mean_sp": 2.0, "std_sp": 0.2},
         {"interval": 5, "scheduler": "INCR", "mean_sp": 1.6, "std_sp": 0.1},
         {"interval": 10, "scheduler": "INCR", "mean_sp": 1.4, "std_sp": 0.1},
-        {"interval": 5, "scheduler": "RM", "mean_sp": 1.0, "std_sp": 0.05},
-        {"interval": 10, "scheduler": "RM", "mean_sp": 1.0, "std_sp": 0.05},
+        {"interval": 5, "scheduler": "DM", "mean_sp": 1.0, "std_sp": 0.05},
+        {"interval": 10, "scheduler": "DM", "mean_sp": 1.0, "std_sp": 0.05},
     ]
 
 
@@ -64,7 +64,7 @@ class TestIntervalSweepFigure(unittest.TestCase):
     @unittest.mock.patch("simulation_experiments.interval_sweep.MATPLOTLIB_AVAILABLE", True)
     @unittest.mock.patch("simulation_experiments.interval_sweep.save_figure")
     def test_raw_only_when_normalize_off(self, mock_save):
-        cfg = {"main_scheduler_list": ["INCR", "BF", "RM", "CFS"]}
+        cfg = {"main_scheduler_list": ["INCR", "BF", "DM", "CFS"]}
         with unittest.mock.patch.object(sweep, "FIGSIZE_SINGLE", (8, 6)):
             sweep.generate_interval_sweep_figure(_data(), cfg, "/tmp/fig2_test", ideal_sp=5.0)
         self.assertEqual(mock_save.call_count, 1)
@@ -78,7 +78,7 @@ class TestIntervalSweepFigure(unittest.TestCase):
         same shape, just an unscaled y-axis), so it is dropped -- plot less.
         """
         cfg = {
-            "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+            "main_scheduler_list": ["INCR", "BF", "DM", "CFS"],
             "analysis": {"normalize_sp": True,
                          "sp_normalization_method": "upper_bound"},
         }
@@ -94,7 +94,7 @@ class TestIntervalSweepFigure(unittest.TestCase):
     def test_normalized_skipped_when_no_ceiling(self, mock_save):
         """With normalize_sp on but no ceiling, only the raw figure is drawn."""
         cfg = {
-            "main_scheduler_list": ["INCR", "BF", "RM", "CFS"],
+            "main_scheduler_list": ["INCR", "BF", "DM", "CFS"],
             "analysis": {"normalize_sp": True,
                          "sp_normalization_method": "upper_bound"},
         }
@@ -167,7 +167,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
         with unittest.mock.patch.object(sweep.subprocess, "run") as mock_run:
             out = sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=10,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=True,
@@ -184,7 +184,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
             mock_run.return_value = unittest.mock.MagicMock(returncode=0)
             out = sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=5,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=True,
@@ -208,7 +208,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
             mock_run.return_value = unittest.mock.MagicMock(returncode=0)
             sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=10,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=True,
@@ -225,7 +225,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
             mock_run.return_value = unittest.mock.MagicMock(returncode=0)
             sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=5,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=False,
@@ -247,7 +247,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
             mock_run.return_value = unittest.mock.MagicMock(returncode=0)
             sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=10,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=False,
@@ -306,7 +306,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
         with unittest.mock.patch.object(sweep.subprocess, "run") as mock_run:
             out = sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=10,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=True, run_root=run_root,
@@ -327,7 +327,7 @@ class TestSweepReuseMatchingInterval(unittest.TestCase):
             mock_run.return_value = unittest.mock.MagicMock(returncode=0)
             out = sweep.run_single_interval(
                 num_tasks=6, n_tasksets=2, n_sec=30, interval_sec=5,
-                base_seed=1000, schedulers=["INCR", "BF", "RM", "CFS"],
+                base_seed=1000, schedulers=["INCR", "BF", "DM", "CFS"],
                 bin_dir="release", output_parent=tmp, export_level=1,
                 important_task_pct=0.1, num_workers=None, resume=False,
                 verbose=0, reuse_matching_interval=True, run_root=run_root,

@@ -44,7 +44,7 @@ import simulation_experiments.aggregate_across_tasks as agg
 # Fixtures
 # ---------------------------------------------------------------------------
 
-SCHEDULERS_MAIN = ["INCR_Reopt_10", "BF", "RM", "CFS"]
+SCHEDULERS_MAIN = ["INCR_Reopt_10", "BF", "DM", "CFS"]
 SCHEDULERS_ABLATION = ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET"]
 
 
@@ -293,7 +293,7 @@ class TestGateQ3(unittest.TestCase):
     def test_pass(self):
         lookup = {
             (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.70},
-            (8, "RM"): {"mean_sp_norm": 0.50},
+            (8, "DM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.60},
             (8, "INCR_WCET"): {"mean_sp_norm": 0.55},
@@ -304,7 +304,7 @@ class TestGateQ3(unittest.TestCase):
     def test_fail_baseline_beats_incr(self):
         lookup = {
             (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.55},
-            (8, "RM"): {"mean_sp_norm": 0.50},
+            (8, "DM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.60},  # beats INCR
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
             (8, "INCR_WCET"): {"mean_sp_norm": 0.45},
@@ -317,7 +317,7 @@ class TestGateQ3(unittest.TestCase):
         """A missing baseline is reported but does not auto-pass the gate."""
         lookup = {
             (8, "INCR_Reopt_10"): {"mean_sp_norm": 0.70},
-            (8, "RM"): {"mean_sp_norm": 0.50},
+            (8, "DM"): {"mean_sp_norm": 0.50},
             # CFS, INCR_NO_TL, INCR_WCET absent
         }
         verdict = ev.evaluate_q3(lookup, large_n=8)
@@ -491,7 +491,7 @@ class TestPerNVerdicts(unittest.TestCase):
             (4, "INCR_Reopt_30"): {"mean_sp_norm": 0.590, "mean_sched_time": 0.050},
             (4, "INCR_Reopt_60"): {"mean_sp_norm": 0.580, "mean_sched_time": 0.045},
             (6, "BF"): {"mean_sp_norm": 0.55, "mean_sched_time": 2.0},
-            (6, "RM"): {"mean_sp_norm": 0.50},
+            (6, "DM"): {"mean_sp_norm": 0.50},
             (6, "CFS"): {"mean_sp_norm": 0.45},
             (6, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
             (6, "INCR_WCET"): {"mean_sp_norm": 0.45},
@@ -569,7 +569,7 @@ class TestEvaluateAllGates(unittest.TestCase):
                                    "overhead": 0.0075},
             (8, "INCR_Reopt_30"): {"mean_sp_norm": 0.77, "mean_sched_time": 0.070},
             (8, "INCR_Reopt_60"): {"mean_sp_norm": 0.76, "mean_sched_time": 0.065},
-            (8, "RM"): {"mean_sp_norm": 0.50},
+            (8, "DM"): {"mean_sp_norm": 0.50},
             (8, "CFS"): {"mean_sp_norm": 0.45},
             (8, "INCR_NO_TL"): {"mean_sp_norm": 0.40},
             (8, "INCR_WCET"): {"mean_sp_norm": 0.45},
@@ -650,7 +650,7 @@ class TestEndToEndMain(unittest.TestCase):
             # longer scheduled, so it is not in the sp/et dicts.
             sp = {
                 "BF": {4: 0.90, 8: 0.55, 10: 0.50},
-                "RM": {4: 0.50, 8: 0.45, 10: 0.40},
+                "DM": {4: 0.50, 8: 0.45, 10: 0.40},
                 "CFS": {4: 0.45, 8: 0.40, 10: 0.35},
                 "INCR_NO_TL": {4: 0.40, 8: 0.40, 10: 0.35},
                 "INCR_WCET": {4: 0.45, 8: 0.45, 10: 0.40},
@@ -666,7 +666,7 @@ class TestEndToEndMain(unittest.TestCase):
             }
             et = {
                 "BF": {4: 0.20, 8: 2.0, 10: 5.0},
-                "RM": {4: 0.01, 8: 0.01, 10: 0.01},
+                "DM": {4: 0.01, 8: 0.01, 10: 0.01},
                 "CFS": {4: 0.0, 8: 0.0, 10: 0.0},
                 "INCR_NO_TL": {4: 0.04, 8: 0.07, 10: 0.18},
                 "INCR_WCET": {4: 0.04, 8: 0.07, 10: 0.18},

@@ -1,5 +1,5 @@
 {
-    "_comment": "Central experiment configuration (JSON). All simulation and plotting parameters live here. Scripts load this file via experiment_config_loader.py. Modify values directly; no CLI overrides are supported. This is ALSO the single config the north-star gate eval reads (P2.8 D1=alpha fold): the eval_* keys in each mode block carry the gate->N mapping; the pipeline ignores them, evaluation_suite.py reads them. The former dedicated gate_eval_config.json was DELETED; pointing at its old name FAILS LOUDLY. Consequence of the fold: the gate eval runs against the PAPER scheduler set (main+ablation union), NOT the former 10-scheduler gate set. Q1/Q2/Q3/E1 still evaluate (BF/INCR_Reopt_10/CFS/RM_FAST/RM_SLOW simulated). E3 (INCR_Reopt_X period-monotonicity) enforces the realistic-period chain INCR_Reopt_10 >= INCR_Reopt_30 >= INCR_Reopt_60 (eval_period_arms); INCR_Reopt_1 is a special max-reopt stress arm (its pair is NOT enforced) and INCR_Reopt_5 is not simulated, so both are off the enforced chain. test_mode simulates only INCR_Reopt_10 -> E3 reports MISSING at every N (non-fatal); prod_mode simulates INCR_Reopt_1/_10/_30/_60, so the enforced chain (10/30/60) all have data and E3 evaluates.",
+    "_comment": "Central experiment configuration (JSON). All simulation and plotting parameters live here. Scripts load this file via experiment_config_loader.py. Modify values directly; no CLI overrides are supported. This is ALSO the single config the north-star gate eval reads (P2.8 D1=alpha fold): the eval_* keys in each mode block carry the gate->N mapping; the pipeline ignores them, evaluation_suite.py reads them. The former dedicated gate_eval_config.json was DELETED; pointing at its old name FAILS LOUDLY. Consequence of the fold: the gate eval runs against the PAPER scheduler set (main+ablation union), NOT the former 10-scheduler gate set. Q1/Q2/Q3/E1 still evaluate (BF/INCR_Reopt_10/CFS/DM_FAST/DM_SLOW simulated). E3 (INCR_Reopt_X period-monotonicity) enforces the realistic-period chain INCR_Reopt_10 >= INCR_Reopt_30 >= INCR_Reopt_60 (eval_period_arms); INCR_Reopt_1 is a special max-reopt stress arm (its pair is NOT enforced) and INCR_Reopt_5 is not simulated, so both are off the enforced chain. test_mode simulates only INCR_Reopt_10 -> E3 reports MISSING at every N (non-fatal); prod_mode simulates INCR_Reopt_1/_10/_30/_60, so the enforced chain (10/30/60) all have data and E3 evaluates.",
     "_comment_on_naming": "All keys use full descriptive names. Avoid abbreviations. Times are in seconds unless noted. time_limit_seconds (default 1) is the per-activation optimizer budget: run_simulation_plot_eval_ns.sh overwrites sources/parameters.yaml's TIME_LIMIT from it (restored after the run) so the C++ binary (static-init reader in Parameters.cpp) picks up the configured value. It bounds ONE EnumeratePA_with_TimeLimits / OptimizeIncre call (the budget a single scheduler activation runs against), NOT the task time-limits themselves.",
 
     "test_mode": {
@@ -10,7 +10,7 @@
         "simulation_duration_seconds": 70,
         "scheduler_trigger_interval_seconds": 10,
         "time_limit_seconds": 1,
-        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
+        "main_scheduler_list": ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"],
         "ablation_scheduler_list": ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET", "INCR_NO_REOPT"],
         "interval_sweep_seconds_list": [5, 10],
         "parallel_worker_processes": 4,
@@ -23,14 +23,14 @@
         "eval_period_arms": ["INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
     "prod_mode": {
-        "_comment": "Production / paper-grade parameters. Adjust manually for final experiments. ablation_scheduler_list leads with INCR_Reopt_10 (the production arm) as the reference baseline every ablation arm is contrasted against, then carries INCR_NO_REOPT (P3.6: pure incremental, RM-fast bootstrap at interval 0, no periodic reopt) to answer 'does periodic reopt earn its cost?' vs that baseline. INCR_Reopt_10 is also in main_scheduler_list; build_scheduler_union de-duplicates, so it is simulated once.",
+        "_comment": "Production / paper-grade parameters. Adjust manually for final experiments. ablation_scheduler_list leads with INCR_Reopt_10 (the production arm) as the reference baseline every ablation arm is contrasted against, then carries INCR_NO_REOPT (P3.6: pure incremental, DM-fast bootstrap at interval 0, no periodic reopt) to answer 'does periodic reopt earn its cost?' vs that baseline. INCR_Reopt_10 is also in main_scheduler_list; build_scheduler_union de-duplicates, so it is simulated once.",
         "num_tasks_for_cross_task_comparison": [4, 6, 8, 10, 12, 14, 16],
         "num_tasks_for_single_task_figures": 10,
         "num_tasksets_to_generate": 10,
         "simulation_duration_seconds": 600,
         "scheduler_trigger_interval_seconds": 10,
         "time_limit_seconds": 1,
-        "main_scheduler_list": ["INCR_Reopt_10", "BF", "RM_FAST", "RM_SLOW", "CFS"],
+        "main_scheduler_list": ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"],
         "ablation_scheduler_list": ["INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET", "INCR_Reopt_1", "INCR_Reopt_30", "INCR_Reopt_60", "INCR_NO_REOPT"],
         "interval_sweep_seconds_list": [5, 10, 30, 60],
         "_comment_interval_sweep": "Min sweep interval must be >= 2x the max task period, else the trace-generation guard raises. Max period is 1000ms (PERIODS_MS in Gen_Taskset/task_sets_config/templates/taskset_cfg_paper_base.json), so the floor is 2s. With number_of_gmm_trace_instances_per_path=1, the slowest (1000ms) task yields exactly `interval_s` samples per interval: interval=1 -> 1 sample -> orchestrator.py's `>=2 samples per task per interval` guard fires FATALY at interval 0 (raises 'Cannot compute primary taskset_characteristics'); interval=2 is the exact boundary (2 samples, brittle to int-truncation); interval=5 gives a safe 5 samples. So 1 was dropped (previously [1,5,10,30,60]). Raising number_of_gmm_trace_instances_per_path would also fix it but doubles prod cost; keep it at 1.",

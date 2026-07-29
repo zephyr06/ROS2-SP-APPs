@@ -201,9 +201,9 @@ def main():
     config_template_path = os.path.join(_REPO_ROOT, "Gen_Taskset/task_sets_config/taskset_cfg_paper_6.json")
 
     modes = [
-        "RM", "BF", "INCR_Reopt_10",
+        "DM", "BF", "INCR_Reopt_10",
         "INCR_NO_TL", "INCR_WCET",
-        "RM_FAST", "RM_SLOW",
+        "DM_FAST", "DM_SLOW",
     ]
 
     # Data structures: per-run lists
