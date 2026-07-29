@@ -2,7 +2,7 @@
 
 The RTA is the generation-time guarantee that every emitted taskset is
 schedulable for the important tasks under the static solution's
-RM-with-top-priority-lock at the SEED point (RM-grouped PA + min-TL + WCET).
+DM-with-top-priority-lock at the SEED point (DM-grouped PA + min-TL + WCET).
 See ``important_task_rta.py`` for the recurrence and
 ``agents/active_tasks/P0_8_important_task_schedulability/goal.md`` for scope.
 
@@ -14,9 +14,18 @@ plus a parallel ``wcets`` list per D2) and assert the recurrence's verdict on:
   - the boundary R_i == deadline_i (PASS — schedulable is ≤, not <),
   - per-core isolation (a task on core 0 is NOT interfered by a higher-priority
     important task on core 1 — D3),
-  - the RM-with-top-lock ordering (important tasks occupy the top slots, RM
-    within the group; non-important tasks are lower priority and never
-    interfere — the point of the priority lock).
+  - the DM-with-top-lock ordering (important tasks occupy the top slots, DM
+    within the group — shorter DEADLINE = higher priority; non-important tasks
+    are lower priority and never interfere — the point of the priority lock).
+
+Priority model (P0.9): Deadline Monotonic — among important tasks on a core,
+the SHORTER-DEADLINE task is higher priority (NOT shorter-period/RM). The
+generator emits constrained deadlines (``deadline = period * U(0.5,1.0)``,
+``taskset_generator.py:534``) so ``D`` can be ``< T``; for constrained
+deadlines DM is the optimal fixed-priority assignment, and it is what the C++
+scheduler's seed PA runs (``DeadlineMonotonicPriorityVec``). These tests
+therefore construct cases where ``D != T`` so DM and RM orderings DIVERGE —
+asserting the RTA ranks by deadline, not period.
 
 The WCETs are supplied by the caller (per D2: perf = period *
 FINAL_Et_OVER_PERIOD_RANGE[1], non-perf = execution_time_max); these tests pass
@@ -50,8 +59,9 @@ def _task(
 
 # ---------------------------------------------------------------------------
 # Schedulable: two important tasks on one core, small WCETs, ample deadline.
-# R_1 = WCET_1 (no HP interference) = 5 <= deadline 100.  R_2 = WCET_2 +
-# ceil(R_2/period_1)*WCET_1; converges well under deadline 200.
+# D==T here so DM and RM agree on the order. R_1 = WCET_1 (no HP interference)
+# = 5 <= deadline 100.  R_2 = WCET_2 + ceil(R_2/period_1)*WCET_1; converges
+# well under deadline 200.
 # ---------------------------------------------------------------------------
 def test_schedulable_taskset_passes():
     t1 = _task(period=100, deadline=100, wcet=5.0)
@@ -66,21 +76,27 @@ def test_schedulable_taskset_passes():
 
 
 # ---------------------------------------------------------------------------
-# Unschedulable: the HP important task alone nearly saturates the core, so the
-# LP important task's response time blows past its deadline. Verifies the
-# recurrence detects a miss AND names the culprit (per-task diagnostics so a
-# rejection can be diagnosed — which core / which task).
+# Unschedulable: the HP important task interferes enough that the LP important
+# task's response time blows past its (tight) deadline. Verifies the recurrence
+# detects a miss AND names the culprit (per-task diagnostics so a rejection can
+# be diagnosed — which core / which task).
+#
+# DM-correct construction: the HP task has the SHORTER DEADLINE (20 < 24) so it
+# is highest-priority under DM (and also under RM, since its period 50 < 100).
+# The LP task's deadline (24) is TIGHT but still > the HP deadline, so DM keeps
+# the HP task on top — without this, DM would promote the LP task to HP and the
+# miss would vanish.
 # ---------------------------------------------------------------------------
 def test_unschedulable_taskset_fails_and_names_culprit():
-    # HP important task: period 50, WCET 40 -> 80% util on its own.
-    t_hp = _task(period=50, deadline=50, wcet=40.0)
-    # LP important task: period 100, WCET 10. Its response time:
-    #   R = 10 + ceil(R/50)*40. R=10 -> 10+40=50 -> 10+ceil(50/50)*40=50 -> fixed at 50?
-    #   Actually R=50: ceil(50/50)=1 -> 10+40=50. Converges at 50 <= deadline 60. Schedulable!
-    # So make the LP deadline tighter to force a miss: deadline 30.
-    t_lp = _task(period=100, deadline=30, wcet=10.0)
+    # HP important task: period 50, deadline 20, WCET 15. Shortest deadline and
+    # shortest period -> HP under both DM and RM. R = 15 (no HP) <= 20.
+    t_hp = _task(period=50, deadline=20, wcet=15.0)
+    # LP important task: period 100, deadline 24, WCET 10. Its response time:
+    #   R = 10 + ceil(R/50)*15. R=10 -> 25 -> 10+ceil(25/50)*15=25. Fixed at 25.
+    # 25 > deadline 24 -> MISS.
+    t_lp = _task(period=100, deadline=24, wcet=10.0)
     tasks = [t_hp, t_lp]
-    wcets = [40.0, 10.0]
+    wcets = [15.0, 10.0]
 
     schedulable, culprits = important_tasks_schedulable(tasks, wcets)
 
@@ -97,12 +113,15 @@ def test_unschedulable_taskset_fails_and_names_culprit():
 # ---------------------------------------------------------------------------
 # Boundary: R_i == deadline_i must PASS (schedulable is ≤, not <). This is the
 # D6 form P0.6's filter also uses offline; the boundary must not flip to fail.
+#
+# DM construction: both tasks share period 100; DM ranks by deadline, so the
+# deadline-30 task is HP, the deadline-40 task is LP. Each converges to EXACTLY
+# its deadline (R_hp = 30 == 30; R_lp = 40 == 40) — both boundaries.
 # ---------------------------------------------------------------------------
 def test_boundary_response_equals_deadline_passes():
-    # Construct a task whose converged R equals its deadline exactly.
-    # HP task: period 100, WCET 30. LP task: WCET 10, period 100, deadline 40.
-    #   R = 10 + ceil(R/100)*30. R=10 -> 10+30=40 -> 10+ceil(40/100)*30=40. Fixed at 40 == deadline 40.
-    t_hp = _task(period=100, deadline=100, wcet=30.0)
+    # HP (deadline 30, WCET 30): R = 30 (no HP) == deadline 30. Boundary.
+    t_hp = _task(period=100, deadline=30, wcet=30.0)
+    # LP (deadline 40, WCET 10): R = 10 + ceil(R/100)*30. R=10 -> 40 -> 40. == 40.
     t_lp = _task(period=100, deadline=40, wcet=10.0)
     tasks = [t_hp, t_lp]
     wcets = [30.0, 10.0]
@@ -119,50 +138,58 @@ def test_boundary_response_equals_deadline_passes():
 # Per-core isolation (D3): a task on core 0 must NOT be interfered by a
 # higher-priority important task on core 1. If we put the two important tasks
 # on DIFFERENT cores, the LP task's response time is just its own WCET (no HP
-# interference), even though the HP task has a shorter period. The same taskset
-# on ONE core would miss — confirming the per-core scoping is what saves it.
+# interference). The same taskset on ONE core would miss — confirming the
+# per-core scoping is what saves it.
+#
+# DM-correct: the heavy task (a) has the shorter deadline (50 < 60) and shorter
+# period (50 < 100) -> HP under both DM and RM. On one core its interference
+# makes (b) miss; on two cores (b) is isolated.
 # ---------------------------------------------------------------------------
 def test_per_core_isolation_no_cross_core_interference():
-    # On one core this taskset is unschedulable (LP misses). On two cores it
-    # passes because the HP task lives on core 1 -> no interference to core 0.
-    t_hp = _task(period=50, deadline=50, wcet=40.0, processor_id=1)
-    t_lp = _task(period=100, deadline=30, wcet=10.0, processor_id=0)
-    tasks = [t_hp, t_lp]
-    wcets = [40.0, 10.0]
+    # On one core this taskset is unschedulable (b misses). On two cores it
+    # passes because the heavy task (a) lives on core 1 -> no interference to
+    # core 0.
+    t_a = _task(period=50, deadline=50, wcet=42.0, processor_id=1)   # HP (heavy)
+    t_b = _task(period=100, deadline=60, wcet=10.0, processor_id=0)  # LP
+    tasks = [t_a, t_b]
+    wcets = [42.0, 10.0]
 
     schedulable, culprits = important_tasks_schedulable(tasks, wcets)
 
-    # Per-core: t_lp on core 0 has NO higher-priority important tasks on core 0
-    # -> R = 10 <= deadline 30. t_hp on core 1 has no HP either -> R = 40 <= 50.
+    # Per-core: t_b on core 0 has NO higher-priority important tasks on core 0
+    # -> R = 10 <= deadline 60. t_a on core 1 has no HP either -> R = 42 <= 50.
     assert schedulable is True, f"per-core isolation failed: {culprits}"
     assert culprits == []
 
-    # Sanity-check the inverse: same tasks on ONE core must miss (the LP task's
-    # R grows past 30 under HP interference). This confirms the pass above is
+    # Sanity-check the inverse: same tasks on ONE core must miss (b's R grows
+    # past 60 under a's interference). This confirms the pass above is
     # specifically because of per-core scoping, not because the taskset is
     # trivially schedulable.
-    t_hp_same = _task(period=50, deadline=50, wcet=40.0, processor_id=0)
-    t_lp_same = _task(period=100, deadline=30, wcet=10.0, processor_id=0)
+    #   a (HP): R = 42 <= 50.  b (LP): R = 10 + ceil(R/50)*42 = 94 > 60 -> MISS.
+    t_a_same = _task(period=50, deadline=50, wcet=42.0, processor_id=0)
+    t_b_same = _task(period=100, deadline=60, wcet=10.0, processor_id=0)
     schedulable_same, culprits_same = important_tasks_schedulable(
-        [t_hp_same, t_lp_same], wcets
+        [t_a_same, t_b_same], wcets
     )
     assert schedulable_same is False
     assert any(c["task_index"] == 1 for c in culprits_same)
 
 
 # ---------------------------------------------------------------------------
-# RM-with-top-lock ordering: important tasks occupy the top priority slots,
-# RM-ordered within the group (shorter period = higher priority). Non-important
-# tasks are LOWER priority and must NEVER interfere with the important group —
-# that is the point of the priority lock. So a high-utilization non-important
-# task with a short period must not appear in any important task's R_i.
+# DM-with-top-lock ordering: important tasks occupy the top priority slots,
+# DM-ordered within the group (shorter DEADLINE = higher priority). Non-
+# important tasks are LOWER priority and must NEVER interfere with the
+# important group — that is the point of the priority lock. So a high-
+# utilization non-important task with a short deadline must not appear in any
+# important task's R_i.
 # ---------------------------------------------------------------------------
 def test_non_important_tasks_do_not_interfere():
     # Important task: period 200, WCET 20, deadline 60.
-    # Non-important task: period 10 (SHORTER than the important task's!), WCET 9
-    # -> 90% util. Under plain RM the non-important task would be higher
-    # priority and clobber the important task. Under RM-with-top-lock the
-    # important task is ABOVE it, so the non-important task never interferes.
+    # Non-important task: period 10, deadline 10 (SHORTER than the important
+    # task's!), WCET 9 -> 90% util. Under plain DM (or RM) the non-important
+    # task would be higher priority and clobber the important task. Under
+    # DM-with-top-lock the important task is ABOVE it, so the non-important
+    # task never interferes.
     t_imp = _task(period=200, deadline=60, wcet=20.0, is_important=True)
     t_non = _task(period=10, deadline=10, wcet=9.0, is_important=False)
     tasks = [t_imp, t_non]
@@ -191,28 +218,37 @@ def test_non_important_tasks_do_not_interfere():
 
 
 # ---------------------------------------------------------------------------
-# RM-within-important ordering: among important tasks on the same core, the
-# shorter-period one is higher priority. Verify the recurrence uses period
-# (not task index, not WCET) to rank HP interference by swapping the input
-# order — the verdict must be order-invariant (RM sorts them).
+# DM-within-important ordering: among important tasks on the same core, the
+# SHORTER-DEADLINE one is higher priority. This is the discriminating test for
+# the P0.9 RM→DM switch — it constructs a case where DM and RM orderings
+# DIVERGE (one task has the shorter period, the other the shorter deadline) and
+# asserts the RTA ranks by DEADLINE (DM), not period (RM).
+#
+#   t_a: period 100, deadline 30 (SHORT deadline -> DM highest priority)
+#   t_b: period  50, deadline 50 (SHORTER period -> RM highest priority, but
+#         LONGER deadline -> DM lower priority)
+# Under DM: a is HP. R_a = 10 <= 30; R_b = 25 + ceil(R_b/100)*10 = 35 <= 50
+#   -> SCHEDULABLE.
+# Under RM (period sort): b is HP. R_b = 25 <= 50; R_a = 10 + ceil(R_a/50)*25
+#   = 35 > 30 -> UNSCHEDULABLE (a misses).
+# The RTA must use DEADLINE (DM), so it reports schedulable. (Under the old
+# period sort this test FAILS — the red that drives the switch.)
 # ---------------------------------------------------------------------------
-def test_rma_ordering_is_period_based_not_index_based():
-    # Two important tasks; give the longer-period one a smaller index. RM must
-    # still treat the shorter-period task as higher priority.
-    t_long = _task(period=200, deadline=200, wcet=20.0, is_important=True)  # index 0
-    t_short = _task(period=50, deadline=50, wcet=10.0, is_important=True)   # index 1
-    tasks = [t_long, t_short]
-    wcets = [20.0, 10.0]
+def test_dm_ordering_is_deadline_based_not_period_based():
+    t_a = _task(period=100, deadline=30, wcet=10.0, is_important=True)  # DM-HP
+    t_b = _task(period=50, deadline=50, wcet=25.0, is_important=True)   # DM-LP
+    tasks = [t_a, t_b]
+    wcets = [10.0, 25.0]
 
-    # The short task is HP (period 50). The long task's R:
-    #   R = 20 + ceil(R/50)*10. R=20 -> 20+10=30 -> 20+ceil(30/50)*10=30. Fixed at 30.
-    # 30 <= deadline 200 -> schedulable.
     schedulable, culprits = important_tasks_schedulable(tasks, wcets)
-    assert schedulable is True, f"RM ordering failed: {culprits}"
+    assert schedulable is True, (
+        f"DM ordering must rank by deadline (not period); got culprits {culprits}"
+    )
 
-    # Invert input order; same verdict (RM re-sorts).
+    # Order-invariant: reverse input -> same DM verdict (sort re-ranks by
+    # deadline).
     schedulable_rev, _ = important_tasks_schedulable(
-        [t_short, t_long], [10.0, 20.0]
+        [t_b, t_a], [25.0, 10.0]
     )
     assert schedulable_rev is True
 

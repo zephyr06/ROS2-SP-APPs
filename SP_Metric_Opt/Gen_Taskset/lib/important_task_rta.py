@@ -1,8 +1,8 @@
 """Important-task fixed-priority RTA (P0.8 — seed certification).
 
 Generation-time guarantee that every emitted taskset is schedulable for the
-important tasks under the static solution's RM-with-top-priority-lock at the
-SEED point (RM-grouped priority assignment + min-TL + WCET). See
+important tasks under the static solution's DM-with-top-priority-lock at the
+SEED point (DM-grouped priority assignment + min-TL + WCET). See
 ``agents/active_tasks/P0_8_important_task_schedulability/goal.md``.
 
 The test is the standard exact fixed-priority response-time recurrence, scoped
@@ -29,12 +29,17 @@ FINAL_Et_OVER_PERIOD_RANGE[1]``); for non-perf it is ``execution_time_max``
 consistency). The caller supplies each task's WCET — this module is a pure RTA,
 it does not know how WCET was derived.
 
-Priority order: ``AssignRMRespectingGroupOrder`` semantics — important tasks
-occupy the top ``n_important`` priority slots, RM-ordered (shorter period =
-higher priority) within the important group; non-important tasks fill the lower
-slots (RM within their group). Within the important group the recurrence only
-ever looks at higher-priority important tasks, so what matters here is the
-RM-within-important ordering on each core. (The non-important group's internal
+Priority order (P0.9): Deadline Monotonic — ``AssignDMRespectingGroupOrder``
+semantics. Important tasks occupy the top ``n_important`` priority slots,
+DM-ordered (shorter DEADLINE = higher priority) within the important group;
+non-important tasks fill the lower slots (DM within their group). The generator
+emits constrained deadlines (``deadline = period * U(0.5, 1.0)``), so ``D`` can
+be ``< T``; for constrained deadlines DM is the optimal fixed-priority
+assignment. This RTA MUST rank by deadline (not period/RM) to match the C++
+scheduler's seed PA (``DeadlineMonotonicPriorityVec``) — a divergence would make
+the certification hollow. Within the important group the recurrence only ever
+looks at higher-priority important tasks, so what matters here is the
+DM-within-important ordering on each core. (The non-important group's internal
 order is irrelevant to the important-group RTA — they are all lower priority.)
 
 This mirrors the C++ ``RTA_LL`` recurrence (``RTA_LL.h:65-92``) in spirit, NOT in
@@ -121,13 +126,23 @@ def _rta_one_task(
 
 
 def _important_priority_order(tasks: list) -> list:
-    """Return the important tasks RM-ordered (shorter period = higher priority).
+    """Return the important tasks DM-ordered (shorter deadline = higher priority).
 
     The static solution assigns important tasks the top ``n_important`` priority
-    slots, RM-ordered within the group (``AssignRMRespectingGroupOrder``). Within
-    the important group, "higher priority" = shorter period, ties broken
-    deterministically by the task's position in the input list (stable, matches
-    the generator's index-based tie-break for ``is_important`` labeling).
+    slots, DM-ordered within the group (``AssignDMRespectingGroupOrder`` — the
+    P0.9 RM→DM switch). Within the important group, "higher priority" = shorter
+    DEADLINE (Deadline Monotonic), ties broken deterministically by the task's
+    position in the input list (stable, matches the generator's index-based
+    tie-break for ``is_important`` labeling).
+
+    Why deadline, not period (RM): the generator emits constrained deadlines
+    (``deadline = period * U(0.5, 1.0)``, ``taskset_generator.py:534``), so
+    ``D`` can be ``< T``. For constrained deadlines, Deadline Monotonic is the
+    optimal fixed-priority assignment — DM certifies every taskset RM does, plus
+    more. The C++ scheduler's seed PA runs the same DM order
+    (``DeadlineMonotonicPriorityVec``); this RTA MUST match it or the
+    certification is hollow (certifying under DM while the scheduler runs RM —
+    the exact silent hole P0.8 exists to prevent).
 
     Non-important tasks are excluded entirely — they sit in the lower priority
     slots and never interfere with the important group (the priority lock).
@@ -139,16 +154,16 @@ def _important_priority_order(tasks: list) -> list:
             order (index = stable tie-break identity).
 
     Returns:
-        The important-task subset, sorted by ascending period (RM), ties by
+        The important-task subset, sorted by ascending deadline (DM), ties by
         original index. This IS the priority order: index 0 = highest priority
         within the important group.
     """
     important = [
         (i, t) for i, t in enumerate(tasks) if t.get("is_important", False)
     ]
-    # RM: shorter period = higher priority. Stable sort keeps input order on
+    # DM: shorter deadline = higher priority. Stable sort keeps input order on
     # ties (deterministic by task index).
-    important.sort(key=lambda pair: pair[1]["period"])
+    important.sort(key=lambda pair: pair[1]["deadline"])
     return [t for _, t in important]
 
 
@@ -158,11 +173,11 @@ def important_tasks_schedulable(
 ) -> tuple[bool, list]:
     """Per-core fixed-priority RTA for the important group at the seed point.
 
-    For each core, takes that core's important tasks in RM-within-important
-    priority order and runs the ``R_i`` recurrence over the higher-priority
-    important tasks ON THAT CORE. A task on core 0 is NOT interfered by a
-    higher-priority important task on core 1 (D3 — matches the orchestrator's
-    one-RunQueue-per-core semantics).
+    For each core, takes that core's important tasks in DM-within-important
+    priority order (shorter deadline = higher priority — P0.9) and runs the
+    ``R_i`` recurrence over the higher-priority important tasks ON THAT CORE. A
+    task on core 0 is NOT interfered by a higher-priority important task on
+    core 1 (D3 — matches the orchestrator's one-RunQueue-per-core semantics).
 
     schedulable  ⇔  for every important task τ_i on every core, R_i ≤ deadline_i.
 
@@ -190,13 +205,13 @@ def important_tasks_schedulable(
             f"tasks and wcets must be parallel (got {len(tasks)} vs {len(wcets)})"
         )
 
-    # RM-within-important priority order, per core. _important_priority_order
-    # gives the global RM order; we then bucket by core preserving that order,
-    # so within each core the important tasks are RM-ordered (higher-priority
+    # DM-within-important priority order, per core. _important_priority_order
+    # gives the global DM order; we then bucket by core preserving that order,
+    # so within each core the important tasks are DM-ordered (higher-priority
     # important tasks come first).
     important_ordered = _important_priority_order(tasks)
 
-    # Bucket important tasks by core, preserving the global RM priority order.
+    # Bucket important tasks by core, preserving the global DM priority order.
     # Within a core, list index 0 = highest priority among that core's important
     # tasks. A task is interfered ONLY by earlier-listed important tasks on the
     # SAME core.
@@ -215,7 +230,7 @@ def important_tasks_schedulable(
 
     culprits = []
     for core, core_tasks in cores.items():
-        # core_tasks: RM-ordered (highest priority first), same core.
+        # core_tasks: DM-ordered (highest priority first), same core.
         for k, (orig_i, t, wcet_i) in enumerate(core_tasks):
             # Higher-priority important tasks on this core = those before k.
             hp = core_tasks[:k]

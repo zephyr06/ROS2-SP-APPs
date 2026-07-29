@@ -7,6 +7,7 @@ tasks:
     period: 10
     deadline: 10.000000
     name: TSP
+    important: false
   - id: 1
     execution_time_mu: 0.020900
     execution_time_sigma: 0.000766
@@ -15,6 +16,7 @@ tasks:
     period: 1
     deadline: 1.000000
     name: MPC
+    important: false
   - id: 2
     execution_time_mu: 0.980600
     execution_time_sigma: 0.295000
@@ -23,6 +25,7 @@ tasks:
     period: 5
     deadline: 5.000000
     name: RRT
+    important: false
   - id: 3
     execution_time_mu: 0.106000
     execution_time_sigma: 0.010000
@@ -31,6 +34,7 @@ tasks:
     period: 10
     deadline: 10.000000
     name: SLAM
+    important: false
 
 chains:
   chain0:

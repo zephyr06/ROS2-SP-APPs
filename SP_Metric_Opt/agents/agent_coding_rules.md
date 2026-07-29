@@ -32,7 +32,7 @@ Code readabiliy is important
 - Use short functions. If a function has to be very long, try to extract sub-functions for logic that hold together.
 
 Tests
-- If you modified any C++ code, run `make check.SP_OPT -j5` in build folder for testing.
+- If you modified any C++ code, run `cd build && make check.SP_OPT -j5` in build folder for functionality testing, run `cd release && make -j5 && ./tests/RunSpeedTest` for speed tests.
 
 Variable names (during coding and chat)
 - Use informative names, especially during chat. Variable names must be clear even without context, bad examples include `ndiff` or `nvar`, good examples could be `num_tasks_with_diff_et`
