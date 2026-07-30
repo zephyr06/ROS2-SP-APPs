@@ -5,7 +5,12 @@ import os
 # Adjust path to enable absolute imports if executed directly
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline, generate_additional_execution_traces, validate_trajectory_config
+from Gen_Taskset.lib.orchestrator import (
+    run_full_generation_pipeline,
+    run_full_generation_pipeline_with_important_task_gate,
+    generate_additional_execution_traces,
+    validate_trajectory_config,
+)
 from Gen_Taskset.lib.generation_config_parser import load_generation_config
 
 def main():
@@ -23,8 +28,20 @@ def main():
     # Boolean flags
     parser.add_argument("--add_perf_records", action="store_true", help="Add soft-task performance scaling records")
     parser.add_argument("--interact", action="store_true", help="Draw moving paths and GMM surfaces interactively")
-    parser.add_argument("--gen_path_for_taskset", action="store_true", 
+    parser.add_argument("--gen_path_for_taskset", action="store_true",
                         help="Only generate new paths/traces for an existing taskset (do not overwrite taskset params)")
+    # P0.8: the important-task DM-schedulability gate. ON by default — every
+    # generated taskset is certified schedulable for the important subset at the
+    # seed point (re-samples with an advanced seed on failure; loud-raise on
+    # exhaustion — NEVER silently emits an unschedulable taskset). Opt out only
+    # for diagnostics / non-paper configs where you accept an uncertified emit.
+    parser.add_argument("--important_tasks_schedulability_check",
+                        action=argparse.BooleanOptionalAction, default=True,
+                        help="Run the important-task schedulability gate (P0.8). "
+                             "On by default: generation certifies the taskset is "
+                             "DM-schedulable for the important tasks; pass "
+                             "--no-important_tasks_schedulability_check to fall "
+                             "back to the ungated pipeline.")
 
     args = parser.parse_args()
 
@@ -61,16 +78,37 @@ def main():
             interact=args.interact
         )
     else:
-        # Run the full pipeline from scratch
-        run_full_generation_pipeline(
-            cfg_file=args.cfg_file,
-            n_sec=args.n_sec,
-            dir_path=args.dir_path,
-            add_perf_records=args.add_perf_records,
-            interact=args.interact,
-            n_path_per_task=args.n_path_per_task,
-            n_inst_per_path=args.n_inst_per_path
-        )
+        # Run the full pipeline from scratch.
+        # P0.8: by default route through the important-task gate so the emitted
+        # taskset is CERTIFIED schedulable for the important tasks under
+        # DM-with-top-priority-lock at the seed (re-samples on failure, loud-raise
+        # on exhaustion). The gate forwards the same kwargs as the plain pipeline
+        # (its body IS _run_pipeline_with_cfgs, the same body the shell calls).
+        if args.important_tasks_schedulability_check:
+            report = run_full_generation_pipeline_with_important_task_gate(
+                cfg_file=args.cfg_file,
+                n_sec=args.n_sec,
+                dir_path=args.dir_path,
+                add_perf_records=args.add_perf_records,
+                interact=args.interact,
+                n_path_per_task=args.n_path_per_task,
+                n_inst_per_path=args.n_inst_per_path,
+            )
+            # The gate's contract: it returns ONLY on a schedulable draw (else it
+            # raises). Surface the attempt count so a multi-attempt emit is
+            # visible, not silent.
+            print(f"[P0.8 gate] taskset certified schedulable for important "
+                  f"tasks (attempts_used={report['attempts_used']}).")
+        else:
+            run_full_generation_pipeline(
+                cfg_file=args.cfg_file,
+                n_sec=args.n_sec,
+                dir_path=args.dir_path,
+                add_perf_records=args.add_perf_records,
+                interact=args.interact,
+                n_path_per_task=args.n_path_per_task,
+                n_inst_per_path=args.n_inst_per_path
+            )
 
 if __name__ == "__main__":
     main()

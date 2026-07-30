@@ -4,7 +4,15 @@ import tempfile
 import json
 import yaml
 import numpy as np
-from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
+from Gen_Taskset.lib.orchestrator import (
+    run_full_generation_pipeline,
+    run_full_generation_pipeline_with_important_task_gate,
+)
+from Gen_Taskset.lib.important_task_rta import (
+    important_tasks_schedulable,
+    _load_emitted_tasks_by_gid,
+    _wcets_from_loaded_tasks,
+)
 
 def test_integration_pipeline():
     # Setup dedicated test_output directory
@@ -171,3 +179,93 @@ def test_integration_pipeline():
                 assert abs(y - prev_y) <= robot_step_size
                 
             prev_x, prev_y = x, y
+
+
+# ---------------------------------------------------------------------------
+# P0.8 — end-to-end REAL-pipeline gate test (Step 2 deferred coverage)
+# ---------------------------------------------------------------------------
+# The mock-based tests in ``test_important_task_gate.py`` stub
+# ``_run_pipeline_with_cfgs`` and write synthetic characteristics YAMLs, so the
+# gate's retry loop + seed-advance + loud-raise logic is tested in isolation
+# from the (expensive) real generator. This test closes the gap: it runs the
+# REAL pipeline (no monkeypatch) through the gate on a real schedulable config
+# and asserts (1) the gate returns schedulable=True with a sane attempt count,
+# and (2) the certificate is GENUINE — independently re-loading the emitted
+# tasks + WCETs and re-running the RTA reproduces the pass. This catches a
+# hollow gate (e.g. the ``important``→``is_important`` normalization regression,
+# or a WCET rule that reads the wrong field) that the mock tests cannot, because
+# here the emitted YAMLs are whatever the real generator actually produced.
+
+# A small, real, schedulable config. ``test_standard_4.json`` is the stable
+# 4-task config the mock gate tests already use (RANDOM_SEED=42, N_CORES=2);
+# under the config-tuning-round WCET rule (perf=et_mean, env cap 0.27) it passes
+# the gate on attempt 1, so this test is fast.
+_E2E_GATE_CONFIG = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "tests", "test_configs", "test_standard_4.json",
+)
+
+
+def test_gate_end_to_end_real_pipeline_certifies_schedulable_taskset(tmp_path):
+    """Run the REAL pipeline through the gate; assert the certificate is genuine.
+
+    The gate's contract: it returns ONLY on a schedulable draw (else raises
+    loudly). This test verifies that contract holds end-to-end (real generator,
+    real trace loop, real clamp, real WCET read, real RTA) AND that the pass is
+    not hollow — re-running the same RTA primitives the gate uses, against the
+    emitted on-disk YAMLs, independently reproduces ``schedulable=True``. If the
+    two ever disagreed (gate says pass, independent re-check says fail), the
+    gate would be certifying something its own primitives don't verify — a
+    silent hole exactly like the ``important``/``is_important`` key mismatch
+    caught during the Step 2b design review.
+    """
+    report = run_full_generation_pipeline_with_important_task_gate(
+        cfg_file=_E2E_GATE_CONFIG,
+        n_sec=100,           # n_sec-stable verdict (see gate memory); 100s is a
+                             # faithful proxy and keeps the test fast.
+        dir_path=str(tmp_path),
+        add_perf_records=True,
+        interact=False,
+        n_path_per_task=1,
+        n_inst_per_path=1,
+    )
+
+    # 1. The gate returned (did not raise) → contract holds.
+    assert report["schedulable"] is True
+    assert report["attempts_used"] >= 1
+    assert report["culprits"] == []   # passing attempt had no misses
+
+    # 2. The emitted interval YAMLs exist (the canonical gate input).
+    import glob
+    interval_files = sorted(glob.glob(
+        os.path.join(str(tmp_path), "taskset_characteristics_interval_*.yaml")
+    ))
+    assert interval_files, "gate did not emit interval characteristics YAMLs"
+
+    # 3. INDEPENDENT re-check via the SAME primitives the gate uses. If the
+    #    gate's certificate is genuine, re-loading the emitted tasks + deriving
+    #    WCETs + running the RTA must reproduce the pass. A divergence here is
+    #    the signature of a hollow gate.
+    tasks_by_gid = _load_emitted_tasks_by_gid(str(tmp_path))
+    assert tasks_by_gid, "no tasks loaded from emitted characteristics"
+    # Sanity: the real generator labeled at least one task important (top-50% by
+    # sp_weight; N=4 → n_important=2). If NONE are important the RTA is vacuous
+    # — a hollow-gate failure mode this guards against.
+    n_important = sum(1 for t in tasks_by_gid.values() if t.get("is_important"))
+    assert n_important >= 1, (
+        f"real generator emitted no important tasks (gids="
+        f"{sorted(tasks_by_gid)}); the gate's RTA would be vacuous"
+    )
+
+    wcets = _wcets_from_loaded_tasks(tasks_by_gid)
+    gids = sorted(tasks_by_gid.keys())
+    tasks = [tasks_by_gid[g] for g in gids]
+    wcet_list = [wcets[g] for g in gids]
+
+    ok, culprits = important_tasks_schedulable(tasks, wcet_list)
+    assert ok, (
+        f"HOLLOW GATE: gate returned schedulable=True but an independent re-run "
+        f"of its own RTA primitives on the emitted YAMLs FAILED. Culprits: "
+        f"{culprits}"
+    )
+

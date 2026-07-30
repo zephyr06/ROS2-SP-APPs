@@ -6,11 +6,30 @@
 
 ## 2026-07-29
 
+- **P0.8 FINISHED — Step 2 prod-wiring + e2e test + Step 3 rejection-rate
+  LANDED (working tree, git add-only — awaits user commit).** This makes the
+  gate's guarantee *enforced* in production, not just existing + unit-tested.
+  - Step 2 prod-wiring: `run_generator.py` routes through the gate BY DEFAULT
+    (`--no-important_tasks_schedulability_check` opt-out; surfaces
+    `attempts_used`); `run_sim_experiments.py`
+    routes both call sites through a single `_generate_taskset` helper + widens
+    the per-taskset seed step to `IMPORTANT_TASK_GATE_MAX_ATTEMPTS` (20) when the
+    gate is ON so its internal +0..19 retry window can't collide with the next
+    taskset's draw (silent-duplicates fix); legacy +1 when OFF (bit-identical
+    pre-gate). End-to-end REAL-pipeline test in `test_integration.py` asserts the
+    gate's certificate is GENUINE (independently re-runs the RTA primitives on
+    the emitted YAMLs; guards against a hollow gate).
+  - Step 3 rejection-rate: `measure_gate_rejection_rate --samples 5 --ns 4 8 16
+    --n_sec 100` (15 draws) → 0 rejections, 0 raises, max 3 attempts (within
+    budget-20). Second-lever generator-logic fix NOT needed (rejection rate = 0).
+  - Verify: `pytest Gen_Taskset/tests/` = 48 passed (was 47; +1 e2e gate test).
+    P0.8 now FULLY DONE; closable as "shipped" once the user commits this batch.
+
 - **P0.8 config-tuning round — make the gate pass within budget on the REAL
-  paper config (working tree, `git add`-only — NOT committed, awaits review).**
-  The committed gate (`3d2360ed`) is a correct loud-raise certifier, but the
-  real config made it reject too often. Root cause was config + the perf-WCET
-  rule, not the gate. Three fixes: (1) perf WCET → `execution_time_mu` (= et_mean)
+  paper config (COMMITTED `7c8748c0` "update some configs to generate
+  schedulable task sets", 12 files +864/−81).** The committed gate (`3d2360ed`)
+  is a correct loud-raise certifier, but the real config made it reject too
+  often. Root cause was config + the perf-WCET rule, not the gate. Three fixes: (1) perf WCET → `execution_time_mu` (= et_mean)
   — faithful (sim runs `min(et_mean, TL)`, TL is a downward cap) + tightest
   sound; dropped `tl_grid_upper`/`cfgs` params + made the TL grid verdict-irrelevant;
   (2) env cap 0.45→0.27 + variance [0.5,0.6]→[0.3,0.4] → env WCET/period ≤0.486;
@@ -19,7 +38,8 @@
   `execution_time_mu`); strictly safe. Plus `DEADLINE_MODE=implicit` (RM≡DM).
   Verify: `pytest Gen_Taskset/tests/` = 47 passed; faithful gate
   `measure_gate_rejection_rate --samples 2 --ns 4 8 16` → N=4/8 attempt 1,
-  N=16 ≤3 attempts, 0 rejections/0 raises. Step 2 prod-wiring + Step 3 deferred.
+  N=16 ≤3 attempts, 0 rejections/0 raises. Step 2 prod-wiring + Step 3 landed
+  in a later entry this date (see above). (Committed 2026-07-29 as `7c8748c0`.)
 
 - **P0.8 Step 2b refactor — de-duplicate path/config scaffolding + fix
   `dir_path=None` regression (user review).** The shell/body/gate split had

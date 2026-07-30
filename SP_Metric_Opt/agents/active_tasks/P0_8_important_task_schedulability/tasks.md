@@ -134,16 +134,39 @@ Both are sound; the trade is retry-cost vs D2-exactness. **RESOLVED 2026-07-28: 
       End-to-end real-pipeline coverage DEFERRED (not this step).
 
 ## 2. Generation-time gate
-- [ ] TDD red: a generation integration test — emit a taskset, assert it passes the
-      important-task RTA gate.
-- [ ] Wire the RTA into the generation flow (post-`feasibility_clamp`, per D5):
+- [x] TDD red: a generation integration test — emit a taskset, assert it passes the
+      important-task RTA gate. (Step 2b mock tests + the Step 2 e2e real-pipeline
+      test below.)
+- [x] Wire the RTA into the generation flow (post-`feasibility_clamp`, per D5):
       on FAIL, regenerate (retry pattern modeled on `uunifast_distribution`).
-- [ ] Bounded retries = 20 (per D4); on exhaustion, LOUD raise (no silent unschedulable
+      **PROD-WIRED (Step 2, this session):** `run_generator.py` +
+      `run_sim_experiments.py` route through the gate BY DEFAULT
+      (`--no-important_tasks_schedulability_check` opt-out). The gate IS the generation flow now.
+- [x] Bounded retries = 20 (per D4); on exhaustion, LOUD raise (no silent unschedulable
       taskset — avoids re-creating the P1.8 substrate).
-- [ ] TDD green: `pytest Gen_Taskset/tests/test_integration.py` — every emitted
-      taskset passes the gate.
+- [x] TDD green: `pytest Gen_Taskset/tests/test_integration.py` — every emitted
+      taskset passes the gate. (`test_gate_end_to_end_real_pipeline_certifies_
+      schedulable_taskset` runs the REAL pipeline through the gate + independently
+      re-checks the certificate; `pytest Gen_Taskset/tests/` = 48 passed.)
 
-## 2c. Config-tuning round (make the gate pass within budget on the REAL config) — LANDED (working tree, NOT committed)
+## 2d. Step 2 prod-wiring + end-to-end real-pipeline test — LANDED (working tree, git add-only — awaits user commit)
+- [x] `run_generator.py`: generation branch → gate BY DEFAULT; `--no-important_tasks_schedulability_check`
+      opt-out; surfaces `attempts_used`. `--gen_path_for_taskset` branch untouched.
+- [x] `run_sim_experiments.py`: both call sites via `_generate_taskset` helper
+      (gate-vs-plain by the flag); **seed-collision fix** — per-taskset seed step
+      widened to `IMPORTANT_TASK_GATE_MAX_ATTEMPTS` (20) when gate ON (was +1 →
+      retry window collided with the next taskset's draw → silent duplicates);
+      legacy +1 when OFF (bit-identical pre-gate).
+- [x] E2E test `test_gate_end_to_end_real_pipeline_certifies_schedulable_taskset`
+      in `test_integration.py`: REAL pipeline (no monkeypatch) through the gate;
+      asserts `schedulable=True` + `attempts_used>=1` + `culprits==[]` AND an
+      INDEPENDENT re-run of the RTA primitives on the emitted YAMLs reproduces
+      `ok=True` (guards against a hollow gate). Asserts `n_important>=1` (no
+      vacuous RTA).
+- [x] Smoke: gated `taskset_cfg_paper_4.json` → certified attempts_used=1, exit 0;
+      opt-out → plain pipeline, exit 0.
+
+## 2c. Config-tuning round (make the gate pass within budget on the REAL config) — LANDED + COMMITTED `7c8748c0`
 - [x] Diagnose why the committed gate (`3d2360ed`) rejects real tasksets:
       (A) perf WCET was `period×0.9` (TL-grid MAX) → overload;
       (B) non-perf WCET `et_mean+2σ` with σ/et∈[0.5,0.6] → 2.0–2.2× amplifier;
@@ -165,18 +188,27 @@ Both are sound; the trade is retry-cost vs D2-exactness. **RESOLVED 2026-07-28: 
       → N=4 0.883 / N=8 0.588 / N=16 0.923 mean max-core util (was 2.197/3.008).
       Faithful gate `measure_gate_rejection_rate --samples 2 --ns 4 8 16` →
       N=4/8 attempt 1, N=16 ≤3 attempts, 0 rejections/0 raises.
-- [ ] **NEXT:** user review of base-template config + code; commit on user go.
-      Criterion relaxed ≤3 → budget-20 (user: "keep 20 in exp").
+- [x] **COMMITTED** as `7c8748c0` "update some configs to generate schedulable
+      task sets" (12 files, +864/−81). Criterion relaxed ≤3 → budget-20
+      (user: "keep 20 in exp").
 
 ## 3. Rejection-rate reporting + second-lever decision
-- [ ] Log the rejection rate (attempts per accepted taskset, by N) across a smoke
-      generation sweep.
-- [ ] If rejection rate excessive → propose a generator-logic fix (second lever:
+- [x] Log the rejection rate (attempts per accepted taskset, by N) across a smoke
+      generation sweep. (`measure_gate_rejection_rate --samples 5 --ns 4 8 16
+      --n_sec 100`: 15 independent draws, base seeds 1000–1400. Result:
+      N=4/8 100% first-try, N=16 80% first-try (max 3 attempts); **0 rejections,
+      0 raises**. Report saved at
+      `simulation_experiments/important_task_gate_rejection/ns4-8-16_s5_dur100/
+      gate_rejection_rate.json`.)
+- [x] If rejection rate excessive → propose a generator-logic fix (second lever:
       tighten ET/period draw / enforce `deadline > WCET` for important tasks) to the
-      user. Do NOT implement without user go.
+      user. Do NOT implement without user go. **NOT NEEDED — rejection rate = 0**
+      across N=4/8/16; the config-tuning round (`7c8748c0`) already brought
+      generation within budget. Second lever not proposed.
 
 ## 4. Verification + records
-- [x] `pytest Gen_Taskset/tests/` green (47 passed — full generator test suite).
+- [x] `pytest Gen_Taskset/tests/` green (48 passed — full generator test suite;
+      was 47 before the Step 2 e2e test).
 - [x] Confirm the gate covers the important-task types the C++ scorer will actually
       see (cross-check a generated taskset's important tasks against
       `feasibility_clamp.py`'s perf-task skip — the gap this task closes).
@@ -185,13 +217,18 @@ Both are sound; the trade is retry-cost vs D2-exactness. **RESOLVED 2026-07-28: 
 - [x] Confirm the WCET fields match P0.6's (global-max ET per task — D2 consistency).
       [`_load_emitted_tasks_by_gid` keeps the worst-case-ET representative per gid.]
 - [x] `dev_log.md` (this folder + top-level) + memory updated.
-- [x] `git add` staged; user reviews (no commit). [3 files: `orchestrator.py`,
-      `important_task_rta.py`, `test_important_task_gate.py`.]
-- [ ] **DEFERRED (Step 2 generation-time gate wiring):** end-to-end real-pipeline
-      test in `test_integration.py` (emit a real taskset, assert the gate passes)
-      + wiring the wrapper into prod entry points (`run_generator.py`,
-      `run_sim_experiments.py`) — behavior change for the prod pipeline, separate
-      user-reviewed step. The wrapper existing + unit-tested is the unit of value
-      here (Step 2b); wiring it in is Step 2.
-- [ ] **DEFERRED (Step 3):** rejection-rate reporting + second-lever generator-logic
-      fix proposal (user-go only).
+- [x] `git add` staged; user reviewed + COMMITTED. Gate wrapper = `3d2360ed`;
+      config-tuning round = `7c8748c0` (12 files: `orchestrator.py`,
+      `important_task_rta.py`, `taskset_generator.py`,
+      `taskset_cfg_paper_base.json`, `taskset_cfg_paper_16.json`,
+      `test_important_task_gate.py`, `measure_gate_rejection_rate.py`,
+      `measure_important_utilization.py`, this folder's `dev_log.md`/`tasks.md`,
+      top-level `dev_log.md`, `.gitignore`).
+- [x] **Step 2 prod-wiring + e2e test + Step 3 measurement LANDED (this session,
+      git add-only — awaits user commit):** `run_generator.py` +
+      `run_sim_experiments.py` (gate default-ON + `--no-important_tasks_schedulability_check`
+      opt-out + seed-collision fix) + `test_integration.py` e2e test +
+      rejection-rate report. `pytest Gen_Taskset/tests/` = 48 passed; gate smoke
+      = certified attempts_used=1.
+- [x] **Step 3 DONE:** rejection-rate = 0 across N=4/8/16 (15 draws); second lever
+      NOT needed.

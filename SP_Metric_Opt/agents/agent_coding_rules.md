@@ -48,3 +48,6 @@ Work with users:
 
 Ask questions:
 don't ask questions to ask questions or for user confirmation. if you can make decisions, you can take it. othewise, provide enough context to users to decide.
+
+Variable Names:
+Typically, use positive phase rather than negative phase, unless the context prefers a negative phase. For example, use "important_tasks_schedulability_check" rather than "no_important_task_gate".

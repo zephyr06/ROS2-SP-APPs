@@ -1,7 +1,10 @@
 # P0.8 — Taskset Schedulability for Important Tasks under DM (Seed Certification)
 
 **Priority:** P0 (the guarantee the fall-back chain rests on)
-**Status:** design / not started
+**Status:** FULLY LANDED — Steps 1 + 2a + 2b + config-tuning COMMITTED
+(`3d2360ed` gate, `7c8748c0` config-tuning); Step 2 prod-wiring + e2e test +
+Step 3 rejection-rate landed in the working tree (git add-only — awaits user
+commit). `pytest Gen_Taskset/tests/` = 48 passed.
 **Depends on:** ~~"Important tasks" selection rule (D1, shared with P0.6/P0.7)~~ —
 **D1 RESOLVED 2026-07-27** (see below).
 **Blocks:** P0.6 (the static solution is only a *meaningful* safe floor if the taskset
@@ -167,8 +170,22 @@ on the seed point and the WCET fields.
 - [ ] TDD: `Gen_Taskset/tests/` — RTA recurrence tests (schedulable / unschedulable /
       boundary, per-core) + a generation integration test asserting every emitted taskset
       passes the gate. `pytest Gen_Taskset/tests/` green.
-- [ ] `dev_log.md` (this folder + top-level) + memory updated.
-- [ ] `git add` staged; user reviews (no commit).
+- [x] `dev_log.md` (this folder + top-level) + memory updated.
+- [x] `git add` staged; user reviewed + COMMITTED — gate wrapper `3d2360ed`,
+      config-tuning round `7c8748c0` (12 files, +864/−81).
+- [x] **Step 2 — prod wiring (LANDED in working tree, git add-only — awaits user
+      commit):** gate wired into `run_generator.py` (default ON +
+      `--no-important_tasks_schedulability_check` opt-out; surfaces
+      opt-out + surfaces `attempts_used`) + `run_sim_experiments.py` (single
+      `_generate_taskset` helper + seed-collision fix: per-taskset seed step
+      widened to `IMPORTANT_TASK_GATE_MAX_ATTEMPTS` so the retry window can't
+      collide with the next taskset's draw) + end-to-end REAL-pipeline test in
+      `test_integration.py` (certifies a genuine, non-hollow certificate).
+- [x] **Step 3 — rejection-rate reporting (LANDED, measurement not code):**
+      `measure_gate_rejection_rate --samples 5 --ns 4 8 16 --n_sec 100` → 0
+      rejections, 0 raises, max 3 attempts (well within budget-20). Second-lever
+      generator-logic fix NOT needed (rejection rate = 0). Report saved at
+      `simulation_experiments/important_task_gate_rejection/ns4-8-16_s5_dur100/`.
 
 ## Open decisions (settled 2026-07-27 — recorded for reference)
 
