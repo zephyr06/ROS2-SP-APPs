@@ -34,6 +34,7 @@ import shutil
 import pytest
 import yaml
 
+from Gen_Taskset.lib import orchestrator as orch
 from Gen_Taskset.lib.important_task_rta import compute_wcets_from_characteristics
 from Gen_Taskset.lib.yaml_exporter import export_taskset_to_yaml
 
@@ -237,3 +238,187 @@ def test_wcet_keyed_by_gid_not_id(tmp_path):
     assert set(wcets.keys()) == {5, 7}
     assert wcets[5] == 200.0
     assert wcets[7] == 400.0
+
+
+# --------------------------------------------------------------------------
+# run_full_generation_pipeline_with_important_task_gate (Step 2b)
+# --------------------------------------------------------------------------
+# The gate wraps the canonical pipeline: after it emits its characteristics
+# YAMLs (and the feasibility clamp runs — D5: clamp first, then RTA), the gate
+# derives each task's WCET per D2 and runs ``important_tasks_schedulable``. On
+# failure it re-runs the pipeline with an ADVANCED seed so each retry actually
+# re-samples — ``generate_taskset_parameters`` re-seeds every call, but the
+# canonical pipeline reloads cfgs from the config FILE each call
+# (``orchestrator.py:385``), so a naive in-memory seed mutation would be
+# discarded and produce a byte-identical taskset ×N (a no-op retry — the exact
+# silent hole the gate exists to prevent). The gate advances the seed INSIDE
+# the cfgs it holds and calls an inner pipeline fn that takes a pre-loaded
+# cfgs, so the advanced seed actually takes effect. Budget 20 (D4), then LOUD
+# raise (NEVER silently emit an unschedulable taskset — re-creates the P1.8
+# substrate).
+#
+# Test strategy (DECIDED): mock the inner pipeline fn (``_run_pipeline_with_cfgs``)
+# so the fake writes synthetic characteristics YAMLs (unschedulable on attempt
+# 0, schedulable on attempt 1; never-schedulable for the exhaustion case). The
+# wrapper's loop / seed-advance / loud-raise logic is tested in isolation —
+# fast, deterministic, no real generator cost. The REAL
+# ``compute_wcets_from_characteristics`` + ``important_tasks_schedulable`` run
+# on the synthetic YAMLs, so the RTA path IS exercised (just not the expensive
+# trace generation). End-to-end real-pipeline coverage is DEFERRED (not this
+# step).
+
+_TEST_CONFIG_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "tests", "test_configs", "test_standard_4.json",
+)
+
+
+def _schedulable_two_task_characteristics(dir_path: str) -> None:
+    """Write a SCHEDULABLE synthetic characteristics YAML (1 important task).
+
+    One important task, WCET (=execution_time_max, non-perf) well inside its
+    deadline → ``important_tasks_schedulable`` returns True. Trivially
+    schedulable (no higher-priority interference), so the gate PASSES.
+    """
+    task = _emitted_task(
+        gid=0, period=1000, deadline=1000,
+        execution_time_max=100, is_important=True,
+    )
+    _write_characteristics(dir_path, [task], interval_k=0)
+
+
+def _unschedulable_two_task_characteristics(dir_path: str) -> None:
+    """Write an UNSCHEDULABLE synthetic characteristics YAML (1 important task).
+
+    One important task whose WCET (=execution_time_max) EXCEEDS its deadline →
+    the recurrence's first term alone blows the deadline (R_i = WCET_i >
+    deadline_i) → ``important_tasks_schedulable`` returns False with the task
+    as the culprit. ``execution_time_max > deadline`` is the starkest
+    unschedulable case (a task cannot even finish one job by its deadline).
+    """
+    task = _emitted_task(
+        gid=0, period=1000, deadline=100,
+        execution_time_max=500, is_important=True,
+    )
+    _write_characteristics(dir_path, [task], interval_k=0)
+
+
+def test_gate_passes_first_try(monkeypatch, tmp_path):
+    """Schedulable first draw → ``attempts_used == 1``, no retry.
+
+    The gate calls the pipeline once, the RTA passes, and the gate returns
+    immediately — no second attempt, no seed advancement.
+    """
+    calls = []
+
+    def fake_inner(cfgs, dir_path, **kwargs):
+        calls.append(cfgs.get("RANDOM_SEED"))
+        _schedulable_two_task_characteristics(dir_path)
+
+    monkeypatch.setattr(orch, "_run_pipeline_with_cfgs", fake_inner)
+
+    report = orch.run_full_generation_pipeline_with_important_task_gate(
+        cfg_file=_TEST_CONFIG_PATH, dir_path=str(tmp_path), max_attempts=5,
+    )
+
+    assert report["schedulable"] is True
+    assert report["attempts_used"] == 1
+    assert report["culprits"] == []
+    assert len(calls) == 1  # no retry
+
+
+def test_gate_retries_until_schedulable(monkeypatch, tmp_path):
+    """First draw unschedulable, second (advanced-seed) draw schedulable → PASS
+    after 2 attempts.
+
+    The fake writes an unschedulable taskset on attempt 0 and a schedulable one
+    on attempt 1. The gate must detect the attempt-0 failure, advance the seed,
+    re-run, and return PASS with ``attempts_used == 2``.
+    """
+    calls = []
+
+    def fake_inner(cfgs, dir_path, **kwargs):
+        attempt = len(calls)
+        calls.append(cfgs.get("RANDOM_SEED"))
+        if attempt == 0:
+            _unschedulable_two_task_characteristics(dir_path)
+        else:
+            _schedulable_two_task_characteristics(dir_path)
+
+    monkeypatch.setattr(orch, "_run_pipeline_with_cfgs", fake_inner)
+
+    report = orch.run_full_generation_pipeline_with_important_task_gate(
+        cfg_file=_TEST_CONFIG_PATH, dir_path=str(tmp_path), max_attempts=5,
+    )
+
+    assert report["schedulable"] is True
+    assert report["attempts_used"] == 2
+    assert report["culprits"] == []
+    assert len(calls) == 2
+
+
+def test_gate_raises_on_budget_exhaustion(monkeypatch, tmp_path):
+    """NEVER-schedulable config → loud ``RuntimeError`` after ``max_attempts``,
+    NEVER a silent unschedulable emit.
+
+    D4: budget 20 (here capped to 3 for test speed), then a LOUD raise whose
+    message includes the final culprits + attempt count so a rejection can be
+    diagnosed. The fake always writes an unschedulable taskset.
+    """
+    calls = []
+
+    def fake_inner(cfgs, dir_path, **kwargs):
+        calls.append(cfgs.get("RANDOM_SEED"))
+        _unschedulable_two_task_characteristics(dir_path)
+
+    monkeypatch.setattr(orch, "_run_pipeline_with_cfgs", fake_inner)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        orch.run_full_generation_pipeline_with_important_task_gate(
+            cfg_file=_TEST_CONFIG_PATH, dir_path=str(tmp_path), max_attempts=3,
+        )
+
+    msg = str(excinfo.value)
+    assert "3" in msg or "attempts" in msg.lower()  # attempt count surfaced
+    assert len(calls) == 3  # exhausted the budget, no silent emit
+
+
+def test_gate_advances_seed_so_retries_re_sample(monkeypatch, tmp_path):
+    """Two attempts must see DIFFERENT seeds — the no-op-retry guard.
+
+    ``generate_taskset_parameters`` re-seeds every call, but the canonical
+    pipeline reloads cfgs from the config FILE each call, so mutating an
+    in-memory seed would be discarded. The gate advances the seed INSIDE the
+    cfgs it holds and calls an inner fn that takes that cfgs, so each retry
+    sees ``base_seed + attempt``. Asserting the captured seeds are distinct
+    (and exactly ``base, base+1, ...``) proves retries actually re-sample — a
+    no-op retry would see the same seed every time.
+    """
+    calls = []
+
+    def fake_inner(cfgs, dir_path, **kwargs):
+        calls.append(cfgs.get("RANDOM_SEED"))
+        _unschedulable_two_task_characteristics(dir_path)  # never passes
+
+    monkeypatch.setattr(orch, "_run_pipeline_with_cfgs", fake_inner)
+
+    with pytest.raises(RuntimeError):
+        orch.run_full_generation_pipeline_with_important_task_gate(
+            cfg_file=_TEST_CONFIG_PATH, dir_path=str(tmp_path), max_attempts=3,
+        )
+
+    base = load_generation_config_RANDOM_SEED(_TEST_CONFIG_PATH)
+    assert calls == [base, base + 1, base + 2]
+
+
+def load_generation_config_RANDOM_SEED(cfg_path):
+    """Read the config's ``RANDOM_SEED`` without the full integrity gate.
+
+    The gate advances ``RANDOM_SEED`` from the loaded cfgs' value; this helper
+    reads the same starting value the gate sees (``test_standard_4.json`` sets
+    ``RANDOM_SEED=42``) so the seed-advance test can assert the exact sequence.
+    Uses ``load_generation_config`` so INCLUDE + standardize are applied (the
+    gate loads cfgs the same way).
+    """
+    from Gen_Taskset.lib.generation_config_parser import load_generation_config
+    return load_generation_config(cfg_path)["RANDOM_SEED"]

@@ -4,6 +4,93 @@
 > On task completion, append a one-line milestone to the **top-level**
 > `agents/dev_log.md` (the canonical narrative).
 
+## 2026-07-29 (Step 2b refactor — kill triplicated path/config scaffolding + fix dir_path=None regression)
+
+- **User review caught duplication + a regression it caused.** The split of
+  `run_full_generation_pipeline` into shell + `_run_pipeline_with_cfgs` had
+  triplicated the same scaffolding across the shell, the body, and the gate:
+  `OPT_SP_PROJECT_PATH = os.path.dirname(...)` (×3), config-path resolution
+  (relative→absolute + `FileNotFoundError`, ×2), `load_generation_config` +
+  `validate_trajectory_config` (×2), and `dir_path` None-default /
+  relative→absolute + `makedirs` (×2). The duplication also caused a **behavior
+  regression**: the original `run_full_generation_pipeline` resolved
+  `dir_path=None` → `TaskData/<cfg>_gen_1` inside the body; after the split
+  that resolution lived only in the gate, so the shell forwarded `None` to
+  `_run_pipeline_with_cfgs`, which raises `ValueError`. The canonical CLI
+  (`run_generator.py --cfg_file X` with no `--dir_path`) passes `dir_path=None`
+  → it would have broken. (No test exercised the `None`-default path — all
+  ~22 callers pass `dir_path=` explicitly, which is why the suite stayed green
+  and the regression hid.)
+- **Fix = extract three shared helpers** (single source of truth, used by all
+  three entry points): `_resolve_config_path(cfg_file) -> str`,
+  `_load_and_validate_cfgs(cfg_file) -> dict`, `_resolve_dir_path(dir_path,
+  cfg_file) -> str` (does the None-default + relative→absolute + `makedirs`).
+  Hoisted `OPT_SP_PROJECT_PATH` to a module constant. The shell now calls
+  `_resolve_dir_path` before the body → `dir_path=None` is resolved to the
+  `TaskData/<cfg>_gen_1` default again (regression fixed). The body keeps its
+  `dir_path is None` → raise guard (a caller that forgets the helper fails
+  loudly, not silently) and a relative-path safety net. The gate calls the same
+  three helpers, so config + dir resolution can no longer diverge between the
+  shell and the gate.
+- **Verify:** `pytest Gen_Taskset/tests/` = 47 passed (no regressions).
+  Regression fix confirmed end-to-end: `run_full_generation_pipeline(...,
+  dir_path=None)` on `test_standard_4.json` now completes (auto-resolves to
+  `TaskData/test_standard_4_gen_1`) instead of raising — matches the original
+  behavior.
+- Files staged (same 3 code files as Step 2b, updated): `orchestrator.py`,
+  `important_task_rta.py` (unchanged this pass), `test_important_task_gate.py`
+  (unchanged this pass).
+
+## 2026-07-28 (Step 2b — gate wrapper + seed-advancing retry loop LANDED)
+
+- **Step 2b LANDED + staged (NOT committed, awaits user review):** the generation-time
+  gate `run_full_generation_pipeline_with_important_task_gate` in `orchestrator.py`.
+  Wraps the canonical pipeline with a seed-advancing retry loop: each attempt advances
+  `cfgs["RANDOM_SEED"] = base_seed + attempt`, runs the pipeline body, derives WCETs
+  (D2), runs `important_tasks_schedulable` (per-core DM-within-important RTA, D3)
+  post-clamp (D5), and on PASS returns a report; on exhaustion (budget 20, D4) raises
+  `RuntimeError` loudly with the final culprits + attempt count + seed range — NEVER
+  silently emits an unschedulable taskset (the exact P1.8 substrate this prevents).
+- **Design decision (user, 2026-07-28 — "make a choice based on your judgement"):**
+  the seed-advancement blocker was that `run_full_generation_pipeline` reloads cfgs
+  from the config FILE every call (`load_generation_config` at the top of the shell),
+  so mutating an in-memory `cfgs["RANDOM_SEED"]` between retries would be discarded
+  → byte-identical taskset every retry (the no-op-retry bug). Resolved by SPLITTING
+  the function (no default args — user explicitly dislikes default args making
+  failures harder to capture): `run_full_generation_pipeline` is now a thin shell
+  (resolves+loads cfgs, validates, delegates); the body is `_run_pipeline_with_cfgs(cfgs, ...)`
+  taking a REQUIRED pre-loaded cfgs. The ~8 existing shell callers are untouched. The
+  gate loads cfgs ONCE and calls the body directly, so the advanced seed takes effect.
+- **Test-fixture strategy (user, 2026-07-28):** mock `_run_pipeline_with_cfgs`
+  (monkeypatch) writing synthetic characteristics YAMLs (unschedulable attempt 0 /
+  schedulable attempt 1 / never-schedulable for exhaustion); the REAL
+  `compute_wcets_from_characteristics` + `important_tasks_schedulable` run on the
+  synthetic YAMLs (RTA path exercised, expensive trace generation NOT). 4 TDD red→green
+  tests: `test_gate_passes_first_try`, `test_gate_retries_until_schedulable`,
+  `test_gate_raises_on_budget_exhaustion`, `test_gate_advances_seed_so_retries_re_sample`.
+- **DRY refactor (folded into the green step):** extracted `_load_emitted_tasks_by_gid(dir_path) -> {gid: task}`
+  (I/O + gid dedup, worst-case-ET representative) + `_wcets_from_loaded_tasks(tasks_by_gid, tl_grid_upper) -> {gid: wcet}`
+  (pure WCET rule) in `important_task_rta.py`; `compute_wcets_from_characteristics` is
+  now a thin composition of the two. Public API + the 7 existing WCET tests unchanged.
+  The wrapper uses the same reader + WCET fn — single disk read, no duplicated logic.
+- **Key-normalization correctness fix (caught by design review before first run):** the
+  emitted C++-format YAML uses key `important` (`yaml_exporter.py:73`) but the RTA reads
+  `is_important` (`important_tasks_schedulable` → `t.get("is_important")`). The reader
+  normalizes `task["is_important"] = task.get("important", False)` on every loaded task
+  — without this the gate would feed emitted-form tasks to the RTA, which sees NO
+  important tasks → vacuously "schedulable" → a hollow gate (the exact silent hole P0.8
+  exists to prevent).
+- **Verification:** `pytest Gen_Taskset/tests/test_important_task_gate.py` = 11 passed
+  (7 WCET + 4 wrapper); `pytest Gen_Taskset/tests/` = 47 passed (was 43; +4, no
+  regressions). 3 files staged: `orchestrator.py`, `important_task_rta.py`,
+  `test_important_task_gate.py`.
+- **DEFERRED (Step 2 — wiring):** end-to-end real-pipeline test (`test_integration.py`)
+  + wiring the wrapper into prod entry points (`run_generator.py`,
+  `run_sim_experiments.py`) — behavior change for the prod pipeline, separate
+  user-reviewed step. The wrapper existing + unit-tested is the unit of value (Step 2b).
+- **DEFERRED (Step 3):** rejection-rate reporting + second-lever generator-logic fix
+  proposal (user-go only).
+
 ## 2026-07-28 (P0.9 supersedence — plan docs relabeled RM→DM)
 
 - **P0.9 (DM + important-first group lock) LANDED.** The C++ seed PA is now

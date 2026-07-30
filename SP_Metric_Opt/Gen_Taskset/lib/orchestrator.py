@@ -1,6 +1,7 @@
 import os
 import math
 import sys
+import json
 import numpy as np
 import yaml
 import matplotlib.pyplot as plt
@@ -12,6 +13,11 @@ from .trajectory import generate_stops_in_map, generate_path_only
 from .trace_generator import generate_execution_time_trace
 from .visualizer import plot_moving_trajectory
 from .feasibility_clamp import clamp_avg_et_to_period
+from .important_task_rta import (
+    _load_emitted_tasks_by_gid,
+    _wcets_from_loaded_tasks,
+    important_tasks_schedulable,
+)
 
 # Interval settings
 UPDATE_INTERVAL_S = 10
@@ -106,6 +112,64 @@ def validate_trajectory_config(cfgs: dict, config_path: str = None) -> dict:
         print()
     _write_back_resolved_keys(config_path, resolved)
     return cfgs
+
+
+# ---------------------------------------------------------------------------
+# Shared path + config resolution helpers (single source of truth for the
+# pipeline entry points — ``run_full_generation_pipeline`` (shell),
+# ``_run_pipeline_with_cfgs`` (body), and the P0.8 important-task gate all
+# resolve paths identically). Extracted to kill triplicated scaffolding and the
+# divergence bug it caused (the split once dropped the ``dir_path=None`` default
+# from the shell, breaking the canonical CLI's no-``--dir_path`` invocation).
+# ---------------------------------------------------------------------------
+
+# Project root (this file is <root>/Gen_Taskset/lib/orchestrator.py). Module-level
+# so the three entry points share one computation, not three identical copies.
+OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _resolve_config_path(cfg_file: str) -> str:
+    """Resolve a config path to an absolute, existing file path.
+
+    Relative paths are anchored at :data:`OPT_SP_PROJECT_PATH` (the project
+    root), matching the historical behavior of the pipeline entry points.
+    """
+    if not cfg_file.startswith('/'):
+        cfg_file = os.path.join(OPT_SP_PROJECT_PATH, cfg_file)
+    if not os.path.exists(cfg_file):
+        raise FileNotFoundError(f"Configuration file not found: {cfg_file}")
+    return cfg_file
+
+
+def _load_and_validate_cfgs(cfg_file: str) -> dict:
+    """Load a generation config and run both integrity gates.
+
+    Thin composition of :func:`load_generation_config` + the trajectory-layer
+    gate (:func:`validate_trajectory_config`, the second gate — covers
+    ``ROBOT_SPEED_MPS`` that the generation gate does not). Shared by the
+    canonical shell and the P0.8 gate so they cannot diverge on which gates a
+    loaded cfgs passes.
+    """
+    cfgs = load_generation_config(cfg_file)
+    validate_trajectory_config(cfgs, config_path=cfg_file)
+    return cfgs
+
+
+def _resolve_dir_path(dir_path, cfg_file: str) -> str:
+    """Resolve the pipeline output directory to a concrete, created path.
+
+    ``dir_path=None`` (the CLI default) resolves to
+    ``TaskData/<cfg_name>_gen_1``; relative paths anchor at the project root.
+    Creates the directory (``exist_ok=True``). ``cfg_file`` is the already-
+    resolved config path (its basename seeds the default name).
+    """
+    if dir_path is None:
+        cfg_file_name = os.path.basename(cfg_file)
+        dir_path = os.path.join(OPT_SP_PROJECT_PATH, 'TaskData', cfg_file_name.replace('.json', '_gen_1'))
+    elif not dir_path.startswith('/'):
+        dir_path = os.path.join(OPT_SP_PROJECT_PATH, dir_path)
+    os.makedirs(dir_path, exist_ok=True)
+    return dir_path
 
 
 def generate_additional_execution_traces(
@@ -373,28 +437,66 @@ def run_full_generation_pipeline(
     n_path_per_task: int = 4,
     n_inst_per_path: int = 1
 ) -> None:
-    """Coordinates the full pipeline: parameter generation, stops/path generation, and trace generation."""
-    OPT_SP_PROJECT_PATH = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    """Coordinates the full pipeline: parameter generation, stops/path generation, and trace generation.
 
-    # Resolve paths
-    if not cfg_file.startswith('/'):
-        cfg_file = os.path.join(OPT_SP_PROJECT_PATH, cfg_file)
-    if not os.path.exists(cfg_file):
-        raise FileNotFoundError(f"Configuration file not found: {cfg_file}")
+    Thin shell: resolves + loads the config (applying ``standardize_config`` +
+    both integrity gates), then delegates to :func:`_run_pipeline_with_cfgs`.
+    The ~8 existing callers of this function are untouched.
 
-    cfgs = load_generation_config(cfg_file)
-    # 2nd integrity gate: trajectory-layer params the orchestrator reads
-    # (ROBOT_SPEED_MPS) that the generation gate in generate_taskset_parameters
-    # does not cover. Mirrors validate_config_integrity's interactive/raise UX.
-    validate_trajectory_config(cfgs, config_path=cfg_file)
+    The cfgs-loading + body were split so the P0.8 important-task gate
+    (:func:`run_full_generation_pipeline_with_important_task_gate`) can hold ONE
+    loaded cfgs, advance ``cfgs["RANDOM_SEED"]`` per retry, and call
+    ``_run_pipeline_with_cfgs`` directly. The gate MUST NOT call this shell: it
+    reloads cfgs from the config FILE each call, which would discard the
+    advanced seed and produce a byte-identical taskset every retry (a no-op
+    retry — the exact silent hole the gate exists to prevent).
+    """
+    cfg_file = _resolve_config_path(cfg_file)
+    cfgs = _load_and_validate_cfgs(cfg_file)
+    dir_path = _resolve_dir_path(dir_path, cfg_file)
 
+    _run_pipeline_with_cfgs(
+        cfgs,
+        n_sec=n_sec,
+        dir_path=dir_path,
+        add_perf_records=add_perf_records,
+        interact=interact,
+        n_path_per_task=n_path_per_task,
+        n_inst_per_path=n_inst_per_path,
+    )
+
+
+def _run_pipeline_with_cfgs(
+    cfgs: dict,
+    n_sec: int,
+    dir_path: str,
+    add_perf_records: bool,
+    interact: bool,
+    n_path_per_task: int,
+    n_inst_per_path: int,
+) -> None:
+    """Run the generation pipeline against a PRE-LOADED ``cfgs`` (required, no default).
+
+    Body of the former ``run_full_generation_pipeline``. Takes the cfgs the
+    caller already loaded + validated (so this fn does NOT reload from file,
+    does NOT re-run the integrity gates). The caller is responsible for cfgs
+    validity — ``run_full_generation_pipeline`` loads+validates before calling
+    here; the P0.8 gate loads once, then mutates ``cfgs["RANDOM_SEED"]`` per
+    retry before calling here.
+
+    ``dir_path`` is required (no default): the shell resolves a default when
+    ``None``; the gate always supplies a concrete dir. Forcing a concrete dir
+    here means a caller that forgets to set one fails loudly instead of
+    silently writing into a project-relative default.
+    """
     if dir_path is None:
-        cfg_file_name = os.path.basename(cfg_file)
-        dir_path = os.path.join(OPT_SP_PROJECT_PATH, 'TaskData', cfg_file_name.replace('.json', '_gen_1'))
-    else:
-        if not dir_path.startswith('/'):
-            dir_path = os.path.join(OPT_SP_PROJECT_PATH, dir_path)
-            
+        raise ValueError(
+            "_run_pipeline_with_cfgs requires a concrete dir_path (the shell "
+            "run_full_generation_pipeline resolves a default; pass one explicitly)."
+        )
+    if not dir_path.startswith('/'):
+        dir_path = os.path.join(OPT_SP_PROJECT_PATH, dir_path)
+
     os.makedirs(dir_path, exist_ok=True)
 
     # 1. Generate core taskset parameters
@@ -438,3 +540,148 @@ def run_full_generation_pipeline(
     # are on disk, BEFORE the pipeline returns. See feasibility_clamp.py for
     # the FiniteDist-truncates-at-max trace behind the mu+max+min clamp.
     clamp_avg_et_to_period(dir_path, et_over_period_cap=0.95)
+
+
+# ---------------------------------------------------------------------------
+# P0.8 — important-task gate (generation-time seed certification)
+# ---------------------------------------------------------------------------
+# After the canonical pipeline emits its characteristics YAMLs (and the
+# feasibility clamp runs — D5: clamp first, then RTA), the gate derives each
+# task's WCET per D2 and runs ``important_tasks_schedulable``. On failure it
+# re-runs the pipeline with an ADVANCED seed so each retry actually
+# re-samples. Budget 20 (D4), then a LOUD raise (NEVER silently emit an
+# unschedulable taskset — re-creates the P1.8 substrate).
+#
+# WHY THE GATE CANNOT CALL ``run_full_generation_pipeline``: that shell reloads
+# ``cfgs`` from the config FILE every call (``load_generation_config`` at the
+# top of the shell), so mutating an in-memory ``cfgs["RANDOM_SEED"]`` between
+# retries would be discarded — every retry would re-read the file's original
+# seed and produce a byte-identical taskset (a no-op retry, the exact silent
+# hole the gate exists to prevent). The gate therefore loads cfgs ONCE, mutates
+# ``cfgs["RANDOM_SEED"]`` per attempt, and calls ``_run_pipeline_with_cfgs``
+# (the body) directly, so the advanced seed actually takes effect.
+
+# D4: maximum re-sampling attempts before the gate gives up and raises loudly.
+# 20 is generous — a config that cannot draw a schedulable important subset in
+# 20 seeded attempts is almost certainly mis-specified (utilization too high,
+# deadlines too tight), not unlucky.
+IMPORTANT_TASK_GATE_MAX_ATTEMPTS = 20
+
+
+def run_full_generation_pipeline_with_important_task_gate(
+    cfg_file: str,
+    n_sec: int = 1000,
+    dir_path: str = None,
+    add_perf_records: bool = True,
+    interact: bool = False,
+    n_path_per_task: int = 4,
+    n_inst_per_path: int = 1,
+    max_attempts: int = IMPORTANT_TASK_GATE_MAX_ATTEMPTS,
+) -> dict:
+    """Generation-time gate: certify the emitted taskset is schedulable for the
+    important tasks under DM-with-top-priority-lock at the seed point (P0.8).
+
+    Wraps the canonical pipeline (:func:`_run_pipeline_with_cfgs`) with a
+    seed-advancing retry loop. Each attempt:
+
+      1. Advances ``cfgs["RANDOM_SEED"]`` to ``base_seed + attempt`` (the cfgs
+         is loaded ONCE, before the loop — see the module-level note on why the
+         shell cannot be used).
+      2. Runs ``_run_pipeline_with_cfgs`` (generate → export → traces → clamp).
+         Interval files use fixed names + ``"w"`` overwrite, so a re-run with
+         the SAME ``dir_path`` overwrites the prior attempt's files — no
+         accumulation, no stale-data mixing into the WCET/RTA read.
+      3. Reads the emitted tasks (:func:`_load_emitted_tasks_by_gid`, which
+         also normalizes the emitted ``important`` key to the RTA's
+         ``is_important``) and derives WCETs (``_wcets_from_loaded_tasks``, D2).
+      4. Runs :func:`important_tasks_schedulable` (per-core DM-within-important
+         fixed-priority RTA, D3).
+
+    On PASS: returns immediately with a report. On FAIL: advances the seed and
+    retries, up to ``max_attempts``. On exhaustion: raises ``RuntimeError``
+    with the final culprits + attempt count (D4: NEVER silent — an
+    unschedulable taskset is never emitted without a loud failure).
+
+    Args:
+        cfg_file: path to the generation config JSON (loaded once; the seed is
+            read from ``cfgs["RANDOM_SEED"]`` and advanced per attempt).
+        n_sec, dir_path, add_perf_records, interact, n_path_per_task,
+            n_inst_per_path: forwarded to ``_run_pipeline_with_cfgs`` (same
+            semantics as :func:`run_full_generation_pipeline`).
+        max_attempts: D4 retry budget (default 20). The gate raises loudly
+            after this many unschedulable draws.
+
+    Returns:
+        ``{"schedulable": True, "attempts_used": int, "culprits": []}`` on
+        success. ``culprits`` is empty (the final, passing attempt had no
+        misses). The report is for logging/diagnostics; the gate's CONTRACT is
+        that it returns only on a schedulable draw (otherwise it raises).
+
+    Raises:
+        ValueError: if ``cfgs["RANDOM_SEED"]`` is absent (the gate cannot
+            advance a seed that isn't there — a non-reproducible gate is a
+            config error, never silently papered over).
+        RuntimeError: if the budget is exhausted (D4 loud raise; message
+            includes the final culprits + attempt count).
+    """
+    cfg_file = _resolve_config_path(cfg_file)
+    cfgs = _load_and_validate_cfgs(cfg_file)
+    dir_path = _resolve_dir_path(dir_path, cfg_file)
+
+    base_seed = cfgs.get("RANDOM_SEED")
+    if base_seed is None:
+        raise ValueError(
+            f"Config {cfg_file!r} has no RANDOM_SEED. The important-task gate "
+            "advances the seed per retry to re-sample; a non-reproducible "
+            "config (no seed) cannot be advanced. Set RANDOM_SEED in the config."
+        )
+
+    et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
+    tl_grid_upper = et_over_period_range[1]
+
+    culprits = []
+    for attempt in range(max_attempts):
+        # Advance the seed INSIDE the held cfgs so the re-seed inside
+        # generate_taskset_parameters picks up a fresh draw each attempt.
+        cfgs["RANDOM_SEED"] = base_seed + attempt
+
+        _run_pipeline_with_cfgs(
+            cfgs,
+            n_sec=n_sec,
+            dir_path=dir_path,
+            add_perf_records=add_perf_records,
+            interact=interact,
+            n_path_per_task=n_path_per_task,
+            n_inst_per_path=n_inst_per_path,
+        )
+
+        # Single disk read: tasks + WCETs from the same loaded dicts (the
+        # reader normalizes `important` → `is_important` so the RTA sees the
+        # flag — see _load_emitted_tasks_by_gid's docstring).
+        tasks_by_gid = _load_emitted_tasks_by_gid(dir_path)
+        wcets = _wcets_from_loaded_tasks(tasks_by_gid, tl_grid_upper)
+        # RTA takes a parallel list; order by gid for determinism.
+        gids = sorted(tasks_by_gid.keys())
+        tasks = [tasks_by_gid[g] for g in gids]
+        wcet_list = [wcets[g] for g in gids]
+
+        ok, culprits = important_tasks_schedulable(tasks, wcet_list)
+        if ok:
+            return {
+                "schedulable": True,
+                "attempts_used": attempt + 1,
+                "culprits": [],
+            }
+
+    # Budget exhausted (D4): NEVER silently emit the unschedulable taskset.
+    raise RuntimeError(
+        f"Important-task gate: taskset from {cfg_file!r} failed schedulability "
+        f"for the important tasks under DM-with-top-priority-lock after "
+        f"{max_attempts} seed-advancing attempts (seeds {base_seed}.."
+        f"{base_seed + max_attempts - 1}). The last attempt's culprits:\n"
+        f"{json.dumps(culprits, indent=2)}\n"
+        "This is almost certainly a mis-specified config (utilization too "
+        "high or deadlines too tight for the important subset), not bad luck. "
+        "Loosen CPU_UTIL_RANDOM_RANGE / increase deadlines / reduce "
+        "IMPORTANT_TASK_RATIO, then re-run."
+    )

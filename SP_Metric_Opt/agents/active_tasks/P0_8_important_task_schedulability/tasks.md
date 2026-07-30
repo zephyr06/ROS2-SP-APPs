@@ -89,17 +89,49 @@ Both are sound; the trade is retry-cost vs D2-exactness. **RESOLVED 2026-07-28: 
       transient integration failure was a pre-existing flaky test-ordering issue,
       passes in isolation + on clean re-run — NOT my change).
 
-## 2b. Gate wrapper + seed-advancing retry loop — NEXT
-- [ ] TDD red: a retry test — a config whose first draw is unschedulable, second draw
-      (advanced seed) schedulable → wrapper returns PASS after 2 attempts.
-- [ ] TDD red: budget exhaustion → loud raise (NEVER silent).
-- [ ] TDD red: seed advancement actually re-samples (assert two attempts produce
-      DIFFERENT tasksets — guards the no-op-retry bug).
-- [ ] Implement `run_full_generation_pipeline_with_important_task_gate`: wrap the
-      canonical pipeline, run `compute_wcets_from_characteristics` +
-      `important_tasks_schedulable` post-clamp, loop on fail with `RANDOM_SEED +
-      attempt`, budget 20 (D4), loud raise on exhaustion.
-- [ ] Return a report (attempts used, culprits on the final pass).
+## 2b. Gate wrapper + seed-advancing retry loop — LANDED (staged, awaits commit)
+- [x] TDD red: `test_gate_passes_first_try` + `test_gate_retries_until_schedulable`
+      + `test_gate_raises_on_budget_exhaustion` +
+      `test_gate_advances_seed_so_retries_re_sample` (4 red cases; RED because
+      `_run_pipeline_with_cfgs` + the wrapper did not exist yet).
+- [x] Implemented `run_full_generation_pipeline_with_important_task_gate`
+      (`orchestrator.py`): loads cfgs ONCE, advances `cfgs["RANDOM_SEED"] =
+      base_seed + attempt` per retry, calls `_run_pipeline_with_cfgs` (the body)
+      directly, then `_load_emitted_tasks_by_gid` + `_wcets_from_loaded_tasks` +
+      `important_tasks_schedulable` post-clamp; budget 20 (`IMPORTANT_TASK_GATE_MAX_ATTEMPTS`,
+      D4); loud `RuntimeError` on exhaustion (NEVER silent — message includes
+      final culprits + attempt count + seed range + remediation hint).
+- [x] Split `run_full_generation_pipeline` → thin shell (loads+validates cfgs,
+      delegates) + `_run_pipeline_with_cfgs(cfgs, ...)` (the body, takes a
+      REQUIRED pre-loaded cfgs — NO default args, per user preference). The ~8
+      existing callers of the shell are untouched. The gate calls the body
+      directly because the shell reloads cfgs from the config FILE each call,
+      which would discard the advanced seed → byte-identical taskset every retry
+      (the no-op-retry bug the gate exists to prevent).
+- [x] Refactor (DRY): extracted `_load_emitted_tasks_by_gid(dir_path) -> {gid: task}`
+      (I/O + gid dedup, worst-case-ET representative) +
+      `_wcets_from_loaded_tasks(tasks_by_gid, tl_grid_upper) -> {gid: wcet}`
+      (pure WCET rule) in `important_task_rta.py`; `compute_wcets_from_characteristics`
+      is now a thin composition (public API + 7 existing tests unchanged).
+- [x] **Key-normalization correctness fix:** the emitted C++-format YAML uses key
+      `important` (`yaml_exporter.py:73`) but the RTA reads `is_important`
+      (`important_tasks_schedulable` → `t.get("is_important")`). The reader sets
+      `task["is_important"] = task.get("important", False)` on every loaded task
+      — WITHOUT this the gate feeds emitted-form tasks to the RTA, which sees NO
+      important tasks → vacuously "schedulable" → a hollow gate (the exact silent
+      hole P0.8 prevents). Caught by design review before first run.
+- [x] Returns a report: `{"schedulable": True, "attempts_used": int, "culprits": []}`
+      on success (culprits empty — the passing attempt had no misses); raises on
+      exhaustion.
+- [x] TDD green: `pytest Gen_Taskset/tests/test_important_task_gate.py` = 11 passed
+      (7 WCET + 4 wrapper); `pytest Gen_Taskset/tests/` = 47 passed (was 43; +4
+      wrapper tests, no regressions).
+- [x] Test strategy = mock `_run_pipeline_with_cfgs` (monkeypatch) writing
+      synthetic characteristics YAMLs (unschedulable attempt 0 / schedulable
+      attempt 1 / never-schedulable for exhaustion); REAL
+      `compute_wcets_from_characteristics` + `important_tasks_schedulable` run on
+      the synthetic YAMLs (RTA path exercised, expensive trace gen NOT).
+      End-to-end real-pipeline coverage DEFERRED (not this step).
 
 ## 2. Generation-time gate
 - [ ] TDD red: a generation integration test — emit a taskset, assert it passes the
@@ -119,10 +151,22 @@ Both are sound; the trade is retry-cost vs D2-exactness. **RESOLVED 2026-07-28: 
       user. Do NOT implement without user go.
 
 ## 4. Verification + records
-- [ ] `pytest Gen_Taskset/tests/` green (full generator test suite).
-- [ ] Confirm the gate covers the important-task types the C++ scorer will actually
+- [x] `pytest Gen_Taskset/tests/` green (47 passed — full generator test suite).
+- [x] Confirm the gate covers the important-task types the C++ scorer will actually
       see (cross-check a generated taskset's important tasks against
       `feasibility_clamp.py`'s perf-task skip — the gap this task closes).
-- [ ] Confirm the WCET fields match P0.6's (global-max ET per task — D2 consistency).
-- [ ] `dev_log.md` (this folder + top-level) + memory updated.
-- [ ] `git add` staged; user reviews (no commit).
+      [perf → `period * FINAL_Et_OVER_PERIOD_RANGE[1]`; non-perf → global-max
+      `execution_time_max`; both in `_wcets_from_loaded_tasks`.]
+- [x] Confirm the WCET fields match P0.6's (global-max ET per task — D2 consistency).
+      [`_load_emitted_tasks_by_gid` keeps the worst-case-ET representative per gid.]
+- [x] `dev_log.md` (this folder + top-level) + memory updated.
+- [x] `git add` staged; user reviews (no commit). [3 files: `orchestrator.py`,
+      `important_task_rta.py`, `test_important_task_gate.py`.]
+- [ ] **DEFERRED (Step 2 generation-time gate wiring):** end-to-end real-pipeline
+      test in `test_integration.py` (emit a real taskset, assert the gate passes)
+      + wiring the wrapper into prod entry points (`run_generator.py`,
+      `run_sim_experiments.py`) — behavior change for the prod pipeline, separate
+      user-reviewed step. The wrapper existing + unit-tested is the unit of value
+      here (Step 2b); wiring it in is Step 2.
+- [ ] **DEFERRED (Step 3):** rejection-rate reporting + second-lever generator-logic
+      fix proposal (user-go only).

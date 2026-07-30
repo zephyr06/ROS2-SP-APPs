@@ -281,27 +281,124 @@ def _is_perf_task_emitted(task: dict) -> bool:
     return bool(task.get("performance_records_time"))
 
 
+def _load_emitted_tasks_by_gid(dir_path: str) -> dict:
+    """Load emitted tasks from the interval characteristics YAMLs, keyed by gid.
+
+    Globs every ``taskset_characteristics_interval_{k}.yaml`` (the canonical
+    per-interval full taskset — NOT the global k=0 copy or the per-processor
+    splits, which are redundant/subset) and returns one representative task
+    dict per ``gid`` (the generator's stable identity, NOT the per-processor-
+    local ``id``). The representative is the WORST-CASE interval for that task
+    — the one with the largest ``execution_time_max`` — so a downstream WCET
+    read of ``execution_time_max`` yields the global max (D2) without a second
+    pass. Task identity fields (``period``, ``deadline``, ``processorId``,
+    ``important``) are constant across intervals, so the worst-case-ET
+    representative is also a valid identity representative.
+
+    **Key normalization (correctness):** the emitted C++-format YAML uses the
+    key ``important`` (``yaml_exporter.py:73``), but the RTA contract reads
+    ``is_important`` (``important_tasks_schedulable`` →
+    ``t.get("is_important", False)``). This reader sets
+    ``task["is_important"] = task.get("important", False)`` on every loaded
+    task so the RTA sees the flag. Without this, feeding emitted-form tasks
+    straight to the RTA would make it see NO important tasks → vacuously
+    "schedulable" → a hollow gate (the exact silent hole P0.8 prevents).
+
+    Shared by :func:`compute_wcets_from_characteristics` (for the WCET read)
+    and the P0.8 gate wrapper (for the RTA's task list) — single I/O pass, no
+    duplicated glob/parse logic.
+
+    Args:
+        dir_path: the generation output directory containing the emitted
+            ``taskset_characteristics_interval_*.yaml`` files.
+
+    Returns:
+        ``{gid: task_dict}`` for every task seen across the interval files,
+        each dict carrying the normalized ``is_important`` flag alongside the
+        emitted fields. The dict IS the worst-case-ET representative.
+
+    Raises:
+        ValueError: if no ``taskset_characteristics_interval_*.yaml`` files
+            exist in ``dir_path`` (the pipeline did not emit its canonical
+            output — the gate cannot certify what isn't there; NEVER silent).
+    """
+    interval_files = sorted(glob.glob(os.path.join(dir_path, _INTERVAL_GLOB)))
+    if not interval_files:
+        raise ValueError(
+            f"No taskset_characteristics_interval_*.yaml files in {dir_path!r} — "
+            "the pipeline did not emit its canonical per-interval output; the "
+            "important-task gate cannot certify a taskset that isn't there."
+        )
+
+    tasks_by_gid: dict = {}
+    for fpath in interval_files:
+        with open(fpath, "r") as f:
+            data = yaml.safe_load(f)
+        if data is None or "tasks" not in data:
+            continue
+        for task in data["tasks"]:
+            gid = task.get("gid")
+            if gid is None:
+                # No gid → not an emitted task (defensive); skip rather than
+                # raise — a malformed file is the clamp/exporter's problem.
+                continue
+            # Normalize the important flag (emitted `important` → RTA's
+            # `is_important`). See docstring: without this the gate is hollow.
+            task["is_important"] = task.get("important", False)
+            prev = tasks_by_gid.get(gid)
+            if prev is None or float(task.get("execution_time_max", 0.0)) > float(
+                prev.get("execution_time_max", 0.0)
+            ):
+                tasks_by_gid[gid] = task
+
+    return tasks_by_gid
+
+
+def _wcets_from_loaded_tasks(tasks_by_gid: dict, tl_grid_upper: float) -> dict:
+    """Per-task WCET (D2) from already-loaded task dicts.
+
+    Pure computation (no I/O) shared by :func:`compute_wcets_from_characteristics`
+    and the P0.8 gate wrapper, so the WCET rule lives in one place:
+
+      - **Perf task** (carries ``performance_records_time``): WCET =
+        ``period * tl_grid_upper`` — the TL-grid upper bound. The on-disk
+        ``execution_time_max`` for a perf task is a TL-grid BOUND (the exporter
+        forces it to the config range, ``yaml_exporter.py:79-80``), NOT the ET
+        support, so it must NOT be read as the WCET. This is the gap
+        ``feasibility_clamp`` leaves open (it SKIPS perf tasks) that P0.8 closes.
+      - **Non-perf task**: WCET = ``execution_time_max`` of the worst-case
+        representative (the global max ET the task exhibits across the
+        generated intervals — D2; ``_load_emitted_tasks_by_gid`` already
+        selected the max-ET representative). Computed POST-clamp (the clamp may
+        pull ``execution_time_max`` DOWN, so the gate reads the on-disk clamped
+        value — D5: clamp first, then RTA).
+
+    Args:
+        tasks_by_gid: ``{gid: task_dict}`` from :func:`_load_emitted_tasks_by_gid`
+            (each dict is the worst-case-ET representative).
+        tl_grid_upper: ``FINAL_Et_OVER_PERIOD_RANGE[1]`` from the config.
+
+    Returns:
+        ``{gid: wcet}`` for every loaded task.
+    """
+    wcets: dict[int, float] = {}
+    for gid, task in tasks_by_gid.items():
+        period = float(task["period"])
+        if _is_perf_task_emitted(task):
+            wcets[gid] = period * tl_grid_upper
+        else:
+            wcets[gid] = float(task["execution_time_max"])
+    return wcets
+
+
 def compute_wcets_from_characteristics(dir_path: str, cfgs: dict) -> dict:
     """Derive each task's WCET from the emitted characteristics YAMLs (D2).
 
-    Reads every ``taskset_characteristics_interval_{k}.yaml`` the pipeline
-    emitted (the canonical per-interval full taskset — NOT the global k=0 copy
-    or the per-processor splits, which are redundant/subset) and computes,
-    per task (keyed by ``gid`` — the generator's stable identity, NOT the
-    per-processor-local ``id``):
-
-      - **Perf task** (carries ``performance_records_time``): WCET =
-        ``period * FINAL_Et_OVER_PERIOD_RANGE[1]`` — the TL-grid upper bound.
-        The on-disk ``execution_time_max`` for a perf task is a TL-grid
-        BOUND (the exporter forces it to the config range,
-        ``yaml_exporter.py:79-80``), NOT the ET support, so it must NOT be
-        read as the WCET. This is the gap ``feasibility_clamp`` leaves open
-        (it SKIPS perf tasks) that P0.8 closes.
-      - **Non-perf task**: WCET = MAX ``execution_time_max`` across all
-        interval YAMLs — the global max ET the task exhibits across the
-        generated intervals (D2). Computed POST-clamp (the clamp may pull
-        ``execution_time_max`` DOWN, so the gate reads the on-disk clamped
-        value — D5: clamp first, then RTA).
+    Thin composition of :func:`_load_emitted_tasks_by_gid` (I/O + gid dedup +
+    important-flag normalization) and :func:`_wcets_from_loaded_tasks` (the WCET
+    rule). Kept as the public entry point so existing callers (and the 7 WCET
+    tests) are unchanged: same args, same ``{gid: wcet}`` return, same loud
+    ``ValueError`` when the pipeline emitted no interval files.
 
     Args:
         dir_path: the generation output directory containing the emitted
@@ -321,37 +418,5 @@ def compute_wcets_from_characteristics(dir_path: str, cfgs: dict) -> dict:
     """
     et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
     tl_grid_upper = et_over_period_range[1]
-
-    interval_files = sorted(glob.glob(os.path.join(dir_path, _INTERVAL_GLOB)))
-    if not interval_files:
-        raise ValueError(
-            f"No taskset_characteristics_interval_*.yaml files in {dir_path!r} — "
-            "the pipeline did not emit its canonical per-interval output; the "
-            "important-task gate cannot certify a taskset that isn't there."
-        )
-
-    wcets: dict[int, float] = {}
-    for fpath in interval_files:
-        with open(fpath, "r") as f:
-            data = yaml.safe_load(f)
-        if data is None or "tasks" not in data:
-            continue
-        for task in data["tasks"]:
-            gid = task.get("gid")
-            if gid is None:
-                # No gid → not an emitted task (defensive); skip rather than
-                # raise — a malformed file is the clamp/exporter's problem.
-                continue
-            period = float(task["period"])
-            if _is_perf_task_emitted(task):
-                wcet = period * tl_grid_upper
-            else:
-                wcet = float(task["execution_time_max"])
-            # Per-task global max across intervals (non-perf) or the single
-            # TL-grid bound (perf — identical across intervals, so max is a
-            # no-op). max() handles both uniformly.
-            prev = wcets.get(gid)
-            if prev is None or wcet > prev:
-                wcets[gid] = wcet
-
-    return wcets
+    tasks_by_gid = _load_emitted_tasks_by_gid(dir_path)
+    return _wcets_from_loaded_tasks(tasks_by_gid, tl_grid_upper)

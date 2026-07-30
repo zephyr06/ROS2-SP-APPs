@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-07-29
+
+- **P0.8 Step 2b refactor — de-duplicate path/config scaffolding + fix
+  `dir_path=None` regression (user review).** The shell/body/gate split had
+  triplicated `OPT_SP_PROJECT_PATH`, config-path resolution, cfgs-load, and
+  dir-path resolution. The duplication also caused a regression: the original
+  resolved `dir_path=None` → `TaskData/<cfg>_gen_1` in the body; after the
+  split only the gate did, so the shell forwarded `None` to
+  `_run_pipeline_with_cfgs` (which raises) — would have broken the canonical
+  CLI's no-`--dir_path` invocation (no test caught it; all ~22 callers pass
+  `dir_path=` explicitly). Fix = extract `_resolve_config_path` /
+  `_load_and_validate_cfgs` / `_resolve_dir_path` helpers + hoist
+  `OPT_SP_PROJECT_PATH` to a module constant; the shell resolves `dir_path`
+  before the body (regression fixed), the gate shares the same helpers (no
+  divergence). `pytest Gen_Taskset/tests/` = 47 passed; end-to-end
+  `dir_path=None` run confirmed.
+
+## 2026-07-28
+
+- **P0.8 Step 2b — important-task gate wrapper LANDED + staged (NOT committed, awaits
+  user review).** `run_full_generation_pipeline_with_important_task_gate` (`orchestrator.py`):
+  a generation-time gate that certifies every emitted taskset is schedulable for the
+  important tasks under DM-with-top-priority-lock at the seed point. Seed-advancing
+  retry loop (budget 20, D4), loud `RuntimeError` on exhaustion (NEVER silent — prevents
+  re-creating the P1.8 substrate). **Design:** split `run_full_generation_pipeline` into
+  a thin shell + `_run_pipeline_with_cfgs(cfgs, ...)` (REQUIRED cfgs, no default args —
+  user preference) because the shell reloads cfgs from the config file each call, which
+  would discard an advanced seed (no-op-retry bug). **DRY refactor + key-normalization
+  fix:** extracted `_load_emitted_tasks_by_gid` (normalizes emitted `important` → RTA's
+  `is_important`; without it the gate would be hollow) + `_wcets_from_loaded_tasks`.
+  **Tests:** 4 TDD red→green wrapper tests (mock pipeline, real RTA); `pytest Gen_Taskset/tests/`
+  = 47 passed (+4, no regressions). Step 2 (prod wiring) + Step 3 (rejection-rate) deferred.
+
 ## Historical Milestones & Summary (2026-06-20 – 2026-07-24)
 
 - **Pipeline Foundation & Optimization (2026-06-20 – 2026-07-01)**
