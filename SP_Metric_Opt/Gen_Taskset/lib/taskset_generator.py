@@ -52,6 +52,11 @@ REQUIRED_CONFIG_PARAMS = [
 OPTIONAL_CONFIG_PARAMS = [
     {"key": "RANDOM_SEED",            "desc": "absent = OS entropy (non-reproducible run)"},
     {"key": "MAX_UTIL_PER_ENV_TASK",  "desc": "absent = env tasks use MAX_UTIL_PER_TASK"},
+    {"key": "DEADLINE_MODE",          "desc": "absent/'constrained' = deadline=period*U(0.5,1.0) (D<T, "
+                                              "constrained deadlines); 'implicit' = deadline=period (D=T, "
+                                              "the gmm_model default). D=T makes RM≡DM (P0.9's DM-over-RM "
+                                              "distinction collapses); the important-first group lock is "
+                                              "deadline-independent and still meaningful."},
 ]
 
 
@@ -452,26 +457,22 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
     # 2. Optionally tighten utilization cap ONLY for env-dependent tasks.
     #    This leaves headroom so spatial variation from strong negative
     #    correlations doesn't push observed ET above period at map edges.
+    #
+    #    (3a) no-inflation: freed env-util is DROPPED, NOT redistributed. A task's
+    #    utilization must never be raised above its UUniFast-drawn u_i to meet the
+    #    total target — the prior proportional redistribution did exactly that
+    #    (and it would raise PERF u_i -> raise perf execution_time_mu = perf WCET
+    #    under the P0.8 et_mean rule -> spurious gate rejections). Dropping only
+    #    LOWERS the realized load, which the gate never penalizes (it certifies
+    #    schedulability, not a utilization target), so this is strictly safe.
+    #    Side effect (cosmetic, see the `cpu_util` note on the returned dict):
+    #    the realized total load falls below the sampled target by the freed
+    #    amount.
     max_util_env = cfgs.get("MAX_UTIL_PER_ENV_TASK")
     if max_util_env is not None:
-        freed = 0.0
-        non_env_indices = []
         for i in range(n_tasks):
-            if i in env_task_indices:
-                if util_vector[i] > max_util_env:
-                    freed += util_vector[i] - max_util_env
-                    util_vector[i] = max_util_env
-            else:
-                non_env_indices.append(i)
-        # Redistribute freed utilization to non-env tasks proportionally
-        if freed > 0 and non_env_indices:
-            non_env_sum = sum(util_vector[i] for i in non_env_indices)
-            if non_env_sum > 0:
-                for i in non_env_indices:
-                    util_vector[i] += freed * (util_vector[i] / non_env_sum)
-            else:
-                for i in non_env_indices:
-                    util_vector[i] += freed / len(non_env_indices)
+            if i in env_task_indices and util_vector[i] > max_util_env:
+                util_vector[i] = max_util_env
 
     # 3. Select time-limit (performance-record) tasks from non-env candidates.
     # All non-env tasks are eligible regardless of period (the former
@@ -530,8 +531,18 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
         task_idx += 1
 
     # 3. Generate static task properties (deadline, SP constraints)
-    for i in range(n_tasks):
-        taskset_param[i].deadline = int(round(taskset_param[i].period * random.uniform(0.5, 1.0)))
+    #
+    # Deadline mode is config-driven (DEADLINE_MODE). The GMMTaskModel default
+    # is deadline=period (gmm_model.py); the constrained draw below is the ONLY
+    # place that overrides it to deadline < period. 'implicit' (D=T) leaves the
+    # default in place -- the loosest feasible deadline, which removes the
+    # tight-deadline-on-isolated-heavy-task failure mode (Mode 1 of the P0.8
+    # gate rejection). Note D=T makes RM≡DM, so P0.9's DM-over-RM ordering
+    # argument collapses (the important-first group lock is unaffected).
+    deadline_mode = cfgs.get("DEADLINE_MODE", "constrained")
+    if deadline_mode != "implicit":
+        for i in range(n_tasks):
+            taskset_param[i].deadline = int(round(taskset_param[i].period * random.uniform(0.5, 1.0)))
 
     # P2.14: SP_THRESHOLDS_SET removed -- sp_threshold is now sampled continuously
     # and uniformly from SP_THRESHOLD_RANGE for every task. The former discrete
@@ -660,9 +671,20 @@ def generate_taskset_parameters(cfgs: dict, dump_dir: str = None, save_plots: bo
 
     rt = {
         'n_tasks': n_tasks,
+        # NOTE (3a): this is the SAMPLED target utilization (per_core * n_cores),
+        # NOT the realized load. When MAX_UTIL_PER_ENV_TASK caps env tasks, the
+        # env-cap block above DROPS the freed env-util (no redistribution), so
+        # the realized total load (sum of u_i) is LOWER than this field by the
+        # freed amount. This over-report is cosmetic: the P0.8 gate does NOT read
+        # cpu_util (it derives WCET from execution_time_mu / execution_time_max
+        # and the RTA's utilization guard reads sum(WCET/period) per core). The
+        # one contract consumer (test_specifications.py: assert sum(Et_mean/
+        # period) == cpu_util) uses a config WITHOUT MAX_UTIL_PER_ENV_TASK, so
+        # the env-cap block never fires there and the assertion holds.
         'cpu_util': cpu_util,
         # P14: realized per-core utilization sampled from CPU_UTIL_RANDOM_RANGE
-        # that produced cpu_util above.
+        # that produced cpu_util above. Same over-report caveat as cpu_util when
+        # env-capping fires.
         'per_core_cpu_util': per_core_cpu_util,
         'tasks': tasks_dict_list
     }

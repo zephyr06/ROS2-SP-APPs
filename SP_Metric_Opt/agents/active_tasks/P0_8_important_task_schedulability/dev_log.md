@@ -4,6 +4,82 @@
 > On task completion, append a one-line milestone to the **top-level**
 > `agents/dev_log.md` (the canonical narrative).
 
+## 2026-07-29 (config-tuning round — make the gate pass within budget on the REAL paper config)
+
+- **Problem (active task #4, prior session):** the gate as committed in
+  `3d2360ed` is a correct loud-raise certifier, but the REAL paper config
+  (`taskset_cfg_paper_base.json`) made it reject too often under the faithful WCET
+  rule — i.e. the gate would burn its 20-attempt budget and raise on real
+  tasksets. Root cause is NOT the gate (the gate stays a loud-raise certifier);
+  it is the generation config + the perf-WCET rule. Three-layer diagnosis:
+  - **A. Perf WCET was `period * FINAL_Et_OVER_PERIOD_RANGE[1]` (= period×0.9, the
+    TL-grid MAX).** Probe (`measure_important_utilization.py`) of important-perf
+    max-core WCET-util showed overload at N=4/8/16 under this rule.
+  - **B. Non-perf WCET = `et_mean + 2σ`** with `SIGMA_OVER_Et_RANGE=[0.5,0.6]` → a
+    2.0–2.2× amplifier on env/util — the dominant overload driver.
+  - **C. Env cap `MAX_UTIL_PER_ENV_TASK=0.45`** landed env WCET/period at ~0.99
+    (AT the line). (The prior session's "uunifast silent cap-raise" attribution
+    was a CORRECTION: in the real paper config `total/n ≤ 0.75` → the cap-raise
+    never fires; overload is B+A+env-cap, not the cap-raise.)
+- **RESOLVED + IMPLEMENTED (working tree, `git add`-only — NOT committed, awaits
+  review):** all three proposals landed.
+  1. **Perf WCET = `execution_time_mu` (= et_mean), NOT the middle-TL option and
+     NOT the grid MAX.** User reasoning: the C++ sim runs
+     `execution_time = min(et_mean, assigned_TL)` — the TL is a DOWNWARD cap,
+     never an inflator → `runtime_ET ≤ et_mean ≤ WCET` for ANY operating point →
+     et_mean is the faithful + sound operating-point WCET (tightest safe rule).
+     The min-TL clamp (the seed P0.6 walks from) discharges the et_mean concern at
+     that operating point. Code: `important_task_rta.py`
+     `_wcets_from_loaded_tasks(tasks_by_gid)` — DROPPED the `tl_grid_upper` param;
+     perf WCET = `float(task["execution_time_mu"])` with a loud `KeyError` on
+     missing (no fallback — `execution_time_mu` is guaranteed on emitted perf
+     tasks; missing = hand-authored/legacy misconfig). `compute_wcets_from_characteristics
+     (dir_path)` — DROPPED the `cfgs` param + grid derivation (the TL grid is now
+     IRRELEVANT to the verdict; stays `[0.05,0.9]` in config). Gate call site
+     (`orchestrator.py`) updated to match.
+  2. **Env cap 0.45→0.27 + variance [0.5,0.6]→[0.3,0.4]** (`taskset_cfg_paper_base.json`).
+     Env WCET/period = `u_env·(1+2σ/et)`; σ/et∈[0.3,0.4] → amplifier 1.6–1.8;
+     u_env=0.27 → env WCET/period ≤ 0.486 < period (was ~0.99, the overload driver).
+  3. **(3a) no-inflation — shortfall DROPPED, NOT redistributed.**
+     `CPU_UTIL_RANDOM_RANGE` [0.5,1.5]→[0.5,1.0] (lower target). In
+     `taskset_generator.py` the env-cap block KEEPS the env `u_i` clamp-down but
+     DROPS the proportional redistribution block (it raised non-env `u_i` above
+     drawn = the inflation 3a forbids; AND it inflated PERF `u_i` → inflated
+     `execution_time_mu` = perf WCET → spurious rejections). Dropping only LOWERS
+     realized load (gate never penalizes lower load → strictly safe). Cosmetic
+     cpu_util over-report left as-is with a comment (the gate does not read
+     `cpu_util`; the one contract consumer uses a config without
+     `MAX_UTIL_PER_ENV_TASK` so the assertion holds). (3b) normal-only
+     redistribution NOT chosen (3a only, user direction).
+  4. **`DEADLINE_MODE=implicit`** added to `taskset_cfg_paper_base.json`
+     (deadline=period → makes RM≡DM; purely config-read at
+     `taskset_generator.py:546`).
+- **Diagnostic sync:** `measure_important_utilization.py` synced — `_wcet_of`
+  dropped `tl_grid_upper`, perf reads `Et_mean` in-memory (= `execution_time_mu`
+  emitted); removed the misleading `--perf-cap` CLI flag (perf WCET is now et_mean
+  not the grid).
+- **Test sync:** `test_important_task_gate.py` — `_emitted_task` +`execution_time_mu`;
+  renamed `test_wcet_perf_task_is_tl_grid_upper_bound`→`test_wcet_perf_task_is_et_mean`;
+  updated `test_wcet_mixed_perf_and_non_perf`; dropped `cfgs` from all 7 WCET call
+  sites.
+- **Verification (re-confirmed this session):**
+  - `pytest Gen_Taskset/tests/` = **47 passed** (no regressions).
+  - Diagnostic `measure_important_utilization --ns 4 8 16 --seeds 5` (et_mean rule):
+    mean max-core util N=4 0.883 / N=8 0.588 / N=16 0.923 (was N=8 2.197 / N=16
+    3.008 under the old period×0.9 rule); N=4/8 fully cleared, N=16 1/5 seeds
+    util-overloads (1.506, all non-perf on one core).
+  - **Faithful gate verification (REAL gate + REAL RTA, this session):**
+    `measure_gate_rejection_rate --samples 2 --ns 4 8 16 --n_sec 100` →
+    N=4/8 pass on attempt 1; N=16 passes within 3 attempts; **0 rejections, 0
+    raises.** Beats even the original ≤3-retry criterion.
+- **Files edited (all working-tree, NOT committed):** `important_task_rta.py`,
+  `orchestrator.py`, `taskset_generator.py`, `taskset_cfg_paper_base.json`,
+  `measure_important_utilization.py`, `test_important_task_gate.py`. Criterion
+  RELAXED from ≤3 to budget-20 (user: "10 is okay, keep 20 in exp").
+- **NEXT:** user review of the base-template config + code; commit on user go.
+  Step 2 prod-wiring (gate into `run_generator.py`/`run_sim_experiments.py`) +
+  Step 3 rejection-rate reporting remain DEFERRED (user-go).
+
 ## 2026-07-29 (Step 2b refactor — kill triplicated path/config scaffolding + fix dir_path=None regression)
 
 - **User review caught duplication + a regression it caused.** The split of

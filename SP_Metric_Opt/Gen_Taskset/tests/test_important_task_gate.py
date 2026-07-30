@@ -12,11 +12,13 @@ This file tests the (A)-specific pieces the pure-RTA module
 (``test_important_task_rta.py``) does NOT cover:
   - ``compute_wcets_from_characteristics``: reads the emitted
     ``taskset_characteristics_interval_*.yaml`` files and returns per-task
-    global-max WCET. Perf task = ``period * FINAL_Et_OVER_PERIOD_RANGE[1]``
-    (TL-grid upper bound, deterministic across intervals); non-perf =
-    MAX ``execution_time_max`` across all interval YAMLs (post-clamp — the
-    clamp may pull ``execution_time_max`` DOWN, so the global max MUST be
-    taken post-clamp).
+    WCET. Perf task = ``execution_time_mu`` (the task's et_mean — the faithful
+    operating-point ET; the assigned TL is a downward cap, never an inflator,
+    so runtime ET <= et_mean is a sound WCET, interval-invariant for perf
+    since the trace generator samples non-env ET as a constant et_mean);
+    non-perf = MAX ``execution_time_max`` across all interval YAMLs
+    (post-clamp — the clamp may pull ``execution_time_max`` DOWN, so the
+    global max MUST be taken post-clamp).
   - ``run_full_generation_pipeline_with_important_task_gate``: the retry
     wrapper. Advances the seed per attempt; loud-raises on budget exhaustion
     (NEVER silently emits an unschedulable taskset — re-creates the P1.8
@@ -76,8 +78,17 @@ def _emitted_task(
     processor_id: int = 0,
     performance_records_time: str = None,
     is_important: bool = False,
+    execution_time_mu: float = None,
 ) -> dict:
-    """Build one task dict in the EMITTED C++-format representation."""
+    """Build one task dict in the EMITTED C++-format representation.
+
+    ``execution_time_mu`` (the task's et_mean) is the perf WCET under the
+    current D2 rule, so callers that build a PERF task (pass
+    ``performance_records_time``) MUST also pass ``execution_time_mu`` — the
+    exporter emits it for every task; omitting it on a perf task makes the
+    WCET rule raise (the never-silent discipline). Non-perf callers may omit
+    it (their WCET reads ``execution_time_max``).
+    """
     t = {
         "id": gid,
         "gid": gid,
@@ -89,6 +100,8 @@ def _emitted_task(
     }
     if performance_records_time is not None:
         t["performance_records_time"] = performance_records_time
+    if execution_time_mu is not None:
+        t["execution_time_mu"] = execution_time_mu
     return t
 
 
@@ -103,7 +116,6 @@ def test_wcet_non_perf_is_global_max_across_intervals(tmp_path):
     a per-interval ``Et_max``) takes its GLOBAL max as the WCET — the worst
     interval bounds the response time. This is D2.
     """
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
     task = _emitted_task(gid=0, period=1000, deadline=1000,
                          execution_time_max=200, is_important=True)
     _write_characteristics(str(tmp_path), [task], interval_k=0)
@@ -112,7 +124,7 @@ def test_wcet_non_perf_is_global_max_across_intervals(tmp_path):
     task_k1["execution_time_max"] = 350
     _write_characteristics(str(tmp_path), [task_k1], interval_k=1)
 
-    wcets = compute_wcets_from_characteristics(str(tmp_path), cfgs)
+    wcets = compute_wcets_from_characteristics(str(tmp_path))
     assert wcets == {0: 350.0}
 
 
@@ -124,7 +136,6 @@ def test_wcet_clamp_lowered_max_is_respected(tmp_path):
     value — it does NOT re-derive the pre-clamp max. So a task clamped from
     600 → 950-cap*period uses the clamped value as its WCET.
     """
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
     # period=1000, cap=0.95 → clamp target = 950. Pre-clamp max 600 < 950, so
     # clamp leaves it at 600 (the clamp only pulls DOWN, never raises). The
     # gate must read 600, not some pre-clamp phantom.
@@ -132,40 +143,43 @@ def test_wcet_clamp_lowered_max_is_respected(tmp_path):
                          execution_time_max=600, is_important=True)
     _write_characteristics(str(tmp_path), [task], interval_k=0)
 
-    wcets = compute_wcets_from_characteristics(str(tmp_path), cfgs)
+    wcets = compute_wcets_from_characteristics(str(tmp_path))
     assert wcets == {0: 600.0}
 
 
-def test_wcet_perf_task_is_tl_grid_upper_bound(tmp_path):
-    """Perf task WCET = ``period * FINAL_Et_OVER_PERIOD_RANGE[1]`` (D2).
+def test_wcet_perf_task_is_et_mean(tmp_path):
+    """Perf task WCET = ``execution_time_mu`` (the task's et_mean — D2).
 
     A perf task's ``execution_time_min/max`` are TL-grid BOUNDS, not the ET
     support — the exporter forces them to the config range
     (``yaml_exporter.py:79-80``). So the gate must NOT read its
-    ``execution_time_max`` (a grid bound); it must compute the TL-grid upper
-    bound from the period + config. This is the gap ``feasibility_clamp``
-    leaves open (it SKIPS perf tasks) that P0.8 closes.
+    ``execution_time_max`` (a grid bound); it reads ``execution_time_mu``
+    (et_mean). The C++ sim runs ``execution_time = min(et_mean, assigned_TL)``
+    — the TL is a downward cap, never an inflator — so runtime ET <= et_mean,
+    making et_mean a sound WCET (the tightest one tied to the true ET support).
+    This is the gap ``feasibility_clamp`` leaves open (it SKIPS perf tasks)
+    that P0.8 closes.
     """
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
-    # period=1000 → TL-grid upper bound = 1000 * 0.9 = 900. The on-disk
-    # execution_time_max (450) is a grid bound, NOT the WCET — the gate must
-    # ignore it and use 900.
+    # period=1000, execution_time_mu=250 (et_mean). The on-disk
+    # execution_time_max (450) is a TL-grid bound, NOT the WCET — the gate must
+    # ignore it and use the et_mean (250).
     task = _emitted_task(gid=0, period=1000, deadline=1000,
                          execution_time_max=450,
                          performance_records_time="100 200 300 450",
+                         execution_time_mu=250,
                          is_important=True)
     _write_characteristics(str(tmp_path), [task], interval_k=0)
 
-    wcets = compute_wcets_from_characteristics(str(tmp_path), cfgs)
-    assert wcets == {0: 900.0}
+    wcets = compute_wcets_from_characteristics(str(tmp_path))
+    assert wcets == {0: 250.0}
 
 
 def test_wcet_mixed_perf_and_non_perf(tmp_path):
-    """Both task types in one taskset: perf → TL-grid bound, non-perf → global max."""
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
+    """Both task types in one taskset: perf → et_mean, non-perf → global max."""
     perf = _emitted_task(gid=0, period=500, deadline=500,
                          execution_time_max=400,
                          performance_records_time="50 100 200 400",
+                         execution_time_mu=180,
                          is_important=True)
     non_perf = _emitted_task(gid=1, period=1000, deadline=1000,
                              execution_time_max=200, is_important=True)
@@ -174,9 +188,9 @@ def test_wcet_mixed_perf_and_non_perf(tmp_path):
     non_perf_k1["execution_time_max"] = 300
     _write_characteristics(str(tmp_path), [perf, non_perf_k1], interval_k=1)
 
-    wcets = compute_wcets_from_characteristics(str(tmp_path), cfgs)
-    # perf: 500 * 0.9 = 450 (TL-grid bound); non-perf: max(200, 300) = 300.
-    assert wcets == {0: 450.0, 1: 300.0}
+    wcets = compute_wcets_from_characteristics(str(tmp_path))
+    # perf: execution_time_mu = 180; non-perf: max(200, 300) = 300.
+    assert wcets == {0: 180.0, 1: 300.0}
 
 
 def test_wcet_does_not_double_count_global_or_per_processor_splits(tmp_path):
@@ -191,7 +205,6 @@ def test_wcet_does_not_double_count_global_or_per_processor_splits(tmp_path):
     ONLY (the canonical per-interval source) and ignores the global copy +
     per-processor splits.
     """
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
     task = _emitted_task(gid=0, period=1000, deadline=1000,
                          execution_time_max=200, is_important=True)
     _write_characteristics(str(tmp_path), [task], interval_k=0, n_cores=2)
@@ -204,7 +217,7 @@ def test_wcet_does_not_double_count_global_or_per_processor_splits(tmp_path):
         os.path.join(str(tmp_path), "taskset_characteristics.yaml"),
     )
 
-    wcets = compute_wcets_from_characteristics(str(tmp_path), cfgs)
+    wcets = compute_wcets_from_characteristics(str(tmp_path))
     assert wcets == {0: 200.0}
 
 
@@ -216,15 +229,13 @@ def test_wcet_missing_interval_files_raises(tmp_path):
     what isn't there. Loud raise (not an empty-dict return) so a misconfigured
     dir is caught, not papered over.
     """
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
     with pytest.raises(ValueError, match="interval"):
-        compute_wcets_from_characteristics(str(tmp_path), cfgs)
+        compute_wcets_from_characteristics(str(tmp_path))
 
 
 def test_wcet_keyed_by_gid_not_id(tmp_path):
     """WCETs are keyed by ``gid`` (the generator's stable task identity), not
     ``id`` (the per-processor-local id, which restarts at 0 in each split)."""
-    cfgs = {"FINAL_Et_OVER_PERIOD_RANGE": [0.05, 0.9]}
     # Two tasks: gid 5 (id 0) and gid 7 (id 1) — distinct gids, local ids 0/1.
     t5 = _emitted_task(gid=5, period=1000, deadline=1000,
                        execution_time_max=200, is_important=True)
@@ -234,7 +245,7 @@ def test_wcet_keyed_by_gid_not_id(tmp_path):
     t7["id"] = 1
     _write_characteristics(str(tmp_path), [t5, t7], interval_k=0)
 
-    wcets = compute_wcets_from_characteristics(str(tmp_path), cfgs)
+    wcets = compute_wcets_from_characteristics(str(tmp_path))
     assert set(wcets.keys()) == {5, 7}
     assert wcets[5] == 200.0
     assert wcets[7] == 400.0

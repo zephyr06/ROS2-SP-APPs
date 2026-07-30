@@ -44,6 +44,15 @@ simulation_experiments/debug_analysis/
 /Testing/
 temp_run/
 
+# P0.8 important-task diagnostic output (generated JSON run results, NOT source).
+# The harness scripts themselves (measure_*.py) ARE tracked — only their output is ignored.
+simulation_experiments/important_utilization/
+simulation_experiments/important_task_gate_rejection/
+# Scratch test fixture emitted by ad-hoc RTA I/O checks (not a paper fixture).
+TaskData/test_io_important.yaml
+# Editor / autosave backups of the local parameters.yaml (build-managed, not source).
+sources/.parameters.yaml.*.bak
+
 # Binary / Output / Log formats
 *.log
 *.pdf

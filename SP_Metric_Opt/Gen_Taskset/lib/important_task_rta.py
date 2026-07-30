@@ -354,18 +354,26 @@ def _load_emitted_tasks_by_gid(dir_path: str) -> dict:
     return tasks_by_gid
 
 
-def _wcets_from_loaded_tasks(tasks_by_gid: dict, tl_grid_upper: float) -> dict:
+def _wcets_from_loaded_tasks(tasks_by_gid: dict) -> dict:
     """Per-task WCET (D2) from already-loaded task dicts.
 
     Pure computation (no I/O) shared by :func:`compute_wcets_from_characteristics`
     and the P0.8 gate wrapper, so the WCET rule lives in one place:
 
       - **Perf task** (carries ``performance_records_time``): WCET =
-        ``period * tl_grid_upper`` — the TL-grid upper bound. The on-disk
-        ``execution_time_max`` for a perf task is a TL-grid BOUND (the exporter
-        forces it to the config range, ``yaml_exporter.py:79-80``), NOT the ET
-        support, so it must NOT be read as the WCET. This is the gap
-        ``feasibility_clamp`` leaves open (it SKIPS perf tasks) that P0.8 closes.
+        ``execution_time_mu`` (the task's ``et_mean`` — the faithful operating-
+        point ET). The C++ sim runs ``execution_time = min(et_mean,
+        assigned_TL)`` — the assigned TL is a DOWNWARD cap, never an inflator —
+        so ``runtime_ET <= et_mean <= WCET`` for ANY operating point: ``et_mean``
+        is a SOUND WCET and the tightest one tied to the true ET support. The
+        on-disk ``execution_time_max`` for a perf task is a TL-grid BOUND (the
+        exporter forces it to the config range, ``yaml_exporter.py:79-80``),
+        NOT the ET support; the prior ``period * tl_grid_upper`` rule was a
+        conservative bound that over-rejected. Perf ET is deterministic across
+        intervals (``trace_generator`` samples non-env ET as a constant
+        ``et = Et_mean``), so ``execution_time_mu`` is interval-invariant. This
+        is the gap ``feasibility_clamp`` leaves open (it SKIPS perf tasks) that
+        P0.8 closes.
       - **Non-perf task**: WCET = ``execution_time_max`` of the worst-case
         representative (the global max ET the task exhibits across the
         generated intervals — D2; ``_load_emitted_tasks_by_gid`` already
@@ -376,47 +384,65 @@ def _wcets_from_loaded_tasks(tasks_by_gid: dict, tl_grid_upper: float) -> dict:
     Args:
         tasks_by_gid: ``{gid: task_dict}`` from :func:`_load_emitted_tasks_by_gid`
             (each dict is the worst-case-ET representative).
-        tl_grid_upper: ``FINAL_Et_OVER_PERIOD_RANGE[1]`` from the config.
 
     Returns:
         ``{gid: wcet}`` for every loaded task.
+
+    Raises:
+        KeyError: loudly, if a perf task's ``execution_time_mu`` is missing —
+            the exporter guarantees it on every emitted perf task
+            (``yaml_exporter.py:53/58``); a missing value means a hand-authored
+            or legacy misconfig, and a silent fallback to another field would
+            re-open the WCET-correctness hole P0.8 exists to close (NEVER
+            silent).
     """
     wcets: dict[int, float] = {}
     for gid, task in tasks_by_gid.items():
-        period = float(task["period"])
         if _is_perf_task_emitted(task):
-            wcets[gid] = period * tl_grid_upper
+            # Faithful perf WCET = et_mean (= execution_time_mu). The TL grid is
+            # a downward cap on runtime ET, never an inflator, so et_mean is a
+            # sound WCET for any operating point. Missing = misconfig -> raise.
+            if "execution_time_mu" not in task:
+                raise KeyError(
+                    f"Perf task gid={gid} has no 'execution_time_mu' field. "
+                    "The exporter emits this (= et_mean) for every perf task; "
+                    "its absence means a hand-authored/legacy YAML, and a silent "
+                    "fallback would re-open the WCET hole P0.8 closes."
+                )
+            wcets[gid] = float(task["execution_time_mu"])
         else:
             wcets[gid] = float(task["execution_time_max"])
     return wcets
 
 
-def compute_wcets_from_characteristics(dir_path: str, cfgs: dict) -> dict:
+def compute_wcets_from_characteristics(dir_path: str) -> dict:
     """Derive each task's WCET from the emitted characteristics YAMLs (D2).
 
     Thin composition of :func:`_load_emitted_tasks_by_gid` (I/O + gid dedup +
     important-flag normalization) and :func:`_wcets_from_loaded_tasks` (the WCET
-    rule). Kept as the public entry point so existing callers (and the 7 WCET
-    tests) are unchanged: same args, same ``{gid: wcet}`` return, same loud
-    ``ValueError`` when the pipeline emitted no interval files.
+    rule). Kept as the public entry point so callers (and the WCET tests) get
+    the same ``{gid: wcet}`` return and the same loud ``ValueError`` when the
+    pipeline emitted no interval files.
+
+    The WCET rule is config-free: perf = ``execution_time_mu`` (et_mean), non-
+    perf = global max ``execution_time_max`` (see :func:`_wcets_from_loaded_tasks`).
+    The TL grid (``FINAL_Et_OVER_PERIOD_RANGE``) no longer enters the verdict —
+    it was a conservative perf bound, superseded by the faithful et_mean rule.
 
     Args:
         dir_path: the generation output directory containing the emitted
             ``taskset_characteristics_interval_*.yaml`` files.
-        cfgs: the generation config (read for ``FINAL_Et_OVER_PERIOD_RANGE``;
-            presence enforced by ``validate_config_integrity``).
 
     Returns:
         ``{gid: wcet}`` for every task seen across the interval files. A task
-        present in multiple intervals collapses to its global max (non-perf)
-        or its single TL-grid bound (perf, identical across intervals).
+        present in multiple intervals collapses to its global max (non-perf) or
+        its interval-invariant ``execution_time_mu`` (perf, identical across
+        intervals).
 
     Raises:
         ValueError: if no ``taskset_characteristics_interval_*.yaml`` files
             exist in ``dir_path`` (the pipeline did not emit its canonical
             output — the gate cannot certify what isn't there; NEVER silent).
     """
-    et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
-    tl_grid_upper = et_over_period_range[1]
     tasks_by_gid = _load_emitted_tasks_by_gid(dir_path)
-    return _wcets_from_loaded_tasks(tasks_by_gid, tl_grid_upper)
+    return _wcets_from_loaded_tasks(tasks_by_gid)

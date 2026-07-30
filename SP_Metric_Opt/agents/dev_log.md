@@ -6,6 +6,21 @@
 
 ## 2026-07-29
 
+- **P0.8 config-tuning round — make the gate pass within budget on the REAL
+  paper config (working tree, `git add`-only — NOT committed, awaits review).**
+  The committed gate (`3d2360ed`) is a correct loud-raise certifier, but the
+  real config made it reject too often. Root cause was config + the perf-WCET
+  rule, not the gate. Three fixes: (1) perf WCET → `execution_time_mu` (= et_mean)
+  — faithful (sim runs `min(et_mean, TL)`, TL is a downward cap) + tightest
+  sound; dropped `tl_grid_upper`/`cfgs` params + made the TL grid verdict-irrelevant;
+  (2) env cap 0.45→0.27 + variance [0.5,0.6]→[0.3,0.4] → env WCET/period ≤0.486;
+  (3) (3a) no-inflation: cpu_util [0.5,1.5]→[0.5,1.0] + DROP the proportional
+  redistribution block (raises non-env `u_i` above drawn; inflates perf
+  `execution_time_mu`); strictly safe. Plus `DEADLINE_MODE=implicit` (RM≡DM).
+  Verify: `pytest Gen_Taskset/tests/` = 47 passed; faithful gate
+  `measure_gate_rejection_rate --samples 2 --ns 4 8 16` → N=4/8 attempt 1,
+  N=16 ≤3 attempts, 0 rejections/0 raises. Step 2 prod-wiring + Step 3 deferred.
+
 - **P0.8 Step 2b refactor — de-duplicate path/config scaffolding + fix
   `dir_path=None` regression (user review).** The shell/body/gate split had
   triplicated `OPT_SP_PROJECT_PATH`, config-path resolution, cfgs-load, and

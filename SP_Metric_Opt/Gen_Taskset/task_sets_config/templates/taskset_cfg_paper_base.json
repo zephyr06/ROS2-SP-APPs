@@ -14,8 +14,8 @@
         0.3
     ],
     "SIGMA_OVER_Et_RANGE": [
-        0.5,
-        0.6
+        0.3,
+        0.4
     ],
     "RO_1_Et_RANGE": [
         -0.9,
@@ -28,7 +28,8 @@
     "MAP_WIDTH_M": 200,
     "MAP_HEIGHT_M": 200,
     "ROBOT_SPEED_MPS": 1.0,
-    "CPU_UTIL_RANDOM_RANGE": [0.5, 1.5],
+    "DEADLINE_MODE": "implicit",
+    "CPU_UTIL_RANDOM_RANGE": [0.5, 1.0],
     "SP_THRESHOLD_RANGE": [
         0.001,
         0.9
@@ -43,7 +44,7 @@
         0.9
     ],
     "N_GMM_COMPONENTS_PER_TASK": 4,
-    "MAX_UTIL_PER_ENV_TASK": 0.45,
+    "MAX_UTIL_PER_ENV_TASK": 0.27,
     "PERF_RECORD_TASK_PROBABILITY": 0.5,
     "ENV_DEPENDENT_TASKS_RATIO": [0.1, 0.3],
     "MAX_UTIL_PER_TASK": 0.95,

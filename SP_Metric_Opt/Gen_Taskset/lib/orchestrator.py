@@ -636,9 +636,6 @@ def run_full_generation_pipeline_with_important_task_gate(
             "config (no seed) cannot be advanced. Set RANDOM_SEED in the config."
         )
 
-    et_over_period_range = cfgs.get("FINAL_Et_OVER_PERIOD_RANGE", [0.05, 0.9])
-    tl_grid_upper = et_over_period_range[1]
-
     culprits = []
     for attempt in range(max_attempts):
         # Advance the seed INSIDE the held cfgs so the re-seed inside
@@ -657,9 +654,10 @@ def run_full_generation_pipeline_with_important_task_gate(
 
         # Single disk read: tasks + WCETs from the same loaded dicts (the
         # reader normalizes `important` → `is_important` so the RTA sees the
-        # flag — see _load_emitted_tasks_by_gid's docstring).
+        # flag — see _load_emitted_tasks_by_gid's docstring). The WCET rule is
+        # config-free (perf = execution_time_mu, non-perf = execution_time_max).
         tasks_by_gid = _load_emitted_tasks_by_gid(dir_path)
-        wcets = _wcets_from_loaded_tasks(tasks_by_gid, tl_grid_upper)
+        wcets = _wcets_from_loaded_tasks(tasks_by_gid)
         # RTA takes a parallel list; order by gid for determinism.
         gids = sorted(tasks_by_gid.keys())
         tasks = [tasks_by_gid[g] for g in gids]

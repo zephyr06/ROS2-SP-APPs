@@ -143,6 +143,31 @@ Both are sound; the trade is retry-cost vs D2-exactness. **RESOLVED 2026-07-28: 
 - [ ] TDD green: `pytest Gen_Taskset/tests/test_integration.py` — every emitted
       taskset passes the gate.
 
+## 2c. Config-tuning round (make the gate pass within budget on the REAL config) — LANDED (working tree, NOT committed)
+- [x] Diagnose why the committed gate (`3d2360ed`) rejects real tasksets:
+      (A) perf WCET was `period×0.9` (TL-grid MAX) → overload;
+      (B) non-perf WCET `et_mean+2σ` with σ/et∈[0.5,0.6] → 2.0–2.2× amplifier;
+      (C) env cap 0.45 → env WCET/period ≈0.99. (Cap-raise NOT the cause —
+      real-config `total/n ≤ 0.75` means it never fires.)
+- [x] Perf WCET rule → `execution_time_mu` (= et_mean): faithful (sim runs
+      `min(et_mean, TL)`, TL is a downward cap) + sound (tightest safe). Dropped
+      `tl_grid_upper`/`cfgs` params from `_wcets_from_loaded_tasks` +
+      `compute_wcets_from_characteristics`; TL grid now irrelevant to the verdict.
+      Loud `KeyError` on missing `execution_time_mu` (no fallback).
+- [x] Env cap 0.45→0.27 + variance [0.5,0.6]→[0.3,0.4] → env WCET/period ≤0.486.
+- [x] (3a) no-inflation: cpu_util [0.5,1.5]→[0.5,1.0]; DROP the proportional
+      redistribution block (raises non-env `u_i` above drawn = inflation; also
+      inflates perf `execution_time_mu` = perf WCET). Strictly safe (only lowers load).
+- [x] `DEADLINE_MODE=implicit` (deadline=period → RM≡DM).
+- [x] Synced diagnostic `measure_important_utilization.py` + 7 WCET tests
+      (renamed perf-WCET test, dropped `cfgs`/`tl_grid_upper` from call sites).
+- [x] Verify: `pytest Gen_Taskset/tests/` = 47 passed. Diagnostic et_mean rule
+      → N=4 0.883 / N=8 0.588 / N=16 0.923 mean max-core util (was 2.197/3.008).
+      Faithful gate `measure_gate_rejection_rate --samples 2 --ns 4 8 16` →
+      N=4/8 attempt 1, N=16 ≤3 attempts, 0 rejections/0 raises.
+- [ ] **NEXT:** user review of base-template config + code; commit on user go.
+      Criterion relaxed ≤3 → budget-20 (user: "keep 20 in exp").
+
 ## 3. Rejection-rate reporting + second-lever decision
 - [ ] Log the rejection rate (attempts per accepted taskset, by N) across a smoke
       generation sweep.

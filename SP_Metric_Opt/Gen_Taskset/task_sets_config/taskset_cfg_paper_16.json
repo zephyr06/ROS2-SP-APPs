@@ -1,0 +1,7 @@
+{
+    "INCLUDE": "taskset_cfg_paper_base.json",
+    "DESC": "Paper parameters for 16 tasks (P2.10 bit-identity gate)",
+    "N_TASKS": 16,
+    "N_CORES": 2,
+    "RANDOM_SEED": 42
+}
