@@ -4,6 +4,103 @@
 > On task completion, append a one-line milestone to the **top-level**
 > `agents/dev_log.md` (the canonical narrative).
 
+## 2026-07-30 (step 4b LANDED: gate wired into the TL walk's adoption, TDD)
+
+- **User direction (verbatim, this session):** "one issue:
+  ImportantTasksMeetThresholds, maybe also pass rta inside, as i believe the
+  caller should already somehow obtained rta, so no need to re-calculate it
+  again, it's expensive." Verified the user is ALREADY served: commit
+  `ad356bc3 pass rta to ImportantTasksMeetThresholds` (today) changed the
+  predicate's signature to `...(dag, sp_params, pa, tl, node_rtas)` and dropped
+  the `ProbabilisticRTA_TaskSet` re-derivation — the body reads
+  `GetDDL_MissProbability(node_rtas[i], deadline)` off the caller's already-
+  materialized RTAs (zero-extra-eval, the step-4a revision). This message is the
+  same direction, restated; no code change needed for the predicate itself.
+- **The in-flight work this session = step 4b** (wiring the gate into the TL
+  walk's adoption — `enforce_important_task_gate_` + `WouldBeatIncumbent`).
+  Verified the working tree already contained a complete, green implementation
+  (built fresh): `cmake --build build_test --target check.SP_OPT -j5` = **17/17
+  green**, including the 5 new `GateWiring_*` tests (filter run confirms all 5
+  ran + passed).
+- **What step 4b adds (3 pieces, all in `OptimizeSP_TL_Incre.{h,cpp}` + tests):**
+  1. **`WouldBeatIncumbent(challenger_sp, time_limits) -> bool`** (member, `const`):
+     the exact "would this candidate beat the incumbent?" predicate `UpdateRecords`
+     commits on — strictly-greater SP, OR an approx-equal SP tie with a strictly-
+     smaller total TL (tie-break prefers the tighter budget). Extracted from the
+     prior inline logic in `UpdateRecords` (`:129-157`), which now delegates to it.
+     Behavior-identical refactor (the `UpdateRecords` path is byte-identical).
+  2. **`bool enforce_important_task_gate_ = false`** (member): the offline-only
+     gate flag. When true, `OptimizeIncreSingleTask` (the eval the Type-L walk
+     calls per trial TL) gates ADOPTION: a would-beat candidate is committed only
+     if `ImportantTasksMeetThresholds` passes. Default false → prod byte-identical.
+  3. **The gate block** (`OptimizeIncreSingleTask`, after the baseline SP eval):
+     fires ONLY on would-beat (the user's rule: "checked whenever we make
+     progress from the champion; if challenger doesn't beat champion, we don't do
+     the check"). On a gate-REJECT of an SP-better candidate: revert the cache
+     (`rta_cache_ = cache_backup`) + return the INCUMBENT SP (NOT the rejected
+     candidate's better SP) → the walk's `IsBetterTimeLimitOption` sees "no
+     progress" and never tracks the rejected TL into the working vector (`:591`
+     ghost-SP fix). The incumbent itself is never mutated (no `CommitIncumbent`)
+     → `res_opt_` TL/SP/PA stay at the pre-candidate values.
+- **Two soundness guards the gate block relies on (both verified):**
+  - **PA descent is SKIPPED when the gate is on** (`OptimizeIncreSingleTask`'s
+    `if (!BFSharedBudgetCancelled() && !enforce_important_task_gate_)` around
+    `challenger.OptimizeIncre_SingleTask`). Two reasons it MUST be skipped under
+    the gate (the D8 v1 resolution, made concrete): (1) the gate runs on
+    `baseline_rtas` — the RTA just scored at `:250` under the candidate TL +
+    carried PA; PA descent reorders `challenger.opt_pa_`, after which
+    `baseline_rtas` is no longer the RTA for `{opt_pa_, time_limits}`. Skipping
+    descent keeps `challenger.opt_pa_` == carried PA → `baseline_rtas` stays the
+    valid gate RTA → zero extra RTA eval (matches step-4a's directive). (2) PA
+    descent could break the P0.8 group lock the seed certifies; a TL-only walk
+    preserves it by construction. The gate checks per-task `ddl_miss_chance`, NOT
+    the group lock, so it cannot substitute for "no cross-group moves".
+  - **The flag is set true ONLY in tests** (`grep`-verified: no prod site writes
+    `enforce_important_task_gate_` — `ComputeStaticSolution` does not exist yet).
+    So the online arms' PA descent + commit path is untouched → prod byte-identical.
+- **Seed-feasibility invariant (why the gate can only REJECT, never make the
+  solution infeasible):** the walk seeds at TL ≤ et_mean (`SeedTimeLimitsAtOrBelow
+  EtMean`, step 3), where the perf ET point-mass = TL ≤ et_mean = P0.8's perf
+  WCET → the whole RTA dist sits ≤ deadline → `ddl_miss_chance = 0` for important
+  tasks → the seed is gate-feasible by construction (P0.8's gate also certifies
+  it). The gate only fires on would-beat candidates (TL RAISED toward the SP max,
+  into the `ddl_miss_chance > 0` region); a rejected candidate leaves the (still-
+  feasible) incumbent untouched. So the returned solution is feasible-by-
+  construction AND best-SP-among-feasible (the walk kept searching past skipped
+  candidates). This is exactly the user's constrained-optimization objective:
+  max SP s.t. ∀ important task `ddl_miss_chance ≤ sp_threshold`.
+- **TDD:** 5 tests (1 precondition + 4 behaviors), all green:
+  (precondition) TL=1000 strictly SP-better than TL=400 on the fixture's perf term
+  (guards against a silent fixture drift making the reject test vacuously pass);
+  (i) flag OFF (default) → SP-better candidate commits, no gate (byte-identical to
+  prod); (ii) flag ON → gate REJECTS an SP-better threshold-violating candidate
+  (incumbent TL/SP/PA unchanged; eval returns incumbent SP — the ghost-SP fix);
+  (iii) flag ON → gate KEEPS a feasible SP-better candidate (commits — the gate is
+  permissive when the constraint holds); (iv) flag ON, non-beating candidate →
+  gate does NOT run (the user's would-beat-only rule) + no commit. Fixture: T_perf
+  (id 0, NOT important, weight 1.0) drives SP up with TL; T_noise (id 1, important,
+  weight 0.01) at lower priority, deadline wedged between the two TLs' response
+  times so the gate passes at TL=400 and fails at TL=1000 — the candidate is
+  SP-better yet gate-rejected (the constrained-optimization tension the gate exists
+  for: raw SP-maximization would accept the cheap miss; the gate enforces the
+  constraint regardless of weight).
+- **NOT committed** (git add-only per the coding rules; awaits user review). Files
+  touched this sub-step: `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}` +
+  `tests/testIncreOpt_w_TL.cpp`. **This is a self-contained module** (gate wiring,
+  no `ComputeStaticSolution` yet) → staged alone for review per "work by module,
+  commit by module".
+- **Next:** step 5 — `ComputeStaticSolution` wiring: construct the optimizer,
+  seed DM-grouped PA (P0.9 `DeadlineMonotonicPriorityVec`) + et_mean-bounded TL
+  (step 3 `SeedTimeLimitsAtOrBelowEtMean`), set `enforce_important_task_gate_ =
+  true`, run the TL walk (`OptimizeIncre_w_TL` → `RunIntervalDescent`, TL-only →
+  group lock preserved), keep the committed `ResourceOptResult` as
+  `static_solution_`, then reset the flag. Plus verify the 2 safety assumptions
+  (sim perf ET = `min(et_mean,TL)` downward cap; from-scratch path preserves the
+  group lock — moot for v1 since the gate pins TL-only). Call site after
+  `incr_optimizer_` construction (`SimulationOrchestrator.cpp:300-302`), before
+  the interval loop (304-308); OUTSIDE `DeterminePrioritiesAndBudgets`'s ET bracket
+  (316-322) so it doesn't inflate the online ET metric.
+
 ## 2026-07-30 (step 4a revision — gate predicate takes caller's RTAs; zero-extra-eval)
 
 - **User direction:** "ImportantTasksMeetThresholds, maybe also pass rta inside,
@@ -563,3 +660,155 @@
 - All D1–D7 now RESOLVED. `goal.md` "Open decisions" + "Done when" updated; `tasks.md`
   step 0 (design) all checked. Next: step 0.5 (`bool is_important`) — gated on the
   parallel P0.8 owner syncing the same seed point. Still no code; awaiting step-0.5 start.
+
+---
+
+## 2026-07-30 — step 4b RELOCATED: gate moved to `UpdateRecords`, PA descent re-enabled
+
+**User correction (the key design fix).** My step-4b v1 coupled TWO concerns into
+`enforce_important_task_gate_`: (1) the gate check, and (2) SKIPPING PA descent
+(TL-only walk). The user's mental model, stated plainly: "the overall optimization
+process is very similar no matter whether enforce_important_task_gate_ is true or
+false, the difference is that we'll run important tasks' schedulability check and
+only accept a challenger that beats champion if the challenger guarantees important
+tasks' schedulability... i think the simplest solution is just to add the check in
+comparing sp values' function." The TL-only coupling was my over-cautious design
+choice, NOT a user requirement — and it was wrong: the gate is a PURE extra
+accept/reject criterion at the comparison step, not a process change.
+
+**What changed (the refactor).**
+1. **Gate moved** from `OptimizeIncreSingleTask` (the eval lambda) INTO
+   `UpdateRecords` (the commit chokepoint the user pointed at). Fires ONLY on
+   `WouldBeatIncumbent` (the user's would-beat rule); on reject → return `false`,
+   no `CommitIncumbent`.
+2. **PA descent re-enabled** unconditionally: `!BFSharedBudgetCancelled()` only
+   (the `&& !enforce_important_task_gate_` guard DROPPED). PA descent runs whether
+   or not the gate is on.
+3. **Ghost-SP fix relocated**: the eval still reports the INCUMBENT SP on a
+   gate-reject (so the walk sees "no progress"), now driven by `!updated &&
+   enforce_important_task_gate_ && WouldBeatIncumbent(...)` in the eval tail.
+4. **RTA source fixed (the real wrinkle).** v1 read the pre-descent `baseline_rtas`
+   pointer — INVALIDATED by PA descent (overwrites the cache's `candidate_rta_`
+   scratch buffer per the RTACache header's ref-validity contract). The relocated
+   gate re-runs the SAME `rta_cache_.Evaluate(dag_tasks_, opt_pa_, tl)` that
+   `CommitIncumbent` uses at `:824` — the candidate's FINAL {pa, tl}, post-descent.
+   `|diff|<=1`-cheap on the incremental path (the only path the gate is on): after
+   PA descent the champion is either adopted to the candidate (`|diff|==0`,
+   FullReuse) or the prior incumbent (`|diff|==1`); `Evaluate` never mutates the
+   champion, so the caller's `cache_backup` snapshot-revert stays sound. Zero extra
+   RTA eval flag-off (gate skipped entirely). The gate is literally running the
+   commit path's own RTA fetch, then checking it — zero divergence risk.
+
+**D8 status.** The "from-scratch path & the group lock" concern that motivated v1's
+TL-only pin is now MOOT. The gate IS the constraint (max SP s.t. all important tasks
+meet threshold); the P0.8/P0.9 group lock is a means, not the end. A PA descent that
+finds a higher-SP PA still passing the gate is strictly BETTER for the constrained
+objective — the lock is not sacred once the gate holds.
+
+**Tests.** All 5 `GateWiring_*` tests pass WITH PA descent re-enabled (no scenario
+rework needed): on the reject fixture T_perf is already top-priority, so PA descent's
+`FindPriorityVec1D_Variations` finds no strict-improving move and the gate sees the
+candidate's actual {pa,tl} and rejects exactly as before. Section-header + reject-test
+comments updated to describe the new location; the precondition/keep/non-beat tests
+unchanged. `cmake --build build_test --target check.SP_OPT -j5` = 17/17 green. Git
+add-only; NOT committed (awaits user review).
+
+---
+
+## 2026-07-30 — ghost-SP fix: ROOT CAUSE = three divergent acceptance predicates (NEW FINDING)
+
+**User question.** "is this necessary: [the ghost-SP override block]? since `updated`
+already decided whether to update champion, why do differently between
+`enforce_important_task_gate_` true/false". The instinct (correct): `UpdateRecords`
+already decided the commit, so the eval's return shouldn't need flag-dependent surgery.
+
+**Answer: the override IS necessary *as-is*, but it is a SYMPTOM, not the fix.** The
+TL walk (`WalkOneTaskWithTimeLimitOptions`) tracks its best TL by the eval's RETURNED
+SP via `IsBetterTimeLimitOption(sp_val, best_sp, step)` — it does NOT see the
+`updated` bool. A gate-rejected candidate carries a "phantom" SP that is *higher* than
+the committed incumbent's. Returning it raw would (a) inflate the walk's `best_sp` →
+later trial TLs look like "no progress" → patience exhausted → walk stops early,
+missing feasible improvements; and (b) propagate as the next task's walk baseline via
+`OptimizeOneTaskWithTimeLimit`'s return. The override masks the phantom by reporting
+`res_opt_.sp_opt`. It must be flag-guarded + `WouldBeatIncumbent`-guarded (not
+unconditional) because: flag-off non-commits are ALWAYS not-better (no phantom —
+candidate SP ≤ incumbent, returning it is correct + byte-identical); flag-on
+non-commits include better-but-rejected (phantom). The `WouldBeatIncumbent` check
+distinguishes phantom (mask) from genuine non-beat (leave candidate SP).
+
+**The deeper issue the question surfaced (the REAL problem).** There are THREE
+acceptance predicates in the optimizer, and they are NOT unified:
+
+| # | Site | Predicate | Compares against | Commits? |
+|---|------|-----------|------------------|----------|
+| 1 | PA-move loop `OptimizeIncre_SingleTask:354` | `sp_eval > opt_sp_` (strict) | LOCAL `opt_sp_` (member, in-place adopted) | yes, in-place (`opt_pa_ = ...; AdoptChampion`) |
+| 2 | TL-walk adoption `IsBetterTimeLimitOption:116` | strict `>` OR approx-tie+`step<0` | LOCAL `best_sp` (walk-local, NOT committed) | NO — only tracks `best_option_val`; commit is downstream |
+| 3 | Champion commit `WouldBeatIncumbent:129` (→ `UpdateRecords:156` → `CommitIncumbent`) | strict `>` OR approx-tie+smaller-TL | GLOBAL incumbent `res_opt_` | yes, via `CommitIncumbent` |
+
+The ghost-SP override exists PRECISELY because **predicate #2 (walk-local best_sp) can
+disagree with predicate #3 (global incumbent)** on a gate-reject: #2 sees the
+phantom better SP and would track the rejected TL; #3 correctly refused to commit.
+They compare against DIFFERENT references (`best_sp` vs `res_opt_.sp_opt`) and #2 has
+no notion of the gate. When the gate is off they can't disagree (a non-beat for #3 is
+also non-better for #2), so the override is inert — which is why it felt like surgery
+only the flag-on path needs.
+
+**Unified fix (proposed, NOT yet decided by user — awaiting direction).** Make the
+walk's best-tracking and the champion commit use the SAME predicate against the SAME
+reference, so they can never disagree and the phantom cannot arise. Concretely: route
+every acceptance (PA move, TL trial, challenger) through ONE `IsAcceptable(...)`
+predicate that combines `WouldBeatIncumbent`'s strict-better / tie-smaller-TL rule WITH
+the gate, all against the global incumbent `res_opt_`. Then the walk tracks the
+committed incumbent's SP as its baseline (the rejected candidate simply isn't
+"acceptable," so its phantom SP never enters `best_sp`), and the ghost-SP override
+becomes dead code → deletable. Open sub-decisions for the user: (a) does the TL walk's
+downward-tie preference (`step<0`) survive unification, or does the global tie-break
+(smaller total TL) subsume it? (b) is the PA loop's in-place adoption (`opt_sp_ =
+sp_eval; opt_pa_ = ...`) reconciled with the global commit, or kept local? These touch
+core optimization behavior (P2.10/P2.11 territory) and may be a behavior change, so
+NOT bit-identical — needs explicit user go-ahead before any code.
+
+**Status: step 4b v2 LANDED code-wise (override + gate in `UpdateRecords`, PA descent
+on, 17/17 green, git add-only, NOT committed) STANDS as-is for now.** The unification
+is a SEPARATE, larger refactor — recorded here so it isn't lost. No code changed in
+this finding session.
+
+---
+
+## 2026-07-30 — unification DEFERRED (user decision); step 4b v2 is FINAL
+
+**User decision (verbatim):** "if code change is a lot, i'll give up and let you adopt
+the original proposal by adding extra check, even though the code doesn't read elegantly."
+
+The unification was scoped to "TL-walk only" — align the TL-walk adoption predicate
+(`IsBetterTimeLimitOption`) with the commit predicate (`WouldBeatIncumbent` + gate),
+both vs the global incumbent `res_opt_`, leaving the PA-loop's local in-place adoption
+(predicate #1) alone. Grounding under that scope found the change is LARGE, not the
+simple cleanup it appeared:
+
+1. **Breaks the walk-core test framework.** `StubTLWalkOptimizer::CallOptimizerGivenTimeLimits`
+   (`tests/testIncreOpt_w_TL.cpp`) returns SP from a `tl_to_sp` map WITHOUT committing →
+   `res_opt_` never advances. Any unification that routes adoption through the committed
+   incumbent (`res_opt_.sp_opt`) instead of the returned SP would make the stubs see a
+   static `res_opt_` → the walk never adopts → the 7 `TrialAndErrorTLWalkSynthetic` tests
+   break (would require reworking the stub to commit + updating assertions). Framework
+   surgery, not a localized predicate swap.
+
+2. **NOT byte-identical flag-off.** `res_opt_.sp_opt == best_sp` throughout a flag-off
+   walk (each adoption commits), so routing adoption through `res_opt_` makes every
+   non-commit look like an approx-SP *tie*, not a "worse candidate." On the downward
+   pass (`step < 0`), `IsBetterTimeLimitOption` adopts on a tie → the walk adopts smaller
+   TLs on every non-commit, never spending patience → exhaustive to the grid boundary
+   even flag-off. The behavioral delta reaches BEYOND the gate-on path the "TL-walk only"
+   scope targeted, so it is not a contained change.
+
+3. **The override is already correct.** This is a cleanliness refactor, not a bug fix —
+   the gate-reject path is masked correctly, the flag-off path is byte-identical, and the
+   `WouldBeatIncumbent` guard prevents the override from firing on a genuine non-beat.
+
+**Outcome: keep step 4b v2 as-is (FINAL).** The gate in `UpdateRecords` + the ghost-SP
+override in the `OptimizeIncreSingleTask` eval tail stand. The user accepts the
+elegance tradeoff ("the code doesn't read elegantly") in exchange for NOT taking on the
+framework + behavior-change cost of unification. The 4b-followup unification is
+**DEFERRED** — re-file as P2.x if revisited; do NOT start coding it. Next active item:
+step 5 (`ComputeStaticSolution` wiring), once step 4b v2 is reviewed/committed.

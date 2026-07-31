@@ -841,6 +841,205 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl, node_rtas));
 }
 
+// --- P0.6 step 4b: wiring the gate into the TL walk's adoption. ---
+// The pure predicate (above) is step 4a. Step 4b threads it into
+// `UpdateRecords` — the commit chokepoint the eval (`OptimizeIncreSingleTask`)
+// calls — as a PURE extra acceptance test on top of `WouldBeatIncumbent`: a
+// candidate that WOULD beat the champion is committed only if the gate passes
+// (the user's rule: "checked whenever we make progress from the champion; if
+// challenger doesn't beat champion, we don't do the check"). The optimization
+// process — INCLUDING PA descent — is otherwise identical to the flag-off path;
+// the gate is not a process change, only an extra accept/reject criterion. On a
+// gate-REJECT of an SP-better candidate: `UpdateRecords` returns false (no
+// commit) and the eval returns the INCUMBENT SP (not the rejected candidate's
+// SP), so the walk's `IsBetterTimeLimitOption` sees "no progress" and never
+// tracks the rejected TL into the working vector (ghost-SP fix). Flag-off (the
+// default) = no gate, prod byte-identical.
+//
+// Scenario built to produce SP-better-BUT-gate-rejected: T_perf (id 0, NOT
+// important, weight 1.0) carries the perf pairs → its perf coefficient rises
+// with TL, so a larger TL is strictly SP-better. T_noise (id 1, important,
+// weight 0.01) sits at LOWER priority, so T_perf's larger TL adds interference
+// to T_noise's response time. A T_noise deadline wedged between the two TLs'
+// response times makes the gate PASS at the incumbent TL (low interference) and
+// FAIL at the candidate TL (high interference) — the candidate is SP-better yet
+// gate-rejected. PA = {T_perf, T_noise} (T_perf highest priority).
+namespace {
+// The candidate SP the cache-path oracle returns for {pa, tl} on `dag_tasks`.
+double OracleSPForCandidate(const DAG_Model& dag, const SP_Parameters& sp,
+                            const std::vector<int>& pa,
+                            const std::vector<double>& tl) {
+    return ObtainSP_Full_From_NodeRTAs(dag, sp, pa, tl,
+                                       NodeRTAsForCandidate(dag, pa, tl));
+}
+}  // namespace
+
+// Precondition check (not itself a gate test): confirms the fixture's SP
+// arithmetic is what step 4b's reject/keep tests assume — TL=1000 is strictly
+// SP-better than TL=400 on the perf term. Guards against a silent fixture drift
+// making the reject test vacuously pass.
+TEST_F(CompareAndKeepSynthetic,
+       GateWiring_HigherTlIsStrictlySpBetter_Precondition) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    double sp_low = OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0});
+    double sp_high = OracleSPForCandidate(dag_tasks, sp_parameters, pa, {1000.0, -1.0});
+    EXPECT_GT(sp_high, sp_low)
+        << "fixture broken: TL=1000 must be strictly SP-better than TL=400";
+}
+
+// (i) Flag OFF (default): the gate never runs. An SP-better candidate commits
+// normally — byte-identical to prod. Seeds the incumbent at TL=400, walks T_perf
+// to TL=1000 (strictly SP-better), asserts the commit landed.
+TEST_F(CompareAndKeepSynthetic,
+       GateWiring_FlagOff_CommitsSpBetterCandidate_NoGate) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    ASSERT_FALSE(opt.enforce_important_task_gate_);  // default off
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0}),
+                        {400.0, -1.0});
+    ASSERT_TRUE(opt.IfInitialized());
+
+    // Candidate TL=1000 is strictly SP-better; flag off → no gate → commits.
+    double returned = opt.OptimizeIncreSingleTask({1000.0, -1.0}, /*task_idx=*/0,
+                                                  /*et_increased=*/true);
+    EXPECT_GT(returned, opt.res_opt_.sp_opt - 1e-9)
+        << "flag-off: eval must report the (better) committed SP, not the seed";
+    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+}
+
+// (ii) Flag ON, gate REJECTS an SP-better threshold-violating candidate: the
+// incumbent stays UNTOUCHED (TL/SP/PA unchanged) and the eval returns the
+// incumbent SP — the ghost-SP fix (the walk then sees "no progress"). PA descent
+// runs but finds no strict-improving move on this fixture (T_perf is already
+// top-priority), so the gate sees the candidate's actual {pa, tl} and rejects.
+TEST_F(CompareAndKeepSynthetic,
+       GateWiring_FlagOn_RejectsSpBetterThresholdViolatingCandidate) {
+    dag_tasks.tasks[0].is_important = false;   // T_perf: drives SP up with TL
+    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
+    // T_noise deadline wedged between its TL=400 (RT~450) and TL=1000 (RT~1050)
+    // response times: TL=400 → T_noise RT < deadline → passes; TL=1000 →
+    // T_noise RT > deadline → fails. (T_perf stays higher priority, so its
+    // larger TL adds interference to T_noise's RT.)
+    dag_tasks.tasks[1].deadline = 700.0;
+    // Tiny T_noise weight: its deadline-miss SP penalty (~0.01) is dwarfed by
+    // T_perf's perf gain (TL 400→1000 raises T_perf's perf coefficient 0.5→1.0,
+    // a +0.5 SP term at weight 1.0). So the candidate is STRICTLY SP-better yet
+    // gate-REJECTED — the constrained-optimization tension the gate exists for:
+    // raw SP-maximization would accept TL=1000 (the miss is cheap), but the gate
+    // enforces the important-task constraint regardless of weight.
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enforce_important_task_gate_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {400.0, -1.0};
+    // Sanity: the seed itself is gate-feasible (else the reject test is moot).
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_seed,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_seed)));
+    // Sanity: the candidate is gate-INfeasible (the violation step 4b rejects).
+    std::vector<double> tl_candidate = {1000.0, -1.0};
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_candidate,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
+    // Sanity: AND the candidate is strictly SP-better (the crux of the test).
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+    const double incumbent_sp = opt.res_opt_.sp_opt;
+
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/true);
+
+    // The reject: incumbent untouched.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
+    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
+    // The ghost-SP fix: the eval reports the INCUMBENT SP, not the rejected
+    // candidate's (better) SP, so the walk treats the rejected TL as no-progress.
+    EXPECT_DOUBLE_EQ(incumbent_sp, returned);
+}
+
+// (iii) Flag ON, gate PASSES a feasible SP-better candidate: commits normally
+// (the gate is permissive when the constraint holds — the walk keeps the best-SP
+// FEASIBLE point). Same fixture, but T_noise's deadline is loose so TL=1000
+// passes the gate; the SP-better candidate commits.
+TEST_F(CompareAndKeepSynthetic,
+       GateWiring_FlagOn_KeepsFeasibleSpBetterCandidate) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    // Loose T_noise deadline: TL=1000 stays feasible → gate passes → commits.
+    dag_tasks.tasks[1].deadline = 2000.0;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enforce_important_task_gate_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {400.0, -1.0};
+    std::vector<double> tl_candidate = {1000.0, -1.0};
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_candidate,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/true);
+    // The keep: candidate committed.
+    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_GT(opt.res_opt_.sp_opt, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+    EXPECT_GT(returned, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+}
+
+// (iv) Flag ON, candidate does NOT beat the champion: the gate must NOT run
+// (user's rule — only check on would-beat). No threshold is set up to trip; the
+// point is the gate is structurally skipped, observable by the incumbent being
+// discarded by UpdateRecords as usual (no commit, no SP change) AND no false
+// reject of a merely-equal candidate. Seed at TL=1000 (the SP max on this
+// fixture); a TL=400 candidate is strictly SP-WORSE → not a beat → no gate, no
+// commit, incumbent stays at TL=1000.
+TEST_F(CompareAndKeepSynthetic,
+       GateWiring_FlagOn_NonBeatingCandidate_DoesNotGateNorCommit) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enforce_important_task_gate_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {1000.0, -1.0};  // SP max on this fixture
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+    const double incumbent_sp = opt.res_opt_.sp_opt;
+
+    // TL=400 is strictly SP-WORSE → not a beat → no gate invocation, no commit.
+    std::vector<double> tl_candidate = {400.0, -1.0};
+    double candidate_sp = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate);
+    ASSERT_LT(candidate_sp, incumbent_sp);  // precondition: genuinely not a beat
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/false);
+    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
+    // On a NON-beat the eval truthfully reports the candidate's (worse) SP — the
+    // ghost-SP suppression applies ONLY to a gate-rejected SP-BETTER candidate
+    // (test ii); a merely-worse candidate is no progress either way, so its SP
+    // is returned as-is (the walk's IsBetterTimeLimitOption is false regardless).
+    EXPECT_NEAR(candidate_sp, returned, 1e-9);
+}
+
 TEST_F(CompareAndKeepSynthetic,
        ReconstructTimeLimitVecFromResOpt_DefaultsToMinusOneWhenUnset) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);

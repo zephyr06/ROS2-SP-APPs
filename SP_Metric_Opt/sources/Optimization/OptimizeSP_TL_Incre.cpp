@@ -126,25 +126,64 @@ bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step) {
     return false;
 }
 
+bool OptimizePA_Incre_with_TimeLimits::WouldBeatIncumbent(
+    double challenger_sp, const std::vector<double>& time_limits) const {
+    // Strictly-greater SP beats; an approx-equal SP tie beats only when the
+    // challenger's total TL is strictly smaller (the tie-break prefers the
+    // tighter budget). Identical to the prior inline logic in UpdateRecords.
+    if (challenger_sp > opt_sp_ && !ApproxEqualSP(challenger_sp, opt_sp_)) {
+        return true;
+    }
+    if (!ApproxEqualSP(challenger_sp, opt_sp_)) {
+        return false;  // strictly worse — not a beat
+    }
+    // approx-equal tie: beat iff the total TL is strictly smaller.
+    double sum_new = 0;
+    for (double val : time_limits) {
+        if (val != -1.0)
+            sum_new += val;
+    }
+    double sum_old = 0;
+    for (auto const& [id, val] : res_opt_.id2time_limit) {
+        if (val != -1.0)
+            sum_old += val;
+    }
+    return sum_new < sum_old;
+}
+
 bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
-    bool should_update = false;
-    if (optimizer.opt_sp_ > opt_sp_ &&
-        !ApproxEqualSP(optimizer.opt_sp_, opt_sp_)) {
-        should_update = true;
-    } else if (ApproxEqualSP(optimizer.opt_sp_, opt_sp_)) {
-        double sum_new = 0;
-        for (double val : time_limits) {
-            if (val != -1.0)
-                sum_new += val;
-        }
-        double sum_old = 0;
-        for (auto const& [id, val] : res_opt_.id2time_limit) {
-            if (val != -1.0)
-                sum_old += val;
-        }
-        if (sum_new < sum_old) {
-            should_update = true;
+    bool should_update = WouldBeatIncumbent(optimizer.opt_sp_, time_limits);
+
+    // P0.6 hard feasibility gate: the user's constrained-optimization objective
+    // (max SP s.t. every important task's ddl_miss_chance <= its SP threshold).
+    // A PURE extra acceptance test layered on the normal beat predicate — the
+    // process is otherwise identical to the flag-off path. Fires ONLY on a would-
+    // beat (the user's rule: "checked whenever we make progress from the
+    // champion; if challenger doesn't beat champion, we don't do the check").
+    // On a gate-REJECT, fall through to `return false` (no CommitIncumbent); the
+    // caller reports the incumbent SP (ghost-SP fix). Offline-only: the flag is
+    // set true solely in `ComputeStaticSolution` (step 5), never on online arms.
+    //
+    // RTA source: re-run the SAME `rta_cache_.Evaluate(dag_tasks_, pa, tl)`
+    // `CommitIncumbent` runs at :824 — the candidate's final {pa, tl} (PA descent
+    // already applied inside the eval lambda's `optimizer`). This is NOT the
+    // pre-descent `baseline_rtas` (which PA descent invalidated by overwriting
+    // the cache's scratch buffer) — `Evaluate` returns the challenger's actual
+    // RTA. |diff|<=1-cheap on the incremental walk path (the only path the gate
+    // is on): after PA descent the champion is either adopted to the candidate
+    // (|diff|==0, FullReuse) or the prior incumbent (|diff|==1, the walked task).
+    // `Evaluate` never mutates the champion, so the caller's cache_backup
+    // snapshot-revert stays sound on reject. Zero extra RTA eval on the flag-off
+    // path (the gate is skipped entirely).
+    if (should_update && enforce_important_task_gate_ &&
+        !BFSharedBudgetCancelled()) {
+        const std::vector<FiniteDist>& challenger_rtas =
+            rta_cache_.Evaluate(dag_tasks_, optimizer.opt_pa_, time_limits);
+        if (!ImportantTasksMeetThresholds(dag_tasks_, sp_parameters_,
+                                          optimizer.opt_pa_, time_limits,
+                                          challenger_rtas)) {
+            return false;  // gate-REJECT: SP-better but infeasible -> no commit
         }
     }
 
@@ -232,15 +271,22 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
     // Cancel contract: mirror the oracle's INT_MIN on cancel so UpdateRecords'
     // strict-> guard discards a cancelled eval. The cache path has no internal
     // cancel polls, so check both entry and post-Evaluate.
+    //
+    // `baseline_rtas` scores the carried PA under the new TL; the ref points
+    // into the cache's candidate_rta_ scratch buffer (valid only until the next
+    // Evaluate/AdoptChampion). It is consumed ONLY here, before PA descent below
+    // — PA descent's own Evaluate calls would invalidate it, and the P0.6 gate
+    // (now in `UpdateRecords`) fetches the challenger's final RTA itself.
+    const std::vector<FiniteDist>* baseline_rtas = nullptr;
     if (BFSharedBudgetCancelled()) {
         challenger.opt_sp_ = INT_MIN;
     } else {
-        const std::vector<FiniteDist>& baseline_rtas =
-            rta_cache_.Evaluate(dag_tasks_cur, challenger.opt_pa_, time_limits);
+        baseline_rtas =
+            &rta_cache_.Evaluate(dag_tasks_cur, challenger.opt_pa_, time_limits);
 
         challenger.opt_sp_ = ObtainSP_Full_From_NodeRTAs(
             dag_tasks_cur, sp_parameters_, challenger.opt_pa_, time_limits,
-            baseline_rtas);
+            *baseline_rtas);
     }
     // Cancel contract (post-Evaluate): the :218 entry poll guards only the
     // baseline Evaluate+ObtainSP_Full. OptimizeIncre_SingleTask is the bulk of
@@ -250,15 +296,39 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
     // the just-scored baseline (mid-baseline cancel); either way UpdateRecords'
     // strict-> guard discards or adopts safely. Inert within the 1s budget
     // (incremental path finishes inside it) → prod bit-identical. [P2.11 5.6b]
+    //
+    // P0.6: PA descent runs normally whether or not the gate is on — the gate is
+    // a PURE extra accept/reject criterion at `UpdateRecords` (the commit
+    // chokepoint), not a process change. The gate reads the challenger's FINAL
+    // {opt_pa_, time_limits} RTA there (it re-runs the same `rta_cache_.Evaluate`
+    // `CommitIncumbent` uses, |diff|<=1-cheap on this path and never mutates the
+    // champion), NOT the pre-descent `baseline_rtas` above (which PA descent
+    // invalidates by overwriting the cache's scratch buffer).
     if (!BFSharedBudgetCancelled()) {
         challenger.OptimizeIncre_SingleTask(dag_tasks_cur,
                                             static_cast<int>(task_idx),
                                             et_increased, std::ref(rta_cache_));
     }
+    // `UpdateRecords` commits iff WouldBeatIncumbent AND (gate off OR gate
+    // passes); on a flag-off non-commit it reported the candidate's SP, which
+    // was <= incumbent, so the override below is flag-guarded to stay byte-
+    // identical there.
     double current_sp = challenger.opt_sp_;
     bool updated = UpdateRecords(challenger, time_limits);
     if (!updated) {
         rta_cache_ = cache_backup;
+        // P0.6 ghost-SP fix: on a gate-REJECT of an SP-better candidate,
+        // `UpdateRecords` returned false WITHOUT committing (the gate fired in
+        // it), but `current_sp` still holds the rejected candidate's better SP.
+        // Report the INCUMBENT SP instead so the walk's `IsBetterTimeLimitOption`
+        // sees "no progress" and never tracks the rejected TL. On a non-beat
+        // (gate never ran) the candidate's worse SP is no progress either way, so
+        // the override is harmless. Flag-guarded → flag-off path byte-identical
+        // (a flag-off non-commit reported current_sp, which was <= incumbent).
+        if (enforce_important_task_gate_ && !BFSharedBudgetCancelled() &&
+            WouldBeatIncumbent(challenger.opt_sp_, time_limits)) {
+            current_sp = res_opt_.sp_opt;
+        }
     }
     return current_sp;
 }

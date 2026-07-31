@@ -134,6 +134,17 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     bool UpdateRecords(const OptimizePA_Incre& optimizer,
                        const std::vector<double>& time_limits);
 
+    // The "would this candidate beat the incumbent?" predicate — the exact
+    // condition `UpdateRecords` commits on (strictly-greater SP, OR an approx-
+    // equal SP tie with a strictly-smaller total TL — the tie-break prefers the
+    // tighter budget). Extracted so the P0.6 hard gate (step 4b) can ask "would
+    // this commit?" BEFORE deciding to run the feasibility check: per the user's
+    // rule the gate fires ONLY on would-beat ("checked whenever we make progress
+    // from the champion; if challenger doesn't beat champion, we don't do the
+    // check"). Behavior-identical to the prior inline logic in `UpdateRecords`.
+    bool WouldBeatIncumbent(double challenger_sp,
+                            const std::vector<double>& time_limits) const;
+
     // Evaluates one TL vector. from_scratch: a fresh OptimizePA_Incre runs
     // OptimizeFromScratch (the bootstrap). Otherwise warm-starts from a throwaway
     // challenger rebuilt from res_opt_ (BuildChallengerFromIncumbent) + OptimizeIncre;
@@ -341,6 +352,21 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // but can commit a >1 change via memoryless OptimizeFromScratch) neither
     // throws in Evaluate nor regresses. CommitIncumbent does cache work iff true.
     bool rta_cache_active_ = false;
+    // P0.6 step 4b — the hard per-candidate feasibility gate. When true,
+    // `UpdateRecords` (the commit chokepoint) adds ONE extra acceptance test on
+    // top of `WouldBeatIncumbent`: a candidate that WOULD beat the incumbent is
+    // committed only if `ImportantTasksMeetThresholds` passes — i.e. every
+    // important task's probabilistic ddl_miss_chance stays <= its SP threshold
+    // under the candidate {pa, tl} (the user's constrained-optimization objective:
+    // max SP s.t. the gate). A gate-REJECT returns false (no `CommitIncumbent`);
+    // the caller (`OptimizeIncreSingleTask`) then reports the INCUMBENT SP (not
+    // the rejected candidate's better SP) so the walk's `IsBetterTimeLimitOption`
+    // sees "no progress" and never tracks the rejected TL (ghost-SP fix). The
+    // optimization process is OTHERWISE IDENTICAL to the flag-off path: PA
+    // descent runs normally, the gate is purely an extra accept/reject criterion
+    // at the comparison step. Default false → prod byte-identical. Set true only
+    // inside the offline `ComputeStaticSolution` (step 5); never on the online arms.
+    bool enforce_important_task_gate_ = false;
     // Transient per-call TL search window, recorded fresh each call. Not part of
     // the incumbent (the carried TL lives in res_opt_.id2time_limit).
     std::vector<std::vector<double>> time_limit_option_for_each_task_;
