@@ -55,6 +55,31 @@ size_t Find_Close_ExecutionTime(
     return min_diff_index;
 }
 
+// P0.6: directional (at-or-below et_mean) TL seed. See header for the contract.
+// Linear scan of the ascending grid; keep the last index whose option is <=
+// et_mean. If none qualifies, fall back to index 0 (the smallest option).
+size_t FindLargestTimeLimitAtOrBelow(
+    const std::vector<TimePerfPair>& time_perf_pairs, double et_mean) {
+    if (time_perf_pairs.empty())
+        return 0;
+    size_t best_idx = 0;  // fallback: the smallest option
+    bool found_at_or_below = false;
+    for (size_t i = 0; i < time_perf_pairs.size(); i++) {
+        if (time_perf_pairs[i].time_limit <= et_mean) {
+            best_idx = i;  // grid is ascending → later qualifying index is larger
+            found_at_or_below = true;
+        }
+    }
+    if (!found_at_or_below) {
+        CoutWarning(
+            "FindLargestTimeLimitAtOrBelow: no TL grid option is <= et_mean "
+            "(et_mean below the smallest option); falling back to the smallest "
+            "grid option. The seed remains feasible-by-construction (the sim "
+            "caps perf runtime ET at min(et_mean, TL) <= et_mean).");
+    }
+    return best_idx;
+}
+
 std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
     const DAG_Model& dag_tasks, int radius) {
     std::vector<std::vector<double>> time_limit_option_for_each_task;
@@ -492,6 +517,26 @@ OptimizePA_Incre_with_TimeLimits::InitializeTimeLimitsFromETConfig() {
                 dag_tasks_.tasks[i].execution_time_dist.GetAvgValue());
             time_limits[i] =
                 dag_tasks_.tasks[i].timePerformancePairs[close_idx].time_limit;
+        }
+    }
+    return time_limits;
+}
+
+// P0.6: directional et_mean-bounded seed vector (see header). Mirrors
+// InitializeTimeLimitsFromETConfig's structure but uses the at-or-below helper
+// so no perf task seeds above the P0.8-certified WCET.
+std::vector<double>
+OptimizePA_Incre_with_TimeLimits::SeedTimeLimitsAtOrBelowEtMean() const {
+    std::vector<double> time_limits(dag_tasks_.tasks.size());
+    for (size_t i = 0; i < dag_tasks_.tasks.size(); i++) {
+        if (dag_tasks_.tasks[i].timePerformancePairs.empty()) {
+            time_limits[i] = -1.0;
+        } else {
+            size_t seed_idx = FindLargestTimeLimitAtOrBelow(
+                dag_tasks_.tasks[i].timePerformancePairs,
+                dag_tasks_.tasks[i].execution_time_dist.GetAvgValue());
+            time_limits[i] =
+                dag_tasks_.tasks[i].timePerformancePairs[seed_idx].time_limit;
         }
     }
     return time_limits;

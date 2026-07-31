@@ -27,6 +27,23 @@ std::vector<std::vector<double>> RecordCloseTimeLimitOptions(
 size_t FindTimeLimitOptionIndex(const std::vector<double>& options,
                                 double current_val);
 
+// P0.6 static-solution TL seed helper. Given a perf task's sorted-ascending
+// timePerformancePairs (the TL grid) and its et_mean
+// (= execution_time_dist.GetAvgValue()), return the index of the LARGEST grid
+// option that is <= et_mean. This is the directional (at-or-below) variant of
+// Find_Close_ExecutionTime (which is bidirectional and may pick above et_mean):
+// the static solution must seed at-or-below the P0.8-certified WCET (= et_mean)
+// so the seed's runtime ET (sim caps perf ET at min(et_mean, TL)) is <= the
+// certified WCET → the seed is feasible-by-construction. If NO grid option is
+// <= et_mean (et_mean below the smallest option), fall back to the smallest
+// option (index 0) and let the caller flag it — the clamp is still feasible
+// (min(et_mean, smallest) <= et_mean). Returns 0 on an empty grid (the caller
+// treats empty pairs as a non-perf task and sets TL = -1, so the index is never
+// read). Contract: timePerformancePairs is sorted ascending by time_limit
+// (RecordCloseTimeLimitOptions guarantees this).
+size_t FindLargestTimeLimitAtOrBelow(
+    const std::vector<TimePerfPair>& time_perf_pairs, double et_mean);
+
 // Adopt when strictly better, or on an approx-equal tie when walking downward
 // (step<0): the tie-break prefers the smaller TL, so a downward tie improves.
 bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step);
@@ -156,6 +173,13 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     void AbsorbUpdatedDAG(const DAG_Model& dag_tasks_update);
 
     std::vector<double> InitializeTimeLimitsFromETConfig();
+    // P0.6 static-solution TL seed: per-task, the largest TL grid option <=
+    // et_mean (execution_time_dist.GetAvgValue()) for perf tasks; -1 for non-perf
+    // tasks (no timePerformancePairs). The directional counterpart to
+    // InitializeTimeLimitsFromETConfig (which uses the bidirectional
+    // Find_Close_ExecutionTime and may pick above et_mean). Seeds at-or-below the
+    // P0.8-certified WCET (= et_mean) so the seed is feasible-by-construction.
+    std::vector<double> SeedTimeLimitsAtOrBelowEtMean() const;
     void InitializeTimeLimitsToSmallest(std::vector<double>& time_limits);
     // One TL per task, each at its smallest option (-1 if no perf pairs).
     std::vector<double> SmallestTimeLimitVec() const;

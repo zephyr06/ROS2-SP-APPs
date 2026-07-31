@@ -122,6 +122,36 @@ double ObtainSP_Full_From_NodeRTAs(
     const std::vector<double>& tl,
     const std::vector<FiniteDist>& node_rtas);
 
+// P0.6 step 4 — the hard per-candidate feasibility gate's pure predicate.
+// Answers the user's hard guarantee: under the candidate {priority_assignment,
+// tl}, does EVERY important task's probabilistic ddl_miss_chance stay at or
+// below its SP threshold (`sp_parameters.thresholds_node[task_id]`)? Returns
+// true iff for every important task i:
+//     GetDDL_MissProbability(rta_dist_i, deadline_i) <= thresholds_node[i].
+// Important = `Task::is_important` (top-50% by sp_weight, set at generation by
+// P0.9). With no important tasks the universal quantifier is vacuously true
+// (the constraint is free — the design's "seed region" degenerate case).
+//
+// Computation mirrors the cache-path SP eval (`ObtainSP_Full_From_NodeRTAs` →
+// `ObtainSP_DAG_From_Dists` → `ObtainSP` → `GetDDL_MissProbability`): bake TLs
+// into the ET dists (perf → point mass at tl[i]; -1 leaves the base Gaussian),
+// apply the priority assignment (sort), compute the per-task RTA distribution
+// via `ProbabilisticRTA_TaskSet`, then read each important task's miss chance
+// against its threshold. Uses `std::vector<int>` for `priority_assignment`
+// (same cycle-avoidance reason as `ObtainSP_Full_From_NodeRTAs` above).
+//
+// This is the GATE PREDICATE; it does NOT alter SP or the optimizer state. The
+// static-solution TL walk adopts an SP-better candidate TL only when this
+// returns true (skip + continue otherwise). Pessimistic-bound soundness: the
+// metric keeps non-perf Gaussian variance the sim drops and sets perf ET = TL
+// = the sim's runtime cap, so the metric's ddl_miss_chance >= the sim's actual
+// miss chance → a gate on the metric is a sound guarantee of the runtime
+// condition (see `goal.md` "Why a hard gate").
+bool ImportantTasksMeetThresholds(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl);
+
 double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& mpc_path, std::string& tsp_path,
                             std::string& tsp_ext_path, std::string& chain0_path,

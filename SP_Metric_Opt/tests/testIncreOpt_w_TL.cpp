@@ -734,6 +734,85 @@ TEST_F(CompareAndKeepSynthetic, SmallestTimeLimitVec) {
     EXPECT_DOUBLE_EQ(-1.0, tl[1]);
 }
 
+// P0.6 static-solution TL seed vector: per-task, the largest grid option <=
+// et_mean (perf tasks); -1 (non-perf). This is the directional counterpart to
+// InitializeTimeLimitsFromETConfig (which uses the bidirectional
+// Find_Close_ExecutionTime and may pick ABOVE et_mean). The seed must sit
+// at-or-below the P0.8-certified WCET (= et_mean) so it is feasible-by-
+// construction. T_perf: Gaussian mean 500, grid [400,600,800,1000] → largest
+// <= 500 is 400. T_noise: no perf pairs → -1.
+TEST_F(CompareAndKeepSynthetic, SeedTimeLimitsAtOrBelowEtMean) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    std::vector<double> tl = opt.SeedTimeLimitsAtOrBelowEtMean();
+    ASSERT_EQ(2u, tl.size());
+    // T_perf: et_mean = 500; largest grid option <= 500 is 400 (index 0).
+    EXPECT_DOUBLE_EQ(400.0, tl[0]);
+    // T_noise: no time-performance pairs → -1.
+    EXPECT_DOUBLE_EQ(-1.0, tl[1]);
+}
+
+// --- P0.6 step 4: the hard per-candidate feasibility gate's pure predicate. ---
+// ImportantTasksMeetThresholds(dag, sp_params, pa, tl) answers the user's hard
+// guarantee: does EVERY important task's probabilistic ddl_miss_chance stay at
+// or below its SP threshold under the candidate {pa, tl}? It is the gate
+// predicate the static-solution TL walk adopts on (reject SP-better candidates
+// that violate an important task's threshold; keep feasible ones). Tested here
+// in isolation against a synthetic 2-task DAG whose ddl_miss_chance we control
+// via deadline + threshold + TL.
+//
+// Setup (CompareAndKeepSynthetic fixture): T_perf (id 0, important? NO by
+// default) ET~500@TL, T_noise (id 1) ET~50. To exercise the gate we mark
+// T_perf important and drive its ddl_miss_chance across its threshold by
+// moving the deadline relative to its (TL-capped) response time.
+
+TEST_F(CompareAndKeepSynthetic, ImportantTasksMeetThresholds_AdmitsWhenMissChanceBelowThreshold) {
+    // T_perf is the only important task. With TL = 400 (its smallest grid option,
+    // a point mass well below its period/deadline), its RTA sits far under the
+    // deadline → ddl_miss_chance ~ 0, comfortably below any positive threshold.
+    dag_tasks.tasks[0].is_important = true;
+    // Threshold = 0.5 for every task (SP_Parameters default). ddl_miss_chance ~ 0
+    // < 0.5 → feasible.
+    std::vector<double> tl = {400.0, -1.0};
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ImportantTasksMeetThresholds_RejectsWhenImportantTaskMissesDeadline) {
+    // Shrink T_perf's deadline to BELOW its response time so its RTA distribution
+    // is almost entirely past the deadline → ddl_miss_chance ~ 1.0, far above the
+    // 0.5 threshold → the gate REJECTS. (T_perf stays important.)
+    dag_tasks.tasks[0].is_important = true;
+    dag_tasks.tasks[0].deadline = 1.0;  // impossibly tight: RT >> 1
+    std::vector<double> tl = {400.0, -1.0};
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    EXPECT_FALSE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ImportantTasksMeetThresholds_IgnoresNonImportantTaskMisses) {
+    // A NON-important task missing its deadline must NOT trip the gate — the
+    // guarantee is scoped to important tasks only. Mark only T_noise important;
+    // then drive T_perf (non-important) past its deadline. T_noise stays feasible
+    // → gate admits despite T_perf missing.
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[0].deadline = 1.0;  // non-important T_perf misses badly
+    std::vector<double> tl = {400.0, -1.0};
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+}
+
+TEST_F(CompareAndKeepSynthetic,
+       ImportantTasksMeetThresholds_AdmitsWhenNoTaskIsImportant) {
+    // Boundary: with NO important tasks the universal quantifier is vacuously
+    // true → the gate admits (the constraint is free, matching the design's
+    // "seed region: ddl_miss_chance = 0" claim's degenerate case).
+    std::vector<double> tl = {400.0, -1.0};
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+}
+
 TEST_F(CompareAndKeepSynthetic,
        ReconstructTimeLimitVecFromResOpt_DefaultsToMinusOneWhenUnset) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
@@ -2111,6 +2190,77 @@ TEST(IsBetterTimeLimitOptionTest, NearEqualWithinToleranceIsTie) {
     // tie, so the same step-direction rule applies as for exact equality.
     EXPECT_TRUE(IsBetterTimeLimitOption(1.6 + 1e-12, 1.6, /*step=*/-1));
     EXPECT_FALSE(IsBetterTimeLimitOption(1.6 + 1e-12, 1.6, /*step=*/1));
+}
+
+// --- P0.6: et_mean-bounded TL seed helper (FindLargestTimeLimitAtOrBelow) ---
+//
+// The static solution seeds each perf task at the LARGEST TL grid option that
+// does not exceed its et_mean (= execution_time_dist.GetAvgValue()). This is the
+// operating point P0.8 certifies (perf WCET = et_mean): at TL <= et_mean the sim
+// caps perf runtime ET at min(et_mean, TL) <= et_mean = certified WCET, so the
+// seed is feasible-by-construction. Find_Close_ExecutionTime (:42) is the
+// bidirectional precedent (closest by abs distance — may pick ABOVE et_mean);
+// this directional variant must never exceed et_mean. The helper is pure
+// (stateless, takes the sorted timePerformancePairs + a scalar et_mean) so it is
+// unit-tested in isolation like the other TL-walk helpers above.
+
+// Sorted ascending, as the metric/grid contract requires (RecordCloseTimeLimitOptions
+// sorts by time). Each test reuses this 4-option grid [400,600,800,1000].
+std::vector<TimePerfPair> P06SeedGrid() {
+    return {TimePerfPair(400.0, 0.5), TimePerfPair(600.0, 0.6),
+            TimePerfPair(800.0, 0.7), TimePerfPair(1000.0, 0.8)};
+}
+
+// (a) et_mean strictly above the largest option → picks the LARGEST option.
+TEST(FindLargestTimeLimitAtOrBelowTest,
+     EtMeanAboveLargestOptionPicksLargest) {
+    auto grid = P06SeedGrid();  // [400,600,800,1000]
+    EXPECT_EQ(3u, FindLargestTimeLimitAtOrBelow(grid, /*et_mean=*/1500.0));
+}
+
+// (b) et_mean strictly below the smallest option → NO option <= et_mean exists
+// → falls back to the SMALLEST (index 0). The static-solution seed tolerates a
+// grid entirely above et_mean by clamping to the floor (still feasible-by-
+// construction: min(et_mean, smallest) <= et_mean).
+TEST(FindLargestTimeLimitAtOrBelowTest,
+     EtMeanBelowSmallestOptionFallsBackToSmallest) {
+    auto grid = P06SeedGrid();  // [400,600,800,1000]
+    EXPECT_EQ(0u, FindLargestTimeLimitAtOrBelow(grid, /*et_mean=*/300.0));
+}
+
+// (c) et_mean lands strictly between two options → picks the largest option
+// that is <= et_mean (the option just below), NOT the closest by abs distance.
+// This is the directional guarantee that diverges from Find_Close_ExecutionTime:
+// at et_mean=700, Find_Close would pick 600 (dist 100) or 800 (dist 100) —
+// ambiguous/tie; FindLargestTimeLimitAtOrBelow must pick 600 (the <= side).
+TEST(FindLargestTimeLimitAtOrBelowTest,
+     EtMeanBetweenOptionsPicksLargestAtOrBelow) {
+    auto grid = P06SeedGrid();  // [400,600,800,1000]
+    EXPECT_EQ(1u, FindLargestTimeLimitAtOrBelow(grid, /*et_mean=*/700.0));
+}
+
+// (d) et_mean exactly equals an option → that option qualifies (<=) and is the
+// largest such → returns its index. et_mean == 800 → index 2.
+TEST(FindLargestTimeLimitAtOrBelowTest,
+     EtMeanExactlyEqualsOptionPicksThatOption) {
+    auto grid = P06SeedGrid();  // [400,600,800,1000]
+    EXPECT_EQ(2u, FindLargestTimeLimitAtOrBelow(grid, /*et_mean=*/800.0));
+}
+
+// (e) et_mean exactly equals the smallest option → index 0 (no fallback needed;
+// the smallest itself satisfies <=).
+TEST(FindLargestTimeLimitAtOrBelowTest,
+     EtMeanExactlyEqualsSmallestOptionPicksSmallest) {
+    auto grid = P06SeedGrid();  // [400,600,800,1000]
+    EXPECT_EQ(0u, FindLargestTimeLimitAtOrBelow(grid, /*et_mean=*/400.0));
+}
+
+// (f) empty grid → returns 0 (the no-option sentinel; the caller treats an empty
+// timePerformancePairs as a non-perf task and sets TL = -1, so the index is
+// never read). Mirrors Find_Close_ExecutionTime's empty-input return.
+TEST(FindLargestTimeLimitAtOrBelowTest, EmptyGridReturnsZero) {
+    std::vector<TimePerfPair> empty;
+    EXPECT_EQ(0u, FindLargestTimeLimitAtOrBelow(empty, /*et_mean=*/700.0));
 }
 
 // --- Trial-and-Error TL walk: WalkOneTaskWithTimeLimitOptions + rewritten
