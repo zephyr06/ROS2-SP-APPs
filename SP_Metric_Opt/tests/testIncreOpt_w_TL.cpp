@@ -2750,6 +2750,99 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     EXPECT_TRUE(opt.evaluated_tls.empty());
 }
 
+// --- P0.6: the offline safe fallback (the fall-back artifact). ---
+// ComputeSafeFallback() seeds at the P0.8-certified point (DM PA + TL <= et_mean), runs
+// a TL walk with the gate ON, and STORES the result as `safe_fallback_` — SEPARATE from
+// the live `res_opt_`, so the persistent optimizer's online behavior is byte-identical
+// (interval 0 still bootstraps fresh; the fallback is consumed only by P0.7's fall-back).
+// `Optimize_w_TL_ScratchOrIncre` lazy-populates it on the first call if a caller didn't
+// pre-call (the dispatcher's safety net — the orchestrator pre-calls to keep the compute
+// out of the online scheduler-ET metric, but doesn't have to).
+//
+// The fixture's SP arithmetic (SP strictly increasing in TL, see CompareAndKeepSynthetic)
+// means the unconstrained optimum is TL=1000 (T_perf's largest grid option). With the gate
+// ON, the walk rejects threshold-violating candidates and keeps the best-SP FEASIBLE point.
+
+// (1) ComputeSafeFallback populates the artifact with a gate-held, et_mean-seeded result.
+// PA is the DM-group-locked seed; the stored result's important-task miss chances all stay
+// <= threshold (the gate held).
+TEST_F(CompareAndKeepSynthetic, ComputeSafeFallback_PopulatesGateHeldArtifact) {
+    dag_tasks.tasks[0].is_important = true;   // T_perf is the gated important task
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    ASSERT_FALSE(opt.HasSafeFallback());  // nothing computed yet
+    ResourceOptResult result = opt.ComputeSafeFallback();
+    ASSERT_TRUE(opt.HasSafeFallback());
+    EXPECT_EQ(result.priority_vec, opt.GetSafeFallback().priority_vec);
+
+    // PA is the DM-group-locked seed (both tasks here, T_perf first by DM).
+    std::vector<int> pa_dm = opt.DeadlineMonotonicPriorityVec();
+    EXPECT_EQ(pa_dm, result.priority_vec);
+
+    // The gate held: re-derive the candidate's node RTAs and check every important task's
+    // ddl_miss_chance <= its threshold (the gate's contract). Reconstruct the TL vector in
+    // task order from the result's id→TL map.
+    std::vector<double> tl_result(dag_tasks.tasks.size());
+    for (size_t i = 0; i < dag_tasks.tasks.size(); i++) {
+        int id = dag_tasks.tasks[i].id;
+        tl_result[i] = result.id2time_limit.count(id) ? result.id2time_limit.at(id)
+                                                        : -1.0;
+    }
+    std::vector<FiniteDist> node_rtas = NodeRTAsForCandidate(dag_tasks, pa_dm, tl_result);
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa_dm, tl_result,
+                                              node_rtas))
+        << "safe fallback must satisfy the gate it was computed under";
+}
+
+// (2) Byte-identical contract: ComputeSafeFallback runs the gate-governed walk on a
+// THROWAWAY sibling, so the persistent optimizer's live incumbent (res_opt_) is UNTOUCHED
+// — interval 0 still bootstraps fresh (the IfInitialized() gate for reopt's baseline reset
+// stays false). This is the separation that keeps P0.6 "produce, don't inject".
+TEST_F(CompareAndKeepSynthetic,
+       ComputeSafeFallback_LeavesLiveIncumbentUntouched_ByteIdentical) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    ASSERT_FALSE(opt.IfInitialized());  // fresh optimizer: no live incumbent
+
+    opt.ComputeSafeFallback();
+    // The artifact is populated, but the LIVE incumbent is STILL uninitialized — interval
+    // 0 will bootstrap fresh (byte-identical).
+    ASSERT_TRUE(opt.HasSafeFallback());
+    EXPECT_FALSE(opt.IfInitialized());
+    EXPECT_FALSE(opt.enforce_important_task_gate_);  // flag reset after the walk
+}
+
+// (3) The dispatcher's safety net: Optimize_w_TL_ScratchOrIncre lazy-populates
+// safe_fallback_ on its first call when the caller did NOT pre-call ComputeSafeFallback.
+TEST_F(CompareAndKeepSynthetic,
+       Dispatcher_LazyPopulatesSafeFallback_WhenNotPreCalled) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    ASSERT_FALSE(opt.HasSafeFallback());  // caller didn't pre-call
+
+    // First dispatcher call: the lazy check sees no fallback → computes one, then proceeds.
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks,
+                                     GlobalVariables::Layer_Node_During_Incremental_Optimization);
+    EXPECT_TRUE(opt.HasSafeFallback());  // safety net populated it
+    // And it didn't trip the gate flag on the live path (the sibling reset it).
+    EXPECT_FALSE(opt.enforce_important_task_gate_);
+}
+
+// (4) The dispatcher does NOT recompute when the caller already pre-called: the lazy
+// check short-circuits (pre-call is the orchestrator's path; the safety net must be a
+// no-op there to avoid a double compute).
+TEST_F(CompareAndKeepSynthetic,
+       Dispatcher_DoesNotRecompute_WhenAlreadyPreCalled) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.ComputeSafeFallback();
+    ASSERT_TRUE(opt.HasSafeFallback());
+    ResourceOptResult pre = opt.GetSafeFallback();
+
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks,
+                                     GlobalVariables::Layer_Node_During_Incremental_Optimization);
+    // Same artifact object (not recomputed).
+    EXPECT_EQ(pre.priority_vec, opt.GetSafeFallback().priority_vec);
+    EXPECT_DOUBLE_EQ(pre.sp_opt, opt.GetSafeFallback().sp_opt);
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

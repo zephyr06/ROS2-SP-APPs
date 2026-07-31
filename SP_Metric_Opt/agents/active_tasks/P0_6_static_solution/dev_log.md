@@ -812,3 +812,185 @@ elegance tradeoff ("the code doesn't read elegantly") in exchange for NOT taking
 framework + behavior-change cost of unification. The 4b-followup unification is
 **DEFERRED** — re-file as P2.x if revisited; do NOT start coding it. Next active item:
 step 5 (`ComputeStaticSolution` wiring), once step 4b v2 is reviewed/committed.
+
+---
+
+## 2026-07-31 — step 5 START (ComputeStaticSolution — lazy-populated artifact)
+
+**Step 4b v2 COMMITTED** (`500665d5`) at the start of the session. Tree clean → step 5.
+
+**Plan approved** (after two rounds with the user):
+- **Q1 (call site) — user-directed redesign:** "let's add one member function into
+  `OptimizePA_Incre_with_TimeLimits` to calculate the static solution, the caller who
+  calls the class to perform incremental optimization will first call the static solution
+  method to generate static solution. at the start of `Optimize_w_TL_ScratchOrIncre`, it
+  will first check if static solution is stored. if not, it will call the method to
+  generate static solution to store one. in this case, i suppose caller doesn't have to
+  call the method to generate static solution." → `ComputeStaticSolution()` is a MEMBER of
+  the persistent optimizer; `Optimize_w_TL_ScratchOrIncre` lazy-checks at its start
+  (safety net); the orchestrator pre-calls (to keep the compute ET-excluded).
+- **Re-opt requirement — user:** "static solution fall-back should also be used in re-opt
+  mode" → the lazy check sits in `Optimize_w_TL_ScratchOrIncre` (the dispatcher BOTH
+  `OptimizeIncre_w_TL` AND `ReOptimizePeriodic` route through), so `static_solution_` is
+  available to re-opt arms too. P0.6 only PRODUCES it; P0.7 wires the actual fall-back
+  USE in both paths.
+- Q2 (modes) = full INCR family; Q3 (ablation) = none (normal-ET mode).
+
+**KEY byte-identical isolation:** `ComputeStaticSolution()` runs the gate-governed walk on
+a THROWAWAY sibling sub-optimizer, NOT on `this`. Reason: the walk commits via
+`CommitIncumbent` → writes `res_opt_`; if it ran on `this`, interval-0 reopt's
+`IfInitialized()` check (`:911`,`:947`) would flip true → `ResetIncumbentBaseline(true)`
+would re-eval the static solution's {pa,tl} as the baseline instead of
+`SeedIncumbentFromDMFast()` → interval 0 warm-starts from the static solution = P0.7's
+injection leaking into P0.6 (NOT byte-identical). The sibling isolates the compute; `this`'s
+live `res_opt_`/cache/flag are untouched. Same class → `this` may touch the sibling's
+private members (C++ access control).
+
+**Ablation save/restore:** the gate is probabilistic — needs the real ET dist, not a WCET
+point-mass (`use_wcet_execution_time` collapses the dist to its max → zero variance →
+gate can't bind) and not a TL-frozen config (`disable_time_limit_opt` pins TLs to smallest
+→ skips the walk). So `ComputeStaticSolution` saves/restores
+`disable_time_limit_opt` + `use_wcet_execution_time` around the walk, forcing normal-ET +
+TL-opt-on regardless of the running arm (mirrors `SimulationOrchestrator.cpp:341-355`).
+
+**Sub-task 5a (IN PROGRESS):** `ComputeStaticSolution()` method + `static_solution_`
+member + `HasStaticSolution()`/`GetStaticSolution()` accessors + dispatcher lazy-check.
+TDD: 4 tests added to `testIncreOpt_w_TL.cpp` (red first): (1) populates gate-held
+artifact (PA DM-grouped, gate holds on the result); (2) byte-identical — live incumbent
+untouched after compute; (3) dispatcher lazy-populates when not pre-called; (4) dispatcher
+short-circuits when pre-called (no double compute). Build running (clean, after header
+layout change).
+
+---
+
+## 2026-07-31 — step 5a LANDED + TIMEOUT REGRESSION fixed (git add-only, NOT committed)
+
+**Step 5a code complete:** `ComputeStaticSolution()` + `static_solution_` member +
+`HasStaticSolution()`/`GetStaticSolution()` accessors + the dispatcher lazy-check at the
+top of `Optimize_w_TL_ScratchOrIncre` (`:699-701`). The 4 TDD tests pass.
+
+**REGRESSION found + fixed (the load-bearing discovery this session).** The clean build
+went 16/17: `testINCRTimeout.RespectsGlobalTimeLimit_SingleEvalExceedsCap` FAILED (21.8 s
+vs the 4 s cap). Root cause = my lazy `ComputeStaticSolution()` at the dispatcher entry
+runs **before** the dispatcher installs its `BFDLSharedBudget` (`:711`), and
+`ComputeStaticSolution` installed NO budget itself → its seed `EvaluateSPWithPriorityVec`
+(~8 s on the wide-Gaussian 7-task fixture, granularity 300) + walk ran unbounded past
+`TIME_LIMIT=1`. NOT pre-existing — introduced by step 5a's lazy dispatcher hook.
+
+**Fix:** `ComputeStaticSolution` now installs its OWN `BFDLSharedBudget` around the WHOLE
+compute (seed eval + walk), mirroring the dispatcher's idiom. Two iterations to land it:
+  - v1 (budget around the walk only) → 9.5 s: the walk was bounded but the SEED eval
+    (`:939`, also an `EvaluateSPWithPriorityVec` on the same taskset) still ran unguarded.
+  - v2 (budget around the whole compute, including the seed eval) → test PASSES (the
+    cooperative cancel fires inside the runaway seed eval via `ObtainSP_DAG`'s
+    `BFSharedBudgetCancelled()` poll, `EvaluateSPWithPriorityVec` returns `INT_MIN`).
+
+**Cancel-safety (why a cancelled static-solution compute is still sound):** on cancel,
+`EvaluateSPWithPriorityVec` returns `INT_MIN` → the walk's strict-`>` adopt guard treats it
+as "not better" → keeps the incumbent (compare-and-keep) → the stored result stays
+GATE-FEASIBLE (the gate only REJECTS, never makes the seed infeasible; the seed itself is
+feasible-by-construction at TL ≤ et_mean), just possibly short of full convergence. The
+seed eval being cancelled mid-way does commit an incumbent with a sentinel `sp_opt =
+INT_MIN` in the degenerate `TIME_LIMIT << seed-eval-cost` case — acceptable: the artifact
+is still a valid `{pa, tl}` (DM-grouped PA + et_mean-bounded TL) with a pessimistic SP;
+P0.7's fall-back compares SP and would just not pick it. The 4 `ComputeStaticSolution_*`
+tests use small granularity (5) → fast SP-evals → never hit the budget → assert the
+non-degenerate path (gate held, byte-identical, lazy + short-circuit). The timeout test
+asserts only the TIME BOUND, not result quality.
+
+**Build:** `cmake --build build_test --target check.SP_OPT -j5` = **17/17 green** (4 new
+step-5a tests + 5 `GateWiring_*` step-4b tests + 8 prior, no regressions). Filtered runs
+confirm all 9 P0.6 tests ran + passed.
+
+**NOT committed** (git add-only per the coding rules; awaits user review). Files touched
+this sub-step: `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}` +
+`tests/testIncreOpt_w_TL.cpp`. Self-contained module (the static-solution artifact +
+dispatcher hook; no orchestrator wiring yet) → staged alone for review per "work by module,
+commit by module".
+
+**Next:** step 5b — orchestrator wiring. Pre-call `ComputeStaticSolution()` after
+`incr_optimizer_` construction (`SimulationOrchestrator.cpp:300-302`), before the interval
+loop (304-308), OUTSIDE `DeterminePrioritiesAndBudgets`'s ET bracket (316-322) so the
+compute does NOT inflate `scheduler_execution_time.txt`. Emit a separate
+`static_solution_compute_time` profile. Then verify the 2 safety assumptions (sim perf ET =
+`min(et_mean,TL)` downward cap; the gate is the constraint so the group-lock concern is
+moot). Then P0.7 wires the actual fall-back USE.
+
+---
+
+## 2026-07-31 — step 5b LANDED (orchestrator wiring + ET-exclusion guard; git add-only, NOT committed)
+
+**Resuming the session found the working tree already contained a COMPLETE step 5b**
+(orchestrator pre-call + separate compute-time member + `RunOrchestrator` output + the
+`PreComputesStaticSolution_ExcludesSchedulerET` integration test) that the prior session's
+dev-log entry had not recorded — an interrupted handoff. This entry records + audits it.
+
+**What step 5b adds (4 pieces, `SimulationOrchestrator.{h,cpp}` + tests):**
+1. **The orchestrator pre-call** (`SimulationOrchestrator.cpp:313-317`): inside the INCR-
+   family construction branch, AFTER `incr_optimizer_` is built (`:300-301`) and BEFORE the
+   interval loop (`:320-324`), `incr_optimizer_.ComputeStaticSolution()` runs once; its
+   wall-time is captured into `static_solution_compute_time_s_`. Only the INCR family
+   (`INCR`/`INCR_NO_TL`/`INCR_WCET`/`INCR_NO_REOPT`/`INCR_*Period`) pre-computes — the gate
+   + walk are an INCR artifact.
+2. **The separate compute-time member** (`SimulationOrchestrator.h:111` +
+   `GetStaticSolutionComputeTime()` `:94-96`): `double static_solution_compute_time_s_`,
+   DISTINCT from `scheduler_exec_time_s_` (the online scheduler-ET metric). The static
+   solution is an offline fall-back artifact, NOT an online scheduler decision, so it must
+   not inflate `scheduler_execution_time.txt`.
+3. **`RunOrchestrator.cpp` output** (`:214-224`): prints `StaticSolutionComputeTime_s:` and
+   writes `static_solution_compute_time.txt` next to `scheduler_execution_time.txt`.
+4. **Test accessor + integration test** (`testScheduleSimulate.cpp`): `TestOrchestrator::
+   HasStaticSolution()` (delegates to `GetIncrOptimizer().HasStaticSolution()`) +
+   `PreComputesStaticSolution_ExcludesSchedulerET`. `GetIncrOptimizer()` (`SimulationOrchestrator.h:102-104`,
+   protected) exposes the persistent optimizer to tests (the artifact lives on it).
+
+**ET-exclusion — STRUCTURAL (disjoint call sites), now ACTUALLY asserted.** The static-
+solution compute counter is written ONLY at `RunSimulation:316-317` (outside the interval
+loop); `scheduler_exec_time_s_` is written ONLY at `DeterminePrioritiesAndBudgets:429-430`
+(called from `SimulateInterval:545` inside the loop). Disjoint → no leakage by construction.
+The test was NAMED `..._ExcludesSchedulerET` but only asserted (1) artifact populated, (2)
+compute timed separately >0, (3) sim runs — it did not verify the exclusion itself. **This
+session strengthened it with a 4th assertion:** a non-INCR (`DM`) run reports
+`GetStaticSolutionComputeTime() == 0.0` exactly. DM ALSO runs `DeterminePrioritiesAndBudgets`
+every interval, so if the static compute leaked into the scheduler-ET path, DM would report
+>0. Exact-zero is non-flaky (no timing sensitivity). Now green.
+
+**The 2 safety assumptions — BOTH VERIFIED:**
+1. **Sim perf ET = `min(et_mean, TL)` downward cap** (the redesign's structural-safety
+   premise): at `SimulationOrchestrator.cpp:499-516`, a perf task's sim runtime ET is
+   `drawn_et = traces[i][idx]` (or `GetAvgValue()` = et_mean when no traces), then
+   `if (budget > 0 && execution_time > budget) execution_time = budget` where `budget` =
+   the task's time limit. So sim perf ET ≤ TL. The metric's perf ET model is a POINT MASS
+   at TL (`ApplyTimeLimitsToTasksExecutionTime`, `SP_Metric.cpp:76-86` — perf ET = TL
+   exactly). → metric perf ET (= TL) ≥ sim perf ET (≤ TL) → metric interference ≥ sim →
+   **metric `ddl_miss_chance` ≥ sim's actual miss chance** → a gate on the METRIC is a
+   sound (pessimistic) guarantee of the user's stated runtime condition. ✓
+2. **The gate IS the constraint (group-lock concern moot):** structural via the COMMITTED
+   step 4b v2 (`500665d5`): `enforce_important_task_gate_` gates the commit chokepoint
+   (`UpdateRecords`); PA descent runs UNCONDITIONALLY (`!BFSharedBudgetCancelled()` only,
+   NOT `&& !enforce_important_task_gate_`). The gate rejects ANY threshold-violating
+   candidate (TL move OR PA move). A PA descent that finds a higher-SP PA STILL PASSING the
+   gate is strictly BETTER for the constrained objective (max SP s.t. the gate) — the
+   P0.8/P0.9 group lock is a means, not the end. The 5 `GateWiring_*` tests pass WITH PA
+   descent on (on the reject fixture T_perf is already top-priority → PA descent finds no
+   strict-improving move → the gate sees the candidate's actual {pa,tl} and rejects). ✓
+
+**Build:** `cmake --build build_test --target check.SP_OPT -j5` = **17/17 green**
+(4 step-5a `ComputeStaticSolution_*` + 5 step-4b `GateWiring_*` + 1 strengthened step-5b
+`PreComputesStaticSolution_ExcludesSchedulerET` (now 4 assertions) + 7 prior). No regressions.
+
+**NOT committed** (git add-only per the coding rules; awaits user review). Files touched
+THIS session: `tests/testScheduleSimulate.cpp` (the ET-exclusion guard). The full P0.6
+working-tree footprint (all steps 3+4a+4b+5a+5b): `sources/Optimization/
+OptimizeSP_TL_Incre.{h,cpp}` + `sources/Safety_Performance_Metric/SP_Metric.{h,cpp}` +
+`sources/RTDA/ImplicitCommunication/SimulationOrchestrator.{h,cpp}` + `tests/RunOrchestrator.cpp`
++ `tests/testIncreOpt_w_TL.cpp` + `tests/testScheduleSimulate.cpp`. Per "work by module,
+commit by module," step 5b is its own reviewable module (orchestrator wiring; the optimizer
+internals are step 5a's already-reviewed module).
+
+**Step 5 COMPLETE (all of section 5 + section 6 verification boxes).** P0.6 now PRODUCES
+the fall-back artifact end-to-end (seed → gate-governed walk → store → orchestrator-pre-call
+→ separate profile). **P0.7 wires the actual fall-back USE** (the two online triggers: (a)
+ET-jump before opt → use `static_solution_` directly; (b) in-walk HALT on first unsafe
+candidate → compare incumbent vs static SP → pick higher). The artifact is ready for P0.7 to
+consume via `incr_optimizer_.GetStaticSolution()`.

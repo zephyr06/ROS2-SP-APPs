@@ -108,16 +108,11 @@
       re-enabled (on the reject fixture T_perf is already top-priority, so PA descent finds no
       strict-improving move and the gate sees the candidate's actual {pa,tl} and rejects).
       `cmake --build build_test --target check.SP_OPT -j5` = 17/17 green. NOT committed (git add-only).
-- [ ] **Step 5 — `ComputeStaticSolution` wiring (NEXT).** Construct the optimizer; seed DM-grouped
-      PA (P0.9 `DeadlineMonotonicPriorityVec`) + et_mean-bounded TL (step 3
-      `SeedTimeLimitsAtOrBelowEtMean`); set `enforce_important_task_gate_ = true`; run the walk
-      (`OptimizeIncre_w_TL` → `RunIntervalDescent`; PA descent runs normally under the gate);
-      keep the committed `ResourceOptResult` as `static_solution_`; reset the flag. Call after
-      `incr_optimizer_` construction (`SimulationOrchestrator.cpp:300-302`), before the interval
-      loop (304-308), OUTSIDE `DeterminePrioritiesAndBudgets`'s ET bracket (316-322). Verify the
-      safety assumption sim perf ET = `min(et_mean,TL)` downward cap. (The from-scratch group-lock
-      concern is now MOOT — the gate is the constraint, not the group lock; PA descent that finds a
-      higher-SP PA still passing the gate is strictly better for the constrained objective.)
+- [x] **Step 5a — `ComputeStaticSolution` artifact + dispatcher lazy-hook LANDED 2026-07-31**
+      (git add-only — NOT committed). See section 5 for detail. The method + `static_solution_`
+      member + accessors + the dispatcher safety-net lazy-check are in
+      `OptimizeSP_TL_Incre.{h,cpp}`; 4 TDD tests in `testIncreOpt_w_TL.cpp`; 17/17 green
+      (incl. the timeout-regression fix).
 
 ## 4b-followup — UNIFY the three acceptance predicates (DEFERRED 2026-07-30 per user)
 - [x] **FINDING (2026-07-30).** The ghost-SP override (step 4b v2) is a SYMPTOM of three
@@ -158,27 +153,64 @@
       See `goal.md` "Why a hard gate (not soft)" + the constraint-mode dev-log entry.
 
 ## 5. Wire `ComputeStaticSolution()` offline + ET-excluded
-- [ ] Resolve **D8** (from-scratch path & the group lock) before wiring.
-- [ ] Implement `ComputeStaticSolution()`: seed DM-grouped PA (P0.9) + et_mean-bounded TL
-      (step 3), run the normal TL walk (`OptimizeIncre_w_TL` → `RunIntervalDescent`,
-      TL-only → group lock preserved), return the committed `ResourceOptResult`. **NO WCET-mode
-      flip, NO filter.**
-- [ ] Call `ComputeStaticSolution()` after `incr_optimizer_` construction
-      (`SimulationOrchestrator.cpp:300-302`), before the interval loop (304-308).
-- [ ] Store result in an in-memory `static_solution_` member (per D4).
-- [ ] Verify the compute is OUTSIDE `DeterminePrioritiesAndBudgets`'s ET bracket
-      (316-322): reported `scheduler_execution_time.txt` unchanged vs. baseline at the same N.
-- [ ] Emit a separate `static_solution_compute_time` profile (does NOT enter the online ET
-      metric).
-- [ ] **Verify the two safety assumptions:** (1) sim perf ET = `min(et_mean, TL)` (downward
-      cap, NOT an overrunable budget) at the `SimulateInterval` ET-draw site; (2) the
-      from-scratch path preserves the group lock (or is constrained).
+- [x] **D8 RESOLVED** (via the gate, 2026-07-30): the hard gate IS the constraint; PA
+      descent that finds a higher-SP PA still passing the gate is strictly better for the
+      constrained objective. The group lock is a means, not the end. Moot.
+- [x] **Step 5a LANDED 2026-07-31 (git add-only — NOT committed):** `ComputeStaticSolution()`
+      member + `std::optional<ResourceOptResult> static_solution_` + `HasStaticSolution()`/
+      `GetStaticSolution()` accessors + the dispatcher lazy-check at the top of
+      `Optimize_w_TL_ScratchOrIncre` (the safety net: if a caller didn't pre-call, the first
+      dispatch computes + stores the artifact, then proceeds). Compute runs on a THROWAWAY
+      sibling (`OptimizePA_Incre_with_TimeLimits sub(dag_tasks_, sp_parameters_)`) so `this`'s
+      live `res_opt_`/cache/flag are UNTOUCHED → online byte-identical (interval 0 still
+      bootstraps fresh; the artifact is consumed only by P0.7's fall-back). Forces
+      `disable_time_limit_opt=false` + `use_wcet_execution_time=false` around the walk (the
+      gate is probabilistic — needs the real ET dist). **TIMEOUT-REGRESSION FIX:** installs
+      its OWN `BFDLSharedBudget` around the WHOLE compute (seed eval + walk) — without it the
+      lazy dispatcher path ran `ComputeStaticSolution` before the dispatcher's budget was
+      installed → a runaway seed SP-eval stranded the compute past `TIME_LIMIT`
+      (`testINCRTimeout` failed 21.8 s; fixed → 17/17 green). On cancel the walk keeps the
+      incumbent (compare-and-keep) → the stored result stays gate-feasible. TDD: 4 tests
+      (gate-held artifact; byte-identical live incumbent; dispatcher lazy-populates;
+      dispatcher short-circuits when pre-called). `cmake --build build_test --target
+      check.SP_OPT -j5` = 17/17 green.
+- [x] **Step 5b LANDED 2026-07-31 (git add-only — NOT committed).** Orchestrator pre-call +
+      separate compute-time profile + ET-exclusion guard. Four pieces in
+      `SimulationOrchestrator.{h,cpp}` + `tests/RunOrchestrator.cpp` +
+      `tests/testScheduleSimulate.cpp`: (1) the pre-call (`RunSimulation:313-317`, inside the
+      INCR-family construction branch, AFTER `incr_optimizer_` is built `:300-301` + BEFORE
+      the interval loop `:320-324`) runs `ComputeStaticSolution()` once; (2) `double
+      static_solution_compute_time_s_` + `GetStaticSolutionComputeTime()` — DISTINCT from
+      `scheduler_exec_time_s_` (the online metric); (3) `RunOrchestrator.cpp:214-224` prints
+      `StaticSolutionComputeTime_s:` + writes `static_solution_compute_time.txt`; (4)
+      `TestOrchestrator::HasStaticSolution()` + the `GetIncrOptimizer()` protected accessor +
+      the `PreComputesStaticSolution_ExcludesSchedulerET` integration test. **ET-exclusion is
+      STRUCTURAL (disjoint call sites: the static counter writes ONLY at `RunSimulation:316`;
+      `scheduler_exec_time_s_` writes ONLY at `DeterminePrioritiesAndBudgets:429`) and now
+      ACTUALLY ASSERTED:** a 4th test assertion (added this session — the test was named for
+      the exclusion but only checked artifact-exists + timed-separately) runs a `DM` mode and
+      asserts `GetStaticSolutionComputeTime() == 0.0` exactly — DM also runs
+      `DeterminePrioritiesAndBudgets` every interval, so a leak would show >0 here.
+      Non-flaky (exact zero). 17/17 green.
+- [x] **Verify the two safety assumptions (2026-07-31).** (1) Sim perf ET = downward cap:
+      `SimulationOrchestrator.cpp:514-516` — `if (budget > 0 && execution_time > budget)
+      execution_time = budget` (budget = TL); sim perf ET ≤ TL = the metric's perf point-mass
+      ET (`ApplyTimeLimitsToTasksExecutionTime`) → metric `ddl_miss_chance` ≥ sim's actual →
+      the gate (on the metric) is a sound pessimistic bound. ✓ (2) The gate IS the
+      constraint: structural via the committed step 4b v2 (`500665d5`) — PA descent runs
+      unconditionally under the gate; the gate rejects any threshold-violating TL or PA move;
+      a higher-SP PA still passing the gate is strictly better for the constrained objective
+      → the group-lock concern is moot. The 5 `GateWiring_*` tests pass with PA descent on. ✓
 
 ## 6. Verification + records
-- [ ] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
-- [ ] Spot-check: at a smoke-test N, `static_solution_` is populated; its PA is DM-grouped;
-      its TL vector seeds at-or-below et_mean and is the optimizer's result from that seed.
-- [ ] Confirm the seed point is at-or-below P0.8's certified WCET (TL ≤ et_mean → runtime ET ≤
-      et_mean = P0.8 perf WCET).
-- [ ] `dev_log.md` (this folder + top-level) + memory updated.
-- [ ] `git add` staged; user reviews (no commit).
+- [x] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
+- [x] Spot-check: `ComputeStaticSolution_PopulatesGateHeldArtifact` asserts the stored
+      `static_solution_` PA = `DeadlineMonotonicPriorityVec()` (DM-grouped) AND re-derives the
+      result's node RTAs → `ImportantTasksMeetThresholds` passes (the gate held on the stored
+      result). The TL vector seeds at-or-below et_mean (step 3 `SeedTimeLimitsAtOrBelowEtMean`)
+      and the walk adopts from there under the gate.
+- [x] Confirm the seed point is at-or-below P0.8's certified WCET: TL ≤ et_mean (step 3
+      helper guarantee) → runtime sim ET ≤ TL ≤ et_mean = P0.8's perf WCET (assumption #1).
+- [x] `dev_log.md` (this folder) + memory updated (2026-07-31 step-5b entry). Top-level
+      `agents/dev_log.md` milestone to be appended at user commit.
+- [x] `git add` staged; user reviews (no commit).

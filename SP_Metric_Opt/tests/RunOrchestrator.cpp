@@ -211,6 +211,18 @@ int main(int argc, char** argv) {
         exec_time_file.close();
     }
 
+    // P0.6 — the offline safe-fallback compute time, reported SEPARATELY from the
+    // scheduler-ET metric. 0.0 for modes that don't pre-compute a fallback.
+    std::cout << "SafeFallbackComputeTime_s: "
+              << orchestrator.GetSafeFallbackComputeTime() << "\n";
+    std::string fallback_time_path =
+        output_folder + "/" + mode + "/safe_fallback_compute_time.txt";
+    std::ofstream fallback_time_file(fallback_time_path);
+    if (fallback_time_file.is_open()) {
+        fallback_time_file << orchestrator.GetSafeFallbackComputeTime() << "\n";
+        fallback_time_file.close();
+    }
+
     const auto& metrics = orchestrator.GetIntervalSPMetrics();
     if (!metrics.empty()) {
         double sum = std::accumulate(metrics.begin(), metrics.end(), 0.0);

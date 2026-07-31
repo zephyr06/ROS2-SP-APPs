@@ -84,9 +84,26 @@ public:
                      RunQueue& run_queue, std::unordered_map<int, std::vector<float>>& traces,
                      std::unordered_map<int, size_t>& trace_indices, int processor_id = -1);
 
+    // P0.6 — wall-time of the offline safe-fallback compute (pre-call in
+    // RunSimulation). Separate from scheduler_exec_time_s_: the fallback is an
+    // offline artifact, NOT an online scheduler decision. Written to
+    // safe_fallback_compute_time.txt.
+    double GetSafeFallbackComputeTime() const {
+        return safe_fallback_compute_time_s_;
+    }
+
+protected:
+    // P0.6 — test access to the persistent optimizer (the fallback lives on it).
+    const OptimizePA_Incre_with_TimeLimits& GetIncrOptimizer() const {
+        return incr_optimizer_;
+    }
+
 private:
     std::string scheduler_mode_;
     OptimizePA_Incre_with_TimeLimits incr_optimizer_;
+
+    // P0.6 — see GetSafeFallbackComputeTime().
+    double safe_fallback_compute_time_s_ = 0.0;
 
     void SimulateInterval(int interval_idx, LLint start_time, LLint end_time);
 };

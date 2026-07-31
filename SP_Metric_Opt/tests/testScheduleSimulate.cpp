@@ -140,6 +140,12 @@ class TestOrchestrator : public FixedTaskPrioritySchedulingOrchestrator {
         return sp_parameters_vecs_;
     }
 
+    // P0.6 — expose the safe-fallback artifact (populated by the orchestrator's
+    // pre-call) + its separate compute-time profile, for TDD.
+    bool HasSafeFallback() const {
+        return GetIncrOptimizer().HasSafeFallback();
+    }
+
     std::vector<float> TestLoadTraces(int task_id, int path_idx, int inst_idx) {
         return LoadJobExecutionTraces(task_id, path_idx, inst_idx);
     }
@@ -208,6 +214,48 @@ TEST(OrchestratorTest, DeadlineMonotonicPriorityAssignment) {
     EXPECT_NEAR(3.6, sp_metrics[0], 1e-4);
     EXPECT_NEAR(3.86524, sp_metrics[1], 1e-4);
 }
+
+// P0.6 — the orchestrator pre-calls ComputeSafeFallback() after incr_optimizer_
+// construction (before the interval loop), so the fallback is ready for P0.7
+// WITHOUT inflating the online scheduler-ET metric. The pre-call site (RunSimulation,
+// after construction) is OUTSIDE DeterminePrioritiesAndBudgets's ET bracket, so
+// scheduler_exec_time_s_ stays the scheduler-only sum. The fallback compute is
+// profiled separately.
+TEST(OrchestratorTest, PreComputesSafeFallback_ExcludesSchedulerET) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_incr_static";
+
+    std::filesystem::remove_all(output_dir);
+
+    TestOrchestrator orchestrator(input_dir, output_dir, "INCR", 100);
+    orchestrator.RunSimulation();
+
+    // (1) The fallback artifact is populated by the orchestrator's pre-call.
+    EXPECT_TRUE(orchestrator.HasSafeFallback())
+        << "RunSimulation should pre-populate the safe fallback for INCR";
+
+    // (2) The fallback compute was timed (>0 — it ran a real walk).
+    EXPECT_GT(orchestrator.GetSafeFallbackComputeTime(), 0.0);
+
+    // (3) The job history still runs (the fallback doesn't break the sim loop).
+    const auto& history = orchestrator.GetJobHistory();
+    EXPECT_FALSE(history.empty());
+
+    // (4) The exclusion itself: a non-INCR mode (DM) does NOT pre-call
+    // ComputeSafeFallback, so its fallback compute time is EXACTLY 0. This proves
+    // the separate counter is written ONLY by the INCR pre-call site (RunSimulation,
+    // outside the interval loop), NEVER by the per-interval scheduler bracket — which
+    // DM also runs (DeterminePrioritiesAndBudgets is called every interval for DM).
+    // If the fallback compute leaked into the scheduler-ET path, DM would report >0
+    // here too. Exact-zero is non-flaky (no timing sensitivity).
+    TestOrchestrator dm_orchestrator(input_dir, output_dir, "DM", 100);
+    dm_orchestrator.RunSimulation();
+    EXPECT_DOUBLE_EQ(0.0, dm_orchestrator.GetSafeFallbackComputeTime())
+        << "non-INCR modes must not run (or time) the safe-fallback compute";
+}
+
 
 
 

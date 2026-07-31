@@ -155,27 +155,9 @@ bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = WouldBeatIncumbent(optimizer.opt_sp_, time_limits);
 
-    // P0.6 hard feasibility gate: the user's constrained-optimization objective
-    // (max SP s.t. every important task's ddl_miss_chance <= its SP threshold).
-    // A PURE extra acceptance test layered on the normal beat predicate — the
-    // process is otherwise identical to the flag-off path. Fires ONLY on a would-
-    // beat (the user's rule: "checked whenever we make progress from the
-    // champion; if challenger doesn't beat champion, we don't do the check").
-    // On a gate-REJECT, fall through to `return false` (no CommitIncumbent); the
-    // caller reports the incumbent SP (ghost-SP fix). Offline-only: the flag is
-    // set true solely in `ComputeStaticSolution` (step 5), never on online arms.
-    //
-    // RTA source: re-run the SAME `rta_cache_.Evaluate(dag_tasks_, pa, tl)`
-    // `CommitIncumbent` runs at :824 — the candidate's final {pa, tl} (PA descent
-    // already applied inside the eval lambda's `optimizer`). This is NOT the
-    // pre-descent `baseline_rtas` (which PA descent invalidated by overwriting
-    // the cache's scratch buffer) — `Evaluate` returns the challenger's actual
-    // RTA. |diff|<=1-cheap on the incremental walk path (the only path the gate
-    // is on): after PA descent the champion is either adopted to the candidate
-    // (|diff|==0, FullReuse) or the prior incumbent (|diff|==1, the walked task).
-    // `Evaluate` never mutates the champion, so the caller's cache_backup
-    // snapshot-revert stays sound on reject. Zero extra RTA eval on the flag-off
-    // path (the gate is skipped entirely).
+    // P0.6 gate: on a would-beat, commit only if every important task's
+    // ddl_miss_chance <= threshold. RTA re-runs the same rta_cache_.Evaluate
+    // CommitIncumbent uses (candidate's final {pa, tl}); reject -> no commit.
     if (should_update && enforce_important_task_gate_ &&
         !BFSharedBudgetCancelled()) {
         const std::vector<FiniteDist>& challenger_rtas =
@@ -690,6 +672,12 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskWithTimeLimit(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     const DAG_Model& dag_tasks_update, int beam_search_width) {
+    // P0.6 — lazy-populate the safe fallback on the first dispatch if the caller
+    // didn't pre-call (the orchestrator pre-calls to keep it out of scheduler-ET).
+    if (!HasSafeFallback()) {
+        ComputeSafeFallback();
+    }
+
     // One shared TIME_LIMIT budget for this interval's INCR call (covers both
     // branches + the disable_time_limit_opt bypass). Fresh per call — the
     // orchestrator reuses incr_optimizer_ across intervals, so construction-time
@@ -892,6 +880,49 @@ void OptimizePA_Incre_with_TimeLimits::SeedIncumbentFromDMFast() {
     double sp_dm = EvaluateSPWithPriorityVec(dag_with_tl_min, sp_parameters_,
                                              pa_dm);
     SeedStateFromIncumbent(dag_with_tl_min, pa_dm, sp_dm, tl_min);
+}
+
+// P0.6 — the offline safe-fallback artifact. Seeds at the P0.8-certified point
+// (DM PA + TL <= et_mean), runs a gate-governed TL walk on a throwaway sibling, and
+// keeps the best-SP gate-feasible result. See header for the isolation contract.
+ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback() {
+    // The gate is probabilistic — force the real ET dist (not WCET) and TL-opt-on.
+    bool prev_disable_tl_opt = GlobalVariables::disable_time_limit_opt;
+    bool prev_use_wcet = GlobalVariables::use_wcet_execution_time;
+    GlobalVariables::disable_time_limit_opt = false;
+    GlobalVariables::use_wcet_execution_time = false;
+
+    // Own budget around the whole compute (seed eval + walk): the lazy dispatcher
+    // path runs this BEFORE its own budget is installed, so without one a runaway
+    // seed SP-eval could strand the compute past TIME_LIMIT (testINCRTimeout).
+    BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
+
+    // Throwaway sibling carries the gate-governed walk so the live incumbent is never
+    // seeded from the fallback (a P0.7 injection, not P0.6).
+    OptimizePA_Incre_with_TimeLimits fallback_solver(dag_tasks_, sp_parameters_);
+    fallback_solver.enforce_important_task_gate_ = true;
+
+    // Seed at the certified point: DM PA + et_mean-bounded TL (TL <= et_mean →
+    // ddl_miss_chance = 0 → seed gate-feasible, so the gate can only REJECT).
+    std::vector<double> tl_seed = fallback_solver.SeedTimeLimitsAtOrBelowEtMean();
+    PriorityVec pa_dm = fallback_solver.DeadlineMonotonicPriorityVec();
+    DAG_Model dag_with_tl =
+        UpdateExtDistBasedOnTimeLimit(fallback_solver.dag_tasks_, tl_seed);
+    double sp_seed =
+        EvaluateSPWithPriorityVec(dag_with_tl, fallback_solver.sp_parameters_, pa_dm);
+    fallback_solver.SeedStateFromIncumbent(dag_with_tl, pa_dm, sp_seed, tl_seed);
+
+    // Gate-governed incremental walk; PA descent runs normally under the gate.
+    fallback_solver.OptimizeIncre_w_TL(
+        fallback_solver.dag_tasks_,
+        GlobalVariables::Layer_Node_During_Incremental_Optimization);
+    fallback_solver.enforce_important_task_gate_ = false;
+
+    GlobalVariables::disable_time_limit_opt = prev_disable_tl_opt;
+    GlobalVariables::use_wcet_execution_time = prev_use_wcet;
+
+    safe_fallback_ = fallback_solver.CollectResults();
+    return *safe_fallback_;
 }
 
 // Reset the incumbent baseline before the descent's baseline eval.

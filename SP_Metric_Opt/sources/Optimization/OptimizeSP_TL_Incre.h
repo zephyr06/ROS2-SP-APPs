@@ -330,6 +330,13 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // only at interval 0 on a fresh optimizer (nothing to clear).
     void SeedIncumbentFromDMFast();
 
+    // P0.6 — the offline safe-fallback artifact. Seeds at the P0.8-certified point
+    // (DM PA + TL <= et_mean), runs a gate-governed TL walk on a throwaway sibling, and
+    // keeps the best-SP gate-feasible result. Sibling isolation → online byte-identical.
+    ResourceOptResult ComputeSafeFallback();
+    bool HasSafeFallback() const { return safe_fallback_.has_value(); }
+    const ResourceOptResult& GetSafeFallback() const { return *safe_fallback_; }
+
     // Incumbent-state helpers. res_opt_ is the single durable store;
     // CommitIncumbent is its only writer. BuildChallengerFromIncumbent rebuilds a
     // throwaway challenger from res_opt_ each candidate (not persistent); the
@@ -342,6 +349,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
 
     // data members
     ResourceOptResult res_opt_;
+    // P0.6 — the offline safe-fallback artifact. Separate from res_opt_ so the live
+    // incumbent stays untouched (byte-identical online). Consumed by P0.7's fall-back.
+    std::optional<ResourceOptResult> safe_fallback_;
     // Single-champion RTA cache; mirrors res_opt_ (adopted at CommitIncumbent,
     // reset at ResetIncumbentBaseline). Routes the SubIncremental baseline
     // re-score through the cache.
@@ -352,20 +362,10 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // but can commit a >1 change via memoryless OptimizeFromScratch) neither
     // throws in Evaluate nor regresses. CommitIncumbent does cache work iff true.
     bool rta_cache_active_ = false;
-    // P0.6 step 4b — the hard per-candidate feasibility gate. When true,
-    // `UpdateRecords` (the commit chokepoint) adds ONE extra acceptance test on
-    // top of `WouldBeatIncumbent`: a candidate that WOULD beat the incumbent is
-    // committed only if `ImportantTasksMeetThresholds` passes — i.e. every
-    // important task's probabilistic ddl_miss_chance stays <= its SP threshold
-    // under the candidate {pa, tl} (the user's constrained-optimization objective:
-    // max SP s.t. the gate). A gate-REJECT returns false (no `CommitIncumbent`);
-    // the caller (`OptimizeIncreSingleTask`) then reports the INCUMBENT SP (not
-    // the rejected candidate's better SP) so the walk's `IsBetterTimeLimitOption`
-    // sees "no progress" and never tracks the rejected TL (ghost-SP fix). The
-    // optimization process is OTHERWISE IDENTICAL to the flag-off path: PA
-    // descent runs normally, the gate is purely an extra accept/reject criterion
-    // at the comparison step. Default false → prod byte-identical. Set true only
-    // inside the offline `ComputeStaticSolution` (step 5); never on the online arms.
+    // P0.6 — hard per-candidate feasibility gate. When true, `UpdateRecords` adds an
+    // extra acceptance test on a would-beat: the candidate commits only if
+    // `ImportantTasksMeetThresholds` passes. Default false → prod byte-identical;
+    // set true only inside `ComputeSafeFallback`.
     bool enforce_important_task_gate_ = false;
     // Transient per-call TL search window, recorded fresh each call. Not part of
     // the incumbent (the carried TL lives in res_opt_.id2time_limit).

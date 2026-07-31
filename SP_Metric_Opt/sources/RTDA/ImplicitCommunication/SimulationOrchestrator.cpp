@@ -299,6 +299,17 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
         scheduler_mode_ == "INCR_NO_REOPT") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
+
+        // P0.6 — pre-compute the offline safe fallback ONCE, after construction and
+        // before the interval loop. Pre-calling keeps it OUT of the per-interval
+        // scheduler-ET metric (this site is outside DeterminePrioritiesAndBudgets's
+        // bracket) and profiles it separately. The throwaway-sibling compute leaves
+        // the live incumbent untouched → online byte-identical. P0.7 wires the USE.
+        auto fallback_start = std::chrono::high_resolution_clock::now();
+        incr_optimizer_.ComputeSafeFallback();
+        auto fallback_end = std::chrono::high_resolution_clock::now();
+        safe_fallback_compute_time_s_ =
+            std::chrono::duration<double>(fallback_end - fallback_start).count();
     }
 
     for (size_t i = 0; i < dag_tasks_vecs_.size(); i++) {
