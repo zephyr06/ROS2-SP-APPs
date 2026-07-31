@@ -132,13 +132,25 @@ double ObtainSP_Full_From_NodeRTAs(
 // P0.9). With no important tasks the universal quantifier is vacuously true
 // (the constraint is free — the design's "seed region" degenerate case).
 //
-// Computation mirrors the cache-path SP eval (`ObtainSP_Full_From_NodeRTAs` →
-// `ObtainSP_DAG_From_Dists` → `ObtainSP` → `GetDDL_MissProbability`): bake TLs
-// into the ET dists (perf → point mass at tl[i]; -1 leaves the base Gaussian),
-// apply the priority assignment (sort), compute the per-task RTA distribution
-// via `ProbabilisticRTA_TaskSet`, then read each important task's miss chance
-// against its threshold. Uses `std::vector<int>` for `priority_assignment`
-// (same cycle-avoidance reason as `ObtainSP_Full_From_NodeRTAs` above).
+// CALLER PASSES THE ALREADY-COMPUTED PER-TASK RTAs (`node_rtas`). The gate's
+// real caller is the TL walk's adoption site, which ALREADY materializes the
+// node RTAs when it scores SP — the cache-path SP eval is
+// `rta_cache_.Evaluate(dag, pa, tl)` → `ObtainSP_Full_From_NodeRTAs(dag, sp,
+// pa, tl, node_rtas)` (`OptimizeSP_TL_Incre.cpp:238-243`). Re-deriving the
+// RTAs here (the prior shape A, via `ProbabilisticRTA_TaskSet`) would
+// duplicate exactly that work on every ADOPTED candidate → wasteful. So the
+// gate mirrors `ObtainSP_Full_From_NodeRTAs`: accept the caller's RTAs.
+//
+// CONTRACT (identical to `ObtainSP_Full_From_NodeRTAs` above): `node_rtas[i]`
+// MUST be the RTA of the task at position i in
+// `UpdateTaskSetPriorities(ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks,
+// tl), priority_assignment)` — i.e. the exact vector an RTACache fed the SAME
+// (dag_tasks, pa, tl) returns, OR a fresh `ProbabilisticRTA_TaskSet` of that
+// prioritized set. The bake+prioritize happens INSIDE this predicate (same as
+// `ObtainSP_Full_From_NodeRTAs`) so `node_rtas[i]` pairs with the prioritized
+// task at index i. `tl[i] == -1` means no TL for task i. Uses
+// `std::vector<int>` for `priority_assignment` (same cycle-avoidance reason as
+// `ObtainSP_Full_From_NodeRTAs` above).
 //
 // This is the GATE PREDICATE; it does NOT alter SP or the optimizer state. The
 // static-solution TL walk adopts an SP-better candidate TL only when this
@@ -150,7 +162,8 @@ double ObtainSP_Full_From_NodeRTAs(
 bool ImportantTasksMeetThresholds(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<int>& priority_assignment,
-    const std::vector<double>& tl);
+    const std::vector<double>& tl,
+    const std::vector<FiniteDist>& node_rtas);
 
 double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& mpc_path, std::string& tsp_path,

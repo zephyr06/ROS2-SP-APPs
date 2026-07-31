@@ -198,37 +198,37 @@ double ObtainSP_Full_From_NodeRTAs(
 }
 
 // P0.6 step 4 — the hard feasibility gate predicate (see header). Mirrors the
-// bake+prioritize+RTA path of `ObtainSP_Full_From_NodeRTAs`, then reads each
+// bake+prioritize path of `ObtainSP_Full_From_NodeRTAs`, then reads each
 // IMPORTANT task's per-task ddl_miss_chance against its threshold instead of
-// aggregating into SP. Re-derives the per-task RTAs via `ProbabilisticRTA_TaskSet`
-// (shape A — one RTA eval per predicate call); acceptable as a pure standalone
-// predicate called once per SP-better ADOPTED candidate (skipped candidates
-// never reach here). The zero-extra-eval variant (thread miss-chances out of
-// the existing SP eval) is a later optimization, deferred until the wiring
-// proves the gate's value.
+// aggregating into SP. Does NOT re-derive RTAs: the caller passes the node RTAs
+// it ALREADY materialized when scoring SP (the cache-path SP eval's
+// `rta_cache_.Evaluate` → `ObtainSP_Full_From_NodeRTAs`), so this is zero-extra-
+// RTA-eval — the prior shape A (`ProbabilisticRTA_TaskSet` per call) would have
+// duplicated the cache's work on every ADOPTED candidate.
 bool ImportantTasksMeetThresholds(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<int>& priority_assignment,
-    const std::vector<double>& tl) {
+    const std::vector<double>& tl,
+    const std::vector<FiniteDist>& node_rtas) {
     // Bake TLs into the ET dists (perf -> point mass at tl[i]; -1 -> base dist),
     // then apply the candidate priority assignment. Identical to the SP eval's
-    // setup so the miss-chances here match what SP saw.
+    // setup (`ObtainSP_Full_From_NodeRTAs`) so `node_rtas[i]` pairs with
+    // `tasks_prioritized[i]` — the caller's RTAs were derived from this SAME
+    // bake+prioritize (cache or `ProbabilisticRTA_TaskSet`), so the indices align.
     TaskSet tasks_baked =
         ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
     TaskSet tasks_prioritized =
         UpdateTaskSetPriorities(tasks_baked, priority_assignment);
 
-    // Per-task RTA distributions under the prioritized + TL-baked taskset.
-    // `ProbabilisticRTA_TaskSet` returns RTAs positional to `tasks_prioritized`
-    // (index i <-> tasks_prioritized[i]).
-    std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks_prioritized);
-
+    // The caller-supplied `node_rtas[i]` is the RTA of `tasks_prioritized[i]`
+    // (the gate's CONTRACT — see the header). No `ProbabilisticRTA_TaskSet`
+    // call: the caller already paid for it when scoring SP.
     for (size_t i = 0; i < tasks_prioritized.size(); i++) {
         if (!tasks_prioritized[i].is_important) {
             continue;  // the guarantee is scoped to important tasks only
         }
         double ddl_miss_chance = GetDDL_MissProbability(
-            rtas[i], tasks_prioritized[i].deadline);
+            node_rtas[i], tasks_prioritized[i].deadline);
         double threshold =
             sp_parameters.thresholds_node.at(tasks_prioritized[i].id);
         if (ddl_miss_chance > threshold) {

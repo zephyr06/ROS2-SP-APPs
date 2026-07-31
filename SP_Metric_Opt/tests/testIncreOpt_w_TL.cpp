@@ -16,6 +16,23 @@ using namespace std;
 using namespace SP_OPT_PA;
 using namespace GlobalVariables;
 
+// Builds the per-task node RTAs for a candidate {pa, tl} the SAME way the
+// cache-path SP eval's caller does (`rta_cache_.Evaluate` is byte-identical to
+// this — see the RTACache oracle tests): apply TLs -> apply pa ->
+// `ProbabilisticRTA_TaskSet`. The gate predicate (`ImportantTasksMeetThresholds`)
+// takes these already-computed RTAs rather than re-deriving them, so each gate
+// test feeds the candidate's RTAs through this helper. `node_rtas[i]` pairs
+// with the prioritized task at index i — the gate's CONTRACT.
+std::vector<FiniteDist> NodeRTAsForCandidate(
+    const DAG_Model& dag_tasks, const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl) {
+    TaskSet tasks_with_tl =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized =
+        UpdateTaskSetPriorities(tasks_with_tl, priority_assignment);
+    return ProbabilisticRTA_TaskSet(tasks_prioritized);
+}
+
 class TaskSetForTest_2tasks : public ::testing::Test {
    public:
     void SetUp() override {
@@ -752,13 +769,20 @@ TEST_F(CompareAndKeepSynthetic, SeedTimeLimitsAtOrBelowEtMean) {
 }
 
 // --- P0.6 step 4: the hard per-candidate feasibility gate's pure predicate. ---
-// ImportantTasksMeetThresholds(dag, sp_params, pa, tl) answers the user's hard
-// guarantee: does EVERY important task's probabilistic ddl_miss_chance stay at
-// or below its SP threshold under the candidate {pa, tl}? It is the gate
-// predicate the static-solution TL walk adopts on (reject SP-better candidates
-// that violate an important task's threshold; keep feasible ones). Tested here
-// in isolation against a synthetic 2-task DAG whose ddl_miss_chance we control
-// via deadline + threshold + TL.
+// ImportantTasksMeetThresholds(dag, sp_params, pa, tl, node_rtas) answers the
+// user's hard guarantee: does EVERY important task's probabilistic
+// ddl_miss_chance stay at or below its SP threshold under the candidate {pa,
+// tl}? It is the gate predicate the static-solution TL walk adopts on (reject
+// SP-better candidates that violate an important task's threshold; keep
+// feasible ones). Tested here in isolation against a synthetic 2-task DAG whose
+// ddl_miss_chance we control via deadline + threshold + TL.
+//
+// The gate takes the ALREADY-COMPUTED node RTAs (its real caller — the TL walk's
+// adoption site — materializes them when scoring SP via
+// `rta_cache_.Evaluate` → `ObtainSP_Full_From_NodeRTAs`; re-deriving would
+// duplicate that work). So each test builds `node_rtas` the SAME way the
+// cache-path caller will: apply TLs → apply pa → `ProbabilisticRTA_TaskSet`
+// (the oracle the cache is byte-identical to — see the RTACache tests above).
 //
 // Setup (CompareAndKeepSynthetic fixture): T_perf (id 0, important? NO by
 // default) ET~500@TL, T_noise (id 1) ET~50. To exercise the gate we mark
@@ -774,7 +798,8 @@ TEST_F(CompareAndKeepSynthetic, ImportantTasksMeetThresholds_AdmitsWhenMissChanc
     // < 0.5 → feasible.
     std::vector<double> tl = {400.0, -1.0};
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+    std::vector<FiniteDist> node_rtas = NodeRTAsForCandidate(dag_tasks, pa, tl);
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl, node_rtas));
 }
 
 TEST_F(CompareAndKeepSynthetic,
@@ -786,7 +811,8 @@ TEST_F(CompareAndKeepSynthetic,
     dag_tasks.tasks[0].deadline = 1.0;  // impossibly tight: RT >> 1
     std::vector<double> tl = {400.0, -1.0};
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    EXPECT_FALSE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+    std::vector<FiniteDist> node_rtas = NodeRTAsForCandidate(dag_tasks, pa, tl);
+    EXPECT_FALSE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl, node_rtas));
 }
 
 TEST_F(CompareAndKeepSynthetic,
@@ -800,7 +826,8 @@ TEST_F(CompareAndKeepSynthetic,
     dag_tasks.tasks[0].deadline = 1.0;  // non-important T_perf misses badly
     std::vector<double> tl = {400.0, -1.0};
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+    std::vector<FiniteDist> node_rtas = NodeRTAsForCandidate(dag_tasks, pa, tl);
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl, node_rtas));
 }
 
 TEST_F(CompareAndKeepSynthetic,
@@ -810,7 +837,8 @@ TEST_F(CompareAndKeepSynthetic,
     // "seed region: ddl_miss_chance = 0" claim's degenerate case).
     std::vector<double> tl = {400.0, -1.0};
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl));
+    std::vector<FiniteDist> node_rtas = NodeRTAsForCandidate(dag_tasks, pa, tl);
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl, node_rtas));
 }
 
 TEST_F(CompareAndKeepSynthetic,
