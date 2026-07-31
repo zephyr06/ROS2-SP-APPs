@@ -994,3 +994,224 @@ the fall-back artifact end-to-end (seed → gate-governed walk → store → orc
 ET-jump before opt → use `static_solution_` directly; (b) in-walk HALT on first unsafe
 candidate → compare incumbent vs static SP → pick higher). The artifact is ready for P0.7 to
 consume via `incr_optimizer_.GetStaticSolution()`.
+
+---
+
+## 2026-07-31 — step 5 post-review refinement (rename + comment trim + reopt-then-incre)
+
+User review of step 5 raised 5 items (records-first per the coding rules; code changes
+follow once the plan is logged):
+
+1. **Rename** `static_solution` → `SafeFallback` solution (the artifact IS the safe fall-
+   back P0.7 swaps in). Rename applies to the C++ surface: `ComputeStaticSolution` →
+   `ComputeSafeFallback`, `static_solution_` → `safe_fallback_`, `HasStaticSolution` →
+   `HasSafeFallback`, `GetStaticSolution` → `GetSafeFallback`,
+   `static_solution_compute_time_s_` → `safe_fallback_compute_time_s_`,
+   `GetStaticSolutionComputeTime` → `GetSafeFallbackComputeTime`, the
+   `static_solution_compute_time.txt` output file, the `StaticSolutionComputeTime_s:`
+   print line, and the test method `TestOrchestrator::HasStaticSolution`. Per
+   [[prefer-existing-codebase-symbol-names]] this is a rename of OUR P0.6 symbols (none
+   predate P0.6), so no external term is displaced. The `P0_6_static_solution/` folder
+   name stays (folder renames churn paths across records; the symbol rename is the
+   user-visible win).
+
+2. **Trim comments.** `ComputeStaticSolution` carries 3 multi-line comment blocks (the
+   ablation save/restore, the BFDLSharedBudget rationale, the throwaway-sibling
+   rationale) + the gate's `UpdateRecords` comment is ~20 lines. Per the new coding rule
+   ("code speaks for itself without comments... ideally <3 lines, never >5"), compress
+   each to ≤3 lines or delete where the code is self-explanatory. The TIMEOUT-REGRESSION
+   FIX rationale is the one piece worth a short note (it's load-bearing and non-obvious)
+   — keep it ≤3 lines.
+
+3. **Orchestrator explicit pre-call — ALREADY DONE.** `SimulationOrchestrator.cpp:313-317`
+   already explicitly calls `incr_optimizer_.ComputeStaticSolution()` after construction
+   (`:300-301`), before the interval loop (`:320-324`), OUTSIDE the
+   `DeterminePrioritiesAndBudgets` ET bracket (`:329+`). The lazy dispatcher check
+   (`Optimize_w_TL_ScratchOrIncre:699-701`) is ONLY a safety net for callers that skip
+   the pre-call (e.g. unit tests). So the user's concern (the static compute must NOT
+   fall into scheduler-ET profiling) is already structurally satisfied + asserted by
+   `PreComputesStaticSolution_ExcludesSchedulerET` (the DM-mode `==0.0` assertion). NO
+   code change for item 3 — record the fact + point the user at the site.
+
+4. **`sub` is a bad name** — rename to `fallback_solver` (it IS the solver that produces
+   the safe-fallback; matches the item-1 rename).
+
+5. **Reopt-then-incremental inside `ComputeStaticSolution`.** User hypothesis: calling
+   `ReOptimizePeriodic` (from-scratch beam search) FIRST, then `OptimizeIncre_w_TL`
+   (incremental walk) to refine, may find a better-SP feasible solution than the
+   incremental-only walk. This is a REAL improvement (the from-scratch beam explores PA
+   + TL jointly from a clean slate; the incremental walk only refines the carried
+   incumbent's TL). BUT it has a HARD blocker the incremental-only path does not:
+
+   **The gate vs the reopt cache path is INCOMPATIBLE as-is.** The gate
+   (`UpdateRecords:179-188`) calls `rta_cache_.Evaluate(dag_tasks_, pa, tl)`
+   UNCONDITIONALLY on a would-beat — NOT gated on `rta_cache_active_`. On the incremental
+   path the cache is armed (`SeedBaselineAndArmCache` Incremental branch `:482-483`),
+   so the champion is consistent and `Evaluate` is a |diff|<=1 patch. On the REOPT path
+   `SeedBaselineAndArmCache` Reopt branch (`:498-530`) does `ResetIncumbentBaseline(true)`
+   which CLEARS the cache (`rta_cache_ = RTACache()`, `:981`) and leaves it DISARMED
+   through the from-scratch beam (`CallOptimizerGivenTimeLimits(from_scratch=true)` at
+   `:504-505`). So when the gate fires inside that beam's `UpdateRecords`:
+     - `rta_cache_.Evaluate` sees no champion → `Initialize` (`RTA_Cache.cpp:439-440`)
+       SETS a champion from the CANDIDATE's {pa,tl}.
+     - The candidate is a from-scratch beam result; it may differ from the eventually
+       committed incumbent by >1 task.
+     - After the beam, the re-arm at `:513-517` calls `Evaluate`+`AdoptChampion` on the
+       COMMITTED triple. If committed ≠ gate-initialized champion by >1 task →
+       `ComputeTaskSetDifference` throws `|diff|>1` (`RTA_Cache.cpp:358`) → SIGABRT.
+   `CommitIncumbent` itself is safe on the reopt path (its cache writes are gated on
+   `rta_cache_active_`, `:872`, false during the beam) — the leak is the GATE's
+   unconditional `Evaluate`.
+
+   **Resolution options (open — needs user pick before coding item 5):**
+   - (A) Gate the gate on `rta_cache_active_`: skip the `ImportantTasksMeetThresholds`
+     check when `!rta_cache_active_` (the reopt from-scratch beam). Cost: the from-scratch
+     beam's candidates are NOT gate-checked → an infeasible PA/TL could be committed as
+     the reopt baseline, then the incremental walk refines FROM it under the gate. The
+     walk's gate can still reject infeasible TL MOVES but can't undo an infeasible
+     baseline PA. Weakens the guarantee on the reopt phase.
+   - (B) Arm the cache BEFORE the from-scratch beam on the reopt path too (seed the
+     champion from the DM incumbent the static-solution compute already committed), so
+     the gate's `Evaluate` is a |diff|<=1 patch. But the from-scratch beam's PA moves
+     are NOT single-change vs the DM champion → `ComputeTaskSetDifference` throws
+     mid-beam. Doesn't work without relaxing the cache's single-change invariant.
+   - (C) Run the from-scratch beam with the gate OFF (option A), accept its committed
+     baseline, THEN run the incremental walk with the gate ON to refine TLs. This is
+     exactly "reopt to find one solution, then incremental to improve it" — the reopt
+     phase explores broadly (no gate, may commit infeasible PA), the incremental phase
+     enforces the gate on every TL move from there. The stored artifact's gate-feasibility
+     then rests on the INCREMENTAL walk's gate, NOT the reopt baseline. If the reopt
+     baseline is infeasible, the walk's first gate-checked move away from it must land
+     feasible — not guaranteed.
+   - (D) Re-derive the gate's RTA source OUTSIDE the cache (a fresh
+     `ProbabilisticRTA_TaskSet` per check, the prior shape-A the step-4a zero-extra-eval
+     decision rejected for the incremental path). For the reopt path this is the ONLY
+     way to gate-check a >1-different candidate soundly. Cost: one full RTA recompute
+     per adopted reopt candidate (the from-scratch beam adopts rarely — only on strict
+     SP improvement — so the cost is bounded). This is the SOUND option but undoes the
+     "zero-extra-eval" property of step 4a ON THE REOPT PATH ONLY (the incremental path
+     keeps the cache pass-through).
+
+   **Recommendation: (D) for the reopt phase + keep (cache pass-through) for the
+   incremental phase**, gated on `rta_cache_active_`: when the cache is armed
+   (incremental), use the champion RTA; when disarmed (reopt from-scratch beam), recompute
+   a fresh RTA for the gate check. This keeps the incremental path's zero-extra-eval
+   intact AND makes the reopt phase sound. The `ImportantTasksMeetThresholds` predicate
+   already takes `node_rtas` by param — the caller can supply either source. NEEDS USER
+   CONFIRMATION before coding (design choice, per "ask users if not certain about design
+   choices").
+
+   **Test impact (item 5):** `ComputeStaticSolution_PopulatesGateHeldArtifact` asserts
+   the stored PA == `DeadlineMonotonicPriorityVec()` (the seed). If reopt runs PA
+   descent, the stored PA may DIFFER from the DM seed (reopt found a higher-SP PA still
+   passing the gate — exactly the group-lock-moot argument from step 4b v2). That
+   assertion must relax to "PA is gate-feasible" (re-derive RTAs + check the predicate),
+   NOT "PA == DM seed". The `ComputeStaticSolution_LeavesLiveIncumbentUntouched` and
+   dispatcher tests are unaffected (they check isolation/lazy-populate, not PA shape).
+
+   **DECISION (user, 2026-07-31): SKIP item 5.** The gate-vs-reopt-cache incompatibility
+   makes a sound reopt-then-incre either costly (option D: fresh RTA per adopted reopt
+   candidate, undoing step-4a's zero-extra-eval on the reopt path) or weak-guarantee
+   (options A/C: the reopt baseline could be infeasible, resting the artifact's
+   feasibility on the incremental walk's gate alone). User chose to forego the from-
+   scratch beam exploration — `ComputeStaticSolution` stays incremental-only (the DM-
+   seeded TL walk under the gate). Re-file if the artifact's SP quality is later found
+   insufficient. No test changes needed (the `PA == DM seed` assertion stays valid: the
+   incremental walk's PA descent is TL-only... wait — step 4b v2 re-enabled PA descent
+   unconditionally under the gate, so the stored PA CAN still differ from the DM seed via
+   the INCREMENTAL walk's own PA descent. The existing test passes today because on its
+   2-task fixture T_perf is already top-priority → PA descent finds no strict-improving
+   move → stored PA == DM seed coincidentally. That assertion is fixture-fragile but not
+   changed by skipping item 5 — leave it; item 5 is skipped, not the assertion.)
+
+**Status:** items 1, 2, 4 are mechanical (rename + comment trim + var rename) — land as
+one module. Item 3 is a no-op (already done; record only). Item 5 SKIPPED (user
+decision).
+
+## 2026-07-31 (section 7 post-review refinement LANDED: rename + comment trim, verified)
+
+- **Resumed on the post-review refinement (section 7).** Found the rename (items 1 + 4)
+  ALREADY applied in the working tree from a prior session — `static_solution`→`SafeFallback`
+  across the full C++ surface (`ComputeSafeFallback`, `safe_fallback_`, `HasSafeFallback`,
+  `GetSafeFallback`, `safe_fallback_compute_time_s_`, `GetSafeFallbackComputeTime`,
+  `safe_fallback_compute_time.txt`, `SafeFallbackComputeTime_s:`,
+  `TestOrchestrator::HasSafeFallback`) + `sub`→`fallback_solver`. `grep`-verified: ZERO
+  remaining `static_solution`/`StaticSolution` references in `sources`+`tests`.
+- **Item 2 (comment trim) — the only code change this session.** The gate's `UpdateRecords`
+  comment block (`OptimizeSP_TL_Incre.cpp:158-161`) was 4 lines → trimmed to 3 (kept the
+  RTA-source + reject semantics; dropped the redundant "caller reports incumbent SP" line,
+  which the eval-tail ghost-SP comment already documents). `ComputeSafeFallback`'s own
+  comments (header `:333-335` + `.cpp:886-888, 896-898, 901-902, 906-907, 916`) were
+  ALREADY ≤3 lines each, incl. the load-bearing TIMEOUT-REGRESSION note (`:896-898`,
+  kept). The eval-tail ghost-SP + cancel-contract comments (`:254-289, 295-310`) are
+  pre-existing P2.11/P0.6 step-4b doc, untouched (out of this refinement's scope).
+- **Build:** `cmake --build build_test --target check.SP_OPT -j5` = **17/17 green**
+  (incl. `testINCRTimeout` 3.15s, `testIncreOpt_w_TL` 1.78s, `testScheduleSimulate` 0.09s).
+  No header-layout change this session → no `--clean-first` needed (the prior session's
+  rename already built clean).
+- **Records:** tasks.md section 7 checkboxes flipped to [x] for items 1/2/4 (were [ ]
+  despite the code being landed); item 3 [x] (no-op, record only); item 5 [x] (SKIPPED,
+  user decision). All section-7 items now closed.
+- **Status:** section 7 complete. P0.6 step 5 (ComputeSafeFallback artifact + orchestrator
+  pre-call + ET-exclusion) + the post-review rename/comment-trim are all LANDED in the
+  working tree, git add-only — NOT committed. Awaiting user review + commit. P0.6
+  PRODUCES the fall-back artifact end-to-end; P0.7 wires the fall-back USE.
+
+## 2026-07-31 — worst-case-DAG redesign (cross-interval safety for P0.7 trigger (a))
+
+**Trigger.** P0.7 design review surfaced that trigger (a) (ET-jump swap-in of
+`safe_fallback_`) was UNSAFE under the 2026-07-30 design: that design certified
+`safe_fallback_` against the *single taskset* `ComputeSafeFallback` was invoked on, but
+trigger (a) swaps it in on a *different* (jumped) interval. The user pushed back that the
+old "safe at WCET across all intervals" argument should still hold; investigation showed
+the redesign had dropped the exact piece (old D2, global-max WCET) that argument relied on.
+
+**Two code facts (verified this session):**
+1. `ComputeSafeFallback` forces `use_wcet_execution_time = false`
+   (`OptimizeSP_TL_Incre.cpp:893`) → env tasks (TL=−1) keep their **base Gaussian** (NOT a
+   WCET point mass) during the compute. So the certificate was "safe at interval-i's env
+   distribution," NOT "safe at env WCET."
+2. The generator's per-interval `Et_sigma = np.std(subset)` (`orchestrator.py:375`) is
+   **independent of the mean** (re-sampled per interval; `Et_sigma = Et_mean *
+   uniform(0.5,0.6)` at `taskset_generator.py:257-258`). So "longest-by-avg-ET" does NOT
+   bound `ddl_miss_chance`: a lower-mean interval can carry a fatter tail / larger
+   `execution_time_max` and escape the certificate.
+
+**User direction (verbatim, 2026-07-31):** "caller should iterate through all the
+intervals' yaml file, and for each task, record the 'longest' ET distribution (measured by
+avg ET). after done, caller will construct a new dag_tasks where each task uses their
+longest ET distribution. then caller use that dag to invoke the current algorithm to find
+safe fallback solution for important tasks, that would be a safe fallback across all
+intervals... if that safe fallback state cannot be found... fail loudly, ask user to
+re-generate a new task set. i feel this new fall back solution will be safe at all
+intervals, as we use the WCET of all possible combination."
+
+**Refinement (shape-assumption check).** The user's "longest by avg ET" rule is NOT sound
+(sigma is mean-independent → not stochastic dominance). But the user's *safety intuition*
+("WCET of all possible combination") IS the sound fix. Resolved as: per task, take the
+**point mass at `max(execution_time_max)` across all interval YAMLs** (env/non-perf; perf
+tasks are already point-masses at TL, bounded by the runtime downward cap
+`min(et_mean,TL)`). Any interval's ET draw ≤ its `max_time` ≤ the worst-case max →
+stochastic dominance → the gate's `ddl_miss_chance` on the worst-case DAG is an upper bound
+for every interval → trigger (a) sound. D9 = worst-case DAG, RESOLVED.
+
+**Loud-fail (user direction):** post-walk gate re-check on the FINAL stored result (not
+just the seed — the walk may find a feasible smaller-TL point below an infeasible seed).
+On failure → raise loud, do NOT store (`HasSafeFallback()` stays false). Raising TL only
+worsens interference, so a seed-level miss is not walk-fixable; the final-check catches
+both "no feasible point" and (cheap insurance) "drift to infeasible" (the gate only
+rejects, so drift can't happen, but the check is cheap).
+
+**Scope:** the worst-case DAG is fed to the OFFLINE `ComputeSafeFallback` only. Online
+sim + online optimizer keep using the actual per-interval DAGs → **online byte-identical**.
+This is NOT the old `use_wcet_execution_time` global flag (which collapsed the online
+path too); it is a one-DAG construction at the offline call site.
+
+**Docs updated this session:** `goal.md` (new "WORST-CASE-DAG (2026-07-31)" section +
+header blockquote + D9 + Done-when + IS/IS-NOT); `tasks.md` (new section 8: steps 8a–8d +
+D9 RESOLVED + the finding recorded); P0.7 `goal.md`/`tasks.md` (rename
+`static_solution_`→`safe_fallback_`, fix trigger (a)'s safety argument to the worst-case
+DAG, D4 refined, drop stale global-max-WCET-as-flag references).
+
+**Status:** design + docs LANDED. NOT yet implemented (steps 8a–8d). Next: implement the
+worst-case-DAG builder (orchestrator) + wire into the pre-call + the loud-fail check, TDD.

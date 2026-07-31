@@ -6,18 +6,32 @@
 operating point the static solution seeds from). P0.7 (fall-back) depends on THIS task.
 **Blocks:** P0.7 (the fall-back swaps the static solution in when an online trigger fires).
 
-> **REDESIGNED 2026-07-30, then CONSTRAINT-MODE SETTLED same day.** The prior (2026-07-27) design
-> was: seed DM-grouped PA + min-TL → **WCET-mode TL walk** with a **skip-and-continue important-task-
-> schedulability filter** → best-SP-safe incumbent. The user's 2026-07-30 direction **simplifies the
-> seed**: seed at the SAME operating point P0.8's schedulability test certifies (TL = largest grid
-> option ≤ `et_mean`), then optimize, and keep it — **dropping** the WCET-mode flip and the
-> global-max WCET precompute (old D2). The user then set the objective — "find the best possible
-> performance while guaranteeing all important tasks' DDL miss chance ≤ SP thresholds" — which
-> **REVIVES a filter in a new form**: a **hard per-candidate gate on the probabilistic
-> `ddl_miss_chance ≤ threshold`** (normal ET mode, offline-scoped), NOT the old WCET point-mass RTA.
-> So: old D2 (WCET precompute) stays DROPPED; old D5/D6/D7 are REVIVED-RESCOPED (hard gate,
-> probabilistic, normal-ET). D1/D3/D4 stand; D8 RESOLVED via the gate. See "The algorithm" +
-> "Why a hard gate" below.
+> **REDESIGNED 2026-07-30, then CONSTRAINT-MODE SETTLED same day, then WORST-CASE-DAG REFINED
+> 2026-07-31.** The prior (2026-07-27) design was: seed DM-grouped PA + min-TL → **WCET-mode TL
+> walk** with a **skip-and-continue important-task-schedulability filter** → best-SP-safe incumbent.
+> The user's 2026-07-30 direction **simplifies the seed**: seed at the SAME operating point P0.8's
+> schedulability test certifies (TL = largest grid option ≤ `et_mean`), then optimize, and keep it —
+> **dropping** the WCET-mode flip and the global-max WCET precompute (old D2). The user then set the
+> objective — "find the best possible performance while guaranteeing all important tasks' DDL miss
+> chance ≤ SP thresholds" — which **REVIVES a filter in a new form**: a **hard per-candidate gate on
+> the probabilistic `ddl_miss_chance ≤ threshold`** (normal ET mode, offline-scoped), NOT the old
+> WCET point-mass RTA. So: old D2 (WCET precompute) stays DROPPED; old D5/D6/D7 are REVIVED-RESCOPED
+> (hard gate, probabilistic, normal-ET). D1/D3/D4 stand; D8 RESOLVED via the gate.
+>
+> **2026-07-31 WORST-CASE-DAG REFINEMENT (authoritative — supersedes the within-one-taskset safety
+> scope of the 2026-07-30 redesign):** the 2026-07-30 design certified `safe_fallback_` against the
+> *single taskset* `ComputeSafeFallback` was invoked on. That made trigger (a) (P0.7's ET-jump
+> swap-in) UNSAFE: a jumped interval's env distribution is not bounded by the certified interval's.
+> Verified two code facts: (1) `ComputeSafeFallback` forces `use_wcet_execution_time=false`
+> (`OptimizeSP_TL_Incre.cpp:893`) → env tasks (TL=−1) keep their **base Gaussian**, NOT a WCET point
+> mass, during the compute; (2) the generator computes per-interval `Et_sigma = np.std(subset)`
+> (`orchestrator.py:375`) **independent of the mean** → "longest-by-avg-ET" does NOT bound
+> `ddl_miss_chance` (a lower-mean interval can carry a fatter tail). The user's fix: **the CALLER
+> builds a worst-case DAG** (per task, the WCET point mass at `max(execution_time_max)` across all
+> interval YAMLs) and invokes `ComputeSafeFallback` on THAT → the certificate holds for every
+> interval (any interval's ET draw ≤ its `max_time` ≤ the worst-case point mass → stochastic
+> dominance → `ddl_miss_chance` bounded). Plus a **loud-fail** if the final stored result fails the
+> gate (the user's "re-generate a new task set"). See "WORST-CASE-DAG (2026-07-31)" below.
 
 ## Goal
 
@@ -87,6 +101,46 @@ live in P0.7, NOT here.
    **feasible-by-construction** (the gate never adopted a violating candidate) AND **best-SP-among-
    feasible** (the walk kept searching past skipped candidates). The fall-back (P0.7) swaps that
    pair in place of the optimizer's `res_opt_` when a trigger fires.
+
+### WORST-CASE-DAG (2026-07-31 — authoritative for cross-interval safety)
+
+The 2026-07-30 design scoped `safe_fallback_`'s safety to the *single taskset* it was computed on.
+P0.7's trigger (a) swaps `safe_fallback_` in on an **ET-jump across intervals** — a different taskset.
+Two code facts made that swap unsafe under the 2026-07-30 design:
+
+1. `ComputeSafeFallback` forces `use_wcet_execution_time = false` (`OptimizeSP_TL_Incre.cpp:893`).
+   So env tasks (TL=−1) keep their **base Gaussian** during the compute — the certificate is
+   "safe at interval-i's env distribution," NOT "safe at env WCET."
+2. The generator's per-interval `Et_sigma = np.std(subset)` (`orchestrator.py:375`) is **independent
+   of the mean** (re-sampled per interval). So a jumped interval with a lower mean but fatter tail /
+   larger `execution_time_max` could yield a *higher* `ddl_miss_chance` than the certified interval →
+   the certificate does not cover it. ("Longest-by-avg-ET" is NOT a sound dominance rule.)
+
+**The fix (user direction 2026-07-31): the caller builds a worst-case DAG and computes the artifact
+on THAT.** For each task, take the **point mass at `max(execution_time_max)` across all interval
+YAMLs** (env and non-perf tasks; perf/TL-optimizable tasks are already point-masses at TL, bounded by
+the downward cap `min(et_mean, TL)` at runtime). Any interval's per-task ET draw ≤ its own
+`max_time` ≤ the worst-case max → the worst-case point mass **stochastically dominates** every
+interval's dist → the gate's `ddl_miss_chance` on the worst-case DAG is an upper bound for every
+interval → **trigger (a)'s swap-in is safe by construction.** This restores the cross-interval
+conservatism the dropped old-D2 used to provide, in a sound form (point-mass at the global max, not a
+flag-driven collapse of the online path).
+
+- **Loud-fail (user direction 2026-07-31):** after the walk, re-run the gate on the **final stored
+  result** (not just the seed — the walk may find a feasible smaller-TL point below an infeasible
+  seed). If the final result fails the gate → **raise loud, do NOT store** (the user's "RM-Fast for
+  important tasks cannot even make important tasks meet their DDL → fail loudly, ask user to
+  re-generate a new task set"). Raising TL only worsens interference, so a seed-level miss is not
+  fixable by the walk; the final-check catches both "no feasible point exists" and "the walk drifted
+  to an infeasible point" (it can't, the gate only rejects, but the check is cheap insurance).
+- **Scope of the WCET point mass:** the worst-case DAG is fed to the **offline `ComputeSafeFallback`
+  only**. The online sim + online optimizer keep using the actual per-interval DAGs → **online
+  byte-identical**. This is NOT the old `use_wcet_execution_time` global flag (which collapses the
+  online path too); it is a one-DAG construction at the offline call site.
+- **Seed TL uses the worst-case `et_mean`:** step-3 `SeedTimeLimitsAtOrBelowEtMean` runs on the
+  worst-case DAG, so the seed TL ≤ the largest `et_mean` any interval exhibits → conservative.
+- **Perf-task TL grid:** unchanged — drawn from the task's `timePerformancePairs` (period-scaled),
+  identical across intervals (the grid is a task-structure property, not per-interval).
 
 ### Why a hard per-candidate gate (not the soft SP_Func penalty)
 
@@ -192,9 +246,15 @@ P0.8's Python RTA reads the same bool → no drift. (Step 0.5 of the old `tasks.
 ## Scope (what this task IS / IS NOT)
 
 **IS:**
-- A new offline `ComputeStaticSolution()` that emits a `ResourceOptResult` (DM-grouped PA +
+- A new offline `ComputeSafeFallback()` that emits a `ResourceOptResult` (DM-grouped PA +
   et_mean-bounded TL seed → TL-only walk with hard feasibility gate → committed best-SP-feasible
-  incumbent), stored on the orchestrator as `static_solution_`.
+  incumbent), stored on the orchestrator as `safe_fallback_`.
+- **Worst-case-DAG construction (2026-07-31):** the orchestrator iterates all interval YAMLs and
+  builds, per task, a point-mass dist at `max(execution_time_max)` across intervals (env/non-perf;
+  perf tasks keep their TL grid) → passes this worst-case DAG to `ComputeSafeFallback`. This makes
+  the certificate cross-interval (sound for P0.7 trigger (a)).
+- **Loud-fail (2026-07-31):** a post-walk gate re-check on the FINAL stored result; on failure,
+  raise loud + do NOT store (prompt re-generation).
 - The **et_mean-bounded TL seed** (largest grid option ≤ `et_mean`) — the P0.8-certified
   operating point. Small helper, TDD-covered.
 - The **hard per-candidate feasibility gate**: adopt an SP-better candidate TL only if
@@ -215,8 +275,10 @@ P0.8's Python RTA reads the same bool → no drift. (Step 0.5 of the old `tasks.
 - The generation-time schedulability GUARANTEE — that's P0.8. P0.8 certifies the operating
   point P0.6 seeds from (and guarantees the TL ≤ et_mean sub-region is feasible by construction);
   the gate enforces feasibility for TL > et_mean candidates the optimizer explores.
-- A WCET-mode ablation or a global-max WCET precompute — DROPPED by the 2026-07-30 redesign
-  (old step 2 / old D2). Do NOT re-introduce them. (The filter IS revived, but in its new
+- A WCET-mode ablation of the ONLINE path or a global-max WCET precompute fed to the online
+  optimizer — DROPPED by the 2026-07-30 redesign (old step 2 / old D2). Do NOT re-introduce them.
+  (The 2026-07-31 worst-case-DAG is an OFFLINE-only construction fed to `ComputeSafeFallback`; it
+  is NOT the old `use_wcet_execution_time` global flag. The filter IS revived, in its new
   probabilistic hard-gate form — not the old WCET point-mass RTA.)
 - A change to the SP metric's definition, `SP_Func`, or the optimizer's online path. The gate
   is a NEW adoption predicate layered on top of the existing TL walk; it does not alter how SP
@@ -283,6 +345,18 @@ construction (the gate never adopted a violating candidate).
       at design time: metric keeps non-perf Gaussian variance the sim drops; metric perf ET = TL
       = the sim's cap); (3) the TL-only walk preserves the group lock.
 - [ ] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
+- [ ] **WORST-CASE-DAG (2026-07-31):** orchestrator builds the worst-case DAG (per-task
+      point mass at `max(execution_time_max)` across interval YAMLs) and passes it to
+      `ComputeSafeFallback`; seed TL ≤ worst `et_mean`. TDD: worst-case DAG's per-task
+      `max_time` = max across intervals; perf-task TL grid preserved.
+- [ ] **LOUD-FAIL (2026-07-31):** post-walk gate re-check on the final stored result; on
+      failure raises loud + does NOT store (no silent bogus artifact). TDD: an unschedulable
+      worst-case DAG (important task's deadline < its own WCET) → `HasSafeFallback()` stays
+      false + raises; a schedulable one → stores + `HasSafeFallback()` true.
+- [ ] **Cross-interval safety verified (2026-07-31):** worst-case point mass stochastically
+      dominates every interval's per-task dist → gate's `ddl_miss_chance` is an upper bound
+      for every interval → trigger (a)'s swap-in is sound. (Code-grounded: sim env ET is
+      uncapped at `max_time` per draw; the worst-case point mass ≥ any draw.)
 - [ ] `git add` staged; user reviews (no commit). `dev_log.md` + memory updated.
 
 ## Open decisions
@@ -307,6 +381,12 @@ construction (the gate never adopted a violating candidate).
   from-scratch path IS a PA beam search that reorders PA, but with the hard gate as the safety
   mechanism, PA descent is safe-to-add-later (the gate rejects any threshold-violating PA move).
   For v1: TL-only walk (group lock preserved by construction). PA descent = deferred enhancement.
+- **D9 — Worst-case DAG for cross-interval safety (2026-07-31).** ✅ RESOLVED 2026-07-31 (user):
+  the caller builds a worst-case DAG (per-task point mass at `max(execution_time_max)` across all
+  interval YAMLs) and invokes `ComputeSafeFallback` on it. Restores the cross-interval conservatism
+  the dropped old-D2 provided, soundly (stochastic dominance), OFFLINE-only (online byte-identical).
+  Replaces the unsound "longest-by-avg-ET" idea (sigma is mean-independent per interval). Loud-fail
+  on a final gate-reject. See "WORST-CASE-DAG (2026-07-31)."
 
 ## Reference docs
 

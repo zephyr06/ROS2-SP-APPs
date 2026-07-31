@@ -214,3 +214,80 @@
 - [x] `dev_log.md` (this folder) + memory updated (2026-07-31 step-5b entry). Top-level
       `agents/dev_log.md` milestone to be appended at user commit.
 - [x] `git add` staged; user reviews (no commit).
+
+## 7. Post-review refinement (2026-07-31) — rename + comment trim + reopt-then-incre
+> User review of step 5 raised 5 items. Records logged FIRST (per coding rules); code
+> follows. See `dev_log.md` 2026-07-31 "step 5 post-review refinement" for full detail.
+
+- [x] **Item 1 — rename** `static_solution` → `SafeFallback` across the C++ surface:
+      `ComputeStaticSolution`→`ComputeSafeFallback`, `static_solution_`→`safe_fallback_`,
+      `HasStaticSolution`→`HasSafeFallback`, `GetStaticSolution`→`GetSafeFallback`,
+      `static_solution_compute_time_s_`→`safe_fallback_compute_time_s_`,
+      `GetStaticSolutionComputeTime`→`GetSafeFallbackComputeTime`,
+      `static_solution_compute_time.txt`→`safe_fallback_compute_time.txt`,
+      `StaticSolutionComputeTime_s:`→`SafeFallbackComputeTime_s:`,
+      `TestOrchestrator::HasStaticSolution`→`HasSafeFallback`. Folder name stays.
+      **LANDED** (working tree, git add-only — NOT committed). `grep`-verified: zero
+      remaining `static_solution`/`StaticSolution` references across `sources`+`tests`.
+- [x] **Item 2 — trim comments** in `ComputeSafeFallback` + the gate's `UpdateRecords`
+      comment to ≤3 lines each (per "code speaks for itself" rule). The TIMEOUT-REGRESSION
+      note is kept (load-bearing) ≤3 lines; the rest is already ≤3 lines each.
+      `UpdateRecords` gate comment was 4 lines → trimmed to 3 (this session).
+      `ComputeSafeFallback`'s header + `.cpp` comments already ≤3 lines each.
+- [x] **Item 3 — orchestrator explicit pre-call: ALREADY DONE.**
+      `SimulationOrchestrator.cpp:313-317` explicitly calls `ComputeSafeFallback()`
+      after `incr_optimizer_` construction (`:300-301`), before the interval loop
+      (`:320-324`), OUTSIDE `DeterminePrioritiesAndBudgets`'s ET bracket. The lazy
+      dispatcher check (`Optimize_w_TL_ScratchOrIncre:699-701`) is a SAFETY NET only.
+      ET-exclusion asserted by `PreComputesSafeFallback_ExcludesSchedulerET` (DM
+      `==0.0`). NO code change — record only.
+- [x] **Item 4 — rename `sub` → `fallback_solver`** in `ComputeSafeFallback` (matches
+      item 1). **LANDED** (working tree). `fallback_solver` is the throwaway-sibling
+      var at `OptimizeSP_TL_Incre.cpp:903`.
+- [x] **Item 5 — reopt-then-incremental: SKIPPED (user decision 2026-07-31).** The
+      gate-vs-reopt-cache incompatibility (gate's `rta_cache_.Evaluate` fires
+      unconditionally; reopt path clears+disarms the cache → would `Initialize` a
+      champion from the beam candidate → post-beam re-arm could throw `|diff|>1`) makes a
+      sound reopt-then-incre either costly (option D: fresh RTA per adopted reopt
+      candidate) or weak-guarantee (options A/C). User chose to skip — `ComputeSafeFallback`
+      stays incremental-only (the DM-seeded TL walk under the gate). The from-scratch beam
+      exploration is foregone; the artifact is the incremental walk's best-SP-feasible
+      point. Zero risk. Re-file if the artifact's SP quality is later found insufficient.
+
+## 8. Worst-case-DAG + loud-fail (2026-07-31 — cross-interval safety for P0.7 trigger (a))
+> The 2026-07-30 design scoped `safe_fallback_`'s safety to ONE taskset. P0.7 trigger (a) swaps
+> it in on an ET-jump ACROSS intervals → unsafe. User direction 2026-07-31: the caller builds a
+> worst-case DAG (per-task WCET point mass at `max(execution_time_max)` across all interval YAMLs)
+> and computes the artifact on THAT. Plus a loud-fail if the final result fails the gate.
+> See `goal.md` "WORST-CASE-DAG (2026-07-31)" for the soundness proof + code grounding.
+
+- [x] **Finding (2026-07-31).** Two code facts make the 2026-07-30 within-one-taskset
+      certificate insufficient for trigger (a): (1) `ComputeSafeFallback` forces
+      `use_wcet_execution_time=false` (`:893`) → env tasks keep their base Gaussian (NOT a
+      WCET point mass) during the compute; (2) the generator's per-interval
+      `Et_sigma=np.std(subset)` (`orchestrator.py:375`) is mean-independent → "longest by
+      avg ET" does NOT bound `ddl_miss_chance`. The dropped old-D2 used to provide the
+      cross-interval bound; nothing replaced it. Delivered to + reconciled with the user.
+- [x] **D9 RESOLVED (user 2026-07-31).** Caller builds worst-case DAG (per-task point mass
+      at `max(execution_time_max)` across interval YAMLs) → `ComputeSafeFallback` on it.
+      Offline-only; online byte-identical. Sound by stochastic dominance (any interval's ET
+      draw ≤ its `max_time` ≤ worst-case max). Loud-fail on final gate-reject.
+- [ ] **Step 8a — worst-case-DAG builder.** Orchestrator iterates `LoadIntervalConfigs()`
+      (all interval YAMLs), per task records `max(execution_time_max)` across intervals,
+      constructs a `DAG_Model` where each env/non-perf task's dist = point mass at that max
+      (perf tasks keep their TL grid + structure). TDD: builder output's per-task
+      `max_time` = max across the fixture's interval YAMLs; perf-task TL grid preserved.
+- [ ] **Step 8b — wire worst-case DAG into `ComputeSafeFallback`.** Orchestrator pre-call
+      (`RunSimulation:313-317`) passes the worst-case DAG (not `dag_tasks_`/interval-0) to
+      `ComputeSafeFallback`. Seed TL ≤ worst `et_mean` (step-3 helper runs on worst-case
+      DAG). Walk + gate unchanged.
+- [ ] **Step 8c — loud-fail.** After the walk, re-run `ImportantTasksMeetThresholds` on the
+      FINAL stored result; on failure → raise loud (do NOT store → `HasSafeFallback()`
+      stays false). TDD: unschedulable worst-case DAG (important task deadline < its own
+      WCET) → raises + `HasSafeFallback()` false; schedulable → stores + true.
+- [ ] **Step 8d — verify cross-interval safety.** Confirm (in code + a test) that the
+      worst-case point mass stochastically dominates every interval's per-task dist → the
+      gate's bound holds for every interval → trigger (a) sound. Update the two safety
+      assumptions in `goal.md` "Done when" with the cross-interval leg.
+- [ ] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
+- [ ] `dev_log.md` + memory updated; `git add` staged; user reviews (no commit).
