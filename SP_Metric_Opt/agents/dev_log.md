@@ -174,3 +174,21 @@
     on the committed tree). Offline-only (online sim+optimizer byte-identical). P0.6 PRODUCES the
     artifact end-to-end; P0.7 wires the fall-back USE. Full record in
     `agents/active_tasks/P0_6_static_solution/`.
+
+- **P0.7 step 2 LANDED (UNCOMMITTED) + step 3 SP-penalty A/B PARTIAL (2026-08-01).** Step 2 =
+  the A/B exposure hook: new `GlobalVariables::enable_fallback_use` (default true) + new
+  `INCR_NO_FALLBACK` mode sets it false for the measurement arm (mirrors `INCR_NO_TL`/
+  `INCR_WCET`); read into `incr_optimizer_.enable_fallback_use_` at construction. TDD
+  `INCR_NO_FALLBACK_DisablesFallbackUse_ButStillComputesFallback` red→green; 17/17 ctest.
+  Step 3 (`measure_p07_penalty.json`, prod `INCR_Reopt_10` ON vs meas `INCR_NO_FALLBACK` OFF):
+  **N=4 done both arms** — prod Mean_SP=0.9133 vs meas 0.9228 (≈1% SP penalty, the expected
+  safety-for-SP trade); P0.7 demonstrably FIRED on prod N=4 taskset_3 (b-i reject + b-ii
+  backstop adopt, miss_chance 0.267>threshold 0.242). **N=6 BLOCKED by P0.6 loud-fail (NOT
+  P0.7):** taskset_3 dies SIGABRT in `ComputeSafeFallback` (`OptimizeSP_TL_Incre.cpp:1030`)
+  — BOTH arms crash identically ("No safe fallback exists — regenerate") because the
+  safe-fallback COMPUTE is unconditional and P0.7 only gates the USE. Root cause (re-confirmed
+  in P2.17) is NOT a P0.8-vs-P0.6 gate gap — `compare_optimizers.py` bypassed P0.8's gate
+  (called the ungated pipeline, no flag) so unschedulable-at-worst-case tasksets reached the
+  sim; P0.8's gate is the HARDER worst-case-WCET gate and correctly rejects them. Filed as
+  **P2.17** (gate wiring, D1 landed); the full N=[4,6,8] A/B re-run waits on its commit.
+  Full record in `agents/active_tasks/P0_7_fallback_mechanism/`.

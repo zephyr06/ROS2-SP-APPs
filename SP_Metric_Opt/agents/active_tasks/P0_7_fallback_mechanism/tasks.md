@@ -78,10 +78,34 @@
 ## 5. Verification + records
 - [x] `cmake --build build_test --target check.SP_OPT --clean-first -j5` green (17/17 ctest,
       115 tests in `testIncreOpt_w_TL`).
-- [ ] Smoke run: confirm `interval_fallback_log.txt` produced at small N (header-only if no
-      trip, populated if a constructed trip case).
+- [x] **Step 1 — Smoke run (prod arm, flag ON, NO code change):** DONE 2026-08-01. Minimal
+      smoke config (`smoke_p07_fallback.json`: `INCR_Reopt_10` only, N=4, 1 taskset). Confirmed
+      `interval_fallback_log.txt` produced (header + 7 rows/interval, all `kept_walk` on this
+      benign taskset), no crash. P0.6 siblings produced. Exit=1 = eval gate FAIL (one-scheduler
+      one-N config), NOT a P0.7 crash.
+- [x] **Step 2 — A/B exposure (Option A, DECIDED + LANDED 2026-08-01):** new
+      `GlobalVariables::enable_fallback_use` (default true) in `Parameters.{h,cpp}`; set per-
+      `RunSimulation` from the mode (`mode != "INCR_NO_FALLBACK"`); read into
+      `incr_optimizer_.enable_fallback_use_` at construction; `INCR_NO_FALLBACK` in the
+      construction guard + a dispatcher branch routing to `Optimize_w_TL_ScratchOrIncre`;
+      `RunOrchestrator.cpp` usage string updated; TDD test
+      `INCR_NO_FALLBACK_DisablesFallbackUse_ButStillComputesFallback` (red→green). 17/17 ctest
+      + 115/115 `testIncreOpt_w_TL`.
+- [x] **Step 3 — SP-penalty measurement (N=4 DATA POINT; N=6/8 deferred to P2.17):**
+      prod (`INCR_Reopt_10`, flag ON) vs measurement (`INCR_NO_FALLBACK`, flag OFF).
+      **N=4 DONE** both arms: prod SP=0.9133 vs meas SP=0.9228 (≈1% SP penalty = the
+      expected safety-for-SP trade); P0.7 mechanism demonstrably FIRED on prod N=4
+      taskset_3 (b-i reject at interval 0; b-ii backstop adopt at interval 2,
+      miss_chance 0.267>threshold 0.242). **N=6/8 DEFERRED:** the N=6 crash is a P0.6
+      loud-fail (NOT P0.7 — both arms crash identically in `ComputeSafeFallback`,
+      `OptimizeSP_TL_Incre.cpp:1030`, because the safe-fallback COMPUTE is unconditional
+      and P0.7 only gates the USE). Root cause (re-confirmed in P2.17) is NOT a P0.8-vs-P0.6
+      gate gap — `compare_optimizers.py` bypassed P0.8's gate (ungated pipeline, no flag) so
+      unschedulable-at-worst-case tasksets reached the sim; P0.8's gate is the HARDER
+      worst-case-WCET gate and correctly rejects them. Filed as **P2.17** (gate wiring, D1
+      landed); full N=[4,6,8] A/B re-run waits on its commit. Crashed N=6/N=8 artifacts
+      cleared; N=4 data point kept at
+      `runs/measure_p07_.../sim/tasks4_.../comparison_summary.csv`. Flag default stays ON.
 - [ ] `dev_log.md` (this folder + top-level) + memory updated.
 - [ ] `git add` staged; user reviews (no commit).
 - [x] `enable_fallback_use_` default ON (= final prod state).
-- [ ] **SP-penalty measurement (MEASUREMENT-ONLY):** prod (flag ON) vs measurement (flag
-      OFF) at matched N; report the SP delta. Flag default stays ON after this.

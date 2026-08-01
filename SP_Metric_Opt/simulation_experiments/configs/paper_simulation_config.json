@@ -11,7 +11,7 @@
         "scheduler_trigger_interval_seconds": 10,
         "time_limit_seconds": 1,
         "main_scheduler_list": ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"],
-        "ablation_scheduler_list": ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET", "INCR_NO_REOPT"],
+        "ablation_scheduler_list": ["BF", "INCR_Reopt_10", "INCR_NO_TL", "INCR_WCET", "INCR_NO_REOPT", "INCR_NO_FALLBACK"],
         "interval_sweep_seconds_list": [5, 10],
         "parallel_worker_processes": 4,
         "enable_execution_time_profiling": true,
@@ -23,7 +23,7 @@
         "eval_period_arms": ["INCR_Reopt_10", "INCR_Reopt_30", "INCR_Reopt_60"]
     },
     "prod_mode": {
-        "_comment": "Production / paper-grade parameters. Adjust manually for final experiments. ablation_scheduler_list leads with INCR_Reopt_10 (the production arm) as the reference baseline every ablation arm is contrasted against, then carries INCR_NO_REOPT (P3.6: pure incremental, DM-fast bootstrap at interval 0, no periodic reopt) to answer 'does periodic reopt earn its cost?' vs that baseline. INCR_Reopt_10 is also in main_scheduler_list; build_scheduler_union de-duplicates, so it is simulated once.",
+        "_comment": "Production / paper-grade parameters. Adjust manually for final experiments. ablation_scheduler_list leads with INCR_Reopt_10 (the production arm) as the reference baseline every ablation arm is contrasted against, then carries INCR_NO_REOPT (P3.6: pure incremental, DM-fast bootstrap at interval 0, no periodic reopt) to answer 'does periodic reopt earn its cost?' vs that baseline, and INCR_NO_FALLBACK (P0.7: flips enable_fallback_use_ off) to answer 'does the online fall-back earn its SP cost?' vs that baseline. INCR_Reopt_10 is also in main_scheduler_list; build_scheduler_union de-duplicates, so it is simulated once.",
         "num_tasks_for_cross_task_comparison": [4, 6, 8, 10, 12, 14, 16],
         "num_tasks_for_single_task_figures": 10,
         "num_tasksets_to_generate": 10,
