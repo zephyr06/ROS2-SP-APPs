@@ -189,7 +189,7 @@ struct ImportantTaskMissInfo {
     double miss_chance = -1.0;
     double threshold = -1.0;
 };
-ImportantTaskMissInfo WorstImportantTaskMissInfo(
+ImportantTaskMissInfo WorstCaseImportantTaskMissInfo(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<int>& priority_assignment,
     const std::vector<double>& tl);

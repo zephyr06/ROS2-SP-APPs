@@ -1359,7 +1359,7 @@ TEST_F(CompareAndKeepSynthetic,
                         tl_walk);
 
     // Record the walk-result's culprit miss info for the post-condition check.
-    auto walk_culprit = WorstImportantTaskMissInfo(dag_tasks, sp_parameters, pa, tl_walk);
+    auto walk_culprit = WorstCaseImportantTaskMissInfo(dag_tasks, sp_parameters, pa, tl_walk);
     ASSERT_GT(walk_culprit.miss_chance, walk_culprit.threshold);
 
     // The dispatcher pushes an interval entry before the backstop; mimic that

@@ -1115,7 +1115,7 @@ bool OptimizePA_Incre_with_TimeLimits::AdoptFallbackIfUnschedulable() {
     // the walk's {pa, tl}, not the fallback's).
     ImportantTaskMissInfo culprit;
     if (!interval_fallback_log_.empty()) {
-        culprit = WorstImportantTaskMissInfo(dag_tasks_, sp_parameters_,
+        culprit = WorstCaseImportantTaskMissInfo(dag_tasks_, sp_parameters_,
                                              res_opt_.priority_vec, tl_pos);
     }
     // Rescue: adopt the safe fallback (re-scored under the current dag, committed
