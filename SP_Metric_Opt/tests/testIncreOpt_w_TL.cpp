@@ -889,27 +889,71 @@ TEST_F(CompareAndKeepSynthetic,
         << "fixture broken: TL=1000 must be strictly SP-better than TL=400";
 }
 
-// (i) Flag OFF (default): the gate never runs. An SP-better candidate commits
-// normally — byte-identical to prod. Seeds the incumbent at TL=400, walks T_perf
-// to TL=1000 (strictly SP-better), asserts the commit landed.
+// (i) "Without fallback" measurement arm: `enable_fallback_use_ = false` → the
+// gate never runs. An SP-better candidate commits normally — byte-identical to
+// the pre-P0.7 optimizer. This is the arm the SP-penalty measurement runs
+// against. Seeds the incumbent at TL=400, walks T_perf to TL=1000 (strictly
+// SP-better), asserts the commit landed.
 TEST_F(CompareAndKeepSynthetic,
        GateWiring_FlagOff_CommitsSpBetterCandidate_NoGate) {
     dag_tasks.tasks[0].is_important = false;
     dag_tasks.tasks[1].is_important = true;
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    ASSERT_FALSE(opt.enforce_important_task_gate_);  // default off
+    opt.enable_fallback_use_ = false;  // measurement arm: no gate (override default)
 
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
     opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0}),
                         {400.0, -1.0});
     ASSERT_TRUE(opt.IfInitialized());
 
-    // Candidate TL=1000 is strictly SP-better; flag off → no gate → commits.
+    // Candidate TL=1000 is strictly SP-better; no gate → commits.
     double returned = opt.OptimizeIncreSingleTask({1000.0, -1.0}, /*task_idx=*/0,
                                                   /*et_increased=*/true);
     EXPECT_GT(returned, opt.res_opt_.sp_opt - 1e-9)
         << "flag-off: eval must report the (better) committed SP, not the seed";
     EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+}
+
+// (i-bis) P0.7 ONLINE arm: `enable_fallback_use_ = true` (the shipped default)
+// arms the during-walk gate via the master flag alone. Same SP-better-BUT-gate-
+// rejected fixture as (ii); the candidate is rejected, the incumbent stays
+// untouched, and the eval reports the incumbent SP (ghost-SP fix). This is the
+// 2b reject-and-continue deliverable on the online path.
+TEST_F(CompareAndKeepSynthetic,
+       GateWiring_OnlineArm_RejectsSpBetterThresholdViolatingCandidate) {
+    dag_tasks.tasks[0].is_important = false;   // T_perf: drives SP up with TL
+    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
+    dag_tasks.tasks[1].deadline = 700.0;       // wedged between TL=400 / TL=1000 RTs
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;           // online arm (shipped default)
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {400.0, -1.0};
+    std::vector<double> tl_candidate = {1000.0, -1.0};
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_seed,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_seed)));
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_candidate,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+    const double incumbent_sp = opt.res_opt_.sp_opt;
+
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/true);
+
+    // Online-arm reject: incumbent untouched, eval reports incumbent SP.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
+    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
+    EXPECT_DOUBLE_EQ(incumbent_sp, returned);
 }
 
 // (ii) Flag ON, gate REJECTS an SP-better threshold-violating candidate: the
@@ -935,7 +979,7 @@ TEST_F(CompareAndKeepSynthetic,
     sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
 
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.enforce_important_task_gate_ = true;
+    opt.enable_fallback_use_ = true;  // gate armed (shipped default)
 
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
     std::vector<double> tl_seed = {400.0, -1.0};
@@ -981,7 +1025,7 @@ TEST_F(CompareAndKeepSynthetic,
     dag_tasks.tasks[1].deadline = 2000.0;
 
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.enforce_important_task_gate_ = true;
+    opt.enable_fallback_use_ = true;  // gate armed (shipped default)
 
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
     std::vector<double> tl_seed = {400.0, -1.0};
@@ -1016,7 +1060,7 @@ TEST_F(CompareAndKeepSynthetic,
     dag_tasks.tasks[0].is_important = false;
     dag_tasks.tasks[1].is_important = true;
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.enforce_important_task_gate_ = true;
+    opt.enable_fallback_use_ = true;  // gate armed (shipped default)
 
     std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
     std::vector<double> tl_seed = {1000.0, -1.0};  // SP max on this fixture
@@ -1038,6 +1082,400 @@ TEST_F(CompareAndKeepSynthetic,
     // (test ii); a merely-worse candidate is no progress either way, so its SP
     // is returned as-is (the walk's IsBetterTimeLimitOption is false regardless).
     EXPECT_NEAR(candidate_sp, returned, 1e-9);
+}
+
+// P0.7 step 2c — post-walk schedulability backstop (D7 overturn). After the walk
+// finishes on its own, `AdoptFallbackIfUnschedulable` runs the gate on the FINAL
+// `res_opt_`. If the walk's result FAILS the gate → adopt `safe_fallback_`, then
+// RE-VERIFY the adopted fallback (a second failure = certificate violation → throw);
+// else KEEP the walk's result even if `safe_fallback_` would have higher global SP.
+// Schedulability decides, not SP. Gated by `enable_fallback_use_`.
+//
+// Fixture (2c): a safe fallback is staged at a GATE-FEASIBLE {pa, tl} (TL=400,
+// T_noise deadline loose). The walk's "final" result is then forced to a
+// GATE-INFEASIBLE point (TL=1000, T_noise deadline tight → miss) that is STRICTLY
+// SP-BETTER than the fallback. The backstop must adopt the (worse-SP, feasible)
+// fallback (rescue succeeds → no throw), NOT keep the (better-SP, infeasible) walk.
+TEST_F(CompareAndKeepSynthetic,
+       AdoptFallbackIfUnschedulable_AdoptsFallbackWhenWalkResultFailsGate) {
+    dag_tasks.tasks[0].is_important = false;   // T_perf: drives SP up with TL
+    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
+    // Tight T_noise deadline: TL=1000 → T_noise RT > deadline → gate FAILS.
+    dag_tasks.tasks[1].deadline = 700.0;
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;           // backstop armed (shipped default)
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_safe = {400.0, -1.0};    // fallback: gate-feasible
+    std::vector<double> tl_walk = {1000.0, -1.0};   // walk result: gate-INfeasible
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_safe));
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_walk));
+    // The walk result is strictly SP-better than the fallback — yet the backstop
+    // must adopt the fallback (schedulability, not SP, decides).
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_safe));
+
+    // Stage the safe fallback artifact (as ComputeSafeFallback would store it).
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_safe),
+                        tl_safe);
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    // Simulate the walk finishing at the SP-better-BUT-infeasible point.
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk),
+                        tl_walk);
+    ASSERT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+
+    opt.AdoptFallbackIfUnschedulable();
+
+    // The backstop adopted the fallback: TL reverted to the feasible 400.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
+}
+
+// 2c complement: the walk's result PASSES the gate → keep it EVEN IF `safe_fallback_`
+// would have higher global SP. Schedulability decides; a feasible walk result is not
+// overridden by a higher-SP fallback. Here the fallback is staged at a HIGHER-SP
+// point than the walk result, but both pass the gate → the walk result is kept.
+TEST_F(CompareAndKeepSynthetic,
+       AdoptFallbackIfUnschedulable_KeepsWalkResultWhenItPassesGate) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    // Loose T_noise deadline: BOTH TLs feasible → the walk result passes the gate.
+    dag_tasks.tasks[1].deadline = 2000.0;
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_fallback = {1000.0, -1.0};  // fallback: higher SP
+    std::vector<double> tl_walk = {400.0, -1.0};       // walk result: lower SP
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_walk));
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_fallback));
+    // Fallback would have higher SP — yet the backstop must KEEP the walk result.
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_fallback),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk));
+
+    // Stage the higher-SP safe fallback.
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_fallback),
+                        tl_fallback);
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    // Walk finishes at the lower-SP-but-feasible point.
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk),
+                        tl_walk);
+    ASSERT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+
+    opt.AdoptFallbackIfUnschedulable();
+
+    // The backstop KEPT the walk result: TL stays 400 (fallback NOT adopted).
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+}
+
+// 2c directive 3: fall-back enabled but NO safe fallback artifact pre-computed →
+// `AdoptFallbackIfUnschedulable` must THROW (a caller bug — the dispatcher contract
+// requires ComputeSafeFallback before dispatch; reaching the backstop with the flag
+// on but no artifact is not a silently-keepable state).
+TEST_F(CompareAndKeepSynthetic,
+       AdoptFallbackIfUnschedulable_ThrowsWhenEnabledButNoFallback) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[1].deadline = 2000.0;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+    ASSERT_FALSE(opt.HasSafeFallback());  // caller forgot to pre-compute
+    // An initialized walk result exists, but no fallback to adopt → throw.
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0}),
+                        {400.0, -1.0});
+    ASSERT_TRUE(opt.IfInitialized());
+
+    EXPECT_THROW(opt.AdoptFallbackIfUnschedulable(), std::runtime_error);
+}
+
+// 2c directive 4: the walk result FAILS the gate AND the staged safe fallback ALSO
+// fails the gate on the current interval → certificate violation → THROW (do NOT
+// silently ship an infeasible result). Both the walk point and the fallback point
+// are gate-INfeasible here (T_noise deadline so tight that even the fallback's
+// TL=400 misses); the rescue runs (AdoptSafeFallbackAsIncumbent) but the re-verify
+// catches the still-infeasible fallback and raises.
+TEST_F(CompareAndKeepSynthetic,
+       AdoptFallbackIfUnschedulable_ThrowsWhenFallbackAlsoFailsGate) {
+    dag_tasks.tasks[0].is_important = false;   // T_perf: higher priority, adds interference
+    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
+    // Pathological T_noise deadline: even TL=400 (the fallback) makes T_noise RT >
+    // deadline → the fallback itself is gate-INfeasible. So BOTH the walk (TL=1000)
+    // and the fallback (TL=400) miss → no safe solution → the re-verify must throw.
+    dag_tasks.tasks[1].deadline = 200.0;
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_safe = {400.0, -1.0};    // fallback: ALSO infeasible
+    std::vector<double> tl_walk = {1000.0, -1.0};   // walk: infeasible
+    // Precondition: NEITHER point passes the gate (the rescue cannot help).
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_safe));
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_walk));
+
+    // Stage the (infeasible) safe fallback artifact.
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_safe),
+                        tl_safe);
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    // Walk finishes at the infeasible point.
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk),
+                        tl_walk);
+
+    // The backstop rescues (adopts the fallback) but the re-verify fails → throw.
+    EXPECT_THROW(opt.AdoptFallbackIfUnschedulable(), std::runtime_error);
+}
+
+// P0.7 step 4 — interval_fallback_log.txt. The optimizer records one outcome per
+// dispatch call (= per interval) and exposes it via GetIntervalFallbackLog; the
+// orchestrator writes the file. These tests cover the RECORDING contract (file I/O
+// is exercised by the step-5 smoke run, not a ctest). Fields, per the user's
+// per-interval-summary decision (2026-08-01):
+//   interval_idx, trigger (a) et_jump_short_circuited, trigger (b-i)
+//   during_walk_reject_count, trigger (b-ii) backstop_verdict, and — when the
+//   backstop ADOPTED the fallback — the culprit important task's id + miss-chance
+//   vs threshold (cheap: the backstop fires <=1x/interval).
+
+// One log entry per dispatch call, indexed by reoptimization_interval_count_ at
+// entry. interval 0's entry is benign (triggers inert there); a second call
+// appends a second entry with idx 1.
+TEST_F(CompareAndKeepSynthetic,
+       FallbackLog_AppendsOneEntryPerDispatchCallIndexedByCounter) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = false;  // measurement arm: no triggers, plain walk
+
+    ASSERT_TRUE(opt.GetIntervalFallbackLog().empty());
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    ASSERT_EQ(1u, opt.GetIntervalFallbackLog().size());
+    EXPECT_EQ(0, opt.GetIntervalFallbackLog()[0].interval_idx);
+
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    ASSERT_EQ(2u, opt.GetIntervalFallbackLog().size());
+    EXPECT_EQ(1, opt.GetIntervalFallbackLog()[1].interval_idx);
+    // Plain walk, no triggers: all outcome fields stay at their defaults.
+    const auto& e = opt.GetIntervalFallbackLog()[1];
+    EXPECT_FALSE(e.et_jump_short_circuited);
+    EXPECT_EQ(0, e.during_walk_reject_count);
+    EXPECT_EQ(IntervalFallbackOutcome::BackstopVerdict::kNone, e.backstop_verdict);
+}
+
+// Trigger (a): an ET-jump short-circuits the walk → the entry records
+// et_jump_short_circuited=true, reject_count=0, backstop=kNone (early return
+// before the backstop runs). Built on the SkipOptOnETJump trip shape: a 1.5x
+// et_mean jump on a task trips DetectETJump.
+TEST_F(CompareAndKeepSynthetic,
+       FallbackLog_RecordsETJumpShortCircuitWhenTriggerAFires) {
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = false;  // measurement arm for the bootstrap only
+    // Bootstrap interval 0 so the optimizer holds a saved old dag to compare.
+    opt.OptimizePureIncremental(dag_tasks, 2);
+    ASSERT_EQ(1u, opt.GetIntervalFallbackLog().size());
+
+    // Stage a safe fallback so trigger (a)'s adoption path is valid, then arm the
+    // fall-back for the interval-1 trip.
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    opt.enable_fallback_use_ = true;
+
+    // Interval 1: jump T_perf's et_mean 500 -> 1000 (2x >= 1.5x threshold) → trip.
+    DAG_Model dag_jumped = dag_tasks;
+    dag_jumped.tasks[0].execution_time_dist =
+        FiniteDist(GaussianDist(1000.0, 0.5), 5);
+
+    opt.OptimizePureIncremental(dag_jumped, 2);
+
+    ASSERT_EQ(2u, opt.GetIntervalFallbackLog().size());
+    const auto& e = opt.GetIntervalFallbackLog()[1];
+    EXPECT_EQ(1, e.interval_idx);
+    EXPECT_TRUE(e.et_jump_short_circuited);
+    EXPECT_EQ(0, e.during_walk_reject_count);  // walk skipped → no rejects
+    EXPECT_EQ(IntervalFallbackOutcome::BackstopVerdict::kNone, e.backstop_verdict);
+}
+
+// Trigger (b-i): the during-walk gate rejects an SP-better-but-infeasible
+// candidate → during_walk_reject_count increments. The online arm (flag on)
+// arms the gate; a candidate that violates the important-task threshold is
+// refused (reject-and-continue), not committed.
+TEST_F(CompareAndKeepSynthetic,
+       FallbackLog_CountsDuringWalkRejectsWhenGateRefusesInfeasibleCandidate) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    // Tight T_noise deadline so an oversized TL is gate-infeasible.
+    dag_tasks.tasks[1].deadline = 700.0;
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;  // online arm: during-walk gate armed
+    // Stage a safe fallback so the post-walk backstop does not throw.
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0}),
+                        {400.0, -1.0});
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+
+    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
+
+    // The gate refused at least one SP-better-but-infeasible challenger during
+    // the walk (the TL walk probes oversized TLs that miss T_noise's deadline).
+    ASSERT_GE(opt.GetIntervalFallbackLog().size(), 1u);
+    const auto& e = opt.GetIntervalFallbackLog().back();
+    EXPECT_GE(e.during_walk_reject_count, 1);
+    EXPECT_FALSE(e.et_jump_short_circuited);  // no ET jump in this run
+}
+
+// Trigger (b-ii): the post-walk backstop ADOPTS the fallback → backstop_verdict
+// = kAdoptedFallback, and the culprit important task's id + miss-chance +
+// threshold are populated (the worst-ratio violator under the walk's result).
+TEST_F(CompareAndKeepSynthetic,
+       FallbackLog_RecordsBackstopAdoptionWithCulpritWhenWalkResultFailsGate) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;  // the gated culprit
+    dag_tasks.tasks[1].deadline = 700.0;     // TL=1000 → T_noise misses
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_safe = {400.0, -1.0};   // fallback: feasible
+    std::vector<double> tl_walk = {1000.0, -1.0};  // walk result: infeasible
+    ASSERT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl_safe));
+    ASSERT_FALSE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl_walk));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_safe),
+                        tl_safe);
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk),
+                        tl_walk);
+
+    // Record the walk-result's culprit miss info for the post-condition check.
+    auto walk_culprit = WorstImportantTaskMissInfo(dag_tasks, sp_parameters, pa, tl_walk);
+    ASSERT_GT(walk_culprit.miss_chance, walk_culprit.threshold);
+
+    // The dispatcher pushes an interval entry before the backstop; mimic that
+    // here (this test calls the backstop directly to stage the walk result).
+    opt.interval_fallback_log_.push_back(IntervalFallbackOutcome{0});
+    opt.AdoptFallbackIfUnschedulable();
+
+    ASSERT_GE(opt.GetIntervalFallbackLog().size(), 1u);
+    const auto& e = opt.GetIntervalFallbackLog().back();
+    EXPECT_EQ(IntervalFallbackOutcome::BackstopVerdict::kAdoptedFallback,
+              e.backstop_verdict);
+    EXPECT_EQ(dag_tasks.tasks[1].id, e.backstop_culprit_task_id);
+    EXPECT_NEAR(walk_culprit.miss_chance, e.backstop_culprit_miss_chance, 1e-9);
+    EXPECT_NEAR(walk_culprit.threshold, e.backstop_culprit_threshold, 1e-9);
+}
+
+// Trigger (b-ii) complement: the backstop KEEPS the walk result (it passes the
+// gate) → backstop_verdict = kKeptWalk, culprit fields stay default.
+TEST_F(CompareAndKeepSynthetic,
+       FallbackLog_RecordsBackstopKeptWalkWhenWalkResultPassesGate) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[1].deadline = 2000.0;  // loose: both TLs feasible
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_walk = {400.0, -1.0};
+    std::vector<double> tl_fallback = {1000.0, -1.0};
+    ASSERT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa, tl_walk));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_fallback),
+                        tl_fallback);
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_walk),
+                        tl_walk);
+
+    // The dispatcher pushes an interval entry before the backstop; mimic that
+    // here (this test calls the backstop directly to stage the walk result).
+    opt.interval_fallback_log_.push_back(IntervalFallbackOutcome{0});
+    opt.AdoptFallbackIfUnschedulable();
+
+    ASSERT_GE(opt.GetIntervalFallbackLog().size(), 1u);
+    const auto& e = opt.GetIntervalFallbackLog().back();
+    EXPECT_EQ(IntervalFallbackOutcome::BackstopVerdict::kKeptWalk, e.backstop_verdict);
+    EXPECT_EQ(-1, e.backstop_culprit_task_id);
+    EXPECT_DOUBLE_EQ(-1.0, e.backstop_culprit_miss_chance);
+    EXPECT_DOUBLE_EQ(-1.0, e.backstop_culprit_threshold);
+}
+
+// P0.7 step 4 — the orchestrator serializes the per-interval log to
+// interval_fallback_log.txt via FormatIntervalFallbackLogCsv (a free function so
+// the CSV shape is unit-testable without file I/O). One header row + one row per
+// interval. Backstop culprit fields are blank unless the backstop ADOPTED.
+TEST(FormatIntervalFallbackLogCsvTest, EmptyLogYieldsHeaderOnly) {
+    std::vector<IntervalFallbackOutcome> log;
+    std::string csv = FormatIntervalFallbackLogCsv(log);
+    EXPECT_EQ("interval_idx,et_jump_short_circuited,during_walk_reject_count,"
+              "backstop_verdict,backstop_culprit_task_id,backstop_culprit_miss_"
+              "chance,backstop_culprit_threshold\n",
+              csv);
+}
+
+TEST(FormatIntervalFallbackLogCsvTest, DefaultRowIsAllZerosAndNone) {
+    std::vector<IntervalFallbackOutcome> log;
+    log.push_back(IntervalFallbackOutcome{3});
+    std::string csv = FormatIntervalFallbackLogCsv(log);
+    ASSERT_EQ(2u, std::count(csv.begin(), csv.end(), '\n'));
+    EXPECT_EQ("3,false,0,none,,,\n", csv.substr(csv.find('\n') + 1));
+}
+
+TEST(FormatIntervalFallbackLogCsvTest, EtJumpRowHasNoBackstop) {
+    std::vector<IntervalFallbackOutcome> log;
+    IntervalFallbackOutcome e{5};
+    e.et_jump_short_circuited = true;
+    log.push_back(e);
+    std::string csv = FormatIntervalFallbackLogCsv(log);
+    EXPECT_EQ("5,true,0,none,,,\n", csv.substr(csv.find('\n') + 1));
+}
+
+TEST(FormatIntervalFallbackLogCsvTest, KeptWalkRowHasBlankCulprit) {
+    std::vector<IntervalFallbackOutcome> log;
+    IntervalFallbackOutcome e{7};
+    e.during_walk_reject_count = 2;
+    e.backstop_verdict = IntervalFallbackOutcome::BackstopVerdict::kKeptWalk;
+    log.push_back(e);
+    std::string csv = FormatIntervalFallbackLogCsv(log);
+    EXPECT_EQ("7,false,2,kept_walk,,,\n", csv.substr(csv.find('\n') + 1));
+}
+
+TEST(FormatIntervalFallbackLogCsvTest, AdoptedFallbackRowHasCulpritFields) {
+    std::vector<IntervalFallbackOutcome> log;
+    IntervalFallbackOutcome e{9};
+    e.backstop_verdict = IntervalFallbackOutcome::BackstopVerdict::kAdoptedFallback;
+    e.backstop_culprit_task_id = 14;
+    e.backstop_culprit_miss_chance = 0.25;
+    e.backstop_culprit_threshold = 0.1;
+    log.push_back(e);
+    std::string csv = FormatIntervalFallbackLogCsv(log);
+    EXPECT_EQ("9,false,0,adopted_fallback,14,0.25,0.1\n",
+              csv.substr(csv.find('\n') + 1));
+}
+
+TEST(FormatIntervalFallbackLogCsvTest, MultipleIntervalsEachGetARow) {
+    std::vector<IntervalFallbackOutcome> log;
+    log.push_back(IntervalFallbackOutcome{0});
+    IntervalFallbackOutcome e1{1};
+    e1.et_jump_short_circuited = true;
+    log.push_back(e1);
+    std::string csv = FormatIntervalFallbackLogCsv(log);
+    auto first_nl = csv.find('\n');
+    auto row0 = csv.substr(first_nl + 1, csv.find('\n', first_nl + 1) - first_nl - 1);
+    EXPECT_EQ("0,false,0,none,,,", row0);
+    EXPECT_EQ("1,true,0,none,,,\n", csv.substr(csv.find('\n', first_nl + 1) + 1));
 }
 
 TEST_F(CompareAndKeepSynthetic,
@@ -1317,6 +1755,7 @@ TEST_F(CompareAndKeepSynthetic,
 // eval_count_. So eval_count_==0 after the bootstrap proves no descent ran.
 TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_Interval0IsSeedOnly) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = false;  // mechanics test (measurement arm): no backstop
     ASSERT_FALSE(opt.IfInitialized());
     ASSERT_EQ(0, opt.eval_count_);
 
@@ -1342,6 +1781,7 @@ TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_Interval0IsSeedOnly) {
 // so the orchestrator's interval bookkeeping is uniform across arms).
 TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_AdvancesCounterOncePerCall) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = false;  // mechanics test (measurement arm): no backstop
     ASSERT_EQ(0, opt.reoptimization_interval_count_);
 
     opt.OptimizePureIncremental(dag_tasks, 2);
@@ -1363,6 +1803,7 @@ TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_AdvancesCounterOncePerCa
 TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_NeverReoptsEvenAtPeriodOne) {
     GlobalVariables::ReoptimizationPeriod = 1;  // would force reopt every interval
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = false;  // mechanics test (measurement arm): no backstop
 
     // Interval 0: bootstrap (seed only, no descent).
     opt.OptimizePureIncremental(dag_tasks, 2);
@@ -2817,125 +3258,6 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     EXPECT_TRUE(opt.evaluated_tls.empty());
 }
 
-// P0.7 trigger (b): the HALT signal must actually BREAK the walk's inner loop.
-// `online_halt_requested_` is raised by `UpdateRecords` on a gate-reject (proven
-// by OnlineHaltGate_FlagOn_HaltsOn...); this test proves the loop honors it. The
-// stub faithfully simulates the gate: at the unsafe TL (800) it sets the flag and
-// returns the incumbent (ghost-SP, "no progress"). With patience=1 the walk would
-// NORMALLY continue past the 800 dip to 1000 — only the halt flag breaks it, so
-// 1000 is never evaluated. (Without the loop-break the walk would visit 1000.)
-TEST_F(TrialAndErrorTLWalkSynthetic,
-       OnlineHalt_BreaksInnerLoopOnFirstUnsafeCandidate) {
-    std::map<double, double> sp;
-    sp[400.0] = 1.4;
-    sp[600.0] = 1.6;   // baseline
-    sp[800.0] = 1.7;   // the unsafe candidate (SP-better but gate-rejected)
-    sp[1000.0] = 1.8;  // would normally be visited (patience=1); halt prevents it
-    auto opt = MakeStub(sp);
-    opt.enforce_online_halt_gate_ = true;
-    ASSERT_FALSE(opt.online_halt_requested_);
-
-    // Stub the gate: 800 trips the halt (raises the flag + returns incumbent SP,
-    // mirroring the ghost-SP fix). Other TLs return their real SP.
-    auto eval = [&opt, sp](const std::vector<double>& tl) {
-        opt.evaluated_tls.push_back(tl[0]);  // record visit order
-        if (tl[0] == 800.0) {
-            opt.online_halt_requested_ = true;
-            return sp.at(600.0);  // ghost-SP: report incumbent, "no progress"
-        }
-        return sp.at(tl[0]);
-    };
-
-    std::vector<double> time_limits = {600.0, -1.0};
-    double final_sp = opt.WalkOneTaskWithTimeLimitOptions(
-        0, time_limits, sp[600.0], /*baseline_val=*/600.0, /*step=*/1,
-        /*patience=*/1, eval);
-
-    // Halt fired at 800; the loop broke BEFORE evaluating 1000.
-    EXPECT_TRUE(opt.online_halt_requested_);
-    EXPECT_EQ(std::vector<double>({800.0}), opt.evaluated_tls);
-    // The incumbent (baseline 600) was preserved — the unsafe 800 was rejected.
-    EXPECT_DOUBLE_EQ(sp[600.0], final_sp);
-    EXPECT_DOUBLE_EQ(600.0, time_limits[0]);
-}
-
-// ============================================================================
-// P0.7 trigger (b) — compare-with-safe-fallback winner (D7 = higher global SP).
-// After the guard halts the walk, the interval's `res` is the higher-global-SP
-// of {the walk's incumbent-so-far, the safe fallback} — both re-scored under the
-// CURRENT dag. The safe fallback is feasible-by-construction (gate-held offline);
-// the incumbent may be SP-higher (the walk found a better feasible point before
-// halting) OR SP-lower (the halt fired early, the fallback is better). D7 picks
-// the higher SP, NOT blindly the fallback.
-// ============================================================================
-
-// (c1) Incumbent SP HIGHER than the safe fallback → the compare picks the
-// incumbent. The compare's CONTRACT is "pick the higher-SP of {incumbent,
-// fallback}", independent of how either was produced — so the fallback is set
-// directly to a known low-SP TL=400 result (the gate-held seed region) and the
-// incumbent to TL=800 (feasible, strictly SP-better: SP rises with TL here).
-TEST_F(CompareAndKeepSynthetic,
-       CompareAndPickWinner_ReturnsIncumbentWhenItsSpIsHigher) {
-    dag_tasks.tasks[0].is_important = false;  // SP rises with T0's TL
-    dag_tasks.tasks[1].is_important = true;
-    dag_tasks.tasks[1].deadline = 2000.0;     // both TLs feasible (loose ddl)
-
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-
-    // Safe fallback: a gate-held TL=400 result (low SP). Set directly so the
-    // compare is tested in isolation from ComputeSafeFallback's walk behavior.
-    ResourceOptResult fallback;
-    fallback.UpdatePriorityVec(pa);
-    fallback.SaveTimeLimits(dag_tasks.tasks, {400.0, -1.0});
-    fallback.sp_opt = OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0});
-    opt.safe_fallback_ = fallback;
-
-    // Incumbent: TL=800 (feasible, strictly SP-better than the TL=400 fallback).
-    std::vector<double> tl_incumbent = {800.0, -1.0};
-    double sp_incumbent = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_incumbent);
-    ASSERT_GT(sp_incumbent, fallback.sp_opt)
-        << "fixture broken: incumbent TL=800 must outscore the fallback TL=400";
-    opt.CommitIncumbent(pa, sp_incumbent, tl_incumbent);
-
-    ResourceOptResult winner = opt.CompareAndPickWinnerAgainstSafeFallback();
-    EXPECT_DOUBLE_EQ(sp_incumbent, winner.sp_opt);
-    EXPECT_DOUBLE_EQ(800.0, winner.id2time_limit.at(dag_tasks.tasks[0].id));
-}
-
-// (c2) Incumbent SP LOWER than the safe fallback → the compare picks the safe
-// fallback. The fallback is set to TL=800 (higher SP); the incumbent is pinned
-// at TL=400 (a halt-fired-early low-SP point). The compare returns the fallback,
-// re-scored under the current dag.
-TEST_F(CompareAndKeepSynthetic,
-       CompareAndPickWinner_ReturnsSafeFallbackWhenItsSpIsHigher) {
-    dag_tasks.tasks[0].is_important = false;
-    dag_tasks.tasks[1].is_important = true;
-    dag_tasks.tasks[1].deadline = 2000.0;  // both TLs feasible
-
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-
-    // Safe fallback: TL=800 (higher SP). Set directly.
-    ResourceOptResult fallback;
-    fallback.UpdatePriorityVec(pa);
-    fallback.SaveTimeLimits(dag_tasks.tasks, {800.0, -1.0});
-    fallback.sp_opt = OracleSPForCandidate(dag_tasks, sp_parameters, pa, {800.0, -1.0});
-    opt.safe_fallback_ = fallback;
-
-    // Incumbent: TL=400 (low SP).
-    std::vector<double> tl_incumbent = {400.0, -1.0};
-    double sp_incumbent = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_incumbent);
-    ASSERT_GT(fallback.sp_opt, sp_incumbent)
-        << "fixture broken: fallback TL=800 must outscore the TL=400 incumbent";
-    opt.CommitIncumbent(pa, sp_incumbent, tl_incumbent);
-
-    ResourceOptResult winner = opt.CompareAndPickWinnerAgainstSafeFallback();
-    // The fallback wins: re-scored under the current dag (same dag → same SP).
-    EXPECT_DOUBLE_EQ(fallback.sp_opt, winner.sp_opt);
-    EXPECT_DOUBLE_EQ(800.0, winner.id2time_limit.at(dag_tasks.tasks[0].id));
-}
-
 // --- P0.6: the offline safe fallback (the fall-back artifact). ---
 // ComputeSafeFallback() seeds at the P0.8-certified point (DM PA + TL <= et_mean), runs
 // a TL walk with the gate ON, and STORES the result as `safe_fallback_` — SEPARATE from
@@ -2994,7 +3316,9 @@ TEST_F(CompareAndKeepSynthetic,
     // 0 will bootstrap fresh (byte-identical).
     ASSERT_TRUE(opt.HasSafeFallback());
     EXPECT_FALSE(opt.IfInitialized());
-    EXPECT_FALSE(opt.enforce_important_task_gate_);  // flag reset after the walk
+    // The persistent optimizer's master flag is untouched by the throwaway-sibling
+    // walk (only `fallback_solver.enable_fallback_use_` is forced, on the sibling).
+    EXPECT_TRUE(opt.enable_fallback_use_);  // stays at the shipped default
 }
 
 // (3) The dispatcher's safety contract: Optimize_w_TL_ScratchOrIncre THROWS if no
@@ -3186,130 +3510,6 @@ TEST_F(ETJumpDispatcherTest, PureIncrementalDispatcherAlsoHonorsETJump) {
     EXPECT_EQ(0, opt.eval_calls);
     ResourceOptResult res = opt.CollectResults();
     EXPECT_EQ(opt.GetSafeFallback().priority_vec, res.priority_vec);
-}
-
-// ============================================================================
-// P0.7 trigger (b) — in-walk early-stop guard (HALT on first unsafe candidate).
-// D6 = HALT online (NOT skip-and-continue — that's P0.6's offline gate). D2 =
-// analytic DDL-miss-chance: the guard reuses `ImportantTasksMeetThresholds` (the
-// SP metric's own per-task verdict via `GetDDL_MissProbability` vs
-// `thresholds_node[id]`) — same detection as P0.6, DIFFERENT response. P0.6's
-// `enforce_important_task_gate_` (set true only in `ComputeSafeFallback`) rejects
-// the candidate and CONTINUES the walk (ample offline budget). Trigger (b)'s
-// `enforce_online_halt_gate_` (default false → prod byte-identical) rejects the
-// candidate AND raises `online_halt_requested_` so the walk's nested loops break
-// (tight online budget). On a halt the incumbent stays untouched (the same
-// reject semantics as P0.6) and the eval reports the incumbent SP (ghost-SP fix).
-//
-// These chokepoint tests mirror P0.6's `GateWiring_FlagOn_*` tests (same
-// CompareAndKeepSynthetic fixture: T_perf id 0 not important, SP rises with TL;
-// T_noise id 1 important + gated, deadline wedged so TL=400 feasible / TL=1000
-// violates) — but assert the HALT signal instead of the continue.
-// ============================================================================
-
-// (b1) Flag ON, an SP-better candidate violates the gate → HALT: the incumbent is
-// untouched (reject, same as P0.6) AND `online_halt_requested_` is raised (the
-// NEW halt signal that breaks the walk — P0.6 would have left it false).
-TEST_F(CompareAndKeepSynthetic,
-       OnlineHaltGate_FlagOn_HaltsOnSpBetterThresholdViolatingCandidate) {
-    dag_tasks.tasks[0].is_important = false;   // T_perf: drives SP up with TL
-    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
-    dag_tasks.tasks[1].deadline = 700.0;       // TL=400 feasible, TL=1000 violates
-    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;  // miss is cheap
-
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.enforce_online_halt_gate_ = true;
-    ASSERT_FALSE(opt.online_halt_requested_);  // clean at start
-
-    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    std::vector<double> tl_seed = {400.0, -1.0};
-    std::vector<double> tl_candidate = {1000.0, -1.0};
-    // Sanity: seed feasible, candidate infeasible, candidate strictly SP-better.
-    ASSERT_TRUE(ImportantTasksMeetThresholds(
-        dag_tasks, sp_parameters, pa, tl_seed,
-        NodeRTAsForCandidate(dag_tasks, pa, tl_seed)));
-    ASSERT_FALSE(ImportantTasksMeetThresholds(
-        dag_tasks, sp_parameters, pa, tl_candidate,
-        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
-    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
-              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
-
-    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
-                        tl_seed);
-    ASSERT_TRUE(opt.IfInitialized());
-    const double incumbent_sp = opt.res_opt_.sp_opt;
-
-    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
-                                                  /*et_increased=*/true);
-
-    // Reject (same as P0.6): incumbent untouched.
-    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
-    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
-    // Ghost-SP fix: eval reports the incumbent SP, not the rejected candidate's.
-    EXPECT_DOUBLE_EQ(incumbent_sp, returned);
-    // The NEW halt signal: raised so the walk breaks (P0.6 leaves it false).
-    EXPECT_TRUE(opt.online_halt_requested_);
-}
-
-// (b2) Flag ON, a feasible SP-better candidate → no halt: the gate is permissive
-// when the constraint holds, the candidate commits, and `online_halt_requested_`
-// stays false (the walk completes normally).
-TEST_F(CompareAndKeepSynthetic,
-       OnlineHaltGate_FlagOn_NoHaltWhenCandidateIsFeasible) {
-    dag_tasks.tasks[0].is_important = false;
-    dag_tasks.tasks[1].is_important = true;
-    dag_tasks.tasks[1].deadline = 2000.0;  // loose: TL=1000 stays feasible
-
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.enforce_online_halt_gate_ = true;
-
-    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    std::vector<double> tl_seed = {400.0, -1.0};
-    std::vector<double> tl_candidate = {1000.0, -1.0};
-    ASSERT_TRUE(ImportantTasksMeetThresholds(
-        dag_tasks, sp_parameters, pa, tl_candidate,
-        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
-    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
-              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
-
-    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
-                        tl_seed);
-    ASSERT_TRUE(opt.IfInitialized());
-
-    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
-                                                  /*et_increased=*/true);
-    // The keep: candidate committed, no halt.
-    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_GT(opt.res_opt_.sp_opt, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
-    EXPECT_GT(returned, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
-    EXPECT_FALSE(opt.online_halt_requested_);
-}
-
-// (b3) Flag ON, candidate does NOT beat the champion → the guard is structurally
-// skipped (user's rule — only check on would-beat), so no halt and no commit.
-TEST_F(CompareAndKeepSynthetic,
-       OnlineHaltGate_FlagOn_NonBeatingCandidate_DoesNotHaltNorCommit) {
-    dag_tasks.tasks[0].is_important = false;
-    dag_tasks.tasks[1].is_important = true;
-    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.enforce_online_halt_gate_ = true;
-
-    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
-    std::vector<double> tl_seed = {1000.0, -1.0};  // SP max on this fixture
-    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
-                        tl_seed);
-    ASSERT_TRUE(opt.IfInitialized());
-    const double incumbent_sp = opt.res_opt_.sp_opt;
-
-    std::vector<double> tl_candidate = {400.0, -1.0};  // strictly SP-worse
-    double candidate_sp = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate);
-    ASSERT_LT(candidate_sp, incumbent_sp);
-    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
-                                                  /*et_increased=*/false);
-    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
-    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
-    EXPECT_FALSE(opt.online_halt_requested_);
 }
 
 // ============================================================================
