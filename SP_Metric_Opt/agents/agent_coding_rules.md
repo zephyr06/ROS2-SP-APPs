@@ -51,3 +51,10 @@ don't ask questions to ask questions or for user confirmation. if you can make d
 
 Variable Names:
 Typically, use positive phase rather than negative phase, unless the context prefers a negative phase. For example, use "important_tasks_schedulability_check" rather than "no_important_task_gate".
+
+code speaks for itself without comments:
+never let comments do the work, always make the code work and readable and clear even without any comments. I hate comment paragraphs, don't add a paragraph of comments or comments with many lines (more than 5 lines), ideally, make comments less than 3 lines, if any.
+Do not add comments that line-to-line explain code logic, code speaks for itself, those comments waste token, useless, and no human read it. Ideally, function names speak for the purpose of a function implementation / goal.
+
+Code commit rule:
+Short, Simple, Modular, Multiple. Each commit should contain minimum modular changes that involve no more than, ideally, 3 source file changes, there are no limits in test file changes. We can add many committs for one task.
