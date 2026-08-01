@@ -381,6 +381,19 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
         safe_fallback_ = fallback;
     }
 
+    // Test-only: arm the RTA cache + adopt res_opt_ as champion, mirroring what
+    // `SeedBaselineAndArmCache(Incremental)` does at the start of a real walk.
+    // The during-walk gate (UpdateRecords) is inert unless `rta_cache_active_` is
+    // true (the disarmed-beam invariant, P2.18); gate-wiring tests that seed via
+    // `CommitIncumbent` directly (bypassing SeedBaselineAndArmCache) must call this
+    // to exercise the gate under the same armed state production reaches.
+    void ArmRtaCacheForTest() {
+        rta_cache_active_ = true;
+        std::vector<double> tl = ReconstructTimeLimitVecFromResOpt();
+        const auto& rtas = rta_cache_.Evaluate(dag_tasks_, opt_pa_, tl);
+        rta_cache_.AdoptChampion(dag_tasks_, opt_pa_, tl, rtas);
+    }
+
     // Incumbent-state helpers. res_opt_ is the single durable store;
     // CommitIncumbent is its only writer. BuildChallengerFromIncumbent rebuilds a
     // throwaway challenger from res_opt_ each candidate (not persistent); the

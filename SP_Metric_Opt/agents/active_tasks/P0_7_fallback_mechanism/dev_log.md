@@ -253,9 +253,13 @@ measure_p07_penalty N=6 crash. Path forward = P2.17 (needs user design input D1/
 
 ## NEXT
 
-P0.7 is CODE-COMPLETE + has a real (N=4) SP-penalty data point. Remaining:
-`git add` the Step-2 code + records for user review (no commit). The full N=[4,6,8]
-SP-penalty re-run is tracked by P2.17 (depends on the gate-gap fix).
+P0.7 is CODE-COMPLETE + COMMITTED (Step 2 = `a8148dc7`, Step 3 configs/records =
+`1ef3c26c`) + has a real (N=4) SP-penalty data point. The full N=[4,6,8] SP-penalty
+re-run is blocked by **P2.18** (NOT P2.17 — P2.17 is committed `aefed906` and
+working; the re-run surfaced a DISTINCT crash: the P0.7 gate arms the RTA cache
+mid from-scratch beam → `|diff|>1` throw. See
+`agents/active_tasks/P2_18_p07_gate_arms_rta_cache_mid_beam/`). P2.18 fix first,
+then the re-run.
 
 ## 2026-08-01 — CORRECTION: P2.17 re-framing (NOT a P0.8-vs-P0.6 gate gap)
 

@@ -210,26 +210,29 @@ bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = WouldBeatIncumbent(optimizer.opt_sp_, time_limits);
 
-    // Feasibility gate: on a would-beat, commit only if every important task's
-    // ddl_miss_chance ≤ threshold. RTA re-runs the same rta_cache_.Evaluate
-    // CommitIncumbent uses (candidate's final {pa, tl}); reject → no commit.
-    // Armed by `enable_fallback_use_` — the single master switch for the fall-back
-    // use (ON by default = shipped; the offline safe-fallback walk inside
-    // `ComputeSafeFallback` forces it true on its throwaway sibling so the
-    // certificate holds even in the measurement arm).
-    bool gate_armed = enable_fallback_use_ && !BFSharedBudgetCancelled();
-    if (should_update && gate_armed) {
-        const std::vector<FiniteDist>& challenger_rtas =
-            rta_cache_.Evaluate(dag_tasks_, optimizer.opt_pa_, time_limits);
-        if (!ImportantTasksMeetThresholds(dag_tasks_, sp_parameters_,
-                                          optimizer.opt_pa_, time_limits,
-                                          challenger_rtas)) {
-            // P0.7 step 4 — count the during-walk reject (trigger b-i). The live
-            // interval's record is the log's back entry (pushed at dispatch entry).
-            if (!interval_fallback_log_.empty()) {
-                interval_fallback_log_.back().during_walk_reject_count++;
+    // Feasibility gate (P0.7 trigger b-i): on a would-beat, commit only if every
+    // important task's ddl_miss_chance ≤ threshold. The cache-backed RTA path runs
+    // only in the incremental walk (rta_cache_active_); the reopt from-scratch beam
+    // is gated post-hoc by AdoptFallbackIfUnschedulable on the final res_opt_.
+    if (should_update && enable_fallback_use_ && !BFSharedBudgetCancelled()) {
+        if (rta_cache_active_) {
+            const std::vector<FiniteDist>& challenger_rtas =
+                rta_cache_.Evaluate(dag_tasks_, optimizer.opt_pa_, time_limits);
+            if (!ImportantTasksMeetThresholds(dag_tasks_, sp_parameters_,
+                                              optimizer.opt_pa_, time_limits,
+                                              challenger_rtas)) {
+                // P0.7 step 4 — count the during-walk reject (trigger b-i). The live
+                // interval's record is the log's back entry (pushed at dispatch entry).
+                if (!interval_fallback_log_.empty()) {
+                    interval_fallback_log_.back().during_walk_reject_count++;
+                }
+                return false;  // gate-REJECT: SP-better but infeasible -> no commit
             }
-            return false;  // gate-REJECT: SP-better but infeasible -> no commit
+        } else {
+            // Re-optimization path: the from-scratch beam ran disarmed (no champion),
+            // so no per-step check here. Important-tasks schedulability is post-
+            // evaluated on the final res_opt_ by the cache-free backstop
+            // AdoptFallbackIfUnschedulable (rolls back to safe_fallback_ on failure).
         }
     }
 

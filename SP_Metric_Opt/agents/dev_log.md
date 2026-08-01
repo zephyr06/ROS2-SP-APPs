@@ -192,3 +192,55 @@
   sim; P0.8's gate is the HARDER worst-case-WCET gate and correctly rejects them. Filed as
   **P2.17** (gate wiring, D1 landed); the full N=[4,6,8] A/B re-run waits on its commit.
   Full record in `agents/active_tasks/P0_7_fallback_mechanism/`.
+
+## 2026-08-01
+
+- **Commit split LANDED — P0.7 + P2.17 work split into 3 modular commits.** The
+  staged index (P0.7 step 2/3 + P2.17 gate-wiring, all staged together) was
+  split per the ≤3-source-file rule: C1 `a8148dc7` (P0.7 step 2: `enable_fallback_use`
+  + `INCR_NO_FALLBACK`, 3 src + 2 test); C2 `1ef3c26c` (P0.7 step 3 configs +
+  records, incl. the stale-framing correction re-attributing the N=6 crash to
+  P2.17's gate *bypass*); C3 `aefed906` (P2.17 gate wiring: `compare_optimizers.py`
+  routed through the gated pipeline + `+20` seed step, default ON; 4 TDD tests;
+  28/28 compare tests; no C++). Records + memory updated.
+
+- **P2.17 COMMITTED (`aefed906`) + verified working — but the re-run surfaced a
+  DISTINCT new crash → filed P2.18.** Re-ran `compare_against_bf.json` test_mode
+  (N=4) with P2.17's gate ON (seed=1040 ⇒ the widened +20 step ⇒ gate active).
+  Crashed again, but NOT the P2.17 signature: `taskset_2 / INCR_WCET` SIGABRT
+  with a 0-byte `run.log`, and `INCR_Reopt_10` FINISHED OK on taskset_2 ⇒ P0.6's
+  `ComputeSafeFallback` did NOT throw. Debug `gdb catch throw` pinned it to a
+  completely different site: `RTACache::ComputeTaskSetDifference` throws the
+  `|diff|>1` single-change invariant (`RTA_Cache.cpp:358`) ← `Evaluate` ←
+  `SeedBaselineAndArmCache` (Reopt branch, `OptimizeSP_TL_Incre.cpp:532`). **Root
+  cause = a P0.7-gate regression:** the during-walk gate (trigger b-i) sources its
+  challenger RTA from `rta_cache_.Evaluate` inside `UpdateRecords` (`:223`), gated
+  by `enable_fallback_use_` (NOT `rta_cache_active_`). In the Reopt from-scratch
+  beam (`SeedBaselineAndArmCache:520-533`, meant to run DISARMED), that `Evaluate`
+  calls `RTACache::Initialize` which ADOPTS A CHAMPION mid-beam → a later beam
+  step commits a `{pa,tl}` differing by >1 task → throw → uncaught →
+  `std::terminate` → SIGABRT. `git blame` `UpdateRecords:214-223` = P0.7 gate code;
+  before P0.7 the from-scratch path never called `Evaluate`, so the cache stayed
+  empty and `:532` was a safe `Initialize`. INCR_WCET trips it (WCET ET
+  distribution makes beam commits >1-diff); INCR_Reopt_10 lucked out on this
+  taskset. Filed as **P2.18** (D1: guard-the-call vs decouple-gate-from-cache;
+  D2: does the gate belong in the from-scratch beam at all). NO code yet —
+  planning next. This is what actually blocked the N=6/8 re-run, not P2.17.
+  Full record in `agents/active_tasks/P2_18_p07_gate_arms_rta_cache_mid_beam/`.
+
+- **P2.18 fix LANDED (git add-only, NOT committed) + verified TDD RED→GREEN + real
+  crash path.** D1=(a) guard-the-call (settled pre-code): added `rta_cache_active_`
+  to the during-walk gate predicate at `UpdateRecords:227` →
+  `enable_fallback_use_ && rta_cache_active_ && !BFSharedBudgetCancelled()` (mirrors
+  the `CommitIncumbent:927` precedent); D2 = gate inert in the from-scratch beam, the
+  cache-free backstop `AdoptFallbackIfUnschedulable` covers the final result. New TDD
+  test `P07GateArmsCacheMidBeamSynthetic` (a `ControlledBeamOpt` subclass injects a
+  gate-infeasible >1-TL-diff beam triple, then calls the REAL `UpdateRecords`):
+  RED without the fix throws `ComputeTaskSetDifference: candidate differs from
+  champion by more than one task` (the exact SIGABRT signature, in-process); GREEN
+  with it. 116/116 `testIncreOpt_w_TL`; 16/17 ctest (sole failure
+  `CFS_RunOrchestrator_Binary` is pre-existing/env-related, identical on clean HEAD).
+  Real crash path: re-ran INCR_WCET on taskset_2 (release) → exit 0, all 60
+  intervals' SP metrics + fallback log (`kept_walk` ×60, zero rejects) written; was
+  0-byte run.log / SIGABRT at interval 0. Full `compare_against_bf.json` N=4 re-run
+  launched in background. P0.7's deferred N=6/8 SP-penalty A/B re-run unblocked next.

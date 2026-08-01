@@ -945,6 +945,9 @@ TEST_F(CompareAndKeepSynthetic,
                         tl_seed);
     ASSERT_TRUE(opt.IfInitialized());
     const double incumbent_sp = opt.res_opt_.sp_opt;
+    // Arm the cache (mirrors SeedBaselineAndArmCache(Incremental)): the during-walk
+    // gate is inert unless rta_cache_active_ is true (P2.18 disarmed-beam invariant).
+    opt.ArmRtaCacheForTest();
 
     double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
                                                   /*et_increased=*/true);
@@ -1000,6 +1003,9 @@ TEST_F(CompareAndKeepSynthetic,
                         tl_seed);
     ASSERT_TRUE(opt.IfInitialized());
     const double incumbent_sp = opt.res_opt_.sp_opt;
+    // Arm the cache (mirrors SeedBaselineAndArmCache(Incremental)): the during-walk
+    // gate is inert unless rta_cache_active_ is true (P2.18 disarmed-beam invariant).
+    opt.ArmRtaCacheForTest();
 
     double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
                                                   /*et_increased=*/true);
@@ -1039,6 +1045,9 @@ TEST_F(CompareAndKeepSynthetic,
     opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
                         tl_seed);
     ASSERT_TRUE(opt.IfInitialized());
+    // Arm the cache (mirrors SeedBaselineAndArmCache(Incremental)): the during-walk
+    // gate is inert unless rta_cache_active_ is true (P2.18 disarmed-beam invariant).
+    opt.ArmRtaCacheForTest();
 
     double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
                                                   /*et_increased=*/true);
@@ -2146,6 +2155,217 @@ TEST_F(ReoptFlagOnMultiTLFlexibleSynthetic,
     EXPECT_GT(opt.subincremental_calls, 0)
         << "the reopt walk must route its per-candidate trials through the "
         << "sub-incremental eval; zero calls means the walk never ran.";
+}
+
+// P2.18 — P0.7 during-walk gate arms the RTA cache mid from-scratch beam.
+//
+// The P2.11 5.5 test above (Reopt_AtInterval0_DoesNotThrowWhenReoptMovesMultipleTLs)
+// exercises the SAME Reopt path with >=2 TL-flexible tasks but stays GREEN because
+// no important task is gate-infeasible — the gate at `UpdateRecords:221` never
+// REJECTs, so `rta_cache_.Evaluate` adopts the beam triple as champion via
+// `Initialize` and then `CommitIncumbent` re-adopts the SAME triple (|diff|==0),
+// so the post-beam re-arm `Evaluate` at `:532` is a safe FullReuse. P2.18 is the
+// case the 5.5 fixture gap left uncovered: the gate REJECTS the beam triple.
+//
+// Mechanism (the precise crash signature, traced source-level):
+//  1. `SeedBaselineAndArmCache(Reopt)` -> `ResetIncumbentBaseline(true)` clears the
+//     cache + `rta_cache_active_=false`; at interval 0 `SeedIncumbentFromDMFast`
+//     commits `{DM_PA, smallest_TLs}` as the seed incumbent.
+//  2. The one from-scratch beam `CallOptimizerGivenTimeLimits(...,from_scratch=true)`
+//     -> `UpdateRecords`. `WouldBeatIncumbent` is true (the beam's higher-TL triple
+//     beats the smallest-TL seed on the perf term). `gate_armed` is true — BUT the
+//     predicate is `enable_fallback_use_ && !BFSharedBudgetCancelled()`, MISSING
+//     `rta_cache_active_` (false here). So `rta_cache_.Evaluate(beam_PA, beam_TL)`
+//     fires on a cache with NO champion -> `Initialize` ADOPTS `{beam_PA, beam_TL}`
+//     as champion.
+//  3. The gate then runs `ImportantTasksMeetThresholds` on the beam triple and
+//     REJECTs (an important task misses its deadline at the high-TL beam triple) ->
+//     `return false` WITHOUT `CommitIncumbent`. The champion stays frozen at the
+//     beam triple; `res_opt_`/`opt_pa_` stay at the `{DM_PA, smallest_TLs}` seed.
+//  4. `:529` re-arms `rta_cache_active_=true`; `:530` `champion_tl =
+//     ReconstructTimeLimitVecFromResOpt()` = the SEED TL (the reject left res_opt_
+//     at the seed); `:532` `rta_cache_.Evaluate(seed_PA, seed_TL)` ->
+//     `ComputeTaskSetDifference` diffs the seed triple against the frozen beam
+//     champion triple. With >=2 TL-flexible tasks whose beam TL != seed TL,
+//     `et_diff.size() > 1` -> `IsSingleTaskChange` returns false -> throws
+//     std::runtime_error (RTA_Cache.cpp:358) -> uncaught -> terminate -> SIGABRT.
+//
+// Fix under test (D1-a, guard-the-call): add `rta_cache_active_` to the gate
+// predicate at `UpdateRecords:220` so the gate is INERT during the disarmed
+// from-scratch beam (`rta_cache_active_=false`) — mirroring the `CommitIncumbent:920`
+// precedent. Then step 2's `Evaluate` is skipped -> no champion adopted mid-beam ->
+// `:532` is a safe `Initialize` (no champion to diff against). The beam's FINAL
+// result is still gated by the cache-free backstop `AdoptFallbackIfUnschedulable`
+// (D2), so the from-scratch beam is not left un-gated.
+//
+// Fixture: TWO TL-flexible perf tasks (T_perf_a, T_perf_b, perf-rises-with-TL) +
+// T_noise (important, TIGHT deadline). The beam triple's TL > the smallest-TL seed
+// for BOTH perf tasks (the >1 TL diff that trips `IsSingleTaskChange`).
+//
+// CRUCIAL — the gate-REJECT needs T_noise INTERFERED (low priority). The DM seed PA
+// puts T_noise FIRST (important-first group lock -> zero interference -> always
+// passes the gate). So the beam triple must use a PERF-FIRST PA {perf_a, perf_b,
+// noise} — the SP-maximizing PA `OptimizeFromScratch` would naturally produce on the
+// real crash taskset (perf weight >> noise weight). At the high-TL beam triple the
+// perf tasks' raised ET adds interference to the low-priority T_noise -> RT > deadline
+// -> gate REJECT. At the smallest-TL seed (DM PA, T_noise first) the gate PASSES.
+//
+// Determinism: the from-scratch beam's PA search is NOT relied on. A test subclass
+// overrides `CallOptimizerGivenTimeLimits(from_scratch=true)` to inject a CONTROLLED
+// beam triple (a throwaway `OptimizePA_Incre` with preset perf-first `opt_pa_` +
+// `opt_sp_` at the high TL) that (a) would-beat the seed SP, (b) is gate-infeasible,
+// (c) differs from the seed by >=2 TLs — then calls the REAL `UpdateRecords`, so the
+// real `rta_cache_.Evaluate` + real `ImportantTasksMeetThresholds` + real
+// `ComputeTaskSetDifference` fire. This is the established injection seam
+// (`StartTLStub`/`RecordingDispatcherOpt` override `CallOptimizerGivenTimeLimits`).
+class P07GateArmsCacheMidBeamSynthetic : public ::testing::Test {
+   public:
+    // Injects a controlled from-scratch beam triple on `from_scratch=true`, then
+    // delegates to the REAL `UpdateRecords` (the gate + cache + throw site). The
+    // injected triple is {beam_PA, beam_TL} with a preset SP that beats the DM-fast
+    // seed — so `WouldBeatIncumbent` is true and the gate fires. `beam_PA` is PERF-
+    // FIRST (T_noise last) so T_noise is interfered at the high TL -> gate REJECT.
+    class ControlledBeamOpt : public OptimizePA_Incre_with_TimeLimits {
+       public:
+        bool injected = false;
+        std::vector<int> beam_pa;
+        std::vector<double> beam_tl;
+        double beam_sp = -1.0;
+        using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
+        double CallOptimizerGivenTimeLimits(
+            int beam_search_width, const std::vector<double>& time_limits,
+            bool from_scratch) override {
+            if (from_scratch && injected) {
+                // PRESET {pa, sp} to the controlled beam triple; TL = beam_tl (NOT
+                // the caller's `time_limits` — the beam triple's TL is the high
+                // TL that makes the gate reject). The real UpdateRecords runs next.
+                DAG_Model dag_cur =
+                    UpdateExtDistBasedOnTimeLimit(dag_tasks_, beam_tl);
+                OptimizePA_Incre optimizer(dag_cur, sp_parameters_);
+                optimizer.opt_pa_ = beam_pa;   // perf-first: T_noise interfered
+                optimizer.opt_sp_ = beam_sp;
+                UpdateRecords(optimizer, beam_tl);
+                return beam_sp;
+            }
+            return OptimizePA_Incre_with_TimeLimits::
+                CallOptimizerGivenTimeLimits(beam_search_width, time_limits,
+                                             from_scratch);
+        }
+    };
+
+    // TL-flexible perf task: grid {400, 1000}, Gaussian ET ~800 -> Gaussian-mean-
+    // closest TL is 1000 (|800-1000|=200 < |800-400|=400). Perf rises with TL, so the
+    // higher TL is strictly SP-better (the beam's incentive to raise TL, diverging
+    // from the smallest-TL seed 400). Wide grid + ET far from the midpoint makes the
+    // closest-TL pick robust to discretized-Gaussian-mean drift.
+    Task MakeTLFlexibleTask(int id, const std::string& name) {
+        const double et_avg = 800.0;
+        std::vector<Value_Proba> dist = {Value_Proba(et_avg, 1.0)};
+        Task t(id, dist, 2000, 2000, id, name);
+        t.execution_time_dist = FiniteDist(GaussianDist(et_avg, 0.5), 5);
+        t.timePerformancePairs.push_back(TimePerfPair(400, 0.4));
+        t.timePerformancePairs.push_back(TimePerfPair(1000, 1.0));
+        return t;
+    }
+
+    void SetUp() override {
+        Task t_perf_a = MakeTLFlexibleTask(0, "T_perf_a");
+        Task t_perf_b = MakeTLFlexibleTask(1, "T_perf_b");
+
+        // T_noise: important, TIGHT deadline. At the smallest-TL seed (400, DM PA ->
+        // T_noise FIRST -> no interference) the gate PASSES. At the high-TL beam
+        // triple (1000, PERF-FIRST PA -> T_noise LAST -> the perf tasks' raised ET
+        // interferes T_noise) T_noise RT > deadline -> gate REJECTS.
+        std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+        Task t_noise(2, dist_noise, 2000, 2000, 2, "T_noise");
+        t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+        t_noise.is_important = true;
+        t_noise.deadline = 850.0;  // between seed-TL RT (low) and beam-TL RT (high)
+
+        TaskSet tasks = {t_perf_a, t_perf_b, t_noise};
+        dag_tasks = DAG_Model(tasks, mapPrev, 0, 0);
+        sp_parameters = SP_Parameters(dag_tasks);
+        // Down-weight T_noise so the beam's SP-maximizing PA puts the perf tasks
+        // high (their perf gain dominates) — T_noise stays low priority in the beam.
+        sp_parameters.weights_node[t_noise.id] = 0.01;
+    }
+
+    MAP_Prev mapPrev;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+// RED: the gate arms the cache mid from-scratch beam -> `ComputeTaskSetDifference`
+// throws |diff|>1 at the post-beam re-arm `Evaluate` (`:532`). Before the fix this
+// is the in-proc crash signature (the same throw the SIGABRT run path hits).
+TEST_F(P07GateArmsCacheMidBeamSynthetic,
+       ReOptimizePeriodic_GateDoesNotArmCacheMidFromScratchBeam) {
+    ControlledBeamOpt opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;  // shipped default: the during-walk gate is armed
+
+    // Precondition A: both perf tasks' Gaussian-mean TL (1000) differs from the
+    // smallest-TL seed (400). This >=2-TL diff is what makes IsSingleTaskChange
+    // return false at the post-beam re-arm `Evaluate`.
+    std::vector<double> gaussian_seed = opt.InitializeTimeLimitsFromETConfig();
+    std::vector<double> smallest_tl = opt.SmallestTimeLimitVec();
+    ASSERT_EQ(gaussian_seed.size(), 3u);
+    ASSERT_NE(gaussian_seed[0], smallest_tl[0])
+        << "fixture broken: T_perf_a Gaussian TL must differ from smallest TL";
+    ASSERT_NE(gaussian_seed[1], smallest_tl[1])
+        << "fixture broken: T_perf_b Gaussian TL must differ from smallest TL";
+    double tl_high = gaussian_seed[0];   // the beam TL (1000)
+    double tl_low = smallest_tl[0];      // the seed TL (400)
+
+    // Precondition B: the gate PASSES at the DM seed (T_noise first -> no
+    // interference, RT < deadline) and FAILS at the PERF-FIRST beam triple (T_noise
+    // last -> interfered by the high-TL perf tasks, RT > deadline). This is the
+    // gate-REJECT that freezes the champion at the beam triple while res_opt_ stays
+    // at the seed.
+    PriorityVec pa_seed = opt.DeadlineMonotonicPriorityVec();      // T_noise first
+    PriorityVec pa_beam = {0, 1, 2};                                // perf-first
+    std::vector<double> tl_seed = {tl_low, tl_low, -1.0};
+    std::vector<double> tl_beam = {tl_high, tl_high, -1.0};
+    ASSERT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa_seed, tl_seed))
+        << "fixture broken: the DM seed triple must PASS the gate (T_noise first -> no "
+        << "interference); otherwise the crash cannot be reproduced.";
+    ASSERT_FALSE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters, pa_beam, tl_beam))
+        << "fixture broken: the perf-first beam triple must FAIL the gate (T_noise last "
+        << "-> interfered at the high TL); otherwise the gate adopts+commits the beam "
+        << "triple (|diff|==0) and the post-beam re-arm `Evaluate` does not throw.";
+
+    // Precondition C: the beam triple is strictly SP-better than the seed (the perf
+    // gain from raising both TLs 400->1000 dominates). This makes `WouldBeatIncumbent`
+    // true so the gate fires on the beam triple.
+    double sp_seed = OracleSPForCandidate(dag_tasks, sp_parameters, pa_seed, tl_seed);
+    double sp_beam = OracleSPForCandidate(dag_tasks, sp_parameters, pa_beam, tl_beam);
+    ASSERT_GT(sp_beam, sp_seed)
+        << "fixture broken: the beam triple must be strictly SP-better than the seed "
+        << "so WouldBeatIncumbent fires the gate; otherwise the gate is never reached.";
+
+    // Inject the controlled beam triple: perf-first PA, SP = sp_beam (beats the seed),
+    // TL = the high Gaussian TL (1000 for both perf tasks). The real UpdateRecords
+    // runs the gate -> REJECTs -> no CommitIncumbent -> champion frozen at
+    // {pa_beam, tl_beam}, res_opt_ at {pa_seed, tl_seed}.
+    opt.injected = true;
+    opt.beam_pa = pa_beam;
+    opt.beam_tl = tl_beam;
+    opt.beam_sp = sp_beam;
+
+    // BEFORE the fix (RED): the post-beam re-arm `Evaluate` at `:532` diffs the
+    // seed triple {pa_seed, tl_seed} against the frozen beam champion {pa_beam,
+    // tl_beam} -> >=2 TL diffs (and a PA diff) -> ComputeTaskSetDifference throws
+    // |diff|>1 -> the throw escapes EXPECT_NO_THROW (RED failure).
+    // AFTER the fix (GREEN): the gate predicate adds `rta_cache_active_` (false
+    // during the beam) -> the gate is inert -> no mid-beam `Evaluate` -> no champion
+    // adopted -> `:532` is a safe `Initialize` -> ReOptimizePeriodic completes.
+    EXPECT_NO_THROW(opt.ReOptimizePeriodic(dag_tasks, 2))
+        << "P2.18: the P0.7 during-walk gate must NOT arm the RTA cache mid from-"
+        << "scratch beam. The gate predicate at UpdateRecords:220 must require "
+        << "rta_cache_active_ (mirroring CommitIncumbent:920) so the gate is inert "
+        << "during the disarmed Reopt beam; a throw here is the |diff|>1 cache-"
+        << "contract crash (the gate adopted a champion via Initialize, then rejected, "
+        << "freezing the champion at the beam triple while res_opt_ stayed at the "
+        << "seed).";
 }
 
 // P2.11 Phase 1b-1e — the unified descent body `RunIntervalDescent` folds the

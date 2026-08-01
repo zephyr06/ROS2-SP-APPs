@@ -107,5 +107,10 @@
       cleared; N=4 data point kept at
       `runs/measure_p07_.../sim/tasks4_.../comparison_summary.csv`. Flag default stays ON.
 - [ ] `dev_log.md` (this folder + top-level) + memory updated.
-- [ ] `git add` staged; user reviews (no commit).
+- [x] `git add` staged; user reviews (no commit). — COMMITTED: Step 2 `a8148dc7`,
+      Step 3 configs/records `1ef3c26c` (2026-08-01).
 - [x] `enable_fallback_use_` default ON (= final prod state).
+- [ ] **Full N=[4,6,8] re-run BLOCKED by P2.18** (NOT P2.17 — P2.17 committed
+      `aefed906` + working; the re-run surfaced a DISTINCT P0.7-gate crash: the
+      gate arms the RTA cache mid from-scratch beam → `|diff|>1` throw in
+      `SeedBaselineAndArmCache:532`. See P2.18). Fix P2.18 first, then re-run.
