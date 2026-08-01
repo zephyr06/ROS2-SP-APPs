@@ -463,3 +463,28 @@
 - Next: surface the seeded-retry prerequisite + placement to the user; on direction,
   TDD the gate (red: emit a taskset, fail the RTA, retry advances the seed, eventually
   PASS or loud-raise) then wire.
+
+## 2026-08-01 (CLOSED)
+
+- **P0.8 CLOSED.** All the deferred Step 2 design questions above were resolved and
+  landed: the seeded-retry mechanism advances `seed + attempt` (localized, opt-in), and
+  the gate is a caller-side wrapper `run_full_generation_pipeline_with_important_task_gate`
+  (canonical `run_full_generation_pipeline` signature untouched), retry budget
+  `IMPORTANT_TASK_GATE_MAX_ATTEMPTS` = 20 then loud raise (D4).
+- **Fully committed at HEAD** (verified 2026-08-01): gate wrapper in
+  `Gen_Taskset/lib/orchestrator.py`; prod-wiring in
+  `Gen_Taskset/executable/run_generator.py` (default ON) +
+  `simulation_experiments/run_sim_experiments.py` (`--important_tasks_schedulability_check`,
+  default True, `--no-...` opt-out) + `simulation_experiments/compare_optimizers.py` (P2.17
+  `aefed906` routed it through the gated pipeline with the +20 seed step). Tests:
+  `Gen_Taskset/tests/test_important_task_gate.py`, `Gen_Taskset/tests/test_integration.py`,
+  `tests/python/test_compare_optimizers_gate.py`.
+- **Seed/WCET consistency with P0.6** (the open step-0 coordination line): verified during
+  P2.17 — both P0.8's gate and P0.6's `ComputeSafeFallback` read the same global-max WCETs
+  (perf = `execution_time_mu`, non-perf = `execution_time_max`); on the crashed taskset the
+  two gates AGREE (both reject, culprit `task_1`, `R=35.39 > 33`). See
+  [[p217-p06-p08-gate-consistency-gap]]. No consistency gap exists; D2 (tighten P0.8 to
+  worst-case DAG) was not needed.
+- **Step 3 rejection-rate:** 0 rejections across N=4/8/16 (15 draws) — the clamp-first
+  lever alone sufficed; the second lever was not needed (48 pytest).
+- Folder moved to `agents/finished_tasks/P0_8_important_task_schedulability/`.

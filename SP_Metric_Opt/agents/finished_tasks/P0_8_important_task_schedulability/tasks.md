@@ -16,9 +16,16 @@
       orchestrator one RunQueue per core, P1.7).
 - [x] **D4 RESOLVED (2026-07-27):** retry budget = 20, then loud raise (NEVER silent).
 - [x] **D5 RESOLVED (2026-07-27):** clamp first, then RTA.
-- [ ] Record decisions in `dev_log.md` + memory; sync with P0.6/P0.7 owners. **Coordinate
+- [x] Record decisions in `dev_log.md` + memory; sync with P0.6/P0.7 owners. **Coordinate
       with P0.6: use the SAME seed point (DM-grouped + min-TL + WCET) and SAME WCET fields
       (global-max ET per task) P0.6 uses** (see `goal.md` "Relationship to P0.6").
+      — **DONE + CLOSED 2026-08-01.** Gate code fully committed (gate wrapper in
+      `Gen_Taskset/lib/orchestrator.py`; prod-wiring in `Gen_Taskset/executable/run_generator.py`
+      + `simulation_experiments/run_sim_experiments.py`; tests `test_important_task_gate.py`,
+      `test_integration.py`, `test_compare_optimizers_gate.py` all at HEAD). Seed/WCET
+      consistency with P0.6 verified during P2.17 ([[p217-p06-p08-gate-consistency-gap]]):
+      both gates read the same global-max WCETs; the two gates AGREE. Folder moved to
+      `finished_tasks/`.
 
 ## 1. Python fixed-priority RTA for the important group (per-core) — LANDED, staged for review
 - [x] TDD red→green: 10 tests in `test_important_task_rta.py` (schedulable, unschedulable

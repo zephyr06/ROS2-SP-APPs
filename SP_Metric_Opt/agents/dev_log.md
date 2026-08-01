@@ -247,3 +247,13 @@
   0-byte run.log / SIGABRT at interval 0. Full `compare_against_bf.json` N=4 re-run
   = 80/80 arms exit 0, zero crashes. P0.7's deferred N=6/8 SP-penalty A/B re-run
   unblocked (owned by P0.7, not P2.18).
+- **2026-08-01 — P0.8 CLOSED.** Important-task schedulability gate fully landed +
+  committed at HEAD: wrapper `run_full_generation_pipeline_with_important_task_gate`
+  (retry budget 20 → loud raise, D4), seeded-retry advances `seed + attempt`, canonical
+  pipeline signature untouched. Prod-wired default-ON in `run_generator.py` +
+  `run_sim_experiments.py` (`--important_tasks_schedulability_check` opt-out); P2.17
+  (`aefed906`) routed `compare_optimizers.py` through it (+20 seed step). Step 3
+  rejection-rate = 0 across N=4/8/16 (clamp-first lever alone sufficed). Seed/WCET
+  consistency with P0.6 verified during P2.17 — both gates read the same global-max
+  WCETs and AGREE on the reject tasksets; no D2 tightening needed. Folder →
+  `finished_tasks/`.
