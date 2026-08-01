@@ -228,11 +228,13 @@
   planning next. This is what actually blocked the N=6/8 re-run, not P2.17.
   Full record in `agents/active_tasks/P2_18_p07_gate_arms_rta_cache_mid_beam/`.
 
-- **P2.18 fix LANDED (git add-only, NOT committed) + verified TDD RED→GREEN + real
-  crash path.** D1=(a) guard-the-call (settled pre-code): added `rta_cache_active_`
-  to the during-walk gate predicate at `UpdateRecords:227` →
+- **P2.18 fix LANDED + verified TDD RED→GREEN + real crash path; COMMITTED `f371c543`
+  (also restructured the gate so `if (rta_cache_active_)` is the first discriminator
+  + an `else` documenting the post-eval reopt path). CLOSED.** D1=(a) guard-the-call
+  (settled pre-code): added `rta_cache_active_`
+  to the during-walk gate predicate at `UpdateRecords` →
   `enable_fallback_use_ && rta_cache_active_ && !BFSharedBudgetCancelled()` (mirrors
-  the `CommitIncumbent:927` precedent); D2 = gate inert in the from-scratch beam, the
+  the `CommitIncumbent` precedent); D2 = gate inert in the from-scratch beam, the
   cache-free backstop `AdoptFallbackIfUnschedulable` covers the final result. New TDD
   test `P07GateArmsCacheMidBeamSynthetic` (a `ControlledBeamOpt` subclass injects a
   gate-infeasible >1-TL-diff beam triple, then calls the REAL `UpdateRecords`):
@@ -243,4 +245,5 @@
   Real crash path: re-ran INCR_WCET on taskset_2 (release) → exit 0, all 60
   intervals' SP metrics + fallback log (`kept_walk` ×60, zero rejects) written; was
   0-byte run.log / SIGABRT at interval 0. Full `compare_against_bf.json` N=4 re-run
-  launched in background. P0.7's deferred N=6/8 SP-penalty A/B re-run unblocked next.
+  = 80/80 arms exit 0, zero crashes. P0.7's deferred N=6/8 SP-penalty A/B re-run
+  unblocked (owned by P0.7, not P2.18).
