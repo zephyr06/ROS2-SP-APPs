@@ -255,6 +255,40 @@ bool ImportantTasksMeetThresholds(
                                         priority_assignment, tl, node_rtas);
 }
 
+// Diagnostic companion (see header). Same bake+prioritize+RTA path as the
+// self-contained gate overload, then returns the worst important-task violator
+// (max miss_chance - threshold) instead of a bool. The gate's verdict is
+// unchanged; this only surfaces the per-task values the gate already computes.
+ImportantTaskMissInfo WorstImportantTaskMissInfo(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl) {
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized =
+        UpdateTaskSetPriorities(tasks_baked, priority_assignment);
+    std::vector<FiniteDist> node_rtas = ProbabilisticRTA_TaskSet(tasks_prioritized);
+    ImportantTaskMissInfo worst;
+    double worst_excess = -1.0;
+    for (size_t i = 0; i < tasks_prioritized.size(); i++) {
+        if (!tasks_prioritized[i].is_important) {
+            continue;
+        }
+        double miss_chance = GetDDL_MissProbability(
+            node_rtas[i], tasks_prioritized[i].deadline);
+        double threshold =
+            sp_parameters.thresholds_node.at(tasks_prioritized[i].id);
+        double excess = miss_chance - threshold;
+        if (excess > worst_excess) {
+            worst_excess = excess;
+            worst.task_id = tasks_prioritized[i].id;
+            worst.miss_chance = miss_chance;
+            worst.threshold = threshold;
+        }
+    }
+    return worst;
+}
+
 double GetTaskPerfTerm(
     double ext_time_single,
     const std::vector<TimePerfPair>& timePerformancePairs_Sorted) {

@@ -176,6 +176,24 @@ bool ImportantTasksMeetThresholds(
     const std::vector<int>& priority_assignment,
     const std::vector<double>& tl);
 
+// Diagnostic companion to `ImportantTasksMeetThresholds`: returns the WORST
+// important-task violator's id + ddl_miss_chance + threshold under the given
+// {PA, TL}. Same bake+prioritize+RTA path as the self-contained gate overload
+// (one fresh RTA eval). Used by P0.7's interval_fallback_log to record WHICH
+// important task forced a post-walk backstop adoption (the backstop fires
+// <=1x/interval, so this is cheap). miss_chance/threshold are -1 when no
+// important task exists (vacuous). The gate's bool verdict is unchanged; this
+// only READS the per-task values the gate already computes internally.
+struct ImportantTaskMissInfo {
+    int task_id = -1;
+    double miss_chance = -1.0;
+    double threshold = -1.0;
+};
+ImportantTaskMissInfo WorstImportantTaskMissInfo(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl);
+
 double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& mpc_path, std::string& tsp_path,
                             std::string& tsp_ext_path, std::string& chain0_path,
