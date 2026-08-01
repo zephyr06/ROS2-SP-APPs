@@ -3,7 +3,8 @@
 > Offline fall-back artifact for P0.7. Seed at the P0.8-certified operating point (DM-grouped
 > PA + TL = largest grid option ≤ `et_mean`) → TL-only walk with a HARD per-candidate gate
 > (`ddl_miss_chance ≤ sp_threshold` for all important tasks) → keep best-SP-feasible as
-> `safe_fallback_`. Algorithm + soundness in `goal.md`. Sections 0.5–9 LANDED; awaits commit.
+> `safe_fallback_`. Algorithm + soundness in `goal.md`. **COMPLETE + COMMITTED `630cda4d`
+> (2026-07-31): sections 0.5–10 LANDED; 17/17 ctest green.**
 > §9 (2026-07-31): dispatcher THROWS when no fallback pre-computed (was an unsound
 > lazy backstop) + `ImportantTasksMeetThresholds` self-contained overload.
 > §10 (2026-07-31): readability refactor — extracted `TaskStructureMatches` from
@@ -179,7 +180,7 @@
       (16/17 ctest; the 1 failure = pre-existing `testPublisher` `PeriodicReleaser.v1`
       wall-clock flake — passes in isolation, unrelated to this change). 6 targeted
       dispatcher + §8 tests pass by name.
-- [ ] `dev_log.md` + memory updated; `git add` staged; user reviews (no commit).
+- [x] `dev_log.md` + memory updated; COMMITTED `630cda4d` (user, 2026-07-31).
 
 ## 10. Readability refactor of the worst-case-DAG builder (2026-07-31)
 > `BuildWorstCaseDagAcrossIntervals` had its structural-equality check inlined as a
@@ -203,4 +204,4 @@
       corrected to the actual field set.
 - [x] `cmake --build build_test --target check.SP_OPT -j5 --clean-first` green
       (**17/17**; the `testPublisher` flake passed this run).
-- [ ] `dev_log.md` + memory updated; `git add` staged; user reviews (no commit).
+- [x] `dev_log.md` + memory updated; COMMITTED `630cda4d` (user, 2026-07-31).

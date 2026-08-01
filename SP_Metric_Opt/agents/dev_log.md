@@ -152,3 +152,25 @@
 - **Verify (Step 2 final):** `pytest Gen_Taskset/tests/` = 43 green; `pytest tests/python/` = 351/353 (2 fails PRE-EXISTING config — `compare_against_bf.json time_limit_seconds`, untouched by P0.9, = P2.14-known); `cmake --build build_test --target check.SP_OPT -j5` = 17/17 green.
 - **Commit state:** Steps 1+2 COMMITTED by the user in 3 commits — `0b9dae4a` (Step 1 C++ seed PA: `OptimizeSP_TL_Incre.{h,cpp}` + `testIncreOpt_w_TL.cpp`), `6a35080b` (Step 2 C++ orchestrator: `SimulationOrchestrator.cpp` + `RunOrchestrator.cpp` + `testScheduleSimulate.cpp`), `352f13d5` (Step 2 configs/Python: 18 source files + the P0.9 task-folder `dev_log.md`/`tasks.md` snapshot). Step 4 records (P0.6/P0.8 plan-doc relabels + dev_log pointers + this milestone) = COMMITTED by the user as `7dd1a7ac` ("update task records"; 9 files, 1297/11; exactly the Step-4 record paths, no unrelated files).
 - **Status**: Steps 1+2+4 ALL committed (`0b9dae4a`/`6a35080b`/`352f13d5`/`7dd1a7ac`). **D6 behavior-change flag**: seed PA shifts whenever `D≠T` (always) or the group lock reorders; schedulability should improve, global SP may move — the verification gate is "schedulability improves/holds + SP within tolerance", NOT bit-identical. Prod A/B re-run = user-go (NOT run unilaterally). Full record in `agents/active_tasks/P0_9_dm_and_important_first_priority/`.
+
+## 2026-07-31
+
+- **P0.6 FINISHED — offline safe-fallback artifact COMPLETE + COMMITTED (`630cda4d`).** Produces
+  a deterministic offline `{PA, TL}` (`safe_fallback_`, `ResourceOptResult`) computed ONCE before
+  the interval loop, for P0.7 to swap in on an online trigger. Algorithm: seed at the P0.8-certified
+  operating point (DM-grouped PA + TL = largest grid option ≤ `et_mean`) → TL-only walk with a HARD
+  per-candidate gate (`ImportantTasksMeetThresholds`: `ddl_miss_chance ≤ sp_threshold` for all
+  important tasks, at the `UpdateRecords` commit chokepoint) → keep the best-SP-feasible result.
+  - **§8 (cross-interval safety for P0.7 trigger (a)):** caller builds a worst-case DAG = per-task
+    point mass at `max(execution_time_max)` across ALL interval YAMLs (`BuildWorstCaseDagAcrossIntervals`,
+    NEW `sources/TaskModel/WorstCaseDAG.cpp`) → `ComputeSafeFallback(worst_case_dag)` → stochastic
+    dominance → the gate's `ddl_miss_chance` upper-bounds every interval. Loud-fail: post-walk
+    re-gate on the FINAL stored result; on fail raises + unstored (`HasSafeFallback()` false).
+  - **§9:** dispatcher THROWS when no fallback is pre-computed (was an unsound lazy backstop — it
+    couldn't build the worst-case DAG) + `ImportantTasksMeetThresholds` self-contained overload.
+  - **§10:** readability refactor — extracted the inlined `structure_matches` flag into header fn
+    `TaskStructureMatches(const Task&, const Task&)` (behavior-preserving; 5 TDD tests).
+  - **Verify:** `cmake --build build_test --target check.SP_OPT -j5` = **17/17 green** (re-verified
+    on the committed tree). Offline-only (online sim+optimizer byte-identical). P0.6 PRODUCES the
+    artifact end-to-end; P0.7 wires the fall-back USE. Full record in
+    `agents/active_tasks/P0_6_static_solution/`.

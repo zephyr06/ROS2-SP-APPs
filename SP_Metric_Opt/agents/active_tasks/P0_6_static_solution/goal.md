@@ -1,11 +1,11 @@
 # P0.6 — Offline Safe Fallback (Fall-Back Seed)
 
 **Priority:** P0 (blocks the fall-back mechanism, P0.7)
-**Status:** sections 0.5–9 LANDED (git add-only, NOT committed); all TDD green. Awaits user commit.
+**Status:** COMPLETE + COMMITTED (`630cda4d`, 2026-07-31). Sections 0.5–10 LANDED; 17/17 ctest green.
 **Depends on:** P0.8 (certifies the seed sub-region). **Blocks:** P0.7 (swaps `safe_fallback_`
 in when an online trigger fires).
-> Latest = **§9: dispatcher throw + gate overload** (tightens the §8 contract).
-> §8 = worst-case-DAG + loud-fail (cross-interval safety for P0.7 trigger (a)).
+> Latest = **§10: readability refactor** (`TaskStructureMatches` extracted from the worst-case-DAG builder).
+> §9 = dispatcher throw + gate overload; §8 = worst-case-DAG + loud-fail (cross-interval safety for P0.7 trigger (a)).
 > Historical redesign narrative is in `dev_log.md`; this file states the settled design only.
 
 ## Goal
@@ -114,9 +114,14 @@ metric / `SP_Func` / the online optimizer path; a new A/B scheduler arm.
       overload (derives RTAs via `ProbabilisticRTA_TaskSet`, delegates to the contract
       overload). Simplifies the §8c loud-fail re-gate; the contract overload stays the
       zero-extra-eval path for the in-walk gate.
-- [ ] `cmake --build build_test --target check.SP_OPT -j5` green (DONE 16/17; the 1
-      failure = pre-existing `testPublisher` `PeriodicReleaser.v1` wall-clock flake,
-      passes in isolation); `git add` staged; user reviews (no commit).
+- [x] `cmake --build build_test --target check.SP_OPT -j5` green (**17/17** this run; the
+      pre-existing `testPublisher` `PeriodicReleaser.v1` wall-clock flake passed here too).
+- [x] **§10:** readability refactor — extract the inlined `structure_matches` flag from
+      `BuildWorstCaseDagAcrossIntervals` into a header fn `TaskStructureMatches(const Task&,
+      const Task&)` (`DAG_Model.h` decl, `WorstCaseDAG.cpp` def). Behavior-preserving:
+      compares id/period/deadline/processorId/name + full `timePerformancePairs` grid; ET
+      dist excluded (the builder fuses the max across intervals). 5 TDD tests; 17/17 green.
+- [x] COMMITTED `630cda4d` (user, 2026-07-31) — all of §0.5–10 (code + records).
 
 ## Open decisions
 

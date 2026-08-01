@@ -2,7 +2,8 @@
 
 > Detailed working log. Append chronological entries below. On completion, append a one-line
 > milestone to the top-level `agents/dev_log.md`. Algorithm + soundness in `goal.md`;
-> checklist in `tasks.md`. Sections 0.5–9 LANDED; awaits user commit.
+> checklist in `tasks.md`. **COMPLETE + COMMITTED `630cda4d` (2026-07-31): sections 0.5–10
+> LANDED; 17/17 ctest green.**
 
 ## 2026-07-31 — worst-case-DAG redesign (cross-interval safety for P0.7 trigger (a))
 
@@ -169,3 +170,13 @@ worst-case-DAG builder (orchestrator) + wire into the pre-call + the loud-fail c
   intervals, so the gap is latent, not a live bug) — corrected the comment to
   match the actual field set. `--clean-first` build green **17/17** (the
   `testPublisher` flake passed this run). NOT committed; awaits user commit.
+- **2026-07-31 (cont. 4) — COMMIT.** User committed all of §0.5–10 (code + records) as
+  `630cda4d` ("add code to build dag with WCET from multiple interval files, and use it in
+  optimization"). Verified post-commit: `git status` clean for P0.6 paths; `630cda4d`
+  contains `BuildWorstCaseDagAcrossIntervals`/`WorstCaseDAG.cpp` (§8a), the dispatcher
+  `throw` + `ImportantTasksMeetThresholds` self-contained overload (§9), and
+  `TaskStructureMatches` (§10). `cmake --build build_test --target check.SP_OPT -j5` =
+  **17/17 green** (re-verified on the committed tree, incl. the `testPublisher` flake
+  passing). Records + memory refreshed to drop the stale "NOT committed / awaits user
+  commit" framing. **P0.6 COMPLETE.** P0.6 PRODUCES the artifact end-to-end; P0.7 wires
+  the fall-back USE.
