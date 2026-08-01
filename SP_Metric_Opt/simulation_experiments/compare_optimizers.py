@@ -27,7 +27,11 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from Gen_Taskset.lib.orchestrator import run_full_generation_pipeline
+from Gen_Taskset.lib.orchestrator import (
+    run_full_generation_pipeline,
+    run_full_generation_pipeline_with_important_task_gate,
+    IMPORTANT_TASK_GATE_MAX_ATTEMPTS,
+)
 from Gen_Taskset.lib.generation_config_parser import (
     load_generation_config,
     resolve_taskset_config_path,
@@ -381,6 +385,37 @@ def _read_log_tail(log_path, max_lines=40):
     return all_lines[-max_lines:]
 
 
+def _generate_taskset(args, cfg_file, dir_path):
+    """P2.17: pick the generation entry point once. The gate routes the same
+    kwargs the ungated pipeline takes; the only differences are (a) the gate
+    certifies DM-schedulability for the important tasks (re-rolling on fail)
+    and (b) it returns a report we surface. Mirrors run_sim_experiments.py.
+    """
+    if not args.important_tasks_schedulability_check:
+        run_full_generation_pipeline(
+            cfg_file=cfg_file,
+            n_sec=args.n_sec,
+            dir_path=dir_path,
+            add_perf_records=True,
+            interact=False,
+            n_path_per_task=1,
+            n_inst_per_path=args.n_inst,
+        )
+    else:
+        report = run_full_generation_pipeline_with_important_task_gate(
+            cfg_file=cfg_file,
+            n_sec=args.n_sec,
+            dir_path=dir_path,
+            add_perf_records=True,
+            interact=False,
+            n_path_per_task=1,
+            n_inst_per_path=args.n_inst,
+        )
+        if args.verbose >= 1:
+            print(f"  [P0.8 gate] taskset {dir_path} certified schedulable for "
+                  f"important tasks (attempts_used={report['attempts_used']}).")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=("Compare scheduler optimizers across randomly generated tasksets. "
@@ -439,6 +474,17 @@ def main():
     parser.add_argument(
         "--base_seed", type=int, default=1000,
         help="Base random seed for deterministic taskset generation (default: 1000)"
+    )
+    # P2.17: the important-task schedulability gate (P0.8), ON by default (mirrors
+    # run_sim_experiments.py). Re-rolls unschedulable-at-worst-case tasksets instead
+    # of letting them reach the sim and trip P0.6's ComputeSafeFallback loud-fail.
+    parser.add_argument(
+        "--important_tasks_schedulability_check",
+        action=argparse.BooleanOptionalAction, default=True,
+        help="Run the important-task schedulability gate (P0.8) on every generated "
+             "taskset. On by default: each taskset is certified DM-schedulable for the "
+             "important tasks; pass --no-important_tasks_schedulability_check to fall "
+             "back to the ungated pipeline with the legacy +1 per-taskset seed step."
     )
     parser.add_argument(
         "--schedulers", nargs="+", default=ALL_SCHEDULERS,
@@ -560,7 +606,12 @@ def main():
 
         # Load, seed, and save configuration (resolve INCLUDE so temp file is self-contained)
         config_dict = load_generation_config(config_file_abs)
-        config_dict["RANDOM_SEED"] = args.base_seed + idx
+        # P2.17: widen the per-taskset seed step to IMPORTANT_TASK_GATE_MAX_ATTEMPTS
+        # when the gate is ON, so its +0..19 retry window for taskset k cannot collide
+        # with taskset k+1's draw; OFF keeps the legacy +1 step.
+        seed_step = (IMPORTANT_TASK_GATE_MAX_ATTEMPTS
+                     if args.important_tasks_schedulability_check else 1)
+        config_dict["RANDOM_SEED"] = args.base_seed + idx * seed_step
         config_dict["UPDATE_INTERVAL_S"] = scheduler_trigger_interval
 
         # Decide whether to (re)generate. _should_generate compares
@@ -588,28 +639,12 @@ def main():
             if args.verbose >= 1:
                 print("  Generating taskset...")
             if args.verbose >= 2:
-                run_full_generation_pipeline(
-                    cfg_file=temp_cfg_path,
-                    n_sec=args.n_sec,
-                    dir_path=taskset_dir,
-                    add_perf_records=True,
-                    interact=False,
-                    n_path_per_task=1,
-                    n_inst_per_path=args.n_inst,
-                )
+                _generate_taskset(args, temp_cfg_path, taskset_dir)
             else:
                 with open(os.devnull, "w") as devnull:
                     with contextlib.redirect_stdout(devnull), \
                          contextlib.redirect_stderr(devnull):
-                        run_full_generation_pipeline(
-                            cfg_file=temp_cfg_path,
-                            n_sec=args.n_sec,
-                            dir_path=taskset_dir,
-                            add_perf_records=True,
-                            interact=False,
-                            n_path_per_task=1,
-                            n_inst_per_path=args.n_inst,
-                        )
+                        _generate_taskset(args, temp_cfg_path, taskset_dir)
         else:
             if args.verbose >= 1:
                 print("  Taskset already exists, skipping generation.")
