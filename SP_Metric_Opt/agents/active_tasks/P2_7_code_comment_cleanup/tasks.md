@@ -21,12 +21,28 @@
     the P1.25 reject-path anecdote). Preserved all WHY-rationale: the safe-upper-bound gate, the
     reindex-by-task-id invariant, the 3-arg vs 2-arg `GetRTA_OneTask` bit-identity reasoning.
     **17/17 ctest green** (comment-only, zero behavior change). Tag count now 0/0.
-- [ ] **2b. Clean `OptimizeSP_TL_Incre.{h,cpp}`**
-  - Remove task tags and historical walk-step changelog narratives.
-- [ ] **2c. Clean `OptimizeSP_Incre.{h,cpp}` & `PrioritySwitchAnalysis.h`**
-  - Simplify inline comments around 1D search and priority switch helpers.
+- [x] **2b. Clean `OptimizeSP_TL_Incre.{h,cpp}`** (DONE 2026-07-31)
+  - Stripped all 37 task tags + `§8c`/`§8` doc-section refs. Compressed the heaviest
+    narrative blocks: `OptimizeIncreSingleTask` (4-paragraph cancel-contract +
+    ghost-SP narrative → 2 focused blocks; ~35 lines cut), `SeedBaselineAndArmCache`
+    re-sync rationale (dropped "5.5 crash fix" / "old reopt body" history, kept the
+    >1-diff-throw WHY), `RunIntervalDescent` ("behavior-neutral bit-identical to the
+    two bodies this replaces" stale changelog removed), `DeadlineMonotonicPriorityVec`
+    (dropped "replaces former plain-RM" narrative), `ComputeSafeFallback` (removed a
+    DUPLICATED loud-fail comment left by the §9b refactor — 2nd copy dropped, kept
+    ONE at the call site). Preserved all WHY: cache-arming asymmetry, |diff|<=1
+    invariant, sibling-isolation → byte-identical, worst-case-DAG stochastic
+    dominance. `.h` 391→355, `.cpp` 1068→1013. Tag count now 0/0.
+- [x] **2c. Clean `OptimizeSP_Incre.{h,cpp}`** (DONE 2026-07-31)
+  - `OptimizeSP_Incre.h` already 0 tags. `OptimizeSP_Incre.cpp`: stripped the 2 tags
+    (`P2.11 5.6b` cooperative-budget, `P0.5` throwaway-challenger) — kept the WHY
+    (inert within budget → byte-identical; throwaway dies with the local, cross-
+    interval invariant is res_opt_.id2time_limit). `PrioritySwitchAnalysis.h` was
+    already at 0 tags from Phase 1b/2a; no change. Tag count now 0/0.
 
 ## Phase 3 — Verification
 
-- [ ] **3a. Build & Run Tests**
-  - Run `ctest` and `pytest` to confirm zero functional or compilation regressions.
+- [x] **3a. Build & Run Tests** (DONE 2026-07-31)
+  - `cmake --build build_test --target check.SP_OPT -j5 --clean-first` → **17/17
+    ctest green** (incl. the `testPublisher` flake this run). Comment-only; zero
+    behavior change. `pytest` out of scope (C++ comment cleanup; no Python touched).

@@ -43,3 +43,59 @@ Task-tag counts via `grep -cE 'P[0-9]\.[0-9]'`:
 ### Next
 Phase 2b: `OptimizeSP_TL_Incre.{h,cpp}` (37 tags — the heaviest; expect the most narrative
 condensing, esp. the P1.10/P1.14/P1.25 changelog blocks in the .cpp).
+
+## 2026-07-31 — Phase 2b + 2c + 3a DONE (sources/Optimization focus)
+
+User direction: resume P2.7, **focus on `sources/Optimization`'s files, compress
+comments further.** Completed the remaining scoped work in one pass.
+
+### Phase 2b — `OptimizeSP_TL_Incre.{h,cpp}` (37 → 0 tags)
+- Stripped every task tag (`P0.6`/`P0.7`/`P0.8`/`P0.9`/`P2.11`/`P3.6`) plus the
+  `§8`/`§8c` design-doc section pointers (same category — living spec, not history
+  book). Net `.h` 391→355, `.cpp` 1068→1013 (−91 lines total across the pair).
+- **Heaviest condensing:**
+  - `OptimizeIncreSingleTask` — a 4-paragraph cancel-contract narrative (`[P2.11
+    5.6b]` entry-vs-post-Evaluate poll distinction, the `baseline_rtas` scratch-
+    buffer lifetime, the `P0.6` gate-vs-pre-descent-RTA distinction) + a separate
+    ghost-SP-fix narrative. Collapsed to 2 focused WHY blocks: (1) revert the
+    speculative champion on REJECT else |diff|>1 throw; (2) skip the O(N) descent
+    on cancel + the gate reads FINAL RTA not this pre-descent `baseline_rtas`.
+    ~35 lines cut.
+  - `SeedBaselineAndArmCache` re-sync — dropped the "5.5 crash fix" label and the
+    "NOT added to the incremental branch" history; kept the genuine WHY (the
+    from-scratch reopt can commit a TL >1 away from the Gaussian seed → first walk
+    step would throw; champion_tl IS the committed TL so reuse it).
+  - `RunIntervalDescent` — removed "Behavior-neutral: SP bit-identical to the two
+    bodies this replaces" (stale refactor changelog) and the "old reopt body
+    disarmed explicitly; old incremental body relied on next reset" history; kept
+    the disarm scopes-the-gate WHY.
+  - `DeadlineMonotonicPriorityVec` — dropped "Replaces the former plain-RM
+    RateMonotonicPriorityVec" narrative; kept DM-optimal-for-constrained-deadlines
+    + group-lock-makes-RTA-self-contained WHY.
+  - `ComputeSafeFallback` loud-fail — **removed a DUPLICATED comment** (the §9b
+    self-contained-overload refactor had left two near-identical loud-fail blocks
+    14 lines apart; dropped the redundant first, kept ONE at the call site).
+- **Preserved** every load-bearing WHY: the cache-arming ASYMMETRY (inc arms-first
+  |diff|==0 FullReuse; reopt beam disarmed |diff|>1), the |diff|<=1 single-change
+  invariant, sibling-isolation → online byte-identical, worst-case-DAG stochastic
+  dominance → cross-interval safety, seed-TL≤et_mean → gate can only REJECT.
+
+### Phase 2c — `OptimizeSP_Incre.{h,cpp}` (2 → 0 tags)
+- `.h` was already 0 tags. `.cpp`: 2 tags stripped — the `P2.11 5.6b` cooperative-
+  budget comment and the `P0.5` throwaway-challenger comment. Kept both WHYs
+  (inert within the 1s budget → byte-identical; the challenger dies with the local,
+  cross-interval invariant is `res_opt_.id2time_limit`).
+- `PrioritySwitchAnalysis.h`: already 0 tags from Phase 1b/2a — no change needed.
+
+### Phase 3a — verification
+- `cmake --build build_test --target check.SP_OPT -j5 --clean-first` → **17/17 ctest
+  green** (incl. the `testPublisher` `PeriodicReleaser.v1` wall-clock flake this run).
+  Comment-only; zero code/behavior change. `pytest` out of scope (C++ only).
+- NOTE: `OptimizeSP_Base.{h,cpp}`, `OptimizeSP_BF.{cpp}`, `OptimizeSP_TL_BF.cpp`
+  still carry a few tags (2/3/1/2) but were NOT in P2.7's scoped target file list
+  (goal.md §"Targeted Files"). Left for a future hygiene pass if desired.
+
+### Status
+All scoped files (`RTA_Cache.{h,cpp}`, `OptimizeSP_TL_Incre.{h,cpp}`,
+`OptimizeSP_Incre.{h,cpp}`, `PrioritySwitchAnalysis.h`) now at **0 task tags**.
+P2.7's scoped work is COMPLETE. `git add`-only — NOT committed; awaits user commit.

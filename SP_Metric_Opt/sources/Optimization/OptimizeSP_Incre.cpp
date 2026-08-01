@@ -329,9 +329,9 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
     std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     for (const PriorityVec& priority_assignment : pa_vec_variations) {
         // Cooperative budget: stop re-searching PA variations once the per-
-        // interval TIME_LIMIT expired (P2.11 5.6b). Retains the best-so-far
-        // opt_pa_/opt_sp_. Inert within budget (incremental path finishes inside
-        // it) → prod bit-identical.
+        // interval TIME_LIMIT expired. Retains the best-so-far opt_pa_/opt_sp_.
+        // Inert within budget (incremental path finishes inside it) → prod byte-
+        // identical.
         if (BFSharedBudgetCancelled()) {
             break;
         }
@@ -449,8 +449,8 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
     }
     // std::cout << "Optimal SP after  incremental optimziation is: " << opt_sp_
     //           << "\n";
-    // Advance this optimizer's dag_tasks_ to the current interval's DAG. Under
-    // P0.5 this optimizer is a THROWAWAY CHALLENGER (rebuilt from res_opt_ via
+    // Advance this optimizer's dag_tasks_ to the current interval's DAG. This
+    // optimizer is a THROWAWAY CHALLENGER (rebuilt from res_opt_ via
     // BuildChallengerFromIncumbent each interval), so this only affects future
     // calls WITHIN this descent — it dies with the local. The cross-interval
     // invariant is the adopted TL in res_opt_.id2time_limit (written by

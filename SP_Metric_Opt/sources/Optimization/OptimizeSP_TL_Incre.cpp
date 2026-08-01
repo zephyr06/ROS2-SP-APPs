@@ -56,8 +56,8 @@ size_t Find_Close_ExecutionTime(
     return min_diff_index;
 }
 
-// P0.6: directional (at-or-below et_mean) TL seed. See header for the contract.
-// Linear scan of the ascending grid; keep the last index whose option is <=
+// Directional (at-or-below et_mean) TL seed. See header for the contract.
+// Linear scan of the ascending grid; keep the last index whose option is ≤
 // et_mean. If none qualifies, fall back to index 0 (the smallest option).
 size_t FindLargestTimeLimitAtOrBelow(
     const std::vector<TimePerfPair>& time_perf_pairs, double et_mean) {
@@ -130,8 +130,8 @@ bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step) {
 bool OptimizePA_Incre_with_TimeLimits::WouldBeatIncumbent(
     double challenger_sp, const std::vector<double>& time_limits) const {
     // Strictly-greater SP beats; an approx-equal SP tie beats only when the
-    // challenger's total TL is strictly smaller (the tie-break prefers the
-    // tighter budget). Identical to the prior inline logic in UpdateRecords.
+    // challenger's total TL is strictly smaller (tie-break prefers the tighter
+    // budget).
     if (challenger_sp > opt_sp_ && !ApproxEqualSP(challenger_sp, opt_sp_)) {
         return true;
     }
@@ -156,9 +156,9 @@ bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = WouldBeatIncumbent(optimizer.opt_sp_, time_limits);
 
-    // P0.6 gate: on a would-beat, commit only if every important task's
-    // ddl_miss_chance <= threshold. RTA re-runs the same rta_cache_.Evaluate
-    // CommitIncumbent uses (candidate's final {pa, tl}); reject -> no commit.
+    // Feasibility gate: on a would-beat, commit only if every important task's
+    // ddl_miss_chance ≤ threshold. RTA re-runs the same rta_cache_.Evaluate
+    // CommitIncumbent uses (candidate's final {pa, tl}); reject → no commit.
     if (should_update && enforce_important_task_gate_ &&
         !BFSharedBudgetCancelled()) {
         const std::vector<FiniteDist>& challenger_rtas =
@@ -216,17 +216,15 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
     bool et_increased) {
     eval_count_++;
 
-    // In-walk AdoptChampion calls advance the champion speculatively to trial
-    // PAs the walk may not commit. On a REJECT the champion must be reverted,
-    // else a later serialized eval diffs committed-PA vs drifted champion
-    // (|diff|>1 → throw, or ≤1 → wrong RTA). Accept needs no revert:
-    // CommitIncumbent re-adopts on every commit. Snapshot at entry, restore on reject.
+    // In-walk AdoptChampion calls advance the champion speculatively to trial PAs
+    // the walk may not commit. On REJECT revert the champion, else a later
+    // serialized eval diffs committed-PA vs drifted champion (|diff|>1 → throw).
+    // Accept needs no revert (CommitIncumbent re-adopts each commit).
     RTACache cache_backup = rta_cache_;
 
-    // Per-eval DAG rebuild is required: the Type-L walk calls this once per
-    // trial TL step with a different `time_limits`. The Type-E call (committed
-    // TL) double-builds the champion DAG, but that's one call per Type-E entry
-    // per interval — negligible, subsumed by the cache's |diff|==0 full-reuse path.
+    // Per-eval rebuild: the Type-L walk calls this once per trial TL step. The
+    // Type-E call double-builds but is one per entry per interval — negligible,
+    // subsumed by the cache's |diff|==0 full-reuse path.
     DAG_Model dag_tasks_cur =
         UpdateExtDistBasedOnTimeLimit(dag_tasks_, time_limits);
 
@@ -241,25 +239,19 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
 
     OptimizePA_Incre challenger = BuildChallengerFromIncumbent();
 
-    // Debug-only invariant: the diff is |diff|<=1 (Type-L: 1, Type-E: 0 — the
-    // env move was absorbed into dag_tasks_ before the champion was built, so it
-    // cancels). |diff|>1 means the champion drifted, breaking the cache premise.
+    // Debug-only: diff must be |diff|≤1 (Type-L: 1; Type-E: 0 — the env move was
+    // absorbed into dag_tasks_ before the champion was built, so it cancels).
     AssertSingleChangeInvariant(challenger.dag_tasks_, dag_tasks_cur, task_idx);
 
-    // Re-score the carried PA under dag_tasks_cur so the primitive's strict->
-    // adopt test measures against the genuine new-TL baseline (else a TL step
-    // that improves only via the carried PA is missed, stopping the walk early).
-    // Routed through the RTA cache: Type-L → |diff|==1 (Evaluate patches one
-    // task); Type-E → |diff|==0 (FullReuse). Bit-identical to the oracle.
-    // Cancel contract: mirror the oracle's INT_MIN on cancel so UpdateRecords'
-    // strict-> guard discards a cancelled eval. The cache path has no internal
-    // cancel polls, so check both entry and post-Evaluate.
-    //
-    // `baseline_rtas` scores the carried PA under the new TL; the ref points
-    // into the cache's candidate_rta_ scratch buffer (valid only until the next
-    // Evaluate/AdoptChampion). It is consumed ONLY here, before PA descent below
-    // — PA descent's own Evaluate calls would invalidate it, and the P0.6 gate
-    // (now in `UpdateRecords`) fetches the challenger's final RTA itself.
+    // Re-score the carried PA under the new TL so the primitive's strict->adopt
+    // test measures against the genuine new-TL baseline (else a TL step that
+    // improves only via the carried PA is missed, stopping the walk early).
+    // Routed through the RTA cache (Type-L → |diff|==1 patch; Type-E → |diff|==0
+    // FullReuse). Mirror the oracle's INT_MIN on cancel so UpdateRecords' strict->
+    // guard discards a cancelled eval. `baseline_rtas` points into the cache's
+    // candidate_rta_ scratch (valid only until the next Evaluate/AdoptChampion) —
+    // consumed HERE only, before PA descent; the gate in `UpdateRecords` fetches
+    // the challenger's final RTA itself.
     const std::vector<FiniteDist>* baseline_rtas = nullptr;
     if (BFSharedBudgetCancelled()) {
         challenger.opt_sp_ = INT_MIN;
@@ -271,43 +263,28 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
             dag_tasks_cur, sp_parameters_, challenger.opt_pa_, time_limits,
             *baseline_rtas);
     }
-    // Cancel contract (post-Evaluate): the :218 entry poll guards only the
-    // baseline Evaluate+ObtainSP_Full. OptimizeIncre_SingleTask is the bulk of
-    // the per-eval cost (O(N) PA variations, each an Evaluate+ObtainSP_Full, no
-    // internal poll pre-5.6b) — skip it once the budget expired, whether at
-    // entry or during the baseline. opt_sp_ is then INT_MIN (entry cancel) or
-    // the just-scored baseline (mid-baseline cancel); either way UpdateRecords'
-    // strict-> guard discards or adopts safely. Inert within the 1s budget
-    // (incremental path finishes inside it) → prod bit-identical. [P2.11 5.6b]
-    //
-    // P0.6: PA descent runs normally whether or not the gate is on — the gate is
-    // a PURE extra accept/reject criterion at `UpdateRecords` (the commit
-    // chokepoint), not a process change. The gate reads the challenger's FINAL
-    // {opt_pa_, time_limits} RTA there (it re-runs the same `rta_cache_.Evaluate`
-    // `CommitIncumbent` uses, |diff|<=1-cheap on this path and never mutates the
-    // champion), NOT the pre-descent `baseline_rtas` above (which PA descent
-    // invalidates by overwriting the cache's scratch buffer).
+    // Skip the O(N)-PA descent once the budget expired (it is the bulk of the
+    // per-eval cost). opt_sp_ is then INT_MIN (entry cancel) or the just-scored
+    // baseline (mid-baseline cancel); either way UpdateRecords' strict-> guard
+    // discards or adopts safely. Inert within the 1s budget (the incremental
+    // path finishes inside it) → prod bit-identical. PA descent runs whether or
+    // not the gate is on — the gate is a pure accept/reject criterion at
+    // `UpdateRecords` (reading the challenger's FINAL RTA there, not this
+    // pre-descent `baseline_rtas` which PA descent overwrites).
     if (!BFSharedBudgetCancelled()) {
         challenger.OptimizeIncre_SingleTask(dag_tasks_cur,
                                             static_cast<int>(task_idx),
                                             et_increased, std::ref(rta_cache_));
     }
-    // `UpdateRecords` commits iff WouldBeatIncumbent AND (gate off OR gate
-    // passes); on a flag-off non-commit it reported the candidate's SP, which
-    // was <= incumbent, so the override below is flag-guarded to stay byte-
-    // identical there.
     double current_sp = challenger.opt_sp_;
     bool updated = UpdateRecords(challenger, time_limits);
     if (!updated) {
         rta_cache_ = cache_backup;
-        // P0.6 ghost-SP fix: on a gate-REJECT of an SP-better candidate,
-        // `UpdateRecords` returned false WITHOUT committing (the gate fired in
-        // it), but `current_sp` still holds the rejected candidate's better SP.
-        // Report the INCUMBENT SP instead so the walk's `IsBetterTimeLimitOption`
-        // sees "no progress" and never tracks the rejected TL. On a non-beat
-        // (gate never ran) the candidate's worse SP is no progress either way, so
-        // the override is harmless. Flag-guarded → flag-off path byte-identical
-        // (a flag-off non-commit reported current_sp, which was <= incumbent).
+        // Gate-REJECT of an SP-better candidate: UpdateRecords returned false
+        // WITHOUT committing, but current_sp still holds the rejected candidate's
+        // better SP. Report the INCUMBENT SP so the walk's IsBetterTimeLimitOption
+        // sees "no progress" and never tracks the rejected TL. Flag-guarded →
+        // flag-off path byte-identical.
         if (enforce_important_task_gate_ && !BFSharedBudgetCancelled() &&
             WouldBeatIncumbent(challenger.opt_sp_, time_limits)) {
             current_sp = res_opt_.sp_opt;
@@ -422,15 +399,12 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
     const std::vector<SerializedTaskQueueEntry>& queue,
     std::vector<double>& starting_time_limits, double current_config_sp,
     int patience) {
-    // Shared per-entry dispatch for the incremental + reopt arms (P2.11 Phase 1
-    // dedup). Each step's UpdateRecords adopts into res_opt_, so the next step's
-    // challenger sees the new champion; the committed TL tracks the adopted best,
-    // so the diff flags only the walked task (|diff|<=1).
+    // Shared per-entry dispatch. Each step's UpdateRecords adopts into res_opt_,
+    // so the next step's challenger sees the new champion; the committed TL tracks
+    // the adopted best, so the diff flags only the walked task (|diff|<=1).
     for (const SerializedTaskQueueEntry& entry : queue) {
-        // Cooperative budget (P2.11 5.6b defense-in-depth): stop walking the
-        // queue once the per-interval TIME_LIMIT expired. Retains the best-so-far
-        // current_config_sp (compare-and-keep). Inert within budget (incremental
-        // path finishes inside it) → prod bit-identical.
+        // Stop walking once the per-interval TIME_LIMIT expired (compare-and-keep
+        // retains the best-so-far). Inert within budget → prod byte-identical.
         if (BFSharedBudgetCancelled()) {
             break;
         }
@@ -453,23 +427,20 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
 
 double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
     int beam_search_width, std::vector<double>& starting_time_limits, IntervalDescentMode mode) {
-    // Reset + baseline seed + cache arm/adopt/re-sync. The two branches are the
-    // old PerformSerializedTaskQueueOptimization (incremental) and reopt descent
-    // baselines — no logic change, just gathered into one helper so
-    // RunIntervalDescent has no mode-conditional cache code.
+    // Reset + baseline seed + cache arm/adopt/re-sync. Gathered into one helper
+    // so RunIntervalDescent has no mode-conditional cache code.
     if (mode == IntervalDescentMode::Incremental) {
-        // 1. Gate reset (incremental: opt_sp_=-1.0 so the first UpdateRecords
-        //    force-commits), then re-arm the cache for this walk body. |diff|<=1
-        //    holds for every CommitIncumbent while true, so AdoptChampion stays
-        //    consistent with res_opt_ and Evaluate never throws.
+        // Gate reset (opt_sp_=-1.0 so the first UpdateRecords force-commits), then
+        // re-arm the cache. |diff|<=1 holds for every CommitIncumbent while true,
+        // so AdoptChampion stays consistent with res_opt_ and Evaluate never throws.
         ResetIncumbentBaseline(/*from_scratch=*/false);
         rta_cache_active_ = true;
 
-        // 2. Baseline = dedicated re-score (NO optimization). Must not route
-        //    through ScratchOrIncre (which would OptimizeIncre before the queue's
-        //    order is honored). Seeds opt_sp_ for the compare-and-keep guard.
-        //    Arms FIRST: this baseline is |diff|==0 FullReuse (same PA+TL re-scored
-        //    under the new DAG) — safe to route through the cache via CommitIncumbent.
+        // Baseline = dedicated re-score (NO optimization — must not route through
+        // ScratchOrIncre, which would OptimizeIncre before the queue's order is
+        // honored). Seeds opt_sp_ for the compare-and-keep guard. Arms FIRST: this
+        // baseline is |diff|==0 FullReuse (same PA+TL re-scored under the new DAG)
+        // — safe to route through the cache via CommitIncumbent.
         DAG_Model dag_baseline =
             UpdateExtDistBasedOnTimeLimit(dag_tasks_, starting_time_limits);
         double current_config_sp =
@@ -478,37 +449,32 @@ double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
         return current_config_sp;
     }
 
-    // Reopt. ResetIncumbentBaseline(true) CLEARS the cache (rta_cache_ = RTACache();
-    // rta_cache_active_ = false), so the one upfront from-scratch beam below runs
-    // DISARMED. The beam is memoryless OptimizeFromScratch — a >1 change that
-    // would make RTACache::ComputeTaskSetDifference throw |diff|>1 → SIGABRT if
-    // the cache were armed. Arming happens AFTER, for the walk only.
+    // Reopt. ResetIncumbentBaseline(true) CLEARS the cache, so the one upfront
+    // from-scratch beam below runs DISARMED — it is memoryless OptimizeFromScratch,
+    // a >1 change that would make ComputeTaskSetDifference throw |diff|>1 →
+    // SIGABRT if the cache were armed. Arming happens AFTER, for the walk only.
     ResetIncumbentBaseline(/*from_scratch=*/true);
     double current_config_sp = CallOptimizerGivenTimeLimits(
         beam_search_width, starting_time_limits, /*from_scratch=*/true);
 
-    // Re-arm the cache: the baseline beam above committed its champion via
-    // CommitIncumbent, but with rta_cache_active_ false (ResetIncumbentBaseline
-    // cleared it), so the cache was NOT adopted. Adopt the committed triple now
-    // (|diff|==0 → Evaluate's FullReuse path, zero-cost) and arm the gate so every
-    // subsequent accepted walk step re-adopts via CommitIncumbent. This makes the
-    // |diff|<=1 single-change invariant hold for the whole walk.
+    // Re-arm: the baseline beam committed its champion via CommitIncumbent with
+    // rta_cache_active_ false (Reset cleared it), so the cache was NOT adopted.
+    // Adopt the committed triple now (|diff|==0 → Evaluate's FullReuse path,
+    // zero-cost) and arm so every accepted walk step re-adopts — making the
+    // |diff|<=1 invariant hold for the whole walk.
     rta_cache_active_ = true;
     std::vector<double> champion_tl = ReconstructTimeLimitVecFromResOpt();
     const std::vector<FiniteDist>& champ_rtas =
         rta_cache_.Evaluate(dag_tasks_, opt_pa_, champion_tl);
     rta_cache_.AdoptChampion(dag_tasks_, opt_pa_, champion_tl, champ_rtas);
 
-    // Re-sync the walk vector to the adopted champion TL (5.5 crash fix). The
-    // upfront from-scratch reopt committed a TL that can diverge from the
-    // incoming starting_time_limits (Gaussian seed at interval 0) by >1 task on
-    // a real taskset. Without this re-sync the first walk step would diff
-    // champion-TL vs seed-TL in >1 task → RTACache::ComputeTaskSetDifference
-    // throws |diff|>1 → SIGABRT. champion_tl IS that committed TL (the cache's
-    // Evaluate/AdoptChampion above only touch rta_cache_, never res_opt_), so
-    // reuse it instead of a redundant second ReconstructTimeLimitVecFromResOpt.
-    // NOT added to the incremental branch: its baseline commit already
-    // establishes champion-TL == walk-start TL.
+    // Re-sync the walk vector to the adopted champion TL. The from-scratch reopt
+    // committed a TL that can diverge from the incoming starting_time_limits
+    // (Gaussian seed at interval 0) by >1 task on a real taskset — without
+    // re-sync the first walk step would diff champion-TL vs seed-TL >1 → throw.
+    // champion_tl IS that committed TL (Evaluate/AdoptChampion only touch
+    // rta_cache_, never res_opt_), so reuse it. The incremental branch needs no
+    // re-sync: its baseline commit already sets champion-TL == walk-start TL.
     starting_time_limits = champion_tl;
     return current_config_sp;
 }
@@ -516,12 +482,10 @@ double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
 void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
     int beam_search_width, std::vector<double>& starting_time_limits, IntervalDescentMode mode,
     const DAG_Model& dag_tasks_prev_pre_tl) {
-    // The ONE descent body shared by the incremental and reopt paths (P2.11
-    // Phase 1b-1e unification). Patience is mode-selected; the baseline-seed
-    // preamble + cache arming live in SeedBaselineAndArmCache(mode); the tail
-    // (BuildSerializedTaskQueue + WalkSerializedTaskQueue + unconditional cache
-    // disarm) is mode-independent. Behavior-neutral: SP bit-identical to the two
-    // bodies this replaces.
+    // The ONE descent body shared by the incremental and reopt paths. Patience
+    // is mode-selected; the baseline-seed + cache arming live in
+    // SeedBaselineAndArmCache(mode); the tail (BuildSerializedTaskQueue +
+    // WalkSerializedTaskQueue + cache disarm) is mode-independent.
     int patience = (mode == IntervalDescentMode::Reopt)
                        ? GlobalVariables::ReoptimizationTimeLimitSearchPatience
                        : GlobalVariables::IncrementalTimeLimitSearchPatience;
@@ -538,22 +502,19 @@ void OptimizePA_Incre_with_TimeLimits::RunIntervalDescent(
     WalkSerializedTaskQueue(queue, starting_time_limits, current_config_sp,
                             patience);
 
-    // Unconditional disarm on the way out (bit-identical for SP: nothing reads
-    // rta_cache_active_ between this return and the next ResetIncumbentBaseline —
-    // only CommitIncumbent reads it, and it is called only inside the descent).
-    // The old reopt body disarmed explicitly; the old incremental body relied on
-    // the next interval's reset clearing it. Unifying on an explicit disarm makes
-    // the tail mode-independent and scopes the cache gate to exactly this descent.
+    // Unconditional disarm (bit-identical for SP: nothing reads rta_cache_active_
+    // between this return and the next ResetIncumbentBaseline — only
+    // CommitIncumbent reads it, called only inside the descent). Scopes the cache
+    // gate to exactly this descent.
     rta_cache_active_ = false;
 }
 
 void OptimizePA_Incre_with_TimeLimits::PerformSerializedTaskQueueOptimization(
     int beam_search_width, std::vector<double>& starting_time_limits,
     const DAG_Model& dag_tasks_prev_pre_tl) {
-    // Thin delegating wrapper (P2.11 Phase 1b-1e). Kept virtual so the test stubs
+    // Thin delegating wrapper. Kept virtual so the test stubs
     // (RecordingDispatcherOpt, StartTLStub) that override it to observe the entry
-    // TL vector keep working unchanged — the parent now delegates to
-    // RunIntervalDescent, so the real body still runs.
+    // TL vector keep working — the parent delegates to RunIntervalDescent.
     RunIntervalDescent(beam_search_width, starting_time_limits, IntervalDescentMode::Incremental,
                        dag_tasks_prev_pre_tl);
 }
@@ -575,9 +536,9 @@ OptimizePA_Incre_with_TimeLimits::InitializeTimeLimitsFromETConfig() {
     return time_limits;
 }
 
-// P0.6: directional et_mean-bounded seed vector (see header). Mirrors
-// InitializeTimeLimitsFromETConfig's structure but uses the at-or-below helper
-// so no perf task seeds above the P0.8-certified WCET.
+// Directional et_mean-bounded seed vector (see header). Mirrors
+// InitializeTimeLimitsFromETConfig but uses the at-or-below helper so no perf
+// task seeds above the certified WCET.
 std::vector<double>
 OptimizePA_Incre_with_TimeLimits::SeedTimeLimitsAtOrBelowEtMean() const {
     std::vector<double> time_limits(dag_tasks_.tasks.size());
@@ -619,9 +580,8 @@ double OptimizePA_Incre_with_TimeLimits::WalkOneTaskWithTimeLimitOptions(
     // improvement budget (no reset on improvement); at 0 the walk stops.
     for (int i = static_cast<int>(curr_opt_idx) + step;
          i >= 0 && i < static_cast<int>(opts.size()); i += step) {
-        // Cooperative budget (P2.11 5.6b defense-in-depth): stop stepping TL
-        // options once the per-interval TIME_LIMIT expired. Retains best_so-far
-        // best_sp/best_option_val. Inert within budget → prod bit-identical.
+        // Stop stepping once the per-interval TIME_LIMIT expired (retains
+        // best-so-far). Inert within budget → prod byte-identical.
         if (BFSharedBudgetCancelled()) {
             break;
         }
@@ -673,13 +633,11 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskWithTimeLimit(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     const DAG_Model& dag_tasks_update, int beam_search_width) {
-    // P0.6 — the safe fallback MUST be pre-computed (offline, on the cross-
-    // interval worst-case DAG) before any dispatch. The orchestrator pre-calls
-    // ComputeSafeFallback once before the interval loop; reaching here without
-    // one is a contract violation. This dispatcher sees only dag_tasks_ (one
-    // interval), NOT dag_tasks_vecs_, so it CANNOT build the worst-case DAG
+    // The safe fallback MUST be pre-computed (offline, on the cross-interval
+    // worst-case DAG) before any dispatch. This dispatcher sees only dag_tasks_
+    // (one interval), NOT dag_tasks_vecs_, so it cannot build the worst-case DAG
     // soundly — lazy-computing on dag_tasks_ would certify against a single
-    // interval → cross-interval unsoundness (the very bug §8 removed). Fail loud.
+    // interval → cross-interval unsoundness. Fail loud.
     if (!HasSafeFallback()) {
         throw std::runtime_error(
             "Optimize_w_TL_ScratchOrIncre: no safe fallback pre-computed. The "
@@ -726,26 +684,23 @@ void OptimizePA_Incre_with_TimeLimits::AbsorbUpdatedDAG(
 
 void OptimizePA_Incre_with_TimeLimits::BootstrapIncumbentFromDMFast(
     const DAG_Model& dag_tasks_update) {
-    // P3.6 interval-0 seed-only bootstrap. Absorb the new DAG (shared absorb keeps
-    // the incumbent + option set consistent for the interval-1+ incremental walk),
-    // then run ONLY the DM-fast seed step (shared with ResetIncumbentBaseline's
-    // interval-0 else-branch). The from-scratch descent (RunIntervalDescent) that
-    // ReOptimizePeriodic runs afterwards is SKIPPED — that is the whole point of
-    // the arm. SeedIncumbentFromDMFast calls EvaluateSPWithPriorityVec directly
-    // (not CallOptimizerGivenTimeLimits), so eval_count_ stays 0: a measurable
-    // guarantee no descent ran. This runs only at interval 0 on a fresh persistent
-    // incr_optimizer_ (count==0), so the cache is already default-constructed and
-    // the gate already false — no ResetIncumbentBaseline preamble needed.
+    // Interval-0 seed-only bootstrap. Absorb the new DAG (keeps the incumbent +
+    // option set consistent for the interval-1+ incremental walk), then run ONLY
+    // the DM-fast seed step — the from-scratch descent that ReOptimizePeriodic
+    // runs afterwards is SKIPPED (the whole point of the arm).
+    // SeedIncumbentFromDMFast calls EvaluateSPWithPriorityVec directly (not
+    // CallOptimizerGivenTimeLimits), so eval_count_ stays 0: a measurable
+    // guarantee no descent ran. Interval 0 only, on a fresh optimizer → cache is
+    // default-constructed and the gate false; no ResetIncumbentBaseline preamble.
     AbsorbUpdatedDAG(dag_tasks_update);
     SeedIncumbentFromDMFast();
 }
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizePureIncremental(
     const DAG_Model& dag_tasks_update, int beam_search_width) {
-    // P3.6 INCR_NO_REOPT dispatcher. count==0 → seed-only DM-fast bootstrap
-    // (no descent); count>0 → warm-started incremental walk. Never
-    // ReOptimizePeriodic. One shared TIME_LIMIT budget for this interval's call
-    // (same rationale as Optimize_w_TL_ScratchOrIncre: the orchestrator reuses
+    // INCR_NO_REOPT dispatcher. count==0 → seed-only DM-fast bootstrap (no
+    // descent); count>0 → warm-started incremental walk. Never ReOptimizePeriodic.
+    // One shared TIME_LIMIT budget per interval (the orchestrator reuses
     // incr_optimizer_ across intervals, so a construction-time start_time_ would
     // bound the whole simulation, not one interval).
     BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
@@ -801,18 +756,14 @@ OptimizePA_Incre_with_TimeLimits::ReconstructTimeLimitVecFromResOpt() {
     return tl;
 }
 
-// Deadline-Monotonic + important-first group lock (P0.9). Important tasks occupy
-// the top priority slots, DM-ordered within the group (shorter deadline = higher
-// priority); non-important tasks fill the lower slots, DM-ordered within their
-// group; every non-important task below every important task (the priority lock —
-// non-important tasks never interfere with the important group, which is what
-// makes P0.8's important-group RTA self-contained). Ties (equal deadline within a
-// group) broken by avg ET ascending (deterministic — matches the former RM
-// tie-break). This is the scheduler's seed PA; P0.8's Python RTA ranks the
-// important group by the same deadline key, so certification matches the running
-// scheduler. Constrained deadlines (deadline = period * U(0.5,1.0)) make DM the
-// optimal fixed-priority assignment (DM >= RM). Replaces the former plain-RM
-// RateMonotonicPriorityVec (period sort, no group lock).
+// DM + important-first group lock. Important tasks occupy the top slots,
+// DM-ordered within the group (shorter deadline = higher priority); non-important
+// fill the lower slots, DM-ordered within their group; every non-important task
+// below every important task (the lock — non-important tasks never interfere with
+// the important group, making its RTA self-contained). Ties broken by avg ET
+// ascending. The scheduler's seed PA; the Python RTA ranks the important group by
+// the same deadline key, so certification matches the running scheduler. DM (not
+// RM) because deadlines are constrained (deadline = period * U(0.5,1.0)).
 PriorityVec OptimizePA_Incre_with_TimeLimits::DeadlineMonotonicPriorityVec() {
     std::vector<int> sorted(dag_tasks_.tasks.size());
     std::iota(sorted.begin(), sorted.end(), 0);
@@ -890,11 +841,11 @@ void OptimizePA_Incre_with_TimeLimits::SeedIncumbentFromDMFast() {
     SeedStateFromIncumbent(dag_with_tl_min, pa_dm, sp_dm, tl_min);
 }
 
-// P0.6 — the offline safe-fallback artifact. Seeds at the P0.8-certified point
-// (DM PA + TL <= et_mean), runs a gate-governed TL walk on a throwaway sibling, and
-// keeps the best-SP gate-feasible result. See header for the isolation contract.
-// `worst_case_dag` (§8): the caller-built cross-interval worst-case DAG; the walk
-// + gate run on IT (not dag_tasks_) so the certificate bounds every interval.
+// Offline safe-fallback artifact. Seeds at the perf-WCET point (DM PA + TL ≤
+// et_mean), runs a gate-governed TL walk on a throwaway sibling, and keeps the
+// best-SP gate-feasible result. See header for the isolation contract.
+// `worst_case_dag`: the caller-built cross-interval worst-case DAG; the walk +
+// gate run on IT (not dag_tasks_) so the certificate bounds every interval.
 ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
     const DAG_Model& worst_case_dag) {
     // The gate is probabilistic — force the real ET dist (not WCET) and TL-opt-on.
@@ -903,23 +854,23 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
     GlobalVariables::disable_time_limit_opt = false;
     GlobalVariables::use_wcet_execution_time = false;
 
-    // Own budget around the whole compute (seed eval + walk): the lazy dispatcher
-    // path runs this BEFORE its own budget is installed, so without one a runaway
-    // seed SP-eval could strand the compute past TIME_LIMIT (testINCRTimeout).
+    // Own budget around the whole compute (seed eval + walk): the dispatcher path
+    // runs this BEFORE its own budget is installed, so without one a runaway seed
+    // SP-eval could strand the compute past TIME_LIMIT.
     BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
 
-    // Throwaway sibling carries the gate-governed walk on the worst-case DAG so the
-    // live incumbent is never seeded from the fallback (a P0.7 injection, not P0.6).
-    // Fresh SP_Parameters from worst_case_dag (thresholds/weights are constant
-    // across intervals → equals sp_parameters_ value-wise).
+    // Throwaway sibling carries the walk on the worst-case DAG so the live incumbent
+    // is never seeded from the fallback (an online trigger, not this compute). Fresh
+    // SP_Parameters from worst_case_dag (thresholds/weights are constant across
+    // intervals → equals sp_parameters_ value-wise).
     SP_Parameters sp_params_worst(worst_case_dag);
     OptimizePA_Incre_with_TimeLimits fallback_solver(worst_case_dag, sp_params_worst);
     fallback_solver.enforce_important_task_gate_ = true;
 
-    // Seed at the certified point: DM PA + et_mean-bounded TL (TL <= et_mean →
+    // Seed at the certified point: DM PA + et_mean-bounded TL (TL ≤ et_mean →
     // ddl_miss_chance = 0 → seed gate-feasible, so the gate can only REJECT). On the
     // worst-case DAG each dist is a point mass → GetAvgValue()==max_time → seed TL
-    // <= max_time across ALL intervals → feasibility-by-construction cross-interval.
+    // ≤ max_time across ALL intervals → feasibility-by-construction cross-interval.
     std::vector<double> tl_seed = fallback_solver.SeedTimeLimitsAtOrBelowEtMean();
     PriorityVec pa_dm = fallback_solver.DeadlineMonotonicPriorityVec();
     DAG_Model dag_with_tl =
@@ -939,13 +890,7 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
     GlobalVariables::disable_time_limit_opt = prev_disable_tl_opt;
     GlobalVariables::use_wcet_execution_time = prev_use_wcet;
 
-    // §8c loud-fail: re-run the gate on the FINAL stored result (not just the
-    // seed). The walk only REJECTS (gate never adopts a violating candidate), so
-    // a miss here means the seed itself was infeasible on the worst-case DAG → not
-    // walk-fixable (raising TL worsens interference) → raise loud, do NOT store
-    // (HasSafeFallback() stays false → "regenerate a new task set"). Fresh RTA
-    // derivation (NOT rta_cache_.Evaluate — the sibling's cache is armed only
-    // inside the walk's serialized path; reusing it post-walk risks a |diff|>1 throw).
+    // Reconstruct the candidate {pa, tl} from the sibling's result.
     ResourceOptResult candidate = fallback_solver.CollectResults();
     std::vector<double> tl_result(worst_case_dag.tasks.size());
     for (size_t i = 0; i < worst_case_dag.tasks.size(); i++) {
@@ -953,11 +898,11 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
         tl_result[i] = candidate.id2time_limit.count(id) ? candidate.id2time_limit.at(id)
                                                           : -1.0;
     }
-    // §8c loud-fail: re-run the gate on the FINAL stored result (not just the
-    // seed). The self-contained overload derives RTAs fresh (the sibling's cache is
-    // armed only inside the walk; reusing it post-walk risks a |diff|>1 throw). The
-    // walk only REJECTS → a miss here means the seed itself was infeasible on the
-    // worst-case DAG → not walk-fixable → raise loud, do NOT store.
+    // Loud-fail: re-run the gate on the FINAL stored result. The self-contained
+    // overload derives RTAs fresh (the sibling's cache is armed only inside the
+    // walk; reusing it post-walk risks a |diff|>1 throw). The walk only REJECTS →
+    // a miss here means the seed itself was infeasible on the worst-case DAG → not
+    // walk-fixable (raising TL worsens interference) → raise loud, do NOT store.
     if (!ImportantTasksMeetThresholds(worst_case_dag, sp_params_worst,
                                       candidate.priority_vec, tl_result)) {
         CoutWarning(
@@ -1013,12 +958,12 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::ReOptimizePeriodic(
 
     // Capture the pre-absorb DAG before overwriting dag_tasks_ — it is the Type-E
     // diff source for BuildSerializedTaskQueue in RunIntervalDescent(Reopt)
-    // (P2.11 merge: the reopt descent walks the same serialized E+L queue the
-    // incremental path uses). Cheap to capture (copy on write via the absorb).
+    // (which walks the same serialized E+L queue the incremental path uses).
+    // Cheap to capture (copy on write via the absorb).
     DAG_Model dag_tasks_prev_pre_tl = dag_tasks_;
     AbsorbUpdatedDAG(dag_tasks_update);
 
-    // The baseline reset (re-eval carried {pa, tl}, or RM+min-TL at interval 0)
+    // The baseline reset (re-eval carried {pa, tl}, or DM+min-TL at interval 0)
     // runs inside the descent via ResetIncumbentBaseline(true). Seed from the
     // carried adopted TL when an incumbent exists; IfInitialized() auto-falls-
     // back to the Gaussian-mean TL at interval 0 (no prior state — irreducible).
