@@ -280,6 +280,13 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
         return;
     }
 
+    // P0.7 step 2 — A/B exposure. INCR_NO_FALLBACK is the measurement arm: flips
+    // enable_fallback_use false so the three online triggers are inert (only the
+    // USE is gated; the P0.6 safe-fallback COMPUTE stays unconditional). Default
+    // true = prod. Set per RunSimulation so back-to-back runs are self-contained.
+    GlobalVariables::enable_fallback_use =
+        (scheduler_mode_ != "INCR_NO_FALLBACK");
+
     // Construct the persistent optimizer once, before the loop. This is state
     // setup, NOT a solve — the first solve runs at interval 0 inside the loop,
     // where Optimize_w_TL_ScratchOrIncre routes count==0 to ReOptimizePeriodic,
@@ -296,9 +303,10 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
     // — the reason the optimizer is persistent — survives those rebinds.
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_) ||
         scheduler_mode_ == "INCR_NO_TL" || scheduler_mode_ == "INCR_WCET" ||
-        scheduler_mode_ == "INCR_NO_REOPT") {
+        scheduler_mode_ == "INCR_NO_REOPT" || scheduler_mode_ == "INCR_NO_FALLBACK") {
         incr_optimizer_ = OptimizePA_Incre_with_TimeLimits(
             dag_tasks_vecs_[0], sp_parameters_vecs_[0]);
+        incr_optimizer_.enable_fallback_use_ = GlobalVariables::enable_fallback_use;
 
         // P0.6 — pre-compute the offline safe fallback ONCE, after construction and
         // before the interval loop. Pre-calling keeps it OUT of the per-interval
@@ -337,6 +345,13 @@ FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets(
     auto sched_start = std::chrono::high_resolution_clock::now();
     ResourceOptResult res;
     if (scheduler_mode_ == "INCR" || IsINCRPeriodVariant(scheduler_mode_)) {
+        incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
+            dag_tasks,
+            GlobalVariables::Layer_Node_During_Incremental_Optimization);
+        res = incr_optimizer_.CollectResults();
+    } else if (scheduler_mode_ == "INCR_NO_FALLBACK") {
+        // P0.7 step 2 — measurement arm: same path as INCR, only the construction-set
+        // enable_fallback_use_=false differs, so the three triggers are inert.
         incr_optimizer_.Optimize_w_TL_ScratchOrIncre(
             dag_tasks,
             GlobalVariables::Layer_Node_During_Incremental_Optimization);

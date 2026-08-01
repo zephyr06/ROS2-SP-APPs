@@ -18,6 +18,10 @@ extern int Granularity;
 extern int Layer_Node_During_Incremental_Optimization;
 extern bool disable_time_limit_opt;
 extern bool use_wcet_execution_time;
+// P0.7 — master flag for the online fall-back USE (the three triggers). Default
+// true = prod. INCR_NO_FALLBACK sets it false for the SP-penalty measurement arm.
+// The P0.6 safe-fallback COMPUTE is unconditional — this gates only the use.
+extern bool enable_fallback_use;
 // P24 periodic reoptimization: every ReoptimizationPeriod-th interval, the TL
 // search re-runs from scratch (compare-and-keep) instead of warm-starting from
 // the incumbent, bounding priority drift over a long sim.

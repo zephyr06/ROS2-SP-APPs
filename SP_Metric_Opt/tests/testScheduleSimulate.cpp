@@ -146,6 +146,12 @@ class TestOrchestrator : public FixedTaskPrioritySchedulingOrchestrator {
         return GetIncrOptimizer().HasSafeFallback();
     }
 
+    // P0.7 step 2 — expose the fallback-use flag (set from the run path by the
+    // INCR_NO_FALLBACK mode) for the A/B exposure test.
+    bool FallbackUseEnabled() const {
+        return GetIncrOptimizer().enable_fallback_use_;
+    }
+
     std::vector<float> TestLoadTraces(int task_id, int path_idx, int inst_idx) {
         return LoadJobExecutionTraces(task_id, path_idx, inst_idx);
     }
@@ -254,6 +260,40 @@ TEST(OrchestratorTest, PreComputesSafeFallback_ExcludesSchedulerET) {
     dm_orchestrator.RunSimulation();
     EXPECT_DOUBLE_EQ(0.0, dm_orchestrator.GetSafeFallbackComputeTime())
         << "non-INCR modes must not run (or time) the safe-fallback compute";
+}
+
+// P0.7 step 2 — A/B exposure. The measurement arm is a new INCR_NO_FALLBACK mode
+// that flips enable_fallback_use_ to false (mirrors the INCR_NO_TL / INCR_WCET
+// mode-string idiom). It must still construct incr_optimizer_ AND pre-compute the
+// safe fallback (the flag gates the online USE of the fallback, NOT the offline
+// compute — P0.6's certificate invariant holds in the measurement arm too). The
+// prod arm (INCR) leaves the flag at its default true. This test is the run-path
+// hook the unit tests' `opt.enable_fallback_use_ = false` line stood in for.
+TEST(OrchestratorTest, INCR_NO_FALLBACK_DisablesFallbackUse_ButStillComputesFallback) {
+    std::string input_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_data_schedule_orchestrator";
+    std::string output_dir =
+        GlobalVariables::PROJECT_PATH + "tests/test_output_incr_no_fallback";
+
+    std::filesystem::remove_all(output_dir);
+
+    TestOrchestrator orchestrator(input_dir, output_dir, "INCR_NO_FALLBACK", 100);
+    orchestrator.RunSimulation();
+
+    EXPECT_FALSE(orchestrator.FallbackUseEnabled())
+        << "INCR_NO_FALLBACK (measurement arm) must flip the flag to false";
+    EXPECT_TRUE(orchestrator.HasSafeFallback())
+        << "the flag gates the online USE, not the offline compute — the safe "
+           "fallback is still pre-computed so the certificate invariant holds";
+    EXPECT_GT(orchestrator.GetSafeFallbackComputeTime(), 0.0);
+
+    const auto& history = orchestrator.GetJobHistory();
+    EXPECT_FALSE(history.empty());
+
+    TestOrchestrator prod_orchestrator(input_dir, output_dir, "INCR", 100);
+    prod_orchestrator.RunSimulation();
+    EXPECT_TRUE(prod_orchestrator.FallbackUseEnabled())
+        << "INCR (prod arm) leaves the flag at its shipped default true";
 }
 
 

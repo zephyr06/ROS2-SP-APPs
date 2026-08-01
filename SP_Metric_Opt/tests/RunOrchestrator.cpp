@@ -108,7 +108,7 @@ int main(int argc, char** argv) {
         std::cerr << "Usage: " << argv[0]
                   << " <input_folder> <output_folder> <mode> <duration_ms>"
                   << " [export_level] [sample_interval_sec]\n";
-        std::cerr << "Modes: DM, BF, INCR, INCR_NO_TL, INCR_WCET, "
+        std::cerr << "Modes: DM, BF, INCR, INCR_NO_TL, INCR_WCET, INCR_NO_FALLBACK, "
                   << "DM_FAST, DM_SLOW\n";
         std::cerr << "  INCR_Reopt_X: INCR with ReoptimizationPeriod overridden to X "
                   << "(X = reopt period; X=1 reopts every interval, larger X = more"
