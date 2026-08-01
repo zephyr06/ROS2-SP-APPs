@@ -223,6 +223,19 @@ int main(int argc, char** argv) {
         fallback_time_file.close();
     }
 
+    // P0.7 step 4 — the per-interval fall-back outcome log (trigger (a) ET-jump,
+    // (b-i) during-walk reject count, (b-ii) post-walk backstop verdict +
+    // culprit). Empty for non-INCR modes (incr_optimizer_ has no dispatch calls).
+    // CSV is built by FormatIntervalFallbackLogCsv so its shape is unit-tested.
+    const auto& fallback_log = orchestrator.GetIntervalFallbackLog();
+    std::string fallback_log_path =
+        output_folder + "/" + mode + "/interval_fallback_log.txt";
+    std::ofstream fallback_log_file(fallback_log_path);
+    if (fallback_log_file.is_open()) {
+        fallback_log_file << FormatIntervalFallbackLogCsv(fallback_log);
+        fallback_log_file.close();
+    }
+
     const auto& metrics = orchestrator.GetIntervalSPMetrics();
     if (!metrics.empty()) {
         double sum = std::accumulate(metrics.begin(), metrics.end(), 0.0);

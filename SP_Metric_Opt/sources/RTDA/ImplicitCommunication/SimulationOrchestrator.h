@@ -92,6 +92,14 @@ public:
         return safe_fallback_compute_time_s_;
     }
 
+    // P0.7 step 4 — per-interval fall-back outcome log (one entry per dispatch
+    // call = per interval). RunOrchestrator serializes it via
+    // FormatIntervalFallbackLogCsv to interval_fallback_log.txt. Empty for modes
+    // that don't route through the INCR dispatchers.
+    const std::vector<IntervalFallbackOutcome>& GetIntervalFallbackLog() const {
+        return incr_optimizer_.GetIntervalFallbackLog();
+    }
+
 protected:
     // P0.6 — test access to the persistent optimizer (the fallback lives on it).
     const OptimizePA_Incre_with_TimeLimits& GetIncrOptimizer() const {
