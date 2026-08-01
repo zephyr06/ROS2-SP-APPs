@@ -39,6 +39,15 @@ size_t FindLargestTimeLimitAtOrBelow(
 // (step<0): the tie-break prefers the smaller TL, so a downward tie improves.
 bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step);
 
+// P0.7 trigger (a) — ET-jump detector. Trips when ANY task's avg ET in the new dag
+// is >= ratio_threshold (default 1.5x) its avg ET in the old dag. Compares
+// execution_time_dist.GetAvgValue() (the truncated mean the optimizer/RTA use), per
+// task by position. Pure + stateless so it is unit-testable in isolation. The caller
+// runs it BEFORE AbsorbUpdatedDAG overwrites the optimizer's dag_tasks_ with the new
+// dag (dag_tasks_ IS the saved old dag until the absorb).
+bool DetectETJump(const DAG_Model& dag_old, const DAG_Model& dag_new,
+                  double ratio_threshold = 1.5);
+
 struct HashKey4Vector {
     std::size_t operator()(const std::vector<double>& v) const {
         std::size_t seed = v.size();
@@ -308,6 +317,28 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     bool HasSafeFallback() const { return safe_fallback_.has_value(); }
     const ResourceOptResult& GetSafeFallback() const { return *safe_fallback_; }
 
+    // P0.7 trigger (a) — ET-jump short-circuit. Runs BEFORE AbsorbUpdatedDAG
+    // (dag_tasks_ IS the saved old dag until the absorb). Trips when any task's
+    // avg ET in dag_tasks_update is >= 1.5x its avg ET in dag_tasks_, AND this is
+    // not interval 0 (no prior dag). On a trip the caller adopts the precomputed
+    // safe fallback's {PA,TL} (re-scored under the absorbed current dag) as the
+    // interval's result and skips the walk. Returns false at interval 0 or when
+    // no jump is detected (the caller then runs the walk normally).
+    bool ShouldShortCircuitOnETJump(const DAG_Model& dag_tasks_update) const;
+
+    // P0.7 trigger (a) — adopt the safe fallback as the interval's incumbent,
+    // scoring its {PA,TL} under the CURRENT dag_tasks_ (already absorbed). The
+    // safe fallback was certified on the cross-interval worst-case DAG, which
+    // stochastically dominates every interval → safe under the jumped ETs by
+    // construction. Commits via CommitIncumbent so CollectResults() returns it.
+    void AdoptSafeFallbackAsIncumbent();
+
+    // P0.7 trigger (b) — D7: compare the walk's incumbent-so-far vs the safe
+    // fallback (both scored under the CURRENT dag) and return the higher-global-SP
+    // one as the interval's `res`. Does NOT commit (the caller adopts the winner).
+    // Throws if no fallback was pre-computed.
+    ResourceOptResult CompareAndPickWinnerAgainstSafeFallback();
+
     // Incumbent-state helpers. res_opt_ is the single durable store;
     // CommitIncumbent is its only writer. BuildChallengerFromIncumbent rebuilds a
     // throwaway challenger from res_opt_ each candidate (not persistent); the
@@ -338,6 +369,18 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // `ImportantTasksMeetThresholds` passes. Default false → prod byte-identical;
     // set true only inside `ComputeSafeFallback`.
     bool enforce_important_task_gate_ = false;
+    // P0.7 trigger (b) — online HALT gate. Same detection as the offline gate
+    // (`ImportantTasksMeetThresholds` on a would-beat) but a DIFFERENT response:
+    // instead of reject-and-continue (the offline gate, ample budget), it sets
+    // `online_halt_requested_` so the walk's nested loops break (D6 = HALT on
+    // first unsafe candidate; tight online budget). Default false → prod
+    // byte-identical; the online dispatcher sets it true.
+    bool enforce_online_halt_gate_ = false;
+    // Raised by `UpdateRecords` on a trigger-(b) gate-reject (an SP-better
+    // candidate that violates an important task's threshold). The walk's inner
+    // (`WalkOneTaskWithTimeLimitOptions`) and outer (`WalkSerializedTaskQueue`)
+    // loops check it to break early. Reset at the start of each walk.
+    bool online_halt_requested_ = false;
     // Transient per-call TL search window, recorded fresh each call. Not part of
     // the incumbent (the carried TL lives in res_opt_.id2time_limit).
     std::vector<std::vector<double>> time_limit_option_for_each_task_;

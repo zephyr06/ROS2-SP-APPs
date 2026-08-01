@@ -2497,6 +2497,66 @@ TEST(FindLargestTimeLimitAtOrBelowTest, EmptyGridReturnsZero) {
     EXPECT_EQ(0u, FindLargestTimeLimitAtOrBelow(empty, /*et_mean=*/700.0));
 }
 
+// --- P0.7 trigger (a): DetectETJump (new-dag-vs-old-dag avg-ET ratio) ---
+//
+// The online optimizer's dag_tasks_ IS the saved old dag; each new interval's dag
+// arrives as the dispatcher's dag_tasks_update param. DetectETJump trips when ANY
+// task's avg ET (execution_time_dist.GetAvgValue(), the truncated mean the RTA uses)
+// in the new dag is >= 1.5x its avg ET in the old dag → a distribution shift hard
+// enough to short-circuit the walk and swap in safe_fallback_. Mirrors
+// FindTaskWithDifferentEt's positional per-task scan but with a ratio threshold.
+
+// Builds a two-task DAG from Gaussian ET dists at the given mus. avg ET ~ mu (the
+// truncated FiniteDist mean of a Gaussian is ~mu).
+DAG_Model P07TwoTaskDag(double mu_t0, double mu_t1) {
+    MAP_Prev mapPrev;
+    FiniteDist d_t0(GaussianDist(mu_t0, mu_t0 * 0.1), 5);
+    FiniteDist d_t1(GaussianDist(mu_t1, mu_t1 * 0.1), 5);
+    TaskSet tasks = {Task(0, d_t0, 2000, 2000, 0, "T0"),
+                     Task(1, d_t1, 2000, 2000, 0, "T1")};
+    return DAG_Model(tasks, mapPrev, 0, 0);
+}
+
+TEST(DetectETJumpTest, TripsWhenAnyTaskETJumpsAtLeastThreshold) {
+    // task 0: 1000 -> 1600 (1.6x >= 1.5) → trips even though task 1 is unchanged.
+    DAG_Model dag_old = P07TwoTaskDag(1000.0, 1000.0);
+    DAG_Model dag_new = P07TwoTaskDag(1600.0, 1000.0);
+    EXPECT_TRUE(DetectETJump(dag_old, dag_new));
+}
+
+TEST(DetectETJumpTest, NoTripWhenMaxJumpBelowThreshold) {
+    // task 0: 1000 -> 1400 (1.4x < 1.5), task 1 unchanged → no trip.
+    DAG_Model dag_old = P07TwoTaskDag(1000.0, 1000.0);
+    DAG_Model dag_new = P07TwoTaskDag(1400.0, 1000.0);
+    EXPECT_FALSE(DetectETJump(dag_old, dag_new));
+}
+
+TEST(DetectETJumpTest, ExactThresholdBoundaryTrips) {
+    // 1000 -> 1500 (exactly 1.5x) → trips (>= is inclusive). Point-mass dists so
+    // GetAvgValue() is exactly the mass (Gaussian FiniteDist truncation would shift
+    // the mean slightly off mu and make the boundary nondeterministic).
+    MAP_Prev mapPrev;
+    FiniteDist d_old({Value_Proba(1000.0, 1.0)});
+    FiniteDist d_new({Value_Proba(1500.0, 1.0)});
+    TaskSet tasks_old = {Task(0, d_old, 2000, 2000, 0, "T0")};
+    TaskSet tasks_new = {Task(0, d_new, 2000, 2000, 0, "T0")};
+    DAG_Model dag_old(tasks_old, mapPrev, 0, 0);
+    DAG_Model dag_new(tasks_new, mapPrev, 0, 0);
+    EXPECT_TRUE(DetectETJump(dag_old, dag_new));
+}
+
+TEST(DetectETJumpTest, NoTripWhenETDecreases) {
+    // 1600 -> 1000 (0.625x) → a decrease never trips (only jumps up matter).
+    MAP_Prev mapPrev;
+    FiniteDist d_old({Value_Proba(1600.0, 1.0)});
+    FiniteDist d_new({Value_Proba(1000.0, 1.0)});
+    TaskSet tasks_old = {Task(0, d_old, 2000, 2000, 0, "T0")};
+    TaskSet tasks_new = {Task(0, d_new, 2000, 2000, 0, "T0")};
+    DAG_Model dag_old(tasks_old, mapPrev, 0, 0);
+    DAG_Model dag_new(tasks_new, mapPrev, 0, 0);
+    EXPECT_FALSE(DetectETJump(dag_old, dag_new));
+}
+
 // --- Trial-and-Error TL walk: WalkOneTaskWithTimeLimitOptions + rewritten
 // RunIntervalDescent(Reopt) ---
 //
@@ -2757,6 +2817,125 @@ TEST_F(TrialAndErrorTLWalkSynthetic,
     EXPECT_TRUE(opt.evaluated_tls.empty());
 }
 
+// P0.7 trigger (b): the HALT signal must actually BREAK the walk's inner loop.
+// `online_halt_requested_` is raised by `UpdateRecords` on a gate-reject (proven
+// by OnlineHaltGate_FlagOn_HaltsOn...); this test proves the loop honors it. The
+// stub faithfully simulates the gate: at the unsafe TL (800) it sets the flag and
+// returns the incumbent (ghost-SP, "no progress"). With patience=1 the walk would
+// NORMALLY continue past the 800 dip to 1000 — only the halt flag breaks it, so
+// 1000 is never evaluated. (Without the loop-break the walk would visit 1000.)
+TEST_F(TrialAndErrorTLWalkSynthetic,
+       OnlineHalt_BreaksInnerLoopOnFirstUnsafeCandidate) {
+    std::map<double, double> sp;
+    sp[400.0] = 1.4;
+    sp[600.0] = 1.6;   // baseline
+    sp[800.0] = 1.7;   // the unsafe candidate (SP-better but gate-rejected)
+    sp[1000.0] = 1.8;  // would normally be visited (patience=1); halt prevents it
+    auto opt = MakeStub(sp);
+    opt.enforce_online_halt_gate_ = true;
+    ASSERT_FALSE(opt.online_halt_requested_);
+
+    // Stub the gate: 800 trips the halt (raises the flag + returns incumbent SP,
+    // mirroring the ghost-SP fix). Other TLs return their real SP.
+    auto eval = [&opt, sp](const std::vector<double>& tl) {
+        opt.evaluated_tls.push_back(tl[0]);  // record visit order
+        if (tl[0] == 800.0) {
+            opt.online_halt_requested_ = true;
+            return sp.at(600.0);  // ghost-SP: report incumbent, "no progress"
+        }
+        return sp.at(tl[0]);
+    };
+
+    std::vector<double> time_limits = {600.0, -1.0};
+    double final_sp = opt.WalkOneTaskWithTimeLimitOptions(
+        0, time_limits, sp[600.0], /*baseline_val=*/600.0, /*step=*/1,
+        /*patience=*/1, eval);
+
+    // Halt fired at 800; the loop broke BEFORE evaluating 1000.
+    EXPECT_TRUE(opt.online_halt_requested_);
+    EXPECT_EQ(std::vector<double>({800.0}), opt.evaluated_tls);
+    // The incumbent (baseline 600) was preserved — the unsafe 800 was rejected.
+    EXPECT_DOUBLE_EQ(sp[600.0], final_sp);
+    EXPECT_DOUBLE_EQ(600.0, time_limits[0]);
+}
+
+// ============================================================================
+// P0.7 trigger (b) — compare-with-safe-fallback winner (D7 = higher global SP).
+// After the guard halts the walk, the interval's `res` is the higher-global-SP
+// of {the walk's incumbent-so-far, the safe fallback} — both re-scored under the
+// CURRENT dag. The safe fallback is feasible-by-construction (gate-held offline);
+// the incumbent may be SP-higher (the walk found a better feasible point before
+// halting) OR SP-lower (the halt fired early, the fallback is better). D7 picks
+// the higher SP, NOT blindly the fallback.
+// ============================================================================
+
+// (c1) Incumbent SP HIGHER than the safe fallback → the compare picks the
+// incumbent. The compare's CONTRACT is "pick the higher-SP of {incumbent,
+// fallback}", independent of how either was produced — so the fallback is set
+// directly to a known low-SP TL=400 result (the gate-held seed region) and the
+// incumbent to TL=800 (feasible, strictly SP-better: SP rises with TL here).
+TEST_F(CompareAndKeepSynthetic,
+       CompareAndPickWinner_ReturnsIncumbentWhenItsSpIsHigher) {
+    dag_tasks.tasks[0].is_important = false;  // SP rises with T0's TL
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[1].deadline = 2000.0;     // both TLs feasible (loose ddl)
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+
+    // Safe fallback: a gate-held TL=400 result (low SP). Set directly so the
+    // compare is tested in isolation from ComputeSafeFallback's walk behavior.
+    ResourceOptResult fallback;
+    fallback.UpdatePriorityVec(pa);
+    fallback.SaveTimeLimits(dag_tasks.tasks, {400.0, -1.0});
+    fallback.sp_opt = OracleSPForCandidate(dag_tasks, sp_parameters, pa, {400.0, -1.0});
+    opt.safe_fallback_ = fallback;
+
+    // Incumbent: TL=800 (feasible, strictly SP-better than the TL=400 fallback).
+    std::vector<double> tl_incumbent = {800.0, -1.0};
+    double sp_incumbent = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_incumbent);
+    ASSERT_GT(sp_incumbent, fallback.sp_opt)
+        << "fixture broken: incumbent TL=800 must outscore the fallback TL=400";
+    opt.CommitIncumbent(pa, sp_incumbent, tl_incumbent);
+
+    ResourceOptResult winner = opt.CompareAndPickWinnerAgainstSafeFallback();
+    EXPECT_DOUBLE_EQ(sp_incumbent, winner.sp_opt);
+    EXPECT_DOUBLE_EQ(800.0, winner.id2time_limit.at(dag_tasks.tasks[0].id));
+}
+
+// (c2) Incumbent SP LOWER than the safe fallback → the compare picks the safe
+// fallback. The fallback is set to TL=800 (higher SP); the incumbent is pinned
+// at TL=400 (a halt-fired-early low-SP point). The compare returns the fallback,
+// re-scored under the current dag.
+TEST_F(CompareAndKeepSynthetic,
+       CompareAndPickWinner_ReturnsSafeFallbackWhenItsSpIsHigher) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[1].deadline = 2000.0;  // both TLs feasible
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+
+    // Safe fallback: TL=800 (higher SP). Set directly.
+    ResourceOptResult fallback;
+    fallback.UpdatePriorityVec(pa);
+    fallback.SaveTimeLimits(dag_tasks.tasks, {800.0, -1.0});
+    fallback.sp_opt = OracleSPForCandidate(dag_tasks, sp_parameters, pa, {800.0, -1.0});
+    opt.safe_fallback_ = fallback;
+
+    // Incumbent: TL=400 (low SP).
+    std::vector<double> tl_incumbent = {400.0, -1.0};
+    double sp_incumbent = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_incumbent);
+    ASSERT_GT(fallback.sp_opt, sp_incumbent)
+        << "fixture broken: fallback TL=800 must outscore the TL=400 incumbent";
+    opt.CommitIncumbent(pa, sp_incumbent, tl_incumbent);
+
+    ResourceOptResult winner = opt.CompareAndPickWinnerAgainstSafeFallback();
+    // The fallback wins: re-scored under the current dag (same dag → same SP).
+    EXPECT_DOUBLE_EQ(fallback.sp_opt, winner.sp_opt);
+    EXPECT_DOUBLE_EQ(800.0, winner.id2time_limit.at(dag_tasks.tasks[0].id));
+}
+
 // --- P0.6: the offline safe fallback (the fall-back artifact). ---
 // ComputeSafeFallback() seeds at the P0.8-certified point (DM PA + TL <= et_mean), runs
 // a TL walk with the gate ON, and STORES the result as `safe_fallback_` — SEPARATE from
@@ -2850,6 +3029,287 @@ TEST_F(CompareAndKeepSynthetic,
     // Same artifact object (not recomputed).
     EXPECT_EQ(pre.priority_vec, opt.GetSafeFallback().priority_vec);
     EXPECT_DOUBLE_EQ(pre.sp_opt, opt.GetSafeFallback().sp_opt);
+}
+
+// ============================================================================
+// P0.7 trigger (a) — ET-jump short-circuit in the dispatcher.
+// `Optimize_w_TL_ScratchOrIncre` (and `OptimizePureIncremental`) run DetectETJump
+// BEFORE AbsorbUpdatedDAG overwrites dag_tasks_ (dag_tasks_ IS the saved old dag
+// until the absorb). On a trip (any task's avg ET >= 1.5x old), the dispatcher
+// SKIPS the walk and adopts safe_fallback_'s {PA,TL} scored under the CURRENT
+// dag as the interval's result. Guarded to skip interval 0 (count==0, no prior
+// dag). Still absorbs the new dag so the next interval compares against THIS
+// interval's jumped ET (fires on the transient jump, not the sustained level).
+// ============================================================================
+
+// Subclass that records whether ANY optimizer eval ran (both the reopt and
+// incremental branches route their per-candidate scoring through
+// CallOptimizerGivenTimeLimits). On a trigger-(a) trip the walk is skipped, so
+// no eval runs. On a normal dispatch at least one eval runs.
+class ETJumpRecordingOpt : public OptimizePA_Incre_with_TimeLimits {
+   public:
+    int eval_calls = 0;
+    using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
+    double CallOptimizerGivenTimeLimits(
+        int beam_search_width, const std::vector<double>& time_limits,
+        bool from_scratch) override {
+        ++eval_calls;
+        return OptimizePA_Incre_with_TimeLimits::CallOptimizerGivenTimeLimits(
+            beam_search_width, time_limits, from_scratch);
+    }
+};
+
+// Two-task DAG whose perf task (T0) avg ET is `et_perf`; non-perf T1 fixed. The
+// perf grid spans [400..1000] so the safe fallback has a TL to carry.
+DAG_Model ETJumpTwoTaskDag(double et_perf) {
+    MAP_Prev mapPrev;
+    std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
+    Task t_perf(0, dist_perf, 2000, 2000, 0, "T0");
+    t_perf.execution_time_dist = FiniteDist(GaussianDist(et_perf, 0.5), 5);
+    for (int i = 0; i < 4; ++i) {
+        t_perf.timePerformancePairs.push_back(
+            TimePerfPair(400 + i * 200, 0.5 + i * 0.1));
+    }
+    std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+    Task t_noise(1, dist_noise, 2000, 2000, 1, "T1");
+    t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+    TaskSet tasks = {t_perf, t_noise};
+    return DAG_Model(tasks, mapPrev, 0, 0);
+}
+
+// Fixture pinning ReoptimizationPeriod=10 so count=1 deterministically routes to
+// the incremental branch (independent of the production default and of any
+// prior test that mutated the global). The count==0 reopt branch is exercised by
+// the interval-0 test below.
+class ETJumpDispatcherTest : public ::testing::Test {
+   public:
+    void SetUp() override {
+        saved_period_ = GlobalVariables::ReoptimizationPeriod;
+        GlobalVariables::ReoptimizationPeriod = 10;
+    }
+    void TearDown() override {
+        GlobalVariables::ReoptimizationPeriod = saved_period_;
+    }
+    int saved_period_;
+};
+
+// (a1) Interval 0 never trips trigger (a) — there is no prior dag to compare
+// against (dag_tasks_ holds the construction DAG == the update at interval 0).
+// The dispatcher runs its normal interval-0 path (reopt bootstrap); the safe
+// fallback is NOT adopted as the result.
+TEST_F(ETJumpDispatcherTest, SkippedAtInterval0_NoPriorDag) {
+    DAG_Model dag = ETJumpTwoTaskDag(500.0);
+    SP_Parameters sp(dag);
+    ETJumpRecordingOpt opt(dag, sp);
+    opt.ComputeSafeFallback(dag);  // pre-compute
+    opt.reoptimization_interval_count_ = 0;  // interval 0
+
+    opt.Optimize_w_TL_ScratchOrIncre(
+        dag, GlobalVariables::Layer_Node_During_Incremental_Optimization);
+
+    // The dispatcher's normal path ran: trigger (a)'s short-circuit would have
+    // skipped the walk and run ZERO optimizer evals (AdoptSafeFallbackAsIncumbent
+    // scores via EvaluateSPWithPriorityVec, not CallOptimizerGivenTimeLimits). A
+    // normal interval-0 dispatch runs at least one eval. (We do NOT assert on
+    // res.sp_opt vs the fallback's SP — this fixture saturates both to 1.8, so
+    // the SP/PA inequality is not a meaningful signal here; eval_calls is.)
+    EXPECT_GE(opt.eval_calls, 1);
+}
+
+// (a2) A >=1.5x ET jump on a LATER interval trips the dispatcher: the walk is
+// SKIPPED and the interval's result IS the safe fallback's {PA,TL} (re-scored
+// under the current dag). The dispatcher still absorbs the new dag.
+TEST_F(ETJumpDispatcherTest, TripSkipsWalkAndAdoptsSafeFallback) {
+    DAG_Model dag_lo = ETJumpTwoTaskDag(500.0);
+    DAG_Model dag_hi = ETJumpTwoTaskDag(1000.0);  // 2.0x jump on T0
+    SP_Parameters sp(dag_lo);
+    ETJumpRecordingOpt opt(dag_lo, sp);
+    opt.ComputeSafeFallback(dag_lo);  // pre-compute the safe fallback
+    opt.reoptimization_interval_count_ = 1;  // a later interval (not interval 0)
+
+    opt.Optimize_w_TL_ScratchOrIncre(
+        dag_hi, GlobalVariables::Layer_Node_During_Incremental_Optimization);
+
+    // The walk did NOT run (trigger (a) short-circuited it).
+    EXPECT_EQ(0, opt.eval_calls);
+    // The result is the safe fallback's PA + TL (adopted under the current dag).
+    ResourceOptResult res = opt.CollectResults();
+    EXPECT_EQ(opt.GetSafeFallback().priority_vec, res.priority_vec);
+    int t0_id = dag_hi.tasks[0].id;
+    EXPECT_DOUBLE_EQ(opt.GetSafeFallback().id2time_limit.at(t0_id),
+                     res.id2time_limit.at(t0_id));
+    // The new (jumped) dag was absorbed so the next interval compares against it.
+    EXPECT_DOUBLE_EQ(dag_hi.tasks[0].execution_time_dist.GetAvgValue(),
+                     opt.dag_tasks_.tasks[0].execution_time_dist.GetAvgValue());
+}
+
+// (a3) A sub-threshold jump (< 1.5x) does NOT trip: the walk runs normally and
+// the safe fallback is NOT adopted. Bootstrap first (so the incremental walk at
+// count=1 has a warm-started incumbent), then dispatch a sub-threshold jump.
+TEST_F(ETJumpDispatcherTest, NoTripBelowThresholdRunsWalkNormally) {
+    DAG_Model dag_lo = ETJumpTwoTaskDag(500.0);
+    DAG_Model dag_hi = ETJumpTwoTaskDag(700.0);  // 1.4x jump on T0 (< 1.5)
+    SP_Parameters sp(dag_lo);
+    ETJumpRecordingOpt opt(dag_lo, sp);
+    opt.ComputeSafeFallback(dag_lo);
+    opt.ReOptimizePeriodic(  // bootstrap the incumbent at interval 0
+        dag_lo, GlobalVariables::Layer_Node_During_Incremental_Optimization);
+    opt.reoptimization_interval_count_ = 1;  // the bootstrap was interval 0
+
+    opt.Optimize_w_TL_ScratchOrIncre(
+        dag_hi, GlobalVariables::Layer_Node_During_Incremental_Optimization);
+
+    // The walk ran (no trip) and found the unconstrained optimum TL=1000 (SP
+    // rises monotonically with T0's TL in this fixture, no gate set).
+    EXPECT_GE(opt.eval_calls, 1);
+    int t0_id = dag_hi.tasks[0].id;
+    ResourceOptResult res = opt.CollectResults();
+    EXPECT_DOUBLE_EQ(1000.0, res.id2time_limit.at(t0_id));
+}
+
+// (a4) OptimizePureIncremental (the INCR_NO_REOPT dispatcher) honors the same
+// trigger-(a) short-circuit.
+TEST_F(ETJumpDispatcherTest, PureIncrementalDispatcherAlsoHonorsETJump) {
+    DAG_Model dag_lo = ETJumpTwoTaskDag(500.0);
+    DAG_Model dag_hi = ETJumpTwoTaskDag(1000.0);  // 2.0x jump
+    SP_Parameters sp(dag_lo);
+    ETJumpRecordingOpt opt(dag_lo, sp);
+    opt.ComputeSafeFallback(dag_lo);
+    opt.reoptimization_interval_count_ = 1;  // skip the interval-0 bootstrap
+
+    opt.OptimizePureIncremental(
+        dag_hi, GlobalVariables::Layer_Node_During_Incremental_Optimization);
+
+    // The walk did NOT run (trigger (a) short-circuited it): both the reopt
+    // and incremental branches route their per-candidate scoring through
+    // CallOptimizerGivenTimeLimits, so a skipped walk → zero eval calls.
+    EXPECT_EQ(0, opt.eval_calls);
+    ResourceOptResult res = opt.CollectResults();
+    EXPECT_EQ(opt.GetSafeFallback().priority_vec, res.priority_vec);
+}
+
+// ============================================================================
+// P0.7 trigger (b) — in-walk early-stop guard (HALT on first unsafe candidate).
+// D6 = HALT online (NOT skip-and-continue — that's P0.6's offline gate). D2 =
+// analytic DDL-miss-chance: the guard reuses `ImportantTasksMeetThresholds` (the
+// SP metric's own per-task verdict via `GetDDL_MissProbability` vs
+// `thresholds_node[id]`) — same detection as P0.6, DIFFERENT response. P0.6's
+// `enforce_important_task_gate_` (set true only in `ComputeSafeFallback`) rejects
+// the candidate and CONTINUES the walk (ample offline budget). Trigger (b)'s
+// `enforce_online_halt_gate_` (default false → prod byte-identical) rejects the
+// candidate AND raises `online_halt_requested_` so the walk's nested loops break
+// (tight online budget). On a halt the incumbent stays untouched (the same
+// reject semantics as P0.6) and the eval reports the incumbent SP (ghost-SP fix).
+//
+// These chokepoint tests mirror P0.6's `GateWiring_FlagOn_*` tests (same
+// CompareAndKeepSynthetic fixture: T_perf id 0 not important, SP rises with TL;
+// T_noise id 1 important + gated, deadline wedged so TL=400 feasible / TL=1000
+// violates) — but assert the HALT signal instead of the continue.
+// ============================================================================
+
+// (b1) Flag ON, an SP-better candidate violates the gate → HALT: the incumbent is
+// untouched (reject, same as P0.6) AND `online_halt_requested_` is raised (the
+// NEW halt signal that breaks the walk — P0.6 would have left it false).
+TEST_F(CompareAndKeepSynthetic,
+       OnlineHaltGate_FlagOn_HaltsOnSpBetterThresholdViolatingCandidate) {
+    dag_tasks.tasks[0].is_important = false;   // T_perf: drives SP up with TL
+    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
+    dag_tasks.tasks[1].deadline = 700.0;       // TL=400 feasible, TL=1000 violates
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;  // miss is cheap
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enforce_online_halt_gate_ = true;
+    ASSERT_FALSE(opt.online_halt_requested_);  // clean at start
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {400.0, -1.0};
+    std::vector<double> tl_candidate = {1000.0, -1.0};
+    // Sanity: seed feasible, candidate infeasible, candidate strictly SP-better.
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_seed,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_seed)));
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_candidate,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+    const double incumbent_sp = opt.res_opt_.sp_opt;
+
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/true);
+
+    // Reject (same as P0.6): incumbent untouched.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
+    EXPECT_EQ(pa, opt.res_opt_.priority_vec);
+    // Ghost-SP fix: eval reports the incumbent SP, not the rejected candidate's.
+    EXPECT_DOUBLE_EQ(incumbent_sp, returned);
+    // The NEW halt signal: raised so the walk breaks (P0.6 leaves it false).
+    EXPECT_TRUE(opt.online_halt_requested_);
+}
+
+// (b2) Flag ON, a feasible SP-better candidate → no halt: the gate is permissive
+// when the constraint holds, the candidate commits, and `online_halt_requested_`
+// stays false (the walk completes normally).
+TEST_F(CompareAndKeepSynthetic,
+       OnlineHaltGate_FlagOn_NoHaltWhenCandidateIsFeasible) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[1].deadline = 2000.0;  // loose: TL=1000 stays feasible
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enforce_online_halt_gate_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {400.0, -1.0};
+    std::vector<double> tl_candidate = {1000.0, -1.0};
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_candidate,
+        NodeRTAsForCandidate(dag_tasks, pa, tl_candidate)));
+    ASSERT_GT(OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate),
+              OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/true);
+    // The keep: candidate committed, no halt.
+    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_GT(opt.res_opt_.sp_opt, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+    EXPECT_GT(returned, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed));
+    EXPECT_FALSE(opt.online_halt_requested_);
+}
+
+// (b3) Flag ON, candidate does NOT beat the champion → the guard is structurally
+// skipped (user's rule — only check on would-beat), so no halt and no commit.
+TEST_F(CompareAndKeepSynthetic,
+       OnlineHaltGate_FlagOn_NonBeatingCandidate_DoesNotHaltNorCommit) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enforce_online_halt_gate_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_seed = {1000.0, -1.0};  // SP max on this fixture
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_seed),
+                        tl_seed);
+    ASSERT_TRUE(opt.IfInitialized());
+    const double incumbent_sp = opt.res_opt_.sp_opt;
+
+    std::vector<double> tl_candidate = {400.0, -1.0};  // strictly SP-worse
+    double candidate_sp = OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_candidate);
+    ASSERT_LT(candidate_sp, incumbent_sp);
+    double returned = opt.OptimizeIncreSingleTask(tl_candidate, /*task_idx=*/0,
+                                                  /*et_increased=*/false);
+    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+    EXPECT_DOUBLE_EQ(incumbent_sp, opt.res_opt_.sp_opt);
+    EXPECT_FALSE(opt.online_halt_requested_);
 }
 
 // ============================================================================

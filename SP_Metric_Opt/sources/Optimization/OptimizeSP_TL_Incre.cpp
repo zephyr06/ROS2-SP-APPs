@@ -127,6 +127,28 @@ bool IsBetterTimeLimitOption(double new_sp, double current_best_sp, int step) {
     return false;
 }
 
+bool DetectETJump(const DAG_Model& dag_old, const DAG_Model& dag_new,
+                  double ratio_threshold) {
+    // Per-task positional scan (mirrors FindTaskWithDifferentEt): avg ET is
+    // execution_time_dist.GetAvgValue(), the truncated FiniteDist mean the RTA
+    // uses. Trips on the FIRST task whose new/old ratio >= ratio_threshold. A
+    // decreased ET (ratio < 1) never trips — only jumps UP short-circuit the walk.
+    const TaskSet& old_tasks = dag_old.tasks;
+    const TaskSet& new_tasks = dag_new.tasks;
+    int count = static_cast<int>(std::min(old_tasks.size(), new_tasks.size()));
+    for (int i = 0; i < count; i++) {
+        double et_old = old_tasks[i].execution_time_dist.GetAvgValue();
+        double et_new = new_tasks[i].execution_time_dist.GetAvgValue();
+        if (et_old <= 0.0) {
+            continue;  // degenerate dist (no defined mean) — cannot ratio
+        }
+        if (et_new / et_old >= ratio_threshold) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool OptimizePA_Incre_with_TimeLimits::WouldBeatIncumbent(
     double challenger_sp, const std::vector<double>& time_limits) const {
     // Strictly-greater SP beats; an approx-equal SP tie beats only when the
@@ -159,13 +181,22 @@ bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     // Feasibility gate: on a would-beat, commit only if every important task's
     // ddl_miss_chance ≤ threshold. RTA re-runs the same rta_cache_.Evaluate
     // CommitIncumbent uses (candidate's final {pa, tl}); reject → no commit.
-    if (should_update && enforce_important_task_gate_ &&
-        !BFSharedBudgetCancelled()) {
+    // P0.7 trigger (b): the ONLINE gate (`enforce_online_halt_gate_`) uses the
+    // SAME detection (`ImportantTasksMeetThresholds`) but, on a reject, also
+    // raises `online_halt_requested_` so the walk HALTs (D6) instead of
+    // skip-and-continue (the offline gate's response). Either flag arms the
+    // check; both are default false → prod byte-identical.
+    bool gate_armed = (enforce_important_task_gate_ || enforce_online_halt_gate_) &&
+                      !BFSharedBudgetCancelled();
+    if (should_update && gate_armed) {
         const std::vector<FiniteDist>& challenger_rtas =
             rta_cache_.Evaluate(dag_tasks_, optimizer.opt_pa_, time_limits);
         if (!ImportantTasksMeetThresholds(dag_tasks_, sp_parameters_,
                                           optimizer.opt_pa_, time_limits,
                                           challenger_rtas)) {
+            if (enforce_online_halt_gate_) {
+                online_halt_requested_ = true;  // D6: HALT the walk on first unsafe
+            }
             return false;  // gate-REJECT: SP-better but infeasible -> no commit
         }
     }
@@ -283,9 +314,11 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeIncreSingleTask(
         // Gate-REJECT of an SP-better candidate: UpdateRecords returned false
         // WITHOUT committing, but current_sp still holds the rejected candidate's
         // better SP. Report the INCUMBENT SP so the walk's IsBetterTimeLimitOption
-        // sees "no progress" and never tracks the rejected TL. Flag-guarded →
-        // flag-off path byte-identical.
-        if (enforce_important_task_gate_ && !BFSharedBudgetCancelled() &&
+        // sees "no progress" and never tracks the rejected TL. Applies to both
+        // the offline gate and trigger (b)'s online halt gate (both reject
+        // SP-better infeasible candidates). Flag-guarded → flag-off byte-identical.
+        if ((enforce_important_task_gate_ || enforce_online_halt_gate_) &&
+            !BFSharedBudgetCancelled() &&
             WouldBeatIncumbent(challenger.opt_sp_, time_limits)) {
             current_sp = res_opt_.sp_opt;
         }
@@ -402,10 +435,20 @@ double OptimizePA_Incre_with_TimeLimits::WalkSerializedTaskQueue(
     // Shared per-entry dispatch. Each step's UpdateRecords adopts into res_opt_,
     // so the next step's challenger sees the new champion; the committed TL tracks
     // the adopted best, so the diff flags only the walked task (|diff|<=1).
+    // P0.7 trigger (b): reset the halt flag at walk start — it is per-walk (an
+    // interval's guard fires at most once; the post-walk compare consumes the
+    // incumbent-so-far). Inert when the gate is off.
+    online_halt_requested_ = false;
     for (const SerializedTaskQueueEntry& entry : queue) {
         // Stop walking once the per-interval TIME_LIMIT expired (compare-and-keep
         // retains the best-so-far). Inert within budget → prod byte-identical.
         if (BFSharedBudgetCancelled()) {
+            break;
+        }
+        // P0.7 trigger (b): a prior entry's per-candidate guard tripped (raised
+        // in UpdateRecords via OptimizeIncreSingleTask). HALT the outer loop —
+        // no further queue entries are walked (D6). Inert when the flag is off.
+        if (online_halt_requested_) {
             break;
         }
         if (entry.kind == SerializedTaskQueueEntry::Kind::EnvChanged) {
@@ -591,6 +634,15 @@ double OptimizePA_Incre_with_TimeLimits::WalkOneTaskWithTimeLimitOptions(
         time_limits[task_idx] = val;
         double sp_val = eval(time_limits);
 
+        // P0.7 trigger (b): the online halt gate raised in `UpdateRecords`
+        // (via the eval → OptimizeIncreSingleTask path) on a gate-rejected
+        // SP-better candidate. HALT immediately — do NOT step further (D6:
+        // tight online budget; the incumbent-so-far is preserved below).
+        // Inert when the flag is off (prod byte-identical).
+        if (online_halt_requested_) {
+            break;
+        }
+
         if (IsBetterTimeLimitOption(sp_val, best_sp, step)) {
             best_sp = sp_val;
             best_option_val = val;
@@ -642,6 +694,18 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
         throw std::runtime_error(
             "Optimize_w_TL_ScratchOrIncre: no safe fallback pre-computed. The "
             "caller must ComputeSafeFallback(worst_case_dag) before dispatching.");
+    }
+
+    // P0.7 trigger (a): an ET-jump (any task's avg ET >= 1.5x the saved old dag)
+    // short-circuits the walk — adopt the precomputed safe fallback directly.
+    // Runs BEFORE AbsorbUpdatedDAG so dag_tasks_ is still the saved old dag. The
+    // safe fallback was certified on the cross-interval worst-case DAG, which
+    // stochastically dominates every interval → safe under the jumped ETs.
+    if (ShouldShortCircuitOnETJump(dag_tasks_update)) {
+        AbsorbUpdatedDAG(dag_tasks_update);  // still absorb so next interval
+        AdoptSafeFallbackAsIncumbent();       // compares against this jumped ET
+        reoptimization_interval_count_++;
+        return opt_pa_;
     }
 
     // One shared TIME_LIMIT budget for this interval's INCR call (covers both
@@ -700,6 +764,15 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizePureIncremental(
     const DAG_Model& dag_tasks_update, int beam_search_width) {
     // INCR_NO_REOPT dispatcher. count==0 → seed-only DM-fast bootstrap (no
     // descent); count>0 → warm-started incremental walk. Never ReOptimizePeriodic.
+    // P0.7 trigger (a): an ET-jump short-circuits the walk (same contract as
+    // Optimize_w_TL_ScratchOrIncre). Runs before AbsorbUpdatedDAG; on a trip the
+    // safe fallback is adopted directly under the absorbed current dag.
+    if (HasSafeFallback() && ShouldShortCircuitOnETJump(dag_tasks_update)) {
+        AbsorbUpdatedDAG(dag_tasks_update);
+        AdoptSafeFallbackAsIncumbent();
+        reoptimization_interval_count_++;
+        return opt_pa_;
+    }
     // One shared TIME_LIMIT budget per interval (the orchestrator reuses
     // incr_optimizer_ across intervals, so a construction-time start_time_ would
     // bound the whole simulation, not one interval).
@@ -915,6 +988,69 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
 
     safe_fallback_ = candidate;
     return *safe_fallback_;
+}
+
+bool OptimizePA_Incre_with_TimeLimits::ShouldShortCircuitOnETJump(
+    const DAG_Model& dag_tasks_update) const {
+    // Interval 0 has no prior dag to compare against (dag_tasks_ holds the
+    // construction DAG, which equals the interval-0 update) → never short-circuit.
+    if (reoptimization_interval_count_ == 0) {
+        return false;
+    }
+    return DetectETJump(dag_tasks_, dag_tasks_update);
+}
+
+void OptimizePA_Incre_with_TimeLimits::AdoptSafeFallbackAsIncumbent() {
+    // Re-score the safe fallback's {PA,TL} under the current (absorbed) dag so the
+    // interval's SP reflects THIS interval's ET, not the worst-case DAG's. The
+    // {PA,TL} themselves are reused as-is (certified on the worst-case DAG, which
+    // stochastically dominates every interval → safe under any interval's ET).
+    const ResourceOptResult& fallback = *safe_fallback_;
+    std::vector<double> tl_pos(dag_tasks_.tasks.size());
+    for (size_t i = 0; i < dag_tasks_.tasks.size(); i++) {
+        int id = dag_tasks_.tasks[i].id;
+        tl_pos[i] = fallback.id2time_limit.count(id) ? fallback.id2time_limit.at(id)
+                                                     : -1.0;
+    }
+    DAG_Model dag_with_tl = UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_pos);
+    double sp = EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters_,
+                                          fallback.priority_vec);
+    CommitIncumbent(fallback.priority_vec, sp, tl_pos);
+}
+
+// P0.7 trigger (b) — D7: after the guard halts the walk, the interval's `res` is
+// the higher-global-SP of {the walk's incumbent-so-far, the safe fallback}, both
+// scored under the CURRENT dag. The fallback's {PA,TL} are reused as-is (certified
+// on the worst-case DAG → safe under any interval); only its SP is re-scored here.
+// Returns the winner as a fresh result; does NOT commit (the caller adopts it via
+// CommitIncumbent, or the orchestrator feeds it to the rollout directly).
+ResourceOptResult
+OptimizePA_Incre_with_TimeLimits::CompareAndPickWinnerAgainstSafeFallback() {
+    if (!HasSafeFallback()) {
+        throw std::runtime_error(
+            "CompareAndPickWinnerAgainstSafeFallback: no safe fallback "
+            "pre-computed. The caller must ComputeSafeFallback(worst_case_dag) "
+            "before dispatching.");
+    }
+    const ResourceOptResult& fallback = *safe_fallback_;
+    std::vector<double> tl_pos(dag_tasks_.tasks.size());
+    for (size_t i = 0; i < dag_tasks_.tasks.size(); i++) {
+        int id = dag_tasks_.tasks[i].id;
+        tl_pos[i] = fallback.id2time_limit.count(id)
+                        ? fallback.id2time_limit.at(id)
+                        : -1.0;
+    }
+    DAG_Model dag_with_tl = UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_pos);
+    double sp_fallback = EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters_,
+                                                   fallback.priority_vec);
+    double sp_incumbent = res_opt_.sp_opt;
+    if (sp_incumbent >= sp_fallback) {
+        return res_opt_;  // the walk's incumbent-so-far wins (higher or equal SP)
+    }
+    // The safe fallback wins: return it with its {PA,TL} and the re-scored SP.
+    ResourceOptResult winner = fallback;
+    winner.sp_opt = sp_fallback;
+    return winner;
 }
 
 // Reset the incumbent baseline before the descent's baseline eval.
