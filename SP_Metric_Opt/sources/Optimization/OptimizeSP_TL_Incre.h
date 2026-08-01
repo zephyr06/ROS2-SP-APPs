@@ -333,7 +333,14 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // P0.6 — the offline safe-fallback artifact. Seeds at the P0.8-certified point
     // (DM PA + TL <= et_mean), runs a gate-governed TL walk on a throwaway sibling, and
     // keeps the best-SP gate-feasible result. Sibling isolation → online byte-identical.
-    ResourceOptResult ComputeSafeFallback();
+    // `worst_case_dag` (P0.6 §8): the caller-built DAG whose per-task dist is a point
+    // mass at max(execution_time_max) across all interval DAGs → stochastically
+    // dominates every interval → the gate's ddl_miss_chance upper-bounds every
+    // interval (P0.7 trigger (a) cross-interval safety). The orchestrator pre-call
+    // builds it from dag_tasks_vecs_ and is the ONLY sound caller — Optimize_w_TL_
+    // ScratchOrIncre throws if no fallback is pre-computed (it cannot build the
+    // worst-case DAG from dag_tasks_).
+    ResourceOptResult ComputeSafeFallback(const DAG_Model& worst_case_dag);
     bool HasSafeFallback() const { return safe_fallback_.has_value(); }
     const ResourceOptResult& GetSafeFallback() const { return *safe_fallback_; }
 

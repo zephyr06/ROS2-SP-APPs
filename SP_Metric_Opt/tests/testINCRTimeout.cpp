@@ -90,6 +90,12 @@ TEST_F(TaskSetINCRWithTimeout, RespectsGlobalTimeLimit) {
     GlobalVariables::debugMode = 0;
 
     OptimizePA_Incre_with_TimeLimits opt(dag, sp);
+    // The dispatcher now requires a pre-computed safe fallback (P0.6 §8: it
+    // cannot build the worst-case DAG from dag_tasks_). Pre-call outside the
+    // timed window so the budget-guard measurement below is unaffected. Under
+    // TIME_LIMIT=0 the pre-call's own budget bails its seed eval; the gate is
+    // vacuous here (no important tasks) → it stores the seed and returns fast.
+    opt.ComputeSafeFallback(dag);
 
     auto start = std::chrono::high_resolution_clock::now();
     opt.Optimize_w_TL_ScratchOrIncre(
@@ -149,6 +155,10 @@ TEST_F(TaskSetINCRWithTimeout, RespectsGlobalTimeLimit_SingleEvalExceedsCap) {
     GlobalVariables::debugMode = 0;
 
     OptimizePA_Incre_with_TimeLimits opt(dag, sp);
+    // Pre-call the safe fallback (P0.6 §8 contract: the dispatcher requires it).
+    // Outside the timed window; under TIME_LIMIT=1 the pre-call's seed eval bails
+    // at the cap, the gate is vacuous (no important tasks) → stores the seed.
+    opt.ComputeSafeFallback(dag);
 
     auto start = std::chrono::high_resolution_clock::now();
     opt.Optimize_w_TL_ScratchOrIncre(

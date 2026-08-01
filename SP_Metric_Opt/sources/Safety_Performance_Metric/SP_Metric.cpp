@@ -238,6 +238,23 @@ bool ImportantTasksMeetThresholds(
     return true;  // every important task (vacuously, if none) meets its threshold
 }
 
+// Self-contained overload: bake TL + apply PA, derive RTAs fresh, then delegate to
+// the contract overload. Mirrors the bake+prioritize the contract assumes its
+// caller already did (see above). Used by the ComputeSafeFallback loud-fail re-gate
+// and any caller without a pre-materialized node-RTA vector.
+bool ImportantTasksMeetThresholds(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl) {
+    TaskSet tasks_baked =
+        ApplyTimeLimitsToTasksExecutionTime(dag_tasks.tasks, tl);
+    TaskSet tasks_prioritized =
+        UpdateTaskSetPriorities(tasks_baked, priority_assignment);
+    std::vector<FiniteDist> node_rtas = ProbabilisticRTA_TaskSet(tasks_prioritized);
+    return ImportantTasksMeetThresholds(dag_tasks, sp_parameters,
+                                        priority_assignment, tl, node_rtas);
+}
+
 double GetTaskPerfTerm(
     double ext_time_single,
     const std::vector<TimePerfPair>& timePerformancePairs_Sorted) {

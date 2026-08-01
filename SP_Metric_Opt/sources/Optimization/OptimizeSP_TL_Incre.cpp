@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <stdexcept>
 
 namespace SP_OPT_PA {
 
@@ -672,10 +673,17 @@ double OptimizePA_Incre_with_TimeLimits::OptimizeOneTaskWithTimeLimit(
 
 PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     const DAG_Model& dag_tasks_update, int beam_search_width) {
-    // P0.6 — lazy-populate the safe fallback on the first dispatch if the caller
-    // didn't pre-call (the orchestrator pre-calls to keep it out of scheduler-ET).
+    // P0.6 — the safe fallback MUST be pre-computed (offline, on the cross-
+    // interval worst-case DAG) before any dispatch. The orchestrator pre-calls
+    // ComputeSafeFallback once before the interval loop; reaching here without
+    // one is a contract violation. This dispatcher sees only dag_tasks_ (one
+    // interval), NOT dag_tasks_vecs_, so it CANNOT build the worst-case DAG
+    // soundly — lazy-computing on dag_tasks_ would certify against a single
+    // interval → cross-interval unsoundness (the very bug §8 removed). Fail loud.
     if (!HasSafeFallback()) {
-        ComputeSafeFallback();
+        throw std::runtime_error(
+            "Optimize_w_TL_ScratchOrIncre: no safe fallback pre-computed. The "
+            "caller must ComputeSafeFallback(worst_case_dag) before dispatching.");
     }
 
     // One shared TIME_LIMIT budget for this interval's INCR call (covers both
@@ -885,7 +893,10 @@ void OptimizePA_Incre_with_TimeLimits::SeedIncumbentFromDMFast() {
 // P0.6 — the offline safe-fallback artifact. Seeds at the P0.8-certified point
 // (DM PA + TL <= et_mean), runs a gate-governed TL walk on a throwaway sibling, and
 // keeps the best-SP gate-feasible result. See header for the isolation contract.
-ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback() {
+// `worst_case_dag` (§8): the caller-built cross-interval worst-case DAG; the walk
+// + gate run on IT (not dag_tasks_) so the certificate bounds every interval.
+ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
+    const DAG_Model& worst_case_dag) {
     // The gate is probabilistic — force the real ET dist (not WCET) and TL-opt-on.
     bool prev_disable_tl_opt = GlobalVariables::disable_time_limit_opt;
     bool prev_use_wcet = GlobalVariables::use_wcet_execution_time;
@@ -897,13 +908,18 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback() {
     // seed SP-eval could strand the compute past TIME_LIMIT (testINCRTimeout).
     BFDLSharedBudget shared_budget(std::chrono::high_resolution_clock::now());
 
-    // Throwaway sibling carries the gate-governed walk so the live incumbent is never
-    // seeded from the fallback (a P0.7 injection, not P0.6).
-    OptimizePA_Incre_with_TimeLimits fallback_solver(dag_tasks_, sp_parameters_);
+    // Throwaway sibling carries the gate-governed walk on the worst-case DAG so the
+    // live incumbent is never seeded from the fallback (a P0.7 injection, not P0.6).
+    // Fresh SP_Parameters from worst_case_dag (thresholds/weights are constant
+    // across intervals → equals sp_parameters_ value-wise).
+    SP_Parameters sp_params_worst(worst_case_dag);
+    OptimizePA_Incre_with_TimeLimits fallback_solver(worst_case_dag, sp_params_worst);
     fallback_solver.enforce_important_task_gate_ = true;
 
     // Seed at the certified point: DM PA + et_mean-bounded TL (TL <= et_mean →
-    // ddl_miss_chance = 0 → seed gate-feasible, so the gate can only REJECT).
+    // ddl_miss_chance = 0 → seed gate-feasible, so the gate can only REJECT). On the
+    // worst-case DAG each dist is a point mass → GetAvgValue()==max_time → seed TL
+    // <= max_time across ALL intervals → feasibility-by-construction cross-interval.
     std::vector<double> tl_seed = fallback_solver.SeedTimeLimitsAtOrBelowEtMean();
     PriorityVec pa_dm = fallback_solver.DeadlineMonotonicPriorityVec();
     DAG_Model dag_with_tl =
@@ -918,10 +934,41 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback() {
         GlobalVariables::Layer_Node_During_Incremental_Optimization);
     fallback_solver.enforce_important_task_gate_ = false;
 
+    // Restore the forced global flags BEFORE the loud-fail check so a throw here
+    // does not leak the forced TL-opt-on / real-ET state to the caller.
     GlobalVariables::disable_time_limit_opt = prev_disable_tl_opt;
     GlobalVariables::use_wcet_execution_time = prev_use_wcet;
 
-    safe_fallback_ = fallback_solver.CollectResults();
+    // §8c loud-fail: re-run the gate on the FINAL stored result (not just the
+    // seed). The walk only REJECTS (gate never adopts a violating candidate), so
+    // a miss here means the seed itself was infeasible on the worst-case DAG → not
+    // walk-fixable (raising TL worsens interference) → raise loud, do NOT store
+    // (HasSafeFallback() stays false → "regenerate a new task set"). Fresh RTA
+    // derivation (NOT rta_cache_.Evaluate — the sibling's cache is armed only
+    // inside the walk's serialized path; reusing it post-walk risks a |diff|>1 throw).
+    ResourceOptResult candidate = fallback_solver.CollectResults();
+    std::vector<double> tl_result(worst_case_dag.tasks.size());
+    for (size_t i = 0; i < worst_case_dag.tasks.size(); i++) {
+        int id = worst_case_dag.tasks[i].id;
+        tl_result[i] = candidate.id2time_limit.count(id) ? candidate.id2time_limit.at(id)
+                                                          : -1.0;
+    }
+    // §8c loud-fail: re-run the gate on the FINAL stored result (not just the
+    // seed). The self-contained overload derives RTAs fresh (the sibling's cache is
+    // armed only inside the walk; reusing it post-walk risks a |diff|>1 throw). The
+    // walk only REJECTS → a miss here means the seed itself was infeasible on the
+    // worst-case DAG → not walk-fixable → raise loud, do NOT store.
+    if (!ImportantTasksMeetThresholds(worst_case_dag, sp_params_worst,
+                                      candidate.priority_vec, tl_result)) {
+        CoutWarning(
+            "ComputeSafeFallback: the worst-case-DAG result VIOLATES the important-"
+            "task gate (a task's ddl_miss_chance > threshold). No safe fallback "
+            "exists for this task set — regenerate a new task set.");
+        throw std::runtime_error(
+            "ComputeSafeFallback: worst-case-DAG result fails the important-task gate");
+    }
+
+    safe_fallback_ = candidate;
     return *safe_fallback_;
 }
 

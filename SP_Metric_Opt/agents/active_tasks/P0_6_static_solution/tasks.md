@@ -1,293 +1,206 @@
 # P0.6 — Tasks (working checklist)
 
-> See `goal.md` for the algorithm (REDESIGNED 2026-07-30; hard gate added same day). Seed at
-> the P0.8-certified operating point (DM-grouped PA + TL = largest grid option ≤ `et_mean`) →
-> run a **TL-only walk with a hard per-candidate feasibility gate** → **keep** the best-SP-
-> feasible result as `static_solution_`.
-> **No WCET-mode flip, no global-max WCET precompute** (old step 2 / old D2 DROPPED). The
-> filter IS revived in a NEW form (old step 4 / old D5/D6/D7): a hard gate on the **probabilistic**
-> `ddl_miss_chance ≤ threshold`, in normal ET mode, offline-scoped — NOT the old WCET point-mass
-> RTA. The user's objective: "find the best possible performance while guaranteeing all important
-> tasks' DDL miss chance ≤ SP thresholds" → a constrained optimization (max SP s.t. the gate).
-> Depends on P0.8 (certifies the seed sub-region) + P0.9 (group-locked DM seed, LANDED).
-> Blocks P0.7 (fall-back invocation).
+> Offline fall-back artifact for P0.7. Seed at the P0.8-certified operating point (DM-grouped
+> PA + TL = largest grid option ≤ `et_mean`) → TL-only walk with a HARD per-candidate gate
+> (`ddl_miss_chance ≤ sp_threshold` for all important tasks) → keep best-SP-feasible as
+> `safe_fallback_`. Algorithm + soundness in `goal.md`. Sections 0.5–9 LANDED; awaits commit.
+> §9 (2026-07-31): dispatcher THROWS when no fallback pre-computed (was an unsound
+> lazy backstop) + `ImportantTasksMeetThresholds` self-contained overload.
+> §10 (2026-07-31): readability refactor — extracted `TaskStructureMatches` from
+> the worst-case-DAG builder (behavior-preserving; 5 TDD tests; 17/17 green).
 
 ## 0. Design decisions
-- [x] **D1 (LANDED via P0.9):** top-50% by `sp_weight`, persisted as `bool Task::is_important`.
-- [x] **D3 (2026-07-27):** per-taskset (== once per worker invocation).
-- [x] **D4 (2026-07-27):** in-memory `static_solution_` member.
-- [x] **2026-07-30 redesign:** old D2 (global-max WCET) DROPPED (leans on P0.8's seed-sub-region
-      certification + the gate). Old D5/D6/D7 REVIVED-RESCOPED: hard gate on probabilistic
-      `ddl_miss_chance ≤ threshold` (normal-ET, offline-scoped, skip-and-continue) — NOT the old
-      WCET point-mass RTA.
-- [x] **D8 (RESOLVED 2026-07-30, via the gate):** the from-scratch path reorders PA, but the hard
-      gate makes PA descent safe-to-add-later (rejects any threshold-violating PA move). v1 =
-      TL-only walk (group lock preserved by construction); PA descent = deferred (gated) enhancement.
-- [ ] Record decisions in `dev_log.md` + memory; sync with P0.7/P0.8 owners.
+- [x] **D1 (via P0.9):** top-50% by `sp_weight`, persisted `bool Task::is_important`.
+- [x] **D3:** per-taskset. **D4:** in-memory `safe_fallback_`.
+- [x] **2026-07-30:** old D2 (global-max WCET) DROPPED; old D5/D6/D7 REVIVED as the hard
+      probabilistic gate (normal-ET, offline-scoped). D8 RESOLVED via the gate.
+- [x] **D9 (2026-07-31):** caller builds a worst-case DAG (per-task point mass at
+      `max(execution_time_max)` across interval YAMLs) → `ComputeSafeFallback` on it →
+      cross-interval safety by stochastic dominance. Loud-fail on final gate-reject. See §8.
 
-## 0.5. `bool is_important` on `Task` + generator labeling — DONE (via P0.9)
-- [x] C++ `bool is_important = false` at `RegularTasks.h:111`; parse `RegularTasks.cpp:87`;
-      emit `:126`. Generator `yaml_exporter.py:73`; labels top-`IMPORTANT_TASK_RATIO` (0.5) by
-      `sp_weight` desc (`taskset_generator.py:577-581`; config `:38`). P0.8 RTA reads the same
-      bool → no drift. **LANDED — no P0.6 work here.**
+## 0.5. `bool is_important` + generator labeling — DONE (via P0.9)
+- [x] `RegularTasks.h:111`; parse `RegularTasks.cpp:87`; emit `:126`. Generator labels
+      top-`IMPORTANT_TASK_RATIO` (0.5). No P0.6 work.
 
 ## 1. DM-grouped PA seed — DONE (via P0.9)
-- [x] `DeadlineMonotonicPriorityVec()` (`OptimizeSP_TL_Incre.cpp:705-721`) already group-locks
-      (reads `is_important` at `:713-714`); `SeedIncumbentFromDMFast()` (`:772-780`) commits
-      the DM-grouped + min-TL seed. **Old `AssignDMRespectingGroupOrder` extraction =
-      SUPERSEDED — LANDED, no P0.6 work here.**
+- [x] `DeadlineMonotonicPriorityVec()` (`OptimizeSP_TL_Incre.cpp:705-721`, reads `is_important`
+      `:713-714`); `SeedIncumbentFromDMFast()` (`:772-780`). Old helper SUPERSEDED.
 
-## 2. ~~Global-max-across-intervals WCET precompute~~ — DROPPED (2026-07-30 redesign)
-- [x] **SUPERSEDED + DROPPED.** P0.6 no longer computes a WCET; it relies on P0.8's grid-wide
-      certification (perf WCET = `et_mean`). The whole TL grid is safe (runtime ET ≤ et_mean =
-      WCET for any TL ≤ et_mean). See `goal.md` "Why no per-candidate filter."
+## 2. ~~Global-max WCET precompute~~ — DROPPED (2026-07-30)
+- [x] SUPERSEDED. P0.6 computes no WCET; leans on P0.8's grid-wide certification (perf WCET =
+      `et_mean`) for the seed region + its own gate for TL > et_mean.
 
-## 3. Static-solution seed (PA + TL) — DONE (PA via P0.9; TL LANDED 2026-07-30)
-- [x] PA seed (DM-grouped): DONE via P0.9 (`DeadlineMonotonicPriorityVec`).
-- [x] **TL seed (LANDED 2026-07-30):** for each perf task, the **largest TL grid option ≤
-      `et_mean`** (`execution_time_dist.GetAvgValue()`); non-perf TL = -1. Implemented as the
-      pure directional helper `FindLargestTimeLimitAtOrBelow(pairs, et_mean)`
-      (`OptimizeSP_TL_Incre.cpp`, after `Find_Close_ExecutionTime`) + the per-task vector method
-      `SeedTimeLimitsAtOrBelowEtMean()` (mirrors `InitializeTimeLimitsFromETConfig`'s structure,
-      uses the at-or-below helper instead of the bidirectional `Find_Close_ExecutionTime`).
-      Falls back to the smallest grid option + `CoutWarning` when no option ≤ et_mean exists.
-- [x] TDD red→green (6 helper tests + 1 vector test, all green): (a) et_mean above largest →
-      largest; (b) et_mean below smallest → smallest + warning; (c) et_mean between options →
-      largest ≤ et_mean (the directional guarantee vs `Find_Close_ExecutionTime`'s tie); (d)
-      et_mean exactly equals an option → that option; (e) et_mean equals smallest → smallest;
-      (f) empty grid → 0; (vector) T_perf mean 500 grid [400,600,800,1000] → 400, T_noise → -1.
-      `cmake --build build_test --target check.SP_OPT -j5` = 17/17 green, no regressions.
+## 3. TL seed (largest grid option ≤ `et_mean`) — DONE (2026-07-30)
+- [x] `FindLargestTimeLimitAtOrBelow(pairs, et_mean)` + `SeedTimeLimitsAtOrBelowEtMean()`
+      (directional ≤ et_mean; non-perf = -1; fall back to smallest + warning). TDD (7 tests); 17/17.
 
-## 4. ~~Skip-and-continue schedulability filter~~ — REVIVED as a hard per-candidate gate (2026-07-30 constraint mode)
-- [x] **REVIVED-RESCOPED 2026-07-30** (the user's objective revived the filter in a new form):
-      a HARD per-candidate gate on the probabilistic `ddl_miss_chance ≤ sp_threshold`, in
-      normal ET mode, offline-scoped — NOT the old WCET point-mass RTA. (Old "DROPPED" wording
-      below was the *first* 2026-07-30 redesign's "no filter" limb, since reversed by the user's
-      objective — see `goal.md` "Why a hard gate.")
-- [x] **D9 grounded (2026-07-30):** the gate cannot hook at the walk's `IsBetterTimeLimitOption`
-      (`:581`) — adoption is a side-effect of `eval`→`OptimizeIncreSingleTask`→`UpdateRecords`→
-      `CommitIncumbent` (`:259`,`:154`), which runs BEFORE the `:581` best-tracking. The gate must
-      sit at the commit chokepoint. See memory `p06-gate-hook-point-discrepancy`.
-- [x] **D9 RESOLVED (user: "i don't care how you do this") → step 4a (pure predicate) LANDED:**
-      `ImportantTasksMeetThresholds(dag, sp_params, pa, tl, node_rtas) -> bool` (SP_Metric.{h,cpp}).
-      TDD red→green (4 tests); 17/17 ctest green. Mirrors the cache-path SP eval's
-      bake+prioritize+miss-chance path. **Zero-extra-eval (user-directed 2026-07-30):** the
-      predicate takes the ALREADY-COMPUTED `node_rtas` the caller materialized when scoring SP
-      (`rta_cache_.Evaluate` → `ObtainSP_Full_From_NodeRTAs`), NOT a re-derived RTA — the prior
-      shape A (`ProbabilisticRTA_TaskSet` per call) would have duplicated the cache's work on every
-      ADOPTED candidate. The bake+prioritize still happens inside (so `node_rtas[i]` pairs with the
-      prioritized task at i — same CONTRACT as `ObtainSP_Full_From_NodeRTAs`). This is the design
-      doc's shape (B) achieved by passing RTAs through (not by threading per-task miss-chances out
-      of `ObtainSP_DAG_From_Dists`).
-- [x] **Step 4b — wire the gate into the commit chokepoint (LANDED 2026-07-30, RELOCATED same
-      day per user review, TDD).** Three pieces in `OptimizeSP_TL_Incre.{h,cpp}` +
-      `tests/testIncreOpt_w_TL.cpp`: (1) `WouldBeatIncumbent(challenger_sp, time_limits) -> bool` —
-      the exact commit predicate `UpdateRecords` uses; `UpdateRecords` delegates to it. (2) `bool
-      enforce_important_task_gate_ = false` — the offline-only gate flag (SINGLE duty: enable the
-      gate check). (3) The gate INSIDE `UpdateRecords` (the commit chokepoint), firing ONLY on
-      would-beat (the user's rule): a candidate that would beat the incumbent is committed only if
-      `ImportantTasksMeetThresholds` passes; on a gate-REJECT of an SP-better candidate → return
-      `false` (no `CommitIncumbent`), and the eval (`OptimizeIncreSingleTask`) reports the INCUMBENT
-      SP (ghost-SP fix) so the walk's `IsBetterTimeLimitOption` sees "no progress". **KEY DESIGN
-      (user-directed 2026-07-30): the gate is a PURE extra accept/reject criterion at the
-      comparison step — the optimization process, INCLUDING PA descent, runs IDENTICALLY whether
-      the flag is on or off.** The prior v1 (gate in `OptimizeIncreSingleTask` + PA descent
-      SKIPPED when the gate was on) over-coupled two concerns into the flag and was DROPPED: PA
-      descent now runs unconditionally (`!BFSharedBudgetCancelled()` only). RTA source: the gate
-      re-runs the SAME `rta_cache_.Evaluate(dag_tasks_, opt_pa_, tl)` `CommitIncumbent` uses
-      (`:824`) — the candidate's FINAL {pa, tl} (PA descent applied), NOT the pre-descent
-      `baseline_rtas` pointer (which PA descent invalidates by overwriting the cache's scratch
-      buffer). `|diff|<=1`-cheap on the incremental path (the only path the gate is on): after PA
-      descent the champion is either adopted to the candidate (`|diff|==0`, FullReuse) or the prior
-      incumbent (`|diff|==1`); `Evaluate` never mutates the champion, so the caller's `cache_backup`
-      snapshot-revert stays sound. Zero extra RTA eval flag-off (gate skipped entirely). Flag written
-      true ONLY in tests (no prod site — `ComputeStaticSolution` not built yet) → prod byte-identical.
-      Seed-feasibility invariant: TL ≤ et_mean → `ddl_miss_chance = 0` → seed gate-feasible by
-      construction → the gate can only REJECT. TDD: 5 tests (precondition + flag-off-commits /
-      flag-on-rejects / flag-on-keeps / flag-on-non-beat-doesn't-gate) all green WITH PA descent
-      re-enabled (on the reject fixture T_perf is already top-priority, so PA descent finds no
-      strict-improving move and the gate sees the candidate's actual {pa,tl} and rejects).
-      `cmake --build build_test --target check.SP_OPT -j5` = 17/17 green. NOT committed (git add-only).
-- [x] **Step 5a — `ComputeStaticSolution` artifact + dispatcher lazy-hook LANDED 2026-07-31**
-      (git add-only — NOT committed). See section 5 for detail. The method + `static_solution_`
-      member + accessors + the dispatcher safety-net lazy-check are in
-      `OptimizeSP_TL_Incre.{h,cpp}`; 4 TDD tests in `testIncreOpt_w_TL.cpp`; 17/17 green
-      (incl. the timeout-regression fix).
+## 4. Hard per-candidate gate — DONE (steps 4a+4b v2, 2026-07-30)
+- [x] **4a:** `ImportantTasksMeetThresholds(dag, sp_params, pa, tl, node_rtas) -> bool`
+      (`SP_Metric.{h,cpp}`). Zero-extra-eval — takes the caller's already-materialized `node_rtas`.
+      TDD (4 tests); 17/17.
+- [x] **4b v2 (FINAL):** gate INSIDE `UpdateRecords` (commit chokepoint), fires ONLY on would-beat
+      via `WouldBeatIncumbent` + `bool enforce_important_task_gate_=false` (true only in tests/
+      `ComputeSafeFallback` → prod byte-identical). Gate-reject → return false (no `CommitIncumbent`);
+      eval reports incumbent SP (ghost-SP fix). PA descent RE-ENABLED unconditionally. RTA source =
+      re-runs `CommitIncumbent`'s `rta_cache_.Evaluate(dag_tasks_,opt_pa_,tl)` (candidate's FINAL
+      {pa,tl}); `|diff|<=1`-cheap, never mutates champion → `cache_backup` revert sound. Seed TL ≤
+      et_mean → `ddl_miss_chance=0` → gate can only REJECT. TDD (5 tests); 17/17. NOT committed.
+- [x] **4b-followup — unify the 3 acceptance predicates (DEFERRED 2026-07-30 per user).** The
+      ghost-SP override is a symptom of divergent predicates (PA-loop local vs TL-walk local vs
+      commit-global). Unification is LARGE (breaks `StubTLWalkOptimizer` test framework; NOT
+      byte-identical flag-off; override already correct = cleanliness not bugfix). 4b v2 is FINAL.
 
-## 4b-followup — UNIFY the three acceptance predicates (DEFERRED 2026-07-30 per user)
-- [x] **FINDING (2026-07-30).** The ghost-SP override (step 4b v2) is a SYMPTOM of three
-      divergent acceptance predicates that can disagree: (1) PA-move loop `OptimizeIncre_SingleTask`
-      `sp_eval > opt_sp_` (strict, vs LOCAL member, in-place adopt); (2) TL-walk adoption
-      `IsBetterTimeLimitOption` (strict-`>` OR approx-tie+`step<0`, vs LOCAL walk `best_sp`, does
-      NOT commit); (3) champion commit `WouldBeatIncumbent`/`UpdateRecords` (strict-`>` OR
-      approx-tie+smaller-TL, vs GLOBAL `res_opt_`, commits via `CommitIncumbent`). The override
-      papers over #2-vs-#3 disagreeing on a gate-reject (phantom SP). See `dev_log.md` 2026-07-30
-      "ghost-SP fix: ROOT CAUSE" entry.
-- [x] **DEFERRED 2026-07-30 (user):** "if code change is a lot, i'll give up and let you adopt the
-      original proposal by adding extra check, even though the code doesn't read elegantly." The
-      unification was scoped to "TL-walk only" (align `IsBetterTimeLimitOption` with the commit
-      predicate vs global `res_opt_`; leave the PA-loop's local in-place adoption alone).
-      Grounding found it is a LARGE change, not the simple cleanup it appeared:
-      (1) **Breaks the walk-core test framework** — `StubTLWalkOptimizer::CallOptimizerGivenTimeLimits`
-      (`tests/testIncreOpt_w_TL.cpp`) returns SP from a `tl_to_sp` map WITHOUT committing →
-      `res_opt_` never advances; routing adoption through the committed incumbent would make the
-      walk never adopt → the 7 `TrialAndErrorTLWalkSynthetic` tests break (requires reworking the
-      stub to commit + assertion updates).
-      (2) **NOT byte-identical flag-off** — `res_opt_.sp_opt == best_sp` throughout a flag-off walk
-      (each adoption commits), so routing adoption through `res_opt_` makes every non-commit look
-      like an approx-SP tie; on the downward pass (`step<0`) `IsBetterTimeLimitOption` adopts on a
-      tie → the walk adopts smaller TLs on every non-commit, never spending patience → exhaustive
-      to the grid boundary even flag-off. The delta reaches BEYOND the gate-on path the
-      "TL-walk only" scope targeted.
-      (3) **The override is already correct** — this is a cleanliness refactor, not a bug fix.
-      → User accepted the elegance tradeoff. **Step 4b v2 stands as-is (final).** Re-file as P2.x
-      if revisited; do NOT start coding it.
-- [x] **The gate + ghost-SP override (step 4b v2) is the chosen design.** No further work here;
-      step 5 is the active next item.
+## 4-old. ~~Skip-and-continue WCET filter~~ — SUPERSEDED (first 2026-07-30 limb, reversed above)
 
-## 4-old. ~~Skip-and-continue schedulability filter~~ — (first 2026-07-30 "no filter" limb, SUPERSEDED above)
-- [x] **SUPERSEDED + REVIVED.** The first 2026-07-30 redesign dropped the filter (structural
-      safety argument: P0.8 certifies the whole TL grid). The user's objective ("best performance
-      s.t. all important tasks' DDL miss chance ≤ SP thresholds") REVIVED it in a new form (the
-      hard gate above) because `ddl_miss_chance` is PROBABILISTIC and binds for TL > et_mean.
-      See `goal.md` "Why a hard gate (not soft)" + the constraint-mode dev-log entry.
+## 5. `ComputeSafeFallback()` offline + ET-excluded — DONE (steps 5a+5b, 2026-07-31)
+- [x] **5a:** `ComputeSafeFallback()` + `optional<ResourceOptResult> safe_fallback_` +
+      `HasSafeFallback()`/`GetSafeFallback()` + dispatcher lazy-check in
+      `Optimize_w_TL_ScratchOrIncre`. Throwaway sibling `fallback_solver` → `this`'s live
+      `res_opt_`/cache/flag UNTOUCHED → online byte-identical. Forces
+      `use_wcet_execution_time=false` (gate is probabilistic). **TIMEOUT-REGRESSION FIX:**
+      installs its OWN `BFDLSharedBudget` around the WHOLE compute (seed eval + walk) — else the
+      lazy dispatcher ran it before the dispatcher's budget → runaway seed SP-eval (`testINCRTimeout`
+      21.8s; fixed → 17/17). TDD (4 tests); 17/17. NOT committed.
+- [x] **5b:** orchestrator pre-call (`RunSimulation:313-317`, INCR-family branch, after
+      `incr_optimizer_` build, before the interval loop); separate `safe_fallback_compute_time_s_`
+      + `GetSafeFallbackComputeTime()` (DISTINCT from `scheduler_exec_time_s_`);
+      `RunOrchestrator.cpp` prints `SafeFallbackComputeTime_s:` + writes
+      `safe_fallback_compute_time.txt`; `PreComputesSafeFallback_ExcludesSchedulerET` test.
+      ET-exclusion STRUCTURAL (disjoint call sites) + ASSERTED (DM-mode `==0.0` exact). NOT committed.
+- [x] **Two safety assumptions VERIFIED.** (1) Sim perf ET = `min(et_mean,TL)` downward cap
+      (`SimulationOrchestrator.cpp:514-516`) → metric `ddl_miss_chance` ≥ sim → gate sound.
+      (2) Gate IS the constraint → group-lock concern moot. 5 `GateWiring_*` tests pass w/ PA on.
 
-## 5. Wire `ComputeStaticSolution()` offline + ET-excluded
-- [x] **D8 RESOLVED** (via the gate, 2026-07-30): the hard gate IS the constraint; PA
-      descent that finds a higher-SP PA still passing the gate is strictly better for the
-      constrained objective. The group lock is a means, not the end. Moot.
-- [x] **Step 5a LANDED 2026-07-31 (git add-only — NOT committed):** `ComputeStaticSolution()`
-      member + `std::optional<ResourceOptResult> static_solution_` + `HasStaticSolution()`/
-      `GetStaticSolution()` accessors + the dispatcher lazy-check at the top of
-      `Optimize_w_TL_ScratchOrIncre` (the safety net: if a caller didn't pre-call, the first
-      dispatch computes + stores the artifact, then proceeds). Compute runs on a THROWAWAY
-      sibling (`OptimizePA_Incre_with_TimeLimits sub(dag_tasks_, sp_parameters_)`) so `this`'s
-      live `res_opt_`/cache/flag are UNTOUCHED → online byte-identical (interval 0 still
-      bootstraps fresh; the artifact is consumed only by P0.7's fall-back). Forces
-      `disable_time_limit_opt=false` + `use_wcet_execution_time=false` around the walk (the
-      gate is probabilistic — needs the real ET dist). **TIMEOUT-REGRESSION FIX:** installs
-      its OWN `BFDLSharedBudget` around the WHOLE compute (seed eval + walk) — without it the
-      lazy dispatcher path ran `ComputeStaticSolution` before the dispatcher's budget was
-      installed → a runaway seed SP-eval stranded the compute past `TIME_LIMIT`
-      (`testINCRTimeout` failed 21.8 s; fixed → 17/17 green). On cancel the walk keeps the
-      incumbent (compare-and-keep) → the stored result stays gate-feasible. TDD: 4 tests
-      (gate-held artifact; byte-identical live incumbent; dispatcher lazy-populates;
-      dispatcher short-circuits when pre-called). `cmake --build build_test --target
-      check.SP_OPT -j5` = 17/17 green.
-- [x] **Step 5b LANDED 2026-07-31 (git add-only — NOT committed).** Orchestrator pre-call +
-      separate compute-time profile + ET-exclusion guard. Four pieces in
-      `SimulationOrchestrator.{h,cpp}` + `tests/RunOrchestrator.cpp` +
-      `tests/testScheduleSimulate.cpp`: (1) the pre-call (`RunSimulation:313-317`, inside the
-      INCR-family construction branch, AFTER `incr_optimizer_` is built `:300-301` + BEFORE
-      the interval loop `:320-324`) runs `ComputeStaticSolution()` once; (2) `double
-      static_solution_compute_time_s_` + `GetStaticSolutionComputeTime()` — DISTINCT from
-      `scheduler_exec_time_s_` (the online metric); (3) `RunOrchestrator.cpp:214-224` prints
-      `StaticSolutionComputeTime_s:` + writes `static_solution_compute_time.txt`; (4)
-      `TestOrchestrator::HasStaticSolution()` + the `GetIncrOptimizer()` protected accessor +
-      the `PreComputesStaticSolution_ExcludesSchedulerET` integration test. **ET-exclusion is
-      STRUCTURAL (disjoint call sites: the static counter writes ONLY at `RunSimulation:316`;
-      `scheduler_exec_time_s_` writes ONLY at `DeterminePrioritiesAndBudgets:429`) and now
-      ACTUALLY ASSERTED:** a 4th test assertion (added this session — the test was named for
-      the exclusion but only checked artifact-exists + timed-separately) runs a `DM` mode and
-      asserts `GetStaticSolutionComputeTime() == 0.0` exactly — DM also runs
-      `DeterminePrioritiesAndBudgets` every interval, so a leak would show >0 here.
-      Non-flaky (exact zero). 17/17 green.
-- [x] **Verify the two safety assumptions (2026-07-31).** (1) Sim perf ET = downward cap:
-      `SimulationOrchestrator.cpp:514-516` — `if (budget > 0 && execution_time > budget)
-      execution_time = budget` (budget = TL); sim perf ET ≤ TL = the metric's perf point-mass
-      ET (`ApplyTimeLimitsToTasksExecutionTime`) → metric `ddl_miss_chance` ≥ sim's actual →
-      the gate (on the metric) is a sound pessimistic bound. ✓ (2) The gate IS the
-      constraint: structural via the committed step 4b v2 (`500665d5`) — PA descent runs
-      unconditionally under the gate; the gate rejects any threshold-violating TL or PA move;
-      a higher-SP PA still passing the gate is strictly better for the constrained objective
-      → the group-lock concern is moot. The 5 `GateWiring_*` tests pass with PA descent on. ✓
+## 6. Verification + records — DONE
+- [x] 17/17 ctest (`cmake --build build_test --target check.SP_OPT -j5`).
+      `ComputeSafeFallback_PopulatesGateHeldArtifact` asserts stored PA = DM-grouped + gate holds.
+      Seed TL ≤ et_mean → runtime ET ≤ TL ≤ et_mean = P0.8 perf WCET. `dev_log.md` + memory
+      updated; `git add` staged; user reviews (no commit).
 
-## 6. Verification + records
-- [x] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
-- [x] Spot-check: `ComputeStaticSolution_PopulatesGateHeldArtifact` asserts the stored
-      `static_solution_` PA = `DeadlineMonotonicPriorityVec()` (DM-grouped) AND re-derives the
-      result's node RTAs → `ImportantTasksMeetThresholds` passes (the gate held on the stored
-      result). The TL vector seeds at-or-below et_mean (step 3 `SeedTimeLimitsAtOrBelowEtMean`)
-      and the walk adopts from there under the gate.
-- [x] Confirm the seed point is at-or-below P0.8's certified WCET: TL ≤ et_mean (step 3
-      helper guarantee) → runtime sim ET ≤ TL ≤ et_mean = P0.8's perf WCET (assumption #1).
-- [x] `dev_log.md` (this folder) + memory updated (2026-07-31 step-5b entry). Top-level
-      `agents/dev_log.md` milestone to be appended at user commit.
-- [x] `git add` staged; user reviews (no commit).
-
-## 7. Post-review refinement (2026-07-31) — rename + comment trim + reopt-then-incre
-> User review of step 5 raised 5 items. Records logged FIRST (per coding rules); code
-> follows. See `dev_log.md` 2026-07-31 "step 5 post-review refinement" for full detail.
-
-- [x] **Item 1 — rename** `static_solution` → `SafeFallback` across the C++ surface:
-      `ComputeStaticSolution`→`ComputeSafeFallback`, `static_solution_`→`safe_fallback_`,
-      `HasStaticSolution`→`HasSafeFallback`, `GetStaticSolution`→`GetSafeFallback`,
-      `static_solution_compute_time_s_`→`safe_fallback_compute_time_s_`,
-      `GetStaticSolutionComputeTime`→`GetSafeFallbackComputeTime`,
-      `static_solution_compute_time.txt`→`safe_fallback_compute_time.txt`,
-      `StaticSolutionComputeTime_s:`→`SafeFallbackComputeTime_s:`,
-      `TestOrchestrator::HasStaticSolution`→`HasSafeFallback`. Folder name stays.
-      **LANDED** (working tree, git add-only — NOT committed). `grep`-verified: zero
-      remaining `static_solution`/`StaticSolution` references across `sources`+`tests`.
-- [x] **Item 2 — trim comments** in `ComputeSafeFallback` + the gate's `UpdateRecords`
-      comment to ≤3 lines each (per "code speaks for itself" rule). The TIMEOUT-REGRESSION
-      note is kept (load-bearing) ≤3 lines; the rest is already ≤3 lines each.
-      `UpdateRecords` gate comment was 4 lines → trimmed to 3 (this session).
-      `ComputeSafeFallback`'s header + `.cpp` comments already ≤3 lines each.
-- [x] **Item 3 — orchestrator explicit pre-call: ALREADY DONE.**
-      `SimulationOrchestrator.cpp:313-317` explicitly calls `ComputeSafeFallback()`
-      after `incr_optimizer_` construction (`:300-301`), before the interval loop
-      (`:320-324`), OUTSIDE `DeterminePrioritiesAndBudgets`'s ET bracket. The lazy
-      dispatcher check (`Optimize_w_TL_ScratchOrIncre:699-701`) is a SAFETY NET only.
-      ET-exclusion asserted by `PreComputesSafeFallback_ExcludesSchedulerET` (DM
-      `==0.0`). NO code change — record only.
-- [x] **Item 4 — rename `sub` → `fallback_solver`** in `ComputeSafeFallback` (matches
-      item 1). **LANDED** (working tree). `fallback_solver` is the throwaway-sibling
-      var at `OptimizeSP_TL_Incre.cpp:903`.
-- [x] **Item 5 — reopt-then-incremental: SKIPPED (user decision 2026-07-31).** The
-      gate-vs-reopt-cache incompatibility (gate's `rta_cache_.Evaluate` fires
-      unconditionally; reopt path clears+disarms the cache → would `Initialize` a
-      champion from the beam candidate → post-beam re-arm could throw `|diff|>1`) makes a
-      sound reopt-then-incre either costly (option D: fresh RTA per adopted reopt
-      candidate) or weak-guarantee (options A/C). User chose to skip — `ComputeSafeFallback`
-      stays incremental-only (the DM-seeded TL walk under the gate). The from-scratch beam
-      exploration is foregone; the artifact is the incremental walk's best-SP-feasible
-      point. Zero risk. Re-file if the artifact's SP quality is later found insufficient.
+## 7. Post-review refinement (2026-07-31) — DONE
+- [x] **Item 1 — rename** `static_solution`→`SafeFallback` across C++ (`grep`-verified zero left;
+      folder name stays). **Item 2 — comment trim** (gate comment 4→3 lines; others ≤3; TIMEOUT
+      note kept). **Item 3 — orchestrator pre-call ALREADY DONE** (no-op). **Item 4 —
+      `sub`→`fallback_solver`** (`:903`). **Item 5 — reopt-then-incre SKIPPED (user):** gate-vs-
+      reopt-cache incompatible (gate's `rta_cache_.Evaluate` fires unconditionally; reopt clears+
+      disarms the cache → `|diff|>1` throw). Stays incremental-only. Re-file if SP quality insufficient.
 
 ## 8. Worst-case-DAG + loud-fail (2026-07-31 — cross-interval safety for P0.7 trigger (a))
 > The 2026-07-30 design scoped `safe_fallback_`'s safety to ONE taskset. P0.7 trigger (a) swaps
 > it in on an ET-jump ACROSS intervals → unsafe. User direction 2026-07-31: the caller builds a
 > worst-case DAG (per-task WCET point mass at `max(execution_time_max)` across all interval YAMLs)
-> and computes the artifact on THAT. Plus a loud-fail if the final result fails the gate.
+> and computes the artifact on THAT. Plus loud-fail if the final result fails the gate.
 > See `goal.md` "WORST-CASE-DAG (2026-07-31)" for the soundness proof + code grounding.
 
-- [x] **Finding (2026-07-31).** Two code facts make the 2026-07-30 within-one-taskset
-      certificate insufficient for trigger (a): (1) `ComputeSafeFallback` forces
-      `use_wcet_execution_time=false` (`:893`) → env tasks keep their base Gaussian (NOT a
-      WCET point mass) during the compute; (2) the generator's per-interval
-      `Et_sigma=np.std(subset)` (`orchestrator.py:375`) is mean-independent → "longest by
-      avg ET" does NOT bound `ddl_miss_chance`. The dropped old-D2 used to provide the
-      cross-interval bound; nothing replaced it. Delivered to + reconciled with the user.
-- [x] **D9 RESOLVED (user 2026-07-31).** Caller builds worst-case DAG (per-task point mass
-      at `max(execution_time_max)` across interval YAMLs) → `ComputeSafeFallback` on it.
-      Offline-only; online byte-identical. Sound by stochastic dominance (any interval's ET
-      draw ≤ its `max_time` ≤ worst-case max). Loud-fail on final gate-reject.
-- [ ] **Step 8a — worst-case-DAG builder.** Orchestrator iterates `LoadIntervalConfigs()`
-      (all interval YAMLs), per task records `max(execution_time_max)` across intervals,
-      constructs a `DAG_Model` where each env/non-perf task's dist = point mass at that max
-      (perf tasks keep their TL grid + structure). TDD: builder output's per-task
-      `max_time` = max across the fixture's interval YAMLs; perf-task TL grid preserved.
-- [ ] **Step 8b — wire worst-case DAG into `ComputeSafeFallback`.** Orchestrator pre-call
+- [x] **Finding (2026-07-31).** Two code facts make the within-one-taskset certificate
+      insufficient for trigger (a): (1) `ComputeSafeFallback` forces
+      `use_wcet_execution_time=false` (`:893`) → env tasks keep their base Gaussian (NOT a WCET
+      point mass); (2) the generator's per-interval `Et_sigma=np.std(subset)` (`orchestrator.py:375`)
+      is mean-independent → "longest by avg ET" does NOT bound `ddl_miss_chance`. The dropped
+      old-D2 used to provide the cross-interval bound. Reconciled with the user.
+- [x] **D9 RESOLVED (user 2026-07-31).** Caller builds worst-case DAG (per-task point mass at
+      `max(execution_time_max)` across interval YAMLs) → `ComputeSafeFallback` on it. Offline-only;
+      online byte-identical. Sound by stochastic dominance (any interval's ET draw ≤ its `max_time`
+      ≤ worst-case max). Loud-fail on final gate-reject.
+- [x] **Step 8a — worst-case-DAG builder.** Orchestrator iterates `LoadIntervalConfigs()` (all
+      interval YAMLs), per task records `max(execution_time_max)` across intervals, constructs a
+      `DAG_Model` where each env/non-perf task's dist = point mass at that max (perf tasks keep
+      their TL grid + structure). TDD: per-task `max_time` = max across the fixture's interval
+      YAMLs; perf-task TL grid preserved. **DONE 2026-07-31:** free fn
+      `BuildWorstCaseDagAcrossIntervals(const std::vector<DAG_Model>&)` declared in `DAG_Model.h`,
+      impl in NEW `sources/TaskModel/WorstCaseDAG.cpp` (CMake `GLOB_RECURSE` — reconfigure picked it
+      up, no CMakeLists edit). Structure copied from interval 0; structural mismatch across intervals
+      raises `std::runtime_error`. 3 TDD tests (max across intervals; perf TL grid preserved;
+      raises on task-count + period mismatch); 17/17 green. NOT committed.
+- [x] **Step 8b — wire worst-case DAG into `ComputeSafeFallback`.** Orchestrator pre-call
       (`RunSimulation:313-317`) passes the worst-case DAG (not `dag_tasks_`/interval-0) to
-      `ComputeSafeFallback`. Seed TL ≤ worst `et_mean` (step-3 helper runs on worst-case
-      DAG). Walk + gate unchanged.
-- [ ] **Step 8c — loud-fail.** After the walk, re-run `ImportantTasksMeetThresholds` on the
-      FINAL stored result; on failure → raise loud (do NOT store → `HasSafeFallback()`
-      stays false). TDD: unschedulable worst-case DAG (important task deadline < its own
-      WCET) → raises + `HasSafeFallback()` false; schedulable → stores + true.
-- [ ] **Step 8d — verify cross-interval safety.** Confirm (in code + a test) that the
-      worst-case point mass stochastically dominates every interval's per-task dist → the
-      gate's bound holds for every interval → trigger (a) sound. Update the two safety
-      assumptions in `goal.md` "Done when" with the cross-interval leg.
-- [ ] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
+      `ComputeSafeFallback`. Seed TL ≤ worst `et_mean` (step-3 helper on the worst-case DAG).
+      Walk + gate unchanged. **DONE 2026-07-31:** signature
+      `ComputeSafeFallback(const DAG_Model& worst_case_dag)` (no overload/default — reduce
+      optional args); sibling built from `worst_case_dag` + fresh `SP_Parameters(worst_case_dag)`;
+      dispatcher safety-net `:678` → `ComputeSafeFallback(dag_tasks_)` (1-interval degenerate
+      worst-case); orchestrator pre-call builds `worst_case_dag = BuildWorstCaseDagAcrossIntervals(
+      dag_tasks_vecs_)` then passes it (kept inside the timed block). 4 existing tests updated to
+      pass `dag_tasks` + new `ComputeSafeFallback_UsesWorstCaseDagNotIntervalZero` (stored result
+      re-gates clean against the WORST-CASE DAG, not interval-0). 17/17 green. NOT committed.
+- [x] **Step 8c — loud-fail.** After the walk, re-run `ImportantTasksMeetThresholds` on the FINAL
+      stored result; on failure → raise loud (do NOT store → `HasSafeFallback()` stays false). TDD:
+      unschedulable worst-case DAG (important task deadline < its own WCET) → raises +
+      `HasSafeFallback()` false; schedulable → stores + true. **DONE 2026-07-31:** loud-fail guard
+      AFTER the walk, BEFORE store — reconstruct `{pa,tl}` from `fallback_solver.CollectResults()`,
+      fresh `ProbabilisticRTA_TaskSet(UpdateTaskSetPriorities(ApplyTimeLimitsToTasksExecutionTime(
+      worst_case_dag.tasks, tl), pa))` (NOT `rta_cache_.Evaluate` — sibling cache armed only inside
+      the walk); `ImportantTasksMeetThresholds` on the worst-case DAG; on false → `CoutWarning` +
+      `throw std::runtime_error` (precedent `RTA_Cache.cpp:358`/`testRTA.cpp:1152`; `CoutError` does
+      a bare `throw;`→terminate, untestable). Global-flag restores (`disable_time_limit_opt`/
+      `use_wcet_execution_time`) moved ABOVE the loud-fail check so a throw doesn't leak forced-flag
+      state. Unschedulable test uses a NON-PERF important task (perf capped at TL ≤ et_mean → no
+      overrun; non-perf TL=−1 keeps full dist → WCET>deadline ⇒ ddl_miss_chance==1.0). 2 TDD tests
+      (schedulable stores; unschedulable raises + unstored); 17/17 green. NOT committed.
+- [x] **Step 8d — verify cross-interval safety.** DONE 2026-07-31. Two tests ground the
+      soundness leg: §8d.1 `BuildWorstCaseDag.StochasticallyDominatesEveryInterval` (per
+      interval j, per task i, `worst.tasks[i].max_time >= interval[j].tasks[i].max_time` → the
+      worst-case point mass stochastically dominates every interval's per-task dist → the gate's
+      `ddl_miss_chance` on the worst-case DAG upper-bounds every interval); §8d.2
+      `ComputeSafeFallback_ReGatesCleanAgainstEveryInterval` (a fallback computed on the
+      worst-case DAG re-gates clean against EACH interval's DAG individually — a failure is a
+      soundness bug). The two safety assumptions in `goal.md` "Done when" updated with the
+      cross-interval leg.
+- [x] `cmake --build build_test --target check.SP_OPT -j5` green (17/17 ctest).
+
+## 9. Dispatcher throw + gate overload (2026-07-31 — tighten the §8 contract)
+> §8 made `ComputeSafeFallback` take the worst-case DAG. Two follow-ups the user
+> asked for: (1) the dispatcher's lazy backstop was unsound — it can't build the
+> worst-case DAG from `dag_tasks_`; (2) the gate predicate gained a self-contained
+> overload so the loud-fail re-gate (and P0.7) doesn't repeat the bake+prioritize+RTA
+> boilerplate.
+
+- [x] **9a — dispatcher THROWS when no safe fallback is pre-computed.** The old
+      `Optimize_w_TL_ScratchOrIncre` lazy-called `ComputeSafeFallback(dag_tasks_)` on
+      first dispatch — but `dag_tasks_` is ONE interval, NOT the worst-case DAG → the
+      cross-interval soundness §8 guarantees would be silently lost. The dispatcher has
+      no `dag_tasks_vecs_`, so it CANNOT build the worst case soundly → fail loud:
+      `throw std::runtime_error` (the orchestrator pre-call is the ONLY sound caller).
+      Header comment updated (removed the "1-interval degenerate worst-case backstop"
+      text). Test (3) rewritten `Dispatcher_ThrowsWhenNoSafeFallbackPreComputed`
+      (was `..._LazyPopulatesSafeFallback_WhenNotPreCalled`); the 6 single-interval
+      `CounterDispatcherSynthetic` routing tests + the `opt_reopt` line +
+      `testINCRTimeout`'s 2 budget-guard tests got a `ComputeSafeFallback(dag)`
+      pre-call (on these fixtures `dag` IS the degenerate worst case; gate vacuous —
+      no important tasks → stores the seed fast).
+- [x] **9b — `ImportantTasksMeetThresholds` self-contained overload.** New
+      `ImportantTasksMeetThresholds(dag, sp_params, pa, tl)` (no `node_rtas`) in
+      `SP_Metric.{h,cpp}`: bakes TL → applies PA → `ProbabilisticRTA_TaskSet` →
+      delegates to the contract overload. Used to simplify `ComputeSafeFallback`'s §8c
+      loud-fail re-gate (dropped the manual `ApplyTimeLimitsToTasksExecutionTime` +
+      `UpdateTaskSetPriorities` + `ProbabilisticRTA_TaskSet` boilerplate at the call
+      site). The contract overload stays the zero-extra-eval path for the in-walk gate.
+- [x] `cmake --build build_test --target check.SP_OPT -j5 --clean-first` green
+      (16/17 ctest; the 1 failure = pre-existing `testPublisher` `PeriodicReleaser.v1`
+      wall-clock flake — passes in isolation, unrelated to this change). 6 targeted
+      dispatcher + §8 tests pass by name.
+- [ ] `dev_log.md` + memory updated; `git add` staged; user reviews (no commit).
+
+## 10. Readability refactor of the worst-case-DAG builder (2026-07-31)
+> `BuildWorstCaseDagAcrossIntervals` had its structural-equality check inlined as a
+> convoluted `bool structure_matches` flag nested two loops deep. Extract it into
+> its own function for readability (user request). Behavior-preserving.
+
+- [x] **10a — extract `TaskStructureMatches(const Task&, const Task&)`.** Declared
+      in `DAG_Model.h` next to `BuildWorstCaseDagAcrossIntervals` (precedent =
+      `FindLargestTimeLimitAtOrBelow` — header-declared so it's directly unit-
+      testable); defined in `WorstCaseDAG.cpp`. Compares id/period/deadline/
+      processorId/name + the full `timePerformancePairs` grid (size + each
+      `time_limit`/`performance`); ET dist DELIBERATELY excluded (the builder fuses
+      the max across intervals). The builder's per-task loop collapses to a single
+      `if (!TaskStructureMatches(...)) throw`.
+- [x] **10b — TDD.** 5 new `TaskStructureMatches.*` tests written FIRST (red), then
+      green: identical match; differing ET dist still matches; each scalar-field
+      mismatch (id/period/deadline/processorId/name); TL-pair count mismatch;
+      TL-pair value mismatch (time_limit + performance). Doc fix: the header comment
+      listed `is_important` among compared fields, but the predicate never compared
+      it (generator-set once → stable across intervals → latent, not live) —
+      corrected to the actual field set.
+- [x] `cmake --build build_test --target check.SP_OPT -j5 --clean-first` green
+      (**17/17**; the `testPublisher` flake passed this run).
 - [ ] `dev_log.md` + memory updated; `git add` staged; user reviews (no commit).

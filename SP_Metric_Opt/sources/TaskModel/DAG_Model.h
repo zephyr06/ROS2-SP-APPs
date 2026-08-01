@@ -134,6 +134,24 @@ DAG_Model ReadDAG_Tasks(std::string path, int max_possible_chains = 100);
 
 bool WhetherDAGChainsShareNodes(const DAG_Model &dag_tasks);
 
+// P0.6 §8: structural equality of two tasks — the predicate
+// BuildWorstCaseDagAcrossIntervals uses to confirm interval DAGs are the SAME
+// taskset before fusing their ET dists. "Structure" = id / period / deadline /
+// processorId / name + the full timePerformancePairs grid; the ET dist itself is
+// DELIBERATELY excluded (the builder fuses the max across intervals).
+bool TaskStructureMatches(const Task &a, const Task &b);
+
+// P0.6 §8: build the worst-case DAG across interval DAGs for offline
+// ComputeSafeFallback. Per task, the dist becomes a POINT MASS at
+// max(execution_time_max) across all intervals → stochastically dominates every
+// interval's per-task dist → the gate's ddl_miss_chance upper-bounds every
+// interval (P0.7 trigger (a) cross-interval safety). Structure (id/period/
+// deadline/processorId/name/timePerformancePairs/chains) is copied verbatim
+// from interval 0 (identical across intervals); a structural mismatch across
+// intervals raises std::runtime_error. Offline-only; online sim keeps the actual
+// per-interval DAGs.
+DAG_Model BuildWorstCaseDagAcrossIntervals(const std::vector<DAG_Model> &interval_dags);
+
 inline std::string GetTaskSetName(int file_index, int N) {
     return "dag-set-N" + std::to_string(N) + "-" +
            std::string(3 - std::to_string(file_index).size(), '0') +

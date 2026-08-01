@@ -1390,6 +1390,7 @@ TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_NeverReoptsEvenAtPeriodO
     // alone, the pure arm has STRICTLY FEWER evals than the reopt arm — the
     // behavioral signature that no from-scratch descent ran.
     OptimizePA_Incre_with_TimeLimits opt_reopt(dag_tasks, sp_parameters);
+    opt_reopt.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
     opt_reopt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // interval 0: reopt
     EXPECT_GT(opt_reopt.eval_count_, 0)
         << "reopt dispatcher runs a from-scratch beam at interval 0";
@@ -1727,6 +1728,7 @@ TEST_F(CounterDispatcherSynthetic,
     // Bootstrap an incumbent via the reopt path (count==0 routes to reopt),
     // so the incremental path's warm-start contract holds.
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+    opt.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     ASSERT_TRUE(opt.IfInitialized());
 
@@ -1738,6 +1740,7 @@ TEST_F(CounterDispatcherSynthetic,
     // directly with the Incremental mode + the SAME carried TL, must reproduce
     // the wrapper's SP exactly (the wrapper is now a 1-line delegate to it).
     RecordingDispatcherOpt opt_direct(dag_tasks, sp_parameters);
+    opt_direct.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
     opt_direct.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
     ASSERT_TRUE(opt_direct.IfInitialized());
     // Reset the dispatcher's observation counters so the direct call's
@@ -1769,6 +1772,7 @@ TEST_F(CounterDispatcherSynthetic,
 // consecutive calls → counter == 3 regardless of which branch each call took.
 TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+    opt.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
     EXPECT_EQ(0, opt.reoptimization_interval_count_);
 
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
@@ -1788,6 +1792,7 @@ TEST_F(CounterDispatcherSynthetic, CounterAdvancesEveryCall_NeverResets) {
 TEST_F(CounterDispatcherSynthetic,
        TriggersReoptAtCountZero_BootstrapsIncumbent) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+    opt.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
     EXPECT_FALSE(opt.IfInitialized());
     EXPECT_EQ(0, opt.reoptimization_interval_count_);
 
@@ -1815,6 +1820,7 @@ TEST_F(CounterDispatcherSynthetic,
 // warm-start contract hold (no CoutError).
 TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+    opt.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
 
     // count == 0 → reopt. Establishes the incumbent.
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);
@@ -1850,6 +1856,7 @@ TEST_F(CounterDispatcherSynthetic, RoutesToIncrementalAtNonModularCount) {
 TEST_F(CounterDispatcherSynthetic,
        ReoptWalk_RoutesWalkTrialsThroughSubIncremental) {
     RecordingDispatcherOpt opt(dag_tasks, sp_parameters);
+    opt.ComputeSafeFallback(dag_tasks);  // single-interval fixture: worst case == dag
 
     opt.Optimize_w_TL_ScratchOrIncre(dag_tasks, 2);  // count==0 → reopt
 
@@ -2771,7 +2778,7 @@ TEST_F(CompareAndKeepSynthetic, ComputeSafeFallback_PopulatesGateHeldArtifact) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
 
     ASSERT_FALSE(opt.HasSafeFallback());  // nothing computed yet
-    ResourceOptResult result = opt.ComputeSafeFallback();
+    ResourceOptResult result = opt.ComputeSafeFallback(dag_tasks);
     ASSERT_TRUE(opt.HasSafeFallback());
     EXPECT_EQ(result.priority_vec, opt.GetSafeFallback().priority_vec);
 
@@ -2803,7 +2810,7 @@ TEST_F(CompareAndKeepSynthetic,
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     ASSERT_FALSE(opt.IfInitialized());  // fresh optimizer: no live incumbent
 
-    opt.ComputeSafeFallback();
+    opt.ComputeSafeFallback(dag_tasks);
     // The artifact is populated, but the LIVE incumbent is STILL uninitialized — interval
     // 0 will bootstrap fresh (byte-identical).
     ASSERT_TRUE(opt.HasSafeFallback());
@@ -2811,19 +2818,21 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_FALSE(opt.enforce_important_task_gate_);  // flag reset after the walk
 }
 
-// (3) The dispatcher's safety net: Optimize_w_TL_ScratchOrIncre lazy-populates
-// safe_fallback_ on its first call when the caller did NOT pre-call ComputeSafeFallback.
-TEST_F(CompareAndKeepSynthetic,
-       Dispatcher_LazyPopulatesSafeFallback_WhenNotPreCalled) {
+// (3) The dispatcher's safety contract: Optimize_w_TL_ScratchOrIncre THROWS if no
+// safe fallback was pre-computed. The dispatcher sees only dag_tasks_ (one interval),
+// not dag_tasks_vecs_, so it cannot build the cross-interval worst-case DAG soundly
+// (§8: certifying against a single interval is cross-interval unsound). The
+// orchestrator pre-calls ComputeSafeFallback on the worst-case DAG before the loop;
+// reaching the dispatcher without one is a caller bug → fail loud.
+TEST_F(CompareAndKeepSynthetic, Dispatcher_ThrowsWhenNoSafeFallbackPreComputed) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     ASSERT_FALSE(opt.HasSafeFallback());  // caller didn't pre-call
 
-    // First dispatcher call: the lazy check sees no fallback → computes one, then proceeds.
-    opt.Optimize_w_TL_ScratchOrIncre(dag_tasks,
-                                     GlobalVariables::Layer_Node_During_Incremental_Optimization);
-    EXPECT_TRUE(opt.HasSafeFallback());  // safety net populated it
-    // And it didn't trip the gate flag on the live path (the sibling reset it).
-    EXPECT_FALSE(opt.enforce_important_task_gate_);
+    EXPECT_THROW(
+        opt.Optimize_w_TL_ScratchOrIncre(
+            dag_tasks, GlobalVariables::Layer_Node_During_Incremental_Optimization),
+        std::runtime_error);
+    EXPECT_FALSE(opt.HasSafeFallback());  // still nothing — did not lazy-compute
 }
 
 // (4) The dispatcher does NOT recompute when the caller already pre-called: the lazy
@@ -2832,7 +2841,7 @@ TEST_F(CompareAndKeepSynthetic,
 TEST_F(CompareAndKeepSynthetic,
        Dispatcher_DoesNotRecompute_WhenAlreadyPreCalled) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
-    opt.ComputeSafeFallback();
+    opt.ComputeSafeFallback(dag_tasks);
     ASSERT_TRUE(opt.HasSafeFallback());
     ResourceOptResult pre = opt.GetSafeFallback();
 
@@ -2841,6 +2850,353 @@ TEST_F(CompareAndKeepSynthetic,
     // Same artifact object (not recomputed).
     EXPECT_EQ(pre.priority_vec, opt.GetSafeFallback().priority_vec);
     EXPECT_DOUBLE_EQ(pre.sp_opt, opt.GetSafeFallback().sp_opt);
+}
+
+// ============================================================================
+// P0.6 §8 — worst-case-DAG builder (cross-interval safety for P0.7 trigger (a)).
+// The caller builds a DAG where each task's dist is a POINT MASS at
+// max(execution_time_max) across all interval DAGs → stochastically dominates
+// every interval's dist → the gate's ddl_miss_chance upper-bounds every interval.
+// See goal.md "WORST-CASE-DAG (2026-07-31)". Helper under test:
+// BuildWorstCaseDagAcrossIntervals(const std::vector<DAG_Model>&).
+// ============================================================================
+
+// (5) §8b: ComputeSafeFallback runs the walk on the PASSED worst-case DAG, not on
+// the optimizer's own dag_tasks_ (interval 0). The optimizer is built from a
+// lighter interval-0 DAG, but ComputeSafeFallback is handed a worst-case DAG with
+// a LARGER non-perf max_time; the stored result must re-gate clean against the
+// WORST-CASE DAG (the certificate that actually bounds the intervals).
+TEST_F(CompareAndKeepSynthetic, ComputeSafeFallback_UsesWorstCaseDagNotIntervalZero) {
+    dag_tasks.tasks[0].is_important = true;  // T_perf is the gated important task
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Build a worst-case DAG whose non-perf task (T_noise) has a LARGER max_time
+    // than interval-0's. Same structure (period/deadline/grid/name) — only ET max
+    // differs — so BuildWorstCaseDagAcrossIntervals fuses them cleanly.
+    DAG_Model dag0 = dag_tasks;
+    TaskSet tasks_hi = dag_tasks.tasks;
+    const double noise_max_hi = 200.0;  // > interval-0's 50.0
+    tasks_hi[1].execution_time_dist =
+        FiniteDist(std::vector<Value_Proba>{Value_Proba(noise_max_hi, 1.0)});
+    // Chains-bearing ctor so structure (chains_/chains_deadlines_) matches dag_tasks.
+    DAG_Model dag_hi(tasks_hi, dag_tasks.chains_, dag_tasks.chains_deadlines_);
+    DAG_Model worst_case_dag = BuildWorstCaseDagAcrossIntervals({dag0, dag_hi});
+
+    // The worst-case DAG's non-perf max is the larger one.
+    EXPECT_DOUBLE_EQ(noise_max_hi, worst_case_dag.tasks[1].execution_time_dist.max_time);
+
+    ASSERT_FALSE(opt.HasSafeFallback());
+    ResourceOptResult result = opt.ComputeSafeFallback(worst_case_dag);
+    ASSERT_TRUE(opt.HasSafeFallback());
+
+    // Reconstruct {pa, tl} in task order and re-gate against the WORST-CASE DAG
+    // (not interval-0's dag_tasks) — the certificate that bounds every interval.
+    std::vector<int> pa_result = result.priority_vec;
+    std::vector<double> tl_result(worst_case_dag.tasks.size());
+    for (size_t i = 0; i < worst_case_dag.tasks.size(); i++) {
+        int id = worst_case_dag.tasks[i].id;
+        tl_result[i] = result.id2time_limit.count(id) ? result.id2time_limit.at(id) : -1.0;
+    }
+    SP_Parameters sp_worst(worst_case_dag);
+    std::vector<FiniteDist> node_rtas =
+        NodeRTAsForCandidate(worst_case_dag, pa_result, tl_result);
+    EXPECT_TRUE(ImportantTasksMeetThresholds(worst_case_dag, sp_worst, pa_result,
+                                             tl_result, node_rtas))
+        << "safe fallback must satisfy the gate on the WORST-CASE DAG it was computed under";
+}
+
+// (6) §8c happy path: on a SCHEDULABLE worst-case DAG, ComputeSafeFallback stores
+// the artifact and the final result re-gates clean (the loud-fail check passes).
+TEST_F(CompareAndKeepSynthetic,
+       ComputeSafeFallback_OnSchedulableWorstCase_StoresArtifact) {
+    dag_tasks.tasks[0].is_important = true;  // T_perf is the gated important task
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // A schedulable worst-case DAG: same structure, ET maxes well under deadline.
+    DAG_Model worst_case_dag = BuildWorstCaseDagAcrossIntervals({dag_tasks, dag_tasks});
+
+    ASSERT_FALSE(opt.HasSafeFallback());
+    opt.ComputeSafeFallback(worst_case_dag);
+    EXPECT_TRUE(opt.HasSafeFallback());  // stored — loud-fail check passed
+
+    // Final stored result re-gates clean against the worst-case DAG.
+    ResourceOptResult result = opt.GetSafeFallback();
+    std::vector<double> tl_result(worst_case_dag.tasks.size());
+    for (size_t i = 0; i < worst_case_dag.tasks.size(); i++) {
+        int id = worst_case_dag.tasks[i].id;
+        tl_result[i] = result.id2time_limit.count(id) ? result.id2time_limit.at(id) : -1.0;
+    }
+    SP_Parameters sp_worst(worst_case_dag);
+    std::vector<FiniteDist> node_rtas =
+        NodeRTAsForCandidate(worst_case_dag, result.priority_vec, tl_result);
+    EXPECT_TRUE(ImportantTasksMeetThresholds(worst_case_dag, sp_worst,
+                                             result.priority_vec, tl_result, node_rtas));
+}
+
+// (7) §8c loud-fail: on an UNSCHEDULABLE worst-case DAG (an important NON-PERF
+// task's WCET point mass exceeds its deadline → ddl_miss_chance==1.0 > threshold),
+// ComputeSafeFallback RAISES std::runtime_error and does NOT store
+// (HasSafeFallback() stays false → "regenerate a new task set"). Non-perf is
+// required: ApplyTimeLimitsToTasksExecutionTime caps PERF tasks at their TL (TL ≤
+// et_mean → runtime ET ≤ TL, no overrun), but leaves NON-PERF (TL=−1) at its full
+// dist → a non-perf WCET point mass > deadline yields ddl_miss_chance==1.0.
+TEST_F(CompareAndKeepSynthetic,
+       ComputeSafeFallback_OnUnschedulableWorstCase_RaisesAndDoesNotStore) {
+    // dag_tasks.tasks[1] is T_noise (non-perf, deadline 2000, fixture). Set its WCET
+    // point mass ABOVE its deadline (3000 > 2000) and mark it important → the gate's
+    // ddl_miss_chance==1.0 > threshold → the loud-fail re-check must reject. Same
+    // structure as dag_tasks; only ET max + the important label differ.
+    TaskSet tasks_unsched = dag_tasks.tasks;
+    tasks_unsched[1].is_important = true;
+    tasks_unsched[1].execution_time_dist =
+        FiniteDist(std::vector<Value_Proba>{Value_Proba(3000.0, 1.0)});
+    DAG_Model dag_unsched(tasks_unsched, dag_tasks.chains_, dag_tasks.chains_deadlines_);
+    // Degenerate single-interval worst-case: T_noise max_time == 3000.0 > deadline 2000.
+    DAG_Model worst_case_dag = BuildWorstCaseDagAcrossIntervals({dag_unsched, dag_unsched});
+    ASSERT_GT(worst_case_dag.tasks[1].execution_time_dist.max_time,
+              worst_case_dag.tasks[1].deadline);
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    ASSERT_FALSE(opt.HasSafeFallback());
+    EXPECT_THROW(opt.ComputeSafeFallback(worst_case_dag), std::runtime_error);
+    // Loud-fail: NOT stored → the caller must regenerate the task set.
+    EXPECT_FALSE(opt.HasSafeFallback());
+}
+
+
+namespace {
+// Builds a 2-task DAG with non-perf tasks whose dists carry the given max_time.
+// Used to vary only ET across the synthetic interval DAGs.
+DAG_Model BuildTwoNonPerfDag(double max0, double max1) {
+    std::vector<Value_Proba> dist0 = {Value_Proba(max0, 1.0)};
+    std::vector<Value_Proba> dist1 = {Value_Proba(max1, 1.0)};
+    TaskSet tasks = {Task(0, dist0, 50, 50, 0, "T0"), Task(1, dist1, 50, 50, 1, "T1")};
+    MAP_Prev mapPrev;
+    return DAG_Model(tasks, mapPrev, 0, 0);
+}
+}  // namespace
+
+// §8a.1: per-task execution_time_max is the MAX across intervals, and each result
+// dist is a single-point mass at that max (point mass = the dominance bound).
+TEST(BuildWorstCaseDag, TakesMaxExecutionTimeMaxAcrossIntervals) {
+    DAG_Model dag0 = BuildTwoNonPerfDag(3.0, 4.0);
+    DAG_Model dag1 = BuildTwoNonPerfDag(4.0, 5.0);
+    std::vector<DAG_Model> intervals = {dag0, dag1};
+
+    DAG_Model worst = BuildWorstCaseDagAcrossIntervals(intervals);
+
+    ASSERT_EQ(2u, worst.tasks.size());
+    // task 0: max(3.0, 4.0) = 4.0; task 1: max(4.0, 5.0) = 5.0.
+    EXPECT_DOUBLE_EQ(4.0, worst.tasks[0].execution_time_dist.max_time);
+    EXPECT_DOUBLE_EQ(5.0, worst.tasks[1].execution_time_dist.max_time);
+    // Each result dist is a point mass at its max.
+    for (size_t i = 0; i < worst.tasks.size(); i++) {
+        const FiniteDist& d = worst.tasks[i].execution_time_dist;
+        ASSERT_EQ(1u, d.distribution.size());
+        EXPECT_DOUBLE_EQ(d.max_time, d.distribution[0].value);
+        EXPECT_DOUBLE_EQ(1.0, d.distribution[0].probability);
+    }
+}
+
+// §8a.2: perf-task TL grid + structure are copied verbatim from interval 0; only
+// the ET dist is overwritten to the worst-case point mass.
+TEST(BuildWorstCaseDag, PreservesPerfTaskTimeLimitGrid) {
+    const double et_perf = 500.0;
+    std::vector<Value_Proba> dist_perf = {Value_Proba(et_perf, 1.0)};
+    Task t_perf(0, dist_perf, 2000, 2000, 0, "T_perf");
+    t_perf.execution_time_dist = FiniteDist(GaussianDist(et_perf, 0.5), 5);
+    for (int i = 0; i < 4; ++i) {
+        t_perf.timePerformancePairs.push_back(TimePerfPair(400 + i * 200, 0.5 + i * 0.1));
+    }
+    std::vector<Value_Proba> dist_noise = {Value_Proba(50.0, 1.0)};
+    Task t_noise(1, dist_noise, 2000, 2000, 1, "T_noise");
+    t_noise.execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+
+    TaskSet tasks0 = {t_perf, t_noise};
+    MAP_Prev mapPrev;
+    DAG_Model dag0(tasks0, mapPrev, 0, 0);
+
+    // Interval 1: identical structure, only ET max differs (heavier tail on T_noise).
+    TaskSet tasks1 = tasks0;
+    tasks1[1].execution_time_dist = FiniteDist(GaussianDist(50.0, 0.5), 5);
+    // Force a larger max_time on T_noise in interval 1.
+    std::vector<Value_Proba> dist_noise_hi = {Value_Proba(80.0, 1.0)};
+    tasks1[1].execution_time_dist = FiniteDist(dist_noise_hi);
+    DAG_Model dag1(tasks1, mapPrev, 0, 0);
+
+    DAG_Model worst = BuildWorstCaseDagAcrossIntervals({dag0, dag1});
+
+    ASSERT_EQ(2u, worst.tasks.size());
+    // Perf task's TL grid + structure copied from interval 0 verbatim.
+    EXPECT_EQ(dag0.tasks[0].timePerformancePairs.size(),
+              worst.tasks[0].timePerformancePairs.size());
+    for (size_t i = 0; i < dag0.tasks[0].timePerformancePairs.size(); i++) {
+        EXPECT_DOUBLE_EQ(dag0.tasks[0].timePerformancePairs[i].time_limit,
+                         worst.tasks[0].timePerformancePairs[i].time_limit);
+        EXPECT_DOUBLE_EQ(dag0.tasks[0].timePerformancePairs[i].performance,
+                         worst.tasks[0].timePerformancePairs[i].performance);
+    }
+    EXPECT_EQ(dag0.tasks[0].period, worst.tasks[0].period);
+    EXPECT_EQ(dag0.tasks[0].deadline, worst.tasks[0].deadline);
+    EXPECT_EQ(dag0.tasks[0].name, worst.tasks[0].name);
+    // Chains + deadlines copied from interval 0.
+    EXPECT_EQ(dag0.chains_, worst.chains_);
+    EXPECT_EQ(dag0.chains_deadlines_, worst.chains_deadlines_);
+    // Perf task dist is a point mass at its worst-case max (interval-0 max here).
+    const FiniteDist& d_perf = worst.tasks[0].execution_time_dist;
+    EXPECT_EQ(1u, d_perf.distribution.size());
+    EXPECT_DOUBLE_EQ(dag0.tasks[0].execution_time_dist.max_time, d_perf.max_time);
+    // Non-perf task took the LARGER max across intervals (80.0 > 50.0).
+    EXPECT_DOUBLE_EQ(80.0, worst.tasks[1].execution_time_dist.max_time);
+}
+
+// §8a.3: structural mismatch across intervals is a loud failure (different task
+// counts, or a period mismatch) — the builder cannot fuse incoherent DAGs.
+TEST(BuildWorstCaseDag, RaisesOnStructuralMismatchAcrossIntervals) {
+    MAP_Prev mapPrev;
+    // Different task counts.
+    DAG_Model two_tasks = BuildTwoNonPerfDag(3.0, 4.0);
+    TaskSet one = {Task(0, std::vector<Value_Proba>{Value_Proba(3.0, 1.0)}, 50, 50, 0, "T0")};
+    DAG_Model one_task(one, mapPrev, 0, 0);
+    EXPECT_THROW(BuildWorstCaseDagAcrossIntervals({two_tasks, one_task}), std::runtime_error);
+
+    // Same count, but a period mismatch on task 1.
+    TaskSet a = {Task(0, std::vector<Value_Proba>{Value_Proba(3.0, 1.0)}, 50, 50, 0, "T0"),
+                 Task(1, std::vector<Value_Proba>{Value_Proba(4.0, 1.0)}, 50, 50, 1, "T1")};
+    TaskSet b = {Task(0, std::vector<Value_Proba>{Value_Proba(4.0, 1.0)}, 50, 50, 0, "T0"),
+                 Task(1, std::vector<Value_Proba>{Value_Proba(5.0, 1.0)}, 100, 100, 1, "T1")};
+    DAG_Model dag_a(a, mapPrev, 0, 0);
+    DAG_Model dag_b(b, mapPrev, 0, 0);
+    EXPECT_THROW(BuildWorstCaseDagAcrossIntervals({dag_a, dag_b}), std::runtime_error);
+}
+
+// §8d.1: the worst-case point mass STOCHASTICALLY DOMINATES every interval's
+// per-task dist — for each interval j, each task i,
+// worst.tasks[i].max_time >= interval_dags[j].tasks[i].max_time. This is the
+// soundness leg: any interval's ET draw ≤ its max_time ≤ the worst-case max →
+// the gate's ddl_miss_chance on the worst-case DAG upper-bounds every interval.
+TEST(BuildWorstCaseDag, StochasticallyDominatesEveryInterval) {
+    // Three intervals with varied per-task max_times (incl. a lower-mean interval
+    // carrying a fatter tail — the mean-independent-sigma case that broke the old
+    // "longest by avg ET" bound).
+    std::vector<DAG_Model> intervals = {BuildTwoNonPerfDag(3.0, 4.0),   // interval 0
+                                        BuildTwoNonPerfDag(4.0, 5.0),   // interval 1
+                                        BuildTwoNonPerfDag(2.0, 6.0)};  // interval 2
+    DAG_Model worst = BuildWorstCaseDagAcrossIntervals(intervals);
+
+    for (size_t j = 0; j < intervals.size(); j++) {
+        for (size_t i = 0; i < intervals[j].tasks.size(); i++) {
+            EXPECT_GE(worst.tasks[i].execution_time_dist.max_time,
+                      intervals[j].tasks[i].execution_time_dist.max_time)
+                << "worst-case max_time must dominate interval " << j << " task " << i;
+        }
+    }
+    // The worst-case max is the per-task MAX across intervals: {4.0, 6.0}.
+    EXPECT_DOUBLE_EQ(4.0, worst.tasks[0].execution_time_dist.max_time);
+    EXPECT_DOUBLE_EQ(6.0, worst.tasks[1].execution_time_dist.max_time);
+}
+
+// §8d.2: cross-interval safety leg — a fallback computed on the worst-case DAG
+// re-gates clean against EACH interval's DAG individually. The worst-case point
+// mass dominates every interval's dist → the gate's ddl_miss_chance on each
+// interval ≤ on the worst-case → if it passed on the worst-case (it did, by
+// construction: the walk only REJECTS + the loud-fail check passed), it passes on
+// every interval. A failure here is a soundness bug.
+TEST_F(CompareAndKeepSynthetic,
+       ComputeSafeFallback_ReGatesCleanAgainstEveryInterval) {
+    dag_tasks.tasks[0].is_important = true;  // T_perf is the gated important task
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+
+    // Two intervals: interval 0 = the fixture DAG; interval 1 = same structure
+    // with a LARGER non-perf (T_noise) max_time. The worst-case DAG takes the max.
+    DAG_Model dag0 = dag_tasks;
+    TaskSet tasks1 = dag_tasks.tasks;
+    tasks1[1].execution_time_dist =
+        FiniteDist(std::vector<Value_Proba>{Value_Proba(120.0, 1.0)});  // > 50.0
+    DAG_Model dag1(tasks1, dag_tasks.chains_, dag_tasks.chains_deadlines_);
+    std::vector<DAG_Model> intervals = {dag0, dag1};
+    DAG_Model worst_case_dag = BuildWorstCaseDagAcrossIntervals(intervals);
+
+    ASSERT_FALSE(opt.HasSafeFallback());
+    opt.ComputeSafeFallback(worst_case_dag);
+    ASSERT_TRUE(opt.HasSafeFallback());
+    ResourceOptResult result = opt.GetSafeFallback();
+
+    // Re-gate the stored fallback against EACH interval's DAG individually. The
+    // TL vector is task-id-keyed in the result; rebuild it per interval (task
+    // order is identical across intervals — verified by the builder).
+    for (size_t j = 0; j < intervals.size(); j++) {
+        const DAG_Model& interval_dag = intervals[j];
+        std::vector<double> tl_result(interval_dag.tasks.size());
+        for (size_t i = 0; i < interval_dag.tasks.size(); i++) {
+            int id = interval_dag.tasks[i].id;
+            tl_result[i] = result.id2time_limit.count(id) ? result.id2time_limit.at(id) : -1.0;
+        }
+        SP_Parameters sp_interval(interval_dag);
+        std::vector<FiniteDist> node_rtas =
+            NodeRTAsForCandidate(interval_dag, result.priority_vec, tl_result);
+        EXPECT_TRUE(ImportantTasksMeetThresholds(interval_dag, sp_interval,
+                                                 result.priority_vec, tl_result,
+                                                 node_rtas))
+            << "stored fallback must re-gate clean on interval " << j;
+    }
+}
+
+// --- P0.6 §8e: TaskStructureMatches (the structural-equality predicate
+// BuildWorstCaseDagAcrossIntervals uses to fuse interval DAGs). "Structure" =
+// id/period/deadline/processorId/name + the full timePerformancePairs grid; the
+// ET dist is DELIBERATELY excluded (the builder fuses the max across intervals).
+
+namespace {
+Task MakeStructTask(int id, int period, double ddl, int proc, std::string name) {
+    std::vector<Value_Proba> dist = {Value_Proba(1.0, 1.0)};
+    Task t(id, dist, period, ddl, id, name);
+    t.processorId = proc;  // not a Task ctor param; set explicitly.
+    return t;
+}
+}  // namespace
+
+TEST(TaskStructureMatches, IdenticalTasksMatch) {
+    Task a = MakeStructTask(0, 50, 50, 0, "T0");
+    Task b = MakeStructTask(0, 50, 50, 0, "T0");
+    EXPECT_TRUE(TaskStructureMatches(a, b));
+}
+
+TEST(TaskStructureMatches, DifferingExecutionTimeDistStillMatches) {
+    Task a = MakeStructTask(0, 50, 50, 0, "T0");
+    Task b = MakeStructTask(0, 50, 50, 0, "T0");
+    a.execution_time_dist = FiniteDist(GaussianDist(3.0, 0.5), 5);
+    b.execution_time_dist = FiniteDist(GaussianDist(9.0, 1.0), 5);
+    EXPECT_TRUE(TaskStructureMatches(a, b));
+}
+
+TEST(TaskStructureMatches, ScalarFieldsMismatch) {
+    Task base = MakeStructTask(0, 50, 50, 0, "T0");
+    EXPECT_FALSE(TaskStructureMatches(base, MakeStructTask(1, 50, 50, 0, "T0")));  // id
+    EXPECT_FALSE(TaskStructureMatches(base, MakeStructTask(0, 100, 50, 0, "T0"))); // period
+    EXPECT_FALSE(TaskStructureMatches(base, MakeStructTask(0, 50, 80, 0, "T0")));  // deadline
+    EXPECT_FALSE(TaskStructureMatches(base, MakeStructTask(0, 50, 50, 1, "T0")));  // processorId
+    EXPECT_FALSE(TaskStructureMatches(base, MakeStructTask(0, 50, 50, 0, "TX")));  // name
+}
+
+TEST(TaskStructureMatches, TimePerfPairCountMismatch) {
+    Task a = MakeStructTask(0, 50, 50, 0, "T0");
+    Task b = MakeStructTask(0, 50, 50, 0, "T0");
+    a.timePerformancePairs.push_back(TimePerfPair(400, 0.5));
+    EXPECT_FALSE(TaskStructureMatches(a, b));
+    EXPECT_FALSE(TaskStructureMatches(b, a));
+}
+
+TEST(TaskStructureMatches, TimePerfPairValueMismatch) {
+    Task a = MakeStructTask(0, 50, 50, 0, "T0");
+    Task b = MakeStructTask(0, 50, 50, 0, "T0");
+    a.timePerformancePairs = {TimePerfPair(400, 0.5), TimePerfPair(600, 0.7)};
+    b.timePerformancePairs = {TimePerfPair(400, 0.5), TimePerfPair(600, 0.9)};  // perf differs
+    EXPECT_FALSE(TaskStructureMatches(a, b));
+    b.timePerformancePairs = {TimePerfPair(400, 0.5), TimePerfPair(800, 0.7)};  // time differs
+    EXPECT_FALSE(TaskStructureMatches(a, b));
+    b.timePerformancePairs = {TimePerfPair(400, 0.5), TimePerfPair(600, 0.7)};  // identical
+    EXPECT_TRUE(TaskStructureMatches(a, b));
 }
 
 int main(int argc, char** argv) {

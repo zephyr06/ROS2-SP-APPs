@@ -165,6 +165,17 @@ bool ImportantTasksMeetThresholds(
     const std::vector<double>& tl,
     const std::vector<FiniteDist>& node_rtas);
 
+// Convenience overload: derives the node RTAs itself via `ProbabilisticRTA_TaskSet`
+// (bake TL → apply PA → RTA), then delegates to the contract overload above. For
+// callers that have NOT already materialized the RTAs when scoring SP — e.g. the
+// ComputeSafeFallback loud-fail re-gate, which re-checks the FINAL stored result
+// post-walk (no shared cache live then). Costs one fresh RTA eval per call, so the
+// contract overload remains the zero-extra-eval path for the in-walk gate.
+bool ImportantTasksMeetThresholds(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment,
+    const std::vector<double>& tl);
+
 double ObtainSPFromRTAFiles(std::string& slam_path, std::string& rrt_path,
                             std::string& mpc_path, std::string& tsp_path,
                             std::string& tsp_ext_path, std::string& chain0_path,
