@@ -13,8 +13,8 @@
     To simplify the presentation, we first describe a brute-force algorithm for priority assignments.
     We then propose improvements inspired by the classical Audsley’s algorithm~\cite{Audsley91optimalpriority} and introduce incremental optimization techniques to balance computational speed and performance.
 
-    Throughout this section, we assume that task configurations $\configs$ are fixed.
-    Optimization of task configurations will be discussed in the next section.
+    Throughout this section, we assume that the QoS budgets $\boldsymbol{\mathcal{Q}}$ are fixed.
+    Optimization of QoS budgets will be discussed in the next section.
 
 
 	\subsection{Brute-Force Priority Assignments}
@@ -28,7 +28,7 @@
 	\subsection{Optimize Safety Based on Audsley's Algorithm and Beam Search}
 	\label{section_audsley_pa}
     Maximizing the SP metric is closely related to maximizing the overall system's schedulability.
-    When task configuration parameters are fixed, the performance function in the SP metric~\eqref{eq_sp_def} becomes a constant coefficient.
+    When the QoS budgets are fixed, the performance function in the SP metric~\eqref{eq_sp_def} becomes a constant coefficient.
     This motivates us to leverage optimal priority assignment algorithms to optimize the SP metric.
     Among various options, Audsley's algorithm~\cite{Audsley91optimalpriority} stands out due to its $O(n^2)$ runtime complexity, where $n$ is the number of tasks in the task set.
 

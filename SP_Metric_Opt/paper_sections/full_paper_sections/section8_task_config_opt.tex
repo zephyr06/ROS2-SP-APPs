@@ -1,11 +1,11 @@
-	\section{Task configuration Optimization}
+	\section{QoS Budget Optimization}
 	\label{section_config_opt}
 
     \sen{we'll change the idea of this section, and treat tasks that need to optimize TLs as a special type of env-dependent task, then trigger incremental optimization after assuming tasks' ET change.}
     \sen{we shall modify the paper's scope and definition of such types of tasks to be more precise and consistent. this method is a more elegant method than simplying searching the possible combination.}
 
-    We consider two strategies for task configuration optimization: \textit{brute-force} and \textit{incremental}.
-    The brute-force strategy enumerates all possible task configuration parameters and selects the configuration that maximizes the SP metric.
+    We consider two strategies for QoS budget optimization: \textit{brute-force} and \textit{incremental}.
+    The brute-force strategy enumerates all possible QoS budgets and selects the one that maximizes the SP metric.
     While exhaustive, this approach is computationally expensive and impractical for online optimization due to the large search space.
 
     The incremental strategy assumes that the environment changes smoothly and that the influence of environments to the optimal task configuration also changes smoothly.
@@ -13,38 +13,38 @@
     Section~\ref{section: relax_smooth_assumption} discusses more about relaxing these two assumptions.
 
     Under the smooth assumption, the incremental optimization algorithm only performs a local search for each optimization variable each time.
-    More specifically, during the \ith{k} iteration, denote the optimization variables from the task set $\boldsymbol{\tau}$ as $\boldsymbol{\lambda}$, and denote its initial value before the optimization as $\boldsymbol{\lambda}^{(k)}$, the incremental optimization solves the following problem:
+    More specifically, during the \ith{k} iteration, denote the optimization variables from the task set $\boldsymbol{\tau}$ as $\boldsymbol{\mathcal{Q}}$, and denote its initial value before the optimization as $\boldsymbol{\mathcal{Q}}^{(k)}$, the incremental optimization solves the following problem:
 	\begin{equation}
-		\max_{\boldsymbol{\lambda}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
+		\max_{\boldsymbol{\mathcal{Q}}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
 	\end{equation}
 
 	\begin{equation}
-		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\lambda_i), \hptasks{i})
+		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \hptasks{i})
 	\end{equation}
 
     \begin{equation}
-        \|\boldsymbol{\lambda} - \boldsymbol{\lambda}^{(k)} \| \leq \delta
+        \|\boldsymbol{\mathcal{Q}} - \boldsymbol{\mathcal{Q}}^{(k)} \| \leq \delta
         \label{eq: incremental_configuration}
     \end{equation}
     where $\delta$ controls the tradeoff between run-time complexity and the solution quality.
     \begin{Example}
-        Consider the running time optimization for the traveling salesman problem (TSP).
-        There are only a few running-time limit options to choose from: [100, 200, 300, 500], where longer running time implies shorter solution path.
-        During the last iteration, if the running time limit is 300ms, and assume $\delta=150$ in equation~\eqref{eq: incremental_configuration}.
+        Consider the QoS budget optimization for the traveling salesman problem (TSP) solved by an anytime algorithm.
+        There are only a few QoS budget options to choose from: [100, 200, 300, 500], where a larger budget implies a shorter solution path (higher quality) per the anytime property.
+        During the last iteration, if the budget is 300ms, and assume $\delta=150$ in equation~\eqref{eq: incremental_configuration}.
         In this case, we only consider 2 potential solution candidates: $200,300$ to be selected from.
     \end{Example}
 
     \agent{To solve this optimization problem efficiently, we implement a linear-time sequential coordinate descent algorithm instead of an exponential exhaustive search over the local search space.
     The algorithm proceeds as follows:
     \begin{enumerate}
-        \item \textbf{Initialization:} The initial execution time limit configuration $\boldsymbol{\lambda}^{(0)}$ is set to match the closest valid execution time limit options corresponding to the pre-optimization execution time (ET) configuration.
+        \item \textbf{Initialization:} The initial QoS budget $\boldsymbol{\mathcal{Q}}^{(0)}$ is set to match the closest valid budget options corresponding to the pre-optimization execution time (ET) configuration.
         \item \textbf{Prioritized Task Ordering:} Rather than updating variables in an arbitrary order, the tasks are sorted and processed according to a heuristic.
         Specifically, tasks are ordered in descending order of their weights, ascending order of their deadlines, and ascending order of their IDs.
         This prioritization ensures that tasks with higher importance and tighter deadlines are optimized first.
-        \item \textbf{Coordinate Descent:} For each task in the sorted list, we evaluate all its available time limit options (either the full set in the scratch mode or the local candidate set constrained by $\delta$ in the incremental mode) one-by-one while keeping the configuration of all other tasks fixed.
+        \item \textbf{Coordinate Descent:} For each task in the sorted list, we evaluate all its available QoS budget options (either the full set in the scratch mode or the local candidate set constrained by $\delta$ in the incremental mode) one-by-one while keeping the budgets of all other tasks fixed.
         The option yielding the highest SP metric is chosen.
-        \item \textbf{Resource-Aware Tie-Breaking:} If multiple time limit options yield the same optimal SP metric, we select the option that minimizes the sum of the tasks' execution time limits.
-        This tie-breaker rule prioritizes configurations with lower execution times to conserve computational resources.
+        \item \textbf{Resource-Aware Tie-Breaking:} If multiple budget options yield the same optimal SP metric, we select the option that minimizes the sum of the tasks' QoS budgets.
+        This tie-breaker rule prioritizes budgets with lower execution times to conserve computational resources.
     \end{enumerate}
     By optimizing each task sequentially, the complexity is reduced from exponential in the number of tasks, $O(M^N)$, to linear, $O(M \cdot N)$, where $M$ is the number of options per task and $N$ is the number of tasks.}
 

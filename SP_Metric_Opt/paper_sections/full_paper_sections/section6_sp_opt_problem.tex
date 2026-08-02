@@ -146,14 +146,14 @@ Therefore, we introduce an efficient implementation for the prediction function 
 	\subsection{Performance metric}
 	The performance metric reflects the quality of a task’s output.
     For example, in SLAM, it may correspond to localization error, while in path planning, it could reflect the travel distance of the generated path.
-    In real-world scenarios, task performance depends on \textit{Task Configurations} (Parameters like runtime limits, which can affect both execution time and output quality) and \textit{Environment} (External factors, \eg sensor noise in rainy conditions, that influence the accuracy of task outputs, such as object detection).
+    In real-world scenarios, task performance depends on \textit{QoS budgets} (Parameters like the running-time limit of anytime algorithms, which can affect both execution time and output quality) and \textit{Environment} (External factors, \eg sensor noise in rainy conditions, that influence the accuracy of task outputs, such as object detection).
 
 	\begin{definition}[Performance Metric]
     \label{def_perf_metric}
 		A computation task $\tau_i$'s performance function $\mathcal{P}(\tau_i, \textbf{E}_k) \rightarrow [0,1]$ is a normalized function that estimates a task's output quality under an environment described by $\textbf{E}_k$.
 	\end{definition}
 
-	Note that the task's configuration parameters are implicitly incorporated into $\tau_i$ based on the notation~\eqref{eq_notation_task}.
+	Note that the task's QoS budget is implicitly incorporated into $\tau_i$ based on the notation~\eqref{eq_notation_task}.
 
     The performance metric can be determined through offline profiling and regression, with its exact format depending on the application.
     For example, in motion planning, the metric could be the total path length, normalized to a range of 0 (worst) to 1 (best).
@@ -242,11 +242,11 @@ Therefore, we introduce an efficient implementation for the prediction function 
     The optimization problem is defined as follows:
 
 	\begin{equation}
-		\max_{\mathcal{A}, \boldsymbol{\lambda}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
+		\max_{\mathcal{A}, \boldsymbol{\mathcal{Q}}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
 		\label{eq_overall_obj}
 	\end{equation}
 	\begin{equation}
-		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\lambda_i), \hptasks{i})
+		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \hptasks{i})
 		\label{eq_prob_rta_in_opt}
 	\end{equation}
 
@@ -256,8 +256,8 @@ Therefore, we introduce an efficient implementation for the prediction function 
         $\textbf{E}_k$ denotes the environment vector estimated online at time $k$.
 
         Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$.
-        $C_i^D$ denotes $\tau_i$'s execution time distribution, $\boldsymbol{\lambda}$ represents the task configurations.
-        This paper focuses on optimizing tasks' running time limits.
+        $C_i^D$ denotes $\tau_i$'s execution time distribution, $\boldsymbol{\mathcal{Q}}$ represents the tasks' QoS budgets.
+        This paper focuses on the running-time limit as the QoS budget for anytime algorithms.
         $\hptasks{i}$ denotes the tasks whose priority is higher than $\tau_i$.
 
 
@@ -268,7 +268,7 @@ Therefore, we introduce an efficient implementation for the prediction function 
 
     The optimization problem in \eqref{eq_overall_obj} presents several challenges:
 \begin{itemize}
-    \item \textbf{Mixed combinatorial and continuous variables:} The problem involves both continuous variables (task configurations $\boldsymbol{\lambda}$) and combinatorial variables (priority assignments included in $\mathcal{A}$).
+    \item \textbf{Mixed combinatorial and continuous variables:} The problem involves both continuous variables (QoS budgets $\boldsymbol{\mathcal{Q}}$) and combinatorial variables (priority assignments included in $\mathcal{A}$).
     \item \textbf{Complicated objective function:} The SP metric's formulation \eqref{eq_sp_def} includes probabilistic components and lacks properties like convexity or continuity, complicating the optimization process.
     \item \textbf{Limited computation resources:} The optimization problem~\eqref{eq_overall_obj} has to be solved online to be useful as the robot is expected to work under unknown environments.
     However, most mobile robots are powered by batteries and are equipped with very limited computation resources, most of which are dedicated to major functional tasks such as motion planning and SLAM.
@@ -282,15 +282,15 @@ Therefore, we introduce an efficient implementation for the prediction function 
     Due to the challenges mentioned above, directly leveraging existing optimization frameworks (e.g., integer linear programming) is infeasible.
     Instead, we analyze the SP metric for exploitable properties to guide algorithm design:
 	\begin{itemize}
-		\item The performance metric only depends on the task configuration $\configs$ and is independent of the priority assignments $\mathcal{A}$.
-		\item The safety metric depends on both $\configs$ and $\mathcal{A}$.
-        However, since many tasks do not involve runtime limits in their configurations, the safety metric is primarily influenced by priority assignments.
-        When $\boldsymbol{\lambda}$ is fixed, the SP metric reduces to a problem similar to classical response time optimization~\cite{Zhao2020AnOF, Wang2023RTAS}.
+		\item The performance metric only depends on the QoS budget $\boldsymbol{\mathcal{Q}}$ and is independent of the priority assignments $\mathcal{A}$.
+		\item The safety metric depends on both $\boldsymbol{\mathcal{Q}}$ and $\mathcal{A}$.
+        However, since not all tasks expose a running-time limit as a tunable QoS budget, the safety metric is primarily influenced by priority assignments.
+        When $\boldsymbol{\mathcal{Q}}$ is fixed, the SP metric reduces to a problem similar to classical response time optimization~\cite{Zhao2020AnOF, Wang2023RTAS}.
 		\item Although not always true, environment often changes smoothly as the robot is moving, and it causes the execution time distributions to vary smoothly.
         Thus, optimal solutions are likely to evolve continuously in some situations.
 	\end{itemize}
     Based on these observations, we propose a divide-and-conquer approach to solve \eqref{eq_overall_obj}.
-    The task configurations $\boldsymbol{\lambda}$ and priority assignments $\mathcal{A}$ are optimized separately and then combined.
+    The QoS budgets $\boldsymbol{\mathcal{Q}}$ and priority assignments $\mathcal{A}$ are optimized separately and then combined.
     While brute-force methods guarantee optimal solutions, their high computational cost makes them unsuitable for online platforms.
     Instead, we trade off optimality for computational efficiency by employing heuristics derived from problem analysis and related literature.
 
