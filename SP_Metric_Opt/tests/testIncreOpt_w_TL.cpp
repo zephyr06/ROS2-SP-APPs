@@ -1280,6 +1280,14 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_FALSE(e.et_jump_short_circuited);
     EXPECT_EQ(0, e.during_walk_reject_count);
     EXPECT_EQ(IntervalFallbackOutcome::BackstopVerdict::kNone, e.backstop_verdict);
+
+    // Walk-stats log mirrors the fallback log's per-dispatch cadence: one entry
+    // per call, indexed by the counter. Interval 1's walk evaluated challengers.
+    ASSERT_EQ(2u, opt.GetIntervalWalkStats().size());
+    EXPECT_EQ(0, opt.GetIntervalWalkStats()[0].interval_idx);
+    EXPECT_EQ(1, opt.GetIntervalWalkStats()[1].interval_idx);
+    EXPECT_GE(opt.GetIntervalWalkStats()[1].evaluated_challenger_count, 1);
+    EXPECT_GE(opt.GetIntervalWalkStats()[1].improving_challenger_count, 0);
 }
 
 // Trigger (a): an ET-jump short-circuits the walk → the entry records
@@ -1342,6 +1350,17 @@ TEST_F(CompareAndKeepSynthetic,
     const auto& e = opt.GetIntervalFallbackLog().back();
     EXPECT_GE(e.during_walk_reject_count, 1);
     EXPECT_FALSE(e.et_jump_short_circuited);  // no ET jump in this run
+
+    // Walk-quality telemetry for the same interval. The walk evaluated several
+    // challengers; at least one improved on the incumbent. Funnel invariant:
+    // evaluated >= improving >= during_walk_reject_count — the gate only runs on
+    // a would-beat (improving), so every reject was first an improving challenger.
+    ASSERT_EQ(opt.GetIntervalWalkStats().size(), opt.GetIntervalFallbackLog().size());
+    const auto& ws = opt.GetIntervalWalkStats().back();
+    EXPECT_GE(ws.evaluated_challenger_count, 1);
+    EXPECT_GE(ws.improving_challenger_count, 1);
+    EXPECT_GE(ws.evaluated_challenger_count, ws.improving_challenger_count);
+    EXPECT_GE(ws.improving_challenger_count, e.during_walk_reject_count);
 }
 
 // Trigger (b-ii): the post-walk backstop ADOPTS the fallback → backstop_verdict
@@ -1487,6 +1506,49 @@ TEST(FormatIntervalFallbackLogCsvTest, MultipleIntervalsEachGetARow) {
     auto row0 = csv.substr(first_nl + 1, csv.find('\n', first_nl + 1) - first_nl - 1);
     EXPECT_EQ("0,false,0,none,,,", row0);
     EXPECT_EQ("1,true,0,none,,,\n", csv.substr(csv.find('\n', first_nl + 1) + 1));
+}
+
+// Walk-quality telemetry (interval_walk_stats.txt). Separate record + CSV from
+// the fallback log: evaluated/improving are walk-exploration metrics, not
+// fallback outcomes. Same shape contract: header + one row per interval.
+TEST(FormatIntervalWalkStatsCsvTest, EmptyLogYieldsHeaderOnly) {
+    std::vector<IntervalWalkStats> log;
+    std::string csv = FormatIntervalWalkStatsCsv(log);
+    EXPECT_EQ("interval_idx,evaluated_challenger_count,improving_challenger_"
+              "count\n",
+              csv);
+}
+
+TEST(FormatIntervalWalkStatsCsvTest, DefaultRowIsZeroEvaluatedZeroImproving) {
+    std::vector<IntervalWalkStats> log;
+    log.push_back(IntervalWalkStats{3});
+    std::string csv = FormatIntervalWalkStatsCsv(log);
+    ASSERT_EQ(2u, std::count(csv.begin(), csv.end(), '\n'));
+    EXPECT_EQ("3,0,0\n", csv.substr(csv.find('\n') + 1));
+}
+
+TEST(FormatIntervalWalkStatsCsvTest, RowCarriesEvaluatedAndImprovingCounts) {
+    std::vector<IntervalWalkStats> log;
+    IntervalWalkStats e{7};
+    e.evaluated_challenger_count = 10;
+    e.improving_challenger_count = 5;
+    log.push_back(e);
+    std::string csv = FormatIntervalWalkStatsCsv(log);
+    EXPECT_EQ("7,10,5\n", csv.substr(csv.find('\n') + 1));
+}
+
+TEST(FormatIntervalWalkStatsCsvTest, MultipleIntervalsEachGetARow) {
+    std::vector<IntervalWalkStats> log;
+    log.push_back(IntervalWalkStats{0});
+    IntervalWalkStats e1{1};
+    e1.evaluated_challenger_count = 4;
+    e1.improving_challenger_count = 2;
+    log.push_back(e1);
+    std::string csv = FormatIntervalWalkStatsCsv(log);
+    auto first_nl = csv.find('\n');
+    auto row0 = csv.substr(first_nl + 1, csv.find('\n', first_nl + 1) - first_nl - 1);
+    EXPECT_EQ("0,0,0", row0);
+    EXPECT_EQ("1,4,2\n", csv.substr(csv.find('\n', first_nl + 1) + 1));
 }
 
 TEST_F(CompareAndKeepSynthetic,

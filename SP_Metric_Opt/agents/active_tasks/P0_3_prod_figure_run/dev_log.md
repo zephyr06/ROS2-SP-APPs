@@ -80,3 +80,139 @@ no label overlap.
 
 Files: `simulation_experiments/aggregate_across_tasks.py`,
 `tests/python/test_aggregate.py`. Not committed (user commits).
+
+## 2026-08-02 — Records sync: P0.3 docs were stalled since 2026-07-24
+
+### Context
+The folder's `goal.md`/`tasks.md` last touched 2026-07-24; substantial work
+landed since (P2.8 scripts/config consolidation, P2.5 `INCR_SCRATCH` removal,
+P0.7/P0.10 fallback commits). This entry records what an audit of the working
+tree found and corrects the docs to match current reality. NO code changed;
+records only.
+
+### Findings (audit of the actual tree)
+1. **Entry point renamed (P2.8).** `run_simulation_and_plot_figures.sh` →
+   `run_simulation_plot_eval_ns.sh`; old name deleted. One `.sh` entry point;
+   experiments differ by `CONFIG_JSON`. Docs referenced the deleted name.
+2. **fig_p25 data source moved.** The standalone
+   `p25periodAB_run_test_dur600_interval10_seed1000_tasks6/` dir the docs
+   pointed at is NOT in the tree. The period figure's data now comes from the
+   prod run's ablation arms `INCR_Reopt_1`/`_10`/`_30`/`_60` (prod simulates
+   all four; `ablation_scheduler_list` carries them).
+3. **Sweep stale-flags crash RESOLVED.** The
+   `interval-sweep-stale-flags-bug` memory (2026-07-04) had
+   `interval_sweep.py` emit `--on_taskset_config_change`/`--run_root` that
+   `compare_optimizers.py` no longer accepted → sweep stage crashed. Audit:
+   `compare_optimizers.py` accepts BOTH flags again (`:505` / `:463`). The
+   `--steps simulate aggregate` workaround is itself gone — stages are
+   fixed-order simulate→sweep→aggregate, no `--steps` override. A failed stage
+   aborts the pipeline (`run_end_to_end_experiments.py:528-531`).
+4. **`normalize_sp: true` is the config default.** Each SP figure emits ONLY
+   the normalized variant; raw SP suppressed as redundant. So the canonical
+   `fig1a`/`fig1f`/`fig_ab_a` stems are the `_normalized` ones, and the "≤ 1.0"
+   verification checks are against those.
+5. **P0.1 dependency RESOLVED** (`7fa2e9d2`, subsumed by P0.5; the
+   inspectability YAML write was discarded by user decision).
+6. **`optimizer_comparison/` absent in clean tree** (created on first run);
+   the old `run_prod_dur600...tasks4x6x8x10x12x14x16x18` run referenced in the
+   goal is gone.
+
+### Doc changes
+- `goal.md`: rewritten — new entry point, fixed-order pipeline stages, the
+  figure→emitted-stem table (normalized variants), P25 data source = ablation
+  arms, out-of-scope note that the stale-flags crash is resolved.
+- `tasks.md`: checklist corrected to match — `release/tests/RunOrchestrator`
+  (not a stale binary), renamed `.sh`, ablation-arm P25 data, the must-have
+  figure stem list.
+- `dev_log.md`: this entry.
+
+### Not started / next
+- The `fig_p25_et_vs_period` generator is STILL NOT IMPLEMENTED (no such
+  function in `aggregate_across_tasks.py` — verified by grep). This remains
+  the open coding task before a prod run can produce all 8 must-have figures.
+- The prod run itself has not been executed under the current tree.
+
+Files: `agents/active_tasks/P0_3_prod_figure_run/{goal,tasks,dev_log}.md`.
+Not committed (user commits).
+
+## 2026-08-02 — REVERT: INCR fallback counters #1 (evaluated) + #3 (improving)
+
+### What happened
+Earlier today the two missing counters were added to
+`IntervalFallbackOutcome` (#1 `evaluated_challenger_count`, #3
+`improving_challenger_count`), instrumented in `UpdateRecords`, and emitted
+in `FormatIntervalFallbackLogCsv`, with a TDD funnel-invariant test
+(#1 ≥ #3 ≥ #4). All staged.
+
+### Why reverted
+User review: #1 (evaluated challengers) and #3 (improving challengers) are
+general optimization-WALK metrics — they describe how the walk explores the
+configuration space, not whether a fall-back trigger fired. Coupling them
+onto `IntervalFallbackOutcome` / `interval_fallback_log_` (which is
+specifically the per-interval record of the three fall-back triggers a/b-i/
+b-ii) was the wrong home. #4 (`during_walk_reject_count`) is a genuine
+fall-back outcome (trigger b-i gate-REJECT), so it stays; #1/#3 are not.
+
+### Reverted
+- `IntervalFallbackOutcome` back to its 7-field shape (no #1/#3).
+- `UpdateRecords` counter block removed; #4 increment in the gate-REJECT
+  branch unchanged.
+- `FormatIntervalFallbackLogCsv` back to the 7-column header/row.
+- Test: removed `FallbackLog_EvaluatedImprovingRejectCountsObeyFunnelInvariant`;
+  the 6 `FormatIntervalFallbackLogCsvTest` cases restored to 7-column shape.
+- Verified: `git diff --cached` empty for
+  `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}` + `tests/testIncreOpt_w_TL.cpp`;
+  no stray `evaluated_challenger_count`/`improving_challenger_count` refs.
+
+### Where #1/#3 belong (NOT done — design open)
+#1/#3 are walk-quality telemetry and should live in a walk-level record, not
+a fall-back record — e.g. a per-dispatch `OptimizationWalkStats` (or per-walk
+counters on the optimizer) emitted separately from the fall-back log. Not
+implemented; awaiting design decision.
+
+## 2026-08-02 — Re-add #1 (evaluated) + #3 (improving) in the correct home: separate walk-stats record + CSV
+
+### Resolution
+User decision: keep the fallback log pure (three triggers only) — #1/#3 go in a
+SEPARATE walk-stats record + CSV, NOT appended to the fallback struct/file.
+
+### What landed
+- NEW struct `IntervalWalkStats { interval_idx, evaluated_challenger_count,
+  improving_challenger_count }` in `OptimizeSP_TL_Incre.h`, sibling to
+  `IntervalFallbackOutcome`. The fallback struct stays at its 7-field shape.
+- NEW `FormatIntervalWalkStatsCsv` (free fn, mirrors the fallback CSV writer)
+  → header `interval_idx,evaluated_challenger_count,improving_challenger_count`.
+- NEW `interval_walk_stats_log_` member + `GetIntervalWalkStats()` getter on
+  `OptimizePA_Incre_with_TimeLimits`; forwarded by `SimulationOrchestrator.h`.
+- Instrumentation in `UpdateRecords`: `evaluated++` at entry (every call),
+  `improving++` when `should_update` (a would-beat). Live interval's record is
+  the back entry — same cadence as `during_walk_reject_count`.
+- Both dispatchers (`Optimize_w_TL_ScratchOrIncre`, `OptimizePureIncremental`)
+  push one `IntervalWalkStats` per call, indexed by `reoptimization_interval_count_`,
+  alongside the fallback-log push.
+- `RunOrchestrator.cpp` writes `interval_walk_stats.txt` (NEW file; separate
+  from `interval_fallback_log.txt`).
+
+### TDD
+- 3 NEW `FormatIntervalWalkStatsCsvTest` cases (empty/header, default-zero row,
+  populated row, multi-interval) — CSV-shape contract, mirrors the fallback suite.
+- Extended `FallbackLog_AppendsOneEntryPerDispatchCallIndexedByCounter` to assert
+  the walk-stats log mirrors the per-dispatch cadence (1 entry/call, indexed).
+- Extended the gate-reject test with the funnel invariant:
+  `evaluated ≥ improving ≥ during_walk_reject_count` (the gate only runs on a
+  would-beat, so every reject was first improving). All three nonzero there.
+- 131/131 `testIncreOpt_w_TL` (was 127; +4 walk-stats tests). 16/17 ctest (sole
+  failure the pre-existing `testScheduleSimulate` CFS, unrelated — shells out to
+  an absent RELEASE binary).
+
+### Note on the prior REVERT
+The REVERT entry above stands as honest history. That round coupled #1/#3 onto
+the fallback struct; this round places them in their own record + CSV. The
+funnel-invariant assertion moved from a standalone test into the gate-reject
+scenario (where it's actually exercised).
+
+Files: `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`,
+`sources/RTDA/ImplicitCommunication/SimulationOrchestrator.h`,
+`tests/RunOrchestrator.cpp`, `tests/testIncreOpt_w_TL.cpp`. Not committed (user
+commits).
+

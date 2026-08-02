@@ -100,6 +100,12 @@ public:
         return incr_optimizer_.GetIntervalFallbackLog();
     }
 
+    // Walk-quality telemetry (evaluated/improving challenger counts). Empty for
+    // modes that don't route through the INCR dispatchers.
+    const std::vector<IntervalWalkStats>& GetIntervalWalkStats() const {
+        return incr_optimizer_.GetIntervalWalkStats();
+    }
+
 protected:
     // P0.6 — test access to the persistent optimizer (the fallback lives on it).
     const OptimizePA_Incre_with_TimeLimits& GetIncrOptimizer() const {

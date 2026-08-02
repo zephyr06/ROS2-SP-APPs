@@ -181,6 +181,17 @@ std::string FormatIntervalFallbackLogCsv(
     return out.str();
 }
 
+std::string FormatIntervalWalkStatsCsv(
+    const std::vector<IntervalWalkStats>& log) {
+    std::ostringstream out;
+    out << "interval_idx,evaluated_challenger_count,improving_challenger_count\n";
+    for (const IntervalWalkStats& e : log) {
+        out << e.interval_idx << "," << e.evaluated_challenger_count << ","
+            << e.improving_challenger_count << "\n";
+    }
+    return out.str();
+}
+
 bool OptimizePA_Incre_with_TimeLimits::WouldBeatIncumbent(
     double challenger_sp, const std::vector<double>& time_limits) const {
     // Strictly-greater SP beats; an approx-equal SP tie beats only when the
@@ -209,6 +220,16 @@ bool OptimizePA_Incre_with_TimeLimits::WouldBeatIncumbent(
 bool OptimizePA_Incre_with_TimeLimits::UpdateRecords(
     const OptimizePA_Incre& optimizer, const std::vector<double>& time_limits) {
     bool should_update = WouldBeatIncumbent(optimizer.opt_sp_, time_limits);
+
+    // Walk-quality telemetry: every call = one evaluated challenger; a would-beat
+    // = one improving challenger. Recorded on the live interval's back entry
+    // (pushed at dispatch entry), same cadence as the fallback reject count.
+    if (!interval_walk_stats_log_.empty()) {
+        interval_walk_stats_log_.back().evaluated_challenger_count++;
+        if (should_update) {
+            interval_walk_stats_log_.back().improving_challenger_count++;
+        }
+    }
 
     // Feasibility gate (P0.7 trigger b-i): on a would-beat, commit only if every
     // important task's ddl_miss_chance ≤ threshold. The cache-backed RTA path runs
@@ -715,6 +736,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::Optimize_w_TL_ScratchOrIncre(
     // dispatch call). interval_idx is the counter BEFORE this call advances it.
     interval_fallback_log_.push_back(
         IntervalFallbackOutcome{reoptimization_interval_count_});
+    interval_walk_stats_log_.push_back(
+        IntervalWalkStats{reoptimization_interval_count_});
 
     // P0.7 trigger (a): an ET-jump (any task's avg ET >= 1.5x the saved old dag)
     // short-circuits the walk — adopt the precomputed safe fallback directly.
@@ -798,6 +821,8 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizePureIncremental(
     // dispatch call). interval_idx is the counter BEFORE this call advances it.
     interval_fallback_log_.push_back(
         IntervalFallbackOutcome{reoptimization_interval_count_});
+    interval_walk_stats_log_.push_back(
+        IntervalWalkStats{reoptimization_interval_count_});
     // P0.7 trigger (a): an ET-jump short-circuits the walk (same contract as
     // Optimize_w_TL_ScratchOrIncre). Runs before AbsorbUpdatedDAG; on a trip the
     // safe fallback is adopted directly under the absorbed current dag. Gated by

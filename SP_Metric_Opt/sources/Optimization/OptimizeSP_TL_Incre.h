@@ -71,6 +71,25 @@ struct IntervalFallbackOutcome {
 std::string FormatIntervalFallbackLogCsv(
     const std::vector<IntervalFallbackOutcome>& log);
 
+// Walk-quality telemetry per dispatch call (one entry per interval). NOT a
+// fallback outcome — these describe how the optimization walk explores config
+// space, independent of whether any fall-back trigger fired. Kept in a separate
+// record + CSV so the fallback log stays pure (the three triggers only).
+//   evaluated_challenger_count = every UpdateRecords call this interval (each
+//     challenger the walk scored and judged vs the incumbent).
+//   improving_challenger_count = the subset that WouldBeatIncumbent (strictly
+//     better SP, or approx-equal SP with smaller total TL).
+struct IntervalWalkStats {
+    int interval_idx = -1;
+    int evaluated_challenger_count = 0;
+    int improving_challenger_count = 0;
+};
+
+// Serialize the per-interval walk-stats log to the CSV written to
+// interval_walk_stats.txt. Header row + one row per interval.
+std::string FormatIntervalWalkStatsCsv(
+    const std::vector<IntervalWalkStats>& log);
+
 struct HashKey4Vector {
     std::size_t operator()(const std::vector<double>& v) const {
         std::size_t seed = v.size();
@@ -371,6 +390,12 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
         return interval_fallback_log_;
     }
 
+    // Walk-quality telemetry (evaluated/improving challenger counts). One entry
+    // per dispatch call; RunOrchestrator writes interval_walk_stats.txt.
+    const std::vector<IntervalWalkStats>& GetIntervalWalkStats() const {
+        return interval_walk_stats_log_;
+    }
+
     // P0.7 step 2c — post-walk schedulability backstop (D7 overturn). After the
     // walk finishes on its own, run `ImportantTasksMeetThresholds` on the FINAL
     // `res_opt_`; if it FAILS → `AdoptSafeFallbackAsIncumbent` (the walk's result
@@ -453,6 +478,9 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     // interval's record (the dispatchers + UpdateRecords + AdoptFallbackIfUnschedulable
     // write to it).
     std::vector<IntervalFallbackOutcome> interval_fallback_log_;
+    // Walk-quality telemetry (one entry per dispatch call, same cadence as
+    // interval_fallback_log_). UpdateRecords writes to the back entry.
+    std::vector<IntervalWalkStats> interval_walk_stats_log_;
 };
 
 inline PriorityVec PerformOptimizePA_Incre_w_TimeLimits(

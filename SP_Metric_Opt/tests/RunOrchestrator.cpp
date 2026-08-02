@@ -236,6 +236,18 @@ int main(int argc, char** argv) {
         fallback_log_file.close();
     }
 
+    // Walk-quality telemetry (evaluated/improving challenger counts per
+    // interval). Separate file from the fallback log — these are walk metrics,
+    // not fallback outcomes. CSV is built by FormatIntervalWalkStatsCsv.
+    const auto& walk_stats = orchestrator.GetIntervalWalkStats();
+    std::string walk_stats_path =
+        output_folder + "/" + mode + "/interval_walk_stats.txt";
+    std::ofstream walk_stats_file(walk_stats_path);
+    if (walk_stats_file.is_open()) {
+        walk_stats_file << FormatIntervalWalkStatsCsv(walk_stats);
+        walk_stats_file.close();
+    }
+
     const auto& metrics = orchestrator.GetIntervalSPMetrics();
     if (!metrics.empty()) {
         double sum = std::accumulate(metrics.begin(), metrics.end(), 0.0);
