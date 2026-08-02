@@ -4,8 +4,10 @@
 #include <vector>
 
 #include "gmock/gmock.h"  // Brings in gMock.
+#include "sources/Optimization/OptimizeFallback.h"
 #include "sources/Optimization/OptimizeSP_BF.h"
 #include "sources/Optimization/OptimizeSP_TL_Incre.h"
+#include "sources/Optimization/PriorityBuilders.h"
 #include "sources/Safety_Performance_Metric/Probability.h"
 #include "sources/TaskModel/RegularTasks.h"
 #include "sources/Utils/Parameters.h"
@@ -1580,6 +1582,142 @@ TEST(DeadlineMonotonicPriorityVec, BreaksDeadlineTiesByExecutionTimeAscending) {
     EXPECT_EQ(1, pa[0]);  // important, deadline 100, ET 10 — lower ET beats T0
     EXPECT_EQ(0, pa[1]);  // important, deadline 100, ET 30
     EXPECT_EQ(2, pa[2]);  // non-important, deadline 100
+}
+
+// P0.10: BF's fallback plan — RM-Fast group-locked {pa, tl}. Same group-lock
+// shape as P0.9's DeadlineMonotonicPriorityVec but period-keyed (RM, not DM),
+// with the "fast" TL (smallest grid option, else -1.0) like DM_FAST. A free fn
+// over DAG_Model (BF has no optimizer instance). These tests build tasksets where
+// the group lock forces a divergence from plain period-sort.
+
+TEST(RateMonotonicFastGroupLocked, RanksImportantGroupFirstThenRmOrdersEach) {
+    // RM + important-first group lock. Important tasks must occupy the TOP slots
+    // (the lock), RM-ordered (period asc) within the important group; non-important
+    // fill the bottom, RM-ordered within their group. Constructed so plain period
+    // sort would scramble the lock (an important task has the longest period).
+    //
+    //   idx  period  deadline  is_important  ET
+    //   0    100      90       YES           10
+    //   1    200     180       YES           10   (longest period, but important)
+    //   2     80     120       no            10
+    //   3     50      60       no            10   (shortest period overall, but
+    //                                            non-important → must NOT jump
+    //                                            above the important group)
+    //
+    // Expected [important, period asc] ++ [non-important, period asc]:
+    //   T0 (p 100) < T1 (p 200)  |  T3 (p 50) < T2 (p 80)
+    //   → pa = [0, 1, 3, 2]
+    // Plain RM (period asc, no lock) would give [3, 2, 0, 1] — wrong on the lock.
+    std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
+    Task t0(0, d, 100, 90, 0, "T0");
+    Task t1(1, d, 200, 180, 1, "T1");
+    Task t2(2, d, 80, 120, 2, "T2");
+    Task t3(3, d, 50, 60, 3, "T3");
+    t0.is_important = true;
+    t1.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1, t2, t3};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+
+    ResourceOptResult res = RateMonotonicFastGroupLocked(dag);
+    ASSERT_EQ(4u, res.priority_vec.size());
+    EXPECT_EQ(0, res.priority_vec[0]);  // important group, period 100
+    EXPECT_EQ(1, res.priority_vec[1]);  // important group, period 200
+    EXPECT_EQ(3, res.priority_vec[2]);  // non-important group, period 50
+    EXPECT_EQ(2, res.priority_vec[3]);  // non-important group, period 80
+}
+
+TEST(RateMonotonicFastGroupLocked, BreaksPeriodTiesByExecutionTimeAscending) {
+    // Within a group, equal-period ties break by avg ET ascending (deterministic;
+    // same tie-break as P0.9's DM builder). Two important tasks share period 100
+    // but differ in ET: T1 (ET 10) must rank above T0 (ET 30). T2 (non-important,
+    // period 100) stays below both regardless of ET (group lock).
+    std::vector<Value_Proba> d0 = {Value_Proba(30.0, 1.0)};
+    std::vector<Value_Proba> d1 = {Value_Proba(10.0, 1.0)};
+    std::vector<Value_Proba> d2 = {Value_Proba(50.0, 1.0)};
+    Task t0(0, d0, 100, 100, 0, "T0");
+    Task t1(1, d1, 100, 100, 1, "T1");
+    Task t2(2, d2, 200, 100, 2, "T2");
+    t0.is_important = true;
+    t1.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1, t2};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+
+    ResourceOptResult res = RateMonotonicFastGroupLocked(dag);
+    ASSERT_EQ(3u, res.priority_vec.size());
+    EXPECT_EQ(1, res.priority_vec[0]);  // important, period 100, ET 10
+    EXPECT_EQ(0, res.priority_vec[1]);  // important, period 100, ET 30
+    EXPECT_EQ(2, res.priority_vec[2]);  // non-important, period 200
+}
+
+TEST(RateMonotonicFastGroupLocked, TimeLimitIsSmallestGridOrMinusOne) {
+    // "Fast" TL = timePerformancePairs[0].time_limit (smallest grid option) for
+    // tasks with a perf grid, else -1.0 (no grid). Mirrors DM_FAST's TL loop.
+    std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
+    Task t0(0, d, 100, 90, 0, "T0");
+    Task t1(1, d, 200, 180, 1, "T1");
+    t0.is_important = true;
+    // t0 has a perf grid; t1 has none → -1.0.
+    t0.timePerformancePairs = {TimePerfPair{50.0, 1.0}, TimePerfPair{90.0, 0.9}};
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+
+    ResourceOptResult res = RateMonotonicFastGroupLocked(dag);
+    EXPECT_EQ(50.0, res.id2time_limit[0]);  // smallest grid option
+    EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[1]);  // no grid
+}
+
+// BuildPriorityPlan is the shared shape behind BF's DM modes (DM/DM_FAST/DM_SLOW,
+// inline in SimulationOrchestrator) and the RM-Fast fallback. These cover configs
+// the RM-Fast tests don't: deadline key + no group lock (the BF DM modes), and the
+// largest-grid TL policy (DM_SLOW).
+
+TEST(BuildPriorityPlan, DeadlineKeyNoLockOrdersByDeadline) {
+    // DM shape (no group lock): sort by deadline asc only. The important flag is
+    // IGNORED here (kNone lock) — a non-important task with the shortest deadline
+    // ranks first. Ties broken by avg ET ascending.
+    //   idx  deadline  period  is_important  ET
+    //   0     90       100     YES           10
+    //   1     60       200     no            10   (shortest deadline → first,
+    //                                              despite non-important)
+    //   2     90       100     no            30   (deadline-ties T0; ET 30 > 10)
+    std::vector<Value_Proba> d0 = {Value_Proba(10.0, 1.0)};
+    std::vector<Value_Proba> d1 = {Value_Proba(10.0, 1.0)};
+    std::vector<Value_Proba> d2 = {Value_Proba(30.0, 1.0)};
+    Task t0(0, d0, 100, 90, 0, "T0");
+    Task t1(1, d1, 200, 60, 1, "T1");
+    Task t2(2, d2, 100, 90, 2, "T2");
+    t0.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1, t2};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+
+    ResourceOptResult res = BuildPriorityPlan(
+        dag, {SortKey::kDeadline, GroupLock::kNone, TimeLimitPolicy::kNone});
+    ASSERT_EQ(3u, res.priority_vec.size());
+    EXPECT_EQ(1, res.priority_vec[0]);  // deadline 60
+    EXPECT_EQ(0, res.priority_vec[1]);  // deadline 90, ET 10 (tiebreak)
+    EXPECT_EQ(2, res.priority_vec[2]);  // deadline 90, ET 30
+    EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[0]);  // kNone TL
+}
+
+TEST(BuildPriorityPlan, LargestGridPolicyPicksBackPair) {
+    // DM_SLOW shape: largest-grid TL = timePerformancePairs.back().time_limit.
+    // T0's grid is {50, 90} → 90 (the back). T1 has no grid → -1.0.
+    std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
+    Task t0(0, d, 100, 90, 0, "T0");
+    Task t1(1, d, 200, 180, 1, "T1");
+    t0.timePerformancePairs = {TimePerfPair{50.0, 1.0}, TimePerfPair{90.0, 0.9}};
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+
+    ResourceOptResult res = BuildPriorityPlan(
+        dag, {SortKey::kDeadline, GroupLock::kNone, TimeLimitPolicy::kLargestGrid});
+    EXPECT_EQ(90.0, res.id2time_limit[0]);  // back grid option
+    EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[1]);  // no grid
 }
 
 TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {

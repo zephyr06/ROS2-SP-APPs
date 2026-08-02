@@ -257,3 +257,22 @@
   consistency with P0.6 verified during P2.17 — both gates read the same global-max
   WCETs and AGREE on the reject tasksets; no D2 tightening needed. Folder →
   `finished_tasks/`.
+- **2026-08-01 — P0.10 §1 LANDED (TDD).** RM-Fast group-locked `{pa,tl}` builder
+  `RateMonotonicFastGroupLocked(const DAG_Model&) -> ResourceOptResult` in NEW TU
+  `sources/Optimization/OptimizeFallback.{h,cpp}` (the dedicated fallback TU per
+  D1; existing-code migration is a later commit). Free fn — BF has no optimizer
+  instance. Mirrors P0.9's `DeadlineMonotonicPriorityVec` group-lock shape +
+  `DM_FAST`'s fast-TL loop, period-keyed (RM not DM): important-first lock →
+  period asc within group → avg-ET tiebreak; TL = smallest grid option else -1.0.
+  3 TDD tests red→green; `testIncreOpt_w_TL` 119/119 (was 116); 16/17 ctest (sole
+  failure pre-existing `CFS_RunOrchestrator_Binary`). Sequencing concern resolved
+  (P0.7 committed, `OptimizeSP_TL_Incre` clean at HEAD). NEXT = §2 BF gate+swap.
+- **2026-08-01 — P0.10 §1b LANDED (TDD).** Extracted the shared "sort indices →
+  fill {priority_vec, id2time_limit}" shape (behind `RateMonotonicFastGroupLocked`
+  AND BF's inline DM/DM_FAST/DM_SLOW modes) into `BuildPriorityPlan(dag, config)`
+  + `PriorityBuilderConfig` (`SortKey`/`GroupLock`/`TimeLimitPolicy`) in NEW TU
+  `sources/Optimization/PriorityBuilders.{h,cpp}`. Rewrote `RateMonotonicFastGroupLocked`
+  as a 3-line delegate `{kPeriod, kImportantFirst, kSmallestGrid}` (3 existing
+  tests = regression net). 2 new `BuildPriorityPlan` tests (DM shape + DM_SLOW
+  largest-grid); `testIncreOpt_w_TL` 121/121 (was 119). Inline DM-mode unification
+  + D1 fall-back-code migration = later commits. NEXT = §2 BF gate+swap.
