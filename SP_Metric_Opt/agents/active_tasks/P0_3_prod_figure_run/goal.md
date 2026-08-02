@@ -46,7 +46,7 @@ against those.
 | `fig_ab_b` | `fig_ablation_mean_exec_time_vs_tasks` | `aggregate_across_tasks.py` |
 | `fig2` | `fig2_sp_vs_interval` (+ `_normalized`) | `interval_sweep.py` |
 | `fig3` | `fig3_important_task_miss_rate` | `aggregate_across_tasks.py` |
-| `fig_fallback_rejection_ratio` | **NOT YET IMPLEMENTED** | new generator (see below) |
+| `fig_fallback_rejection_ratio` | `fig_fallback_rejection_ratio` | `aggregate_across_tasks.py` (built 2026-08-02; reader + generator) |
 | `fig_p25_et_vs_period` | **DEFERRED → P3** (not this cycle) | spec parked in a future P3 `optional_figures` task |
 
 Debug figures (keep code, don't polish): `fig1b`, `fig1d`, `fig1e`, `fig3b`.
@@ -77,16 +77,24 @@ counters across intervals per (taskset, scheduler), then averages the ratio
 across tasksets at each N → records of {num_tasks, scheduler, mean_ratio,
 std_ratio}.
 
-Generator to add in `aggregate_across_tasks.py`:
-- NEW reader: walk `taskset_*/<sched>/<sched>/interval_{fallback_log,walk_stats}.txt`.
-- NEW `generate_fig_fallback_rejection_ratio(records)` → x=num_tasks, y=ratio,
-  one line per scheduler; reuse `build_line_chart` + `save_figure` (PNG+PDF).
-- Wire into `main()` after the existing generators (sequential-call pattern).
-- Unit test in `tests/python/test_aggregate.py` (mock data): assert PNG+PDF
-  non-empty + ratio ∈ [0,1] + funnel invariant holds.
+Generator (BUILT 2026-08-02 in `aggregate_across_tasks.py`, staged):
+- `aggregate_fallback_ratio_from_directories(cfg, run_root)` — walks
+  `<run_root>/sim/tasks{N}_.../taskset_{t}/{sched}/{sched}/interval_{fallback_log,walk_stats}.txt`,
+  sums both counters across intervals per (taskset, scheduler), averages the
+  ratio across tasksets at each N → records of {num_tasks, scheduler,
+  mean_ratio, std_ratio}. Tasksets with `improving==0` are skipped (undefined
+  ratio); header-only non-INCR schedulers (no dispatch calls) drop out.
+- `generate_fig_fallback_rejection_ratio(records, cfg, figures_dir)` → x=num_tasks,
+  y=mean_ratio, one line per scheduler; reuses `build_line_chart` + `save_figure`
+  (PNG+PDF); y-axis clamped to [0,1] via a new `build_line_chart(ylim=...)` param.
+- Wired into `main()` after `generate_important_task_miss_rate_figure`.
+- `TestFallbackRejectionRatio` (7 cases) in `tests/python/test_aggregate.py`;
+  48/48 `test_aggregate` green.
 
 Depends on the staged-but-uncommitted `interval_walk_stats.txt` walk-quality
-counters (#1/#3); that work lands first, then the reader consumes it.
+counters (#1/#3); the reader consumes that file once landed. On a run produced
+before that commit, `interval_walk_stats.txt` is absent → reader returns `[]`
+→ generator no-ops with a "no records" message (graceful, non-fatal).
 
 ## The P25 period figure — DEFERRED → P3 (not this cycle)
 

@@ -19,15 +19,15 @@
 - [ ] Reuse `compute_sp_upper_bound` for normalization
 - [ ] Unit test the generator with mock data (assert PNG+PDF non-empty)
 
-## New fallback-rejection-ratio figure generator (KEEP & BUILD this cycle)
+## New fallback-rejection-ratio figure generator (BUILD — DONE 2026-08-02, staged)
 > `ratio = during_walk_reject_count / improving_challenger_count` ∈ [0,1] vs N.
 > Justifies the P0.7 fallback gate's cost. `comparison_summary.csv` does NOT
 > aggregate these counters → needs a NEW per-interval-log reader. Depends on the
 > staged `interval_walk_stats.txt` counters landing first.
-- [ ] NEW aggregation reader: walk `taskset_*/<sched>/<sched>/interval_{fallback_log,walk_stats}.txt`, sum `during_walk_reject_count` + `improving_challenger_count` across intervals per (taskset, scheduler), average the ratio across tasksets at each N
-- [ ] Add `generate_fig_fallback_rejection_ratio(records)` to `aggregate_across_tasks.py` (x=num_tasks, y=ratio, one line per scheduler; reuse `build_line_chart` + `save_figure`; skip when `improving==0`)
-- [ ] Wire into `main()` after the existing generators (sequential-call pattern)
-- [ ] Unit test in `tests/python/test_aggregate.py` (mock data): assert PNG+PDF non-empty + ratio ∈ [0,1] + funnel invariant `evaluated ≥ improving ≥ during_walk_reject`
+- [x] NEW aggregation reader `aggregate_fallback_ratio_from_directories`: walks `<run_root>/sim/tasks{N}_.../taskset_{t}/{sched}/{sched}/interval_{fallback_log,walk_stats}.txt`, sums `during_walk_reject_count` + `improving_challenger_count` across intervals per (taskset, scheduler), averages the ratio across tasksets at each N; skips tasksets with `improving==0` (undefined ratio); header-only non-INCR schedulers drop out naturally
+- [x] `generate_fig_fallback_rejection_ratio(records, cfg, figures_dir)` in `aggregate_across_tasks.py` (x=num_tasks, y=mean_ratio, one line per scheduler; reuses `build_line_chart` + `save_figure`; y-axis clamped to [0,1] via new `build_line_chart(ylim=...)` param)
+- [x] Wired into `main()` after `generate_important_task_miss_rate_figure` (sequential-call pattern; builds its own records from `run_root` since `comparison_summary.csv` lacks these counters)
+- [x] Unit test `TestFallbackRejectionRatio` in `tests/python/test_aggregate.py` (7 cases): reader sums/averages, skips `improving==0`, funnel invariant + ratio ∈ [0,1], header-only non-INCR handled, missing-files empty, generator saves PNG+PDF, y-axis clamped to [0,1]. 48/48 `test_aggregate` green.
 
 ## Run the prod pipeline
 - [ ] Confirm `release/tests/RunOrchestrator` exists (built fresh by the `.sh` build stage; do NOT rely on a stale binary)

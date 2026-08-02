@@ -446,6 +446,95 @@ def aggregate_data_from_directories(cfg=None, output_parent=None):
     return records
 
 
+def aggregate_fallback_ratio_from_directories(cfg, run_root):
+    """Sum the per-interval fall-back counters into one ratio per (N, scheduler).
+
+    For each taskset under ``<run_root>/sim/tasks{N}_.../taskset_{t}/{sched}/{sched}/``,
+    reads ``interval_fallback_log.txt`` (column ``during_walk_reject_count``,
+    trigger b-i) and ``interval_walk_stats.txt`` (column
+    ``improving_challenger_count``), sums each across intervals, and forms the
+    per-taskset ratio ``during_walk_reject / improving``. The ratio is undefined
+    when no improving challenger was found (``improving == 0``); such tasksets
+    are skipped. Ratios are then averaged across tasksets at each task count.
+
+    Non-INCR schedulers write header-only logs (no dispatch calls), so they
+    naturally contribute no improving challengers and drop out.
+
+    Returns
+    -------
+    list[dict]
+        Each dict: ``num_tasks``, ``scheduler``, ``mean_ratio``, ``std_ratio``.
+        ``std_ratio`` is the population std across tasksets at that N.
+    """
+    sim_dir = os.path.join(run_root, "sim")
+    if not os.path.isdir(sim_dir):
+        return []
+
+    # (num_tasks, scheduler) -> list of per-taskset ratios.
+    ratios_by_key = {}
+
+    for entry in os.listdir(sim_dir):
+        exp_path = os.path.join(sim_dir, entry)
+        if not os.path.isdir(exp_path):
+            continue
+        num_tasks = parse_task_count_from_dir_name(entry)
+        if num_tasks is None:
+            continue
+
+        for ts_name in os.listdir(exp_path):
+            ts_dir = os.path.join(exp_path, ts_name)
+            if not os.path.isdir(ts_dir):
+                continue
+            for sched in os.listdir(ts_dir):
+                sched_dir = os.path.join(ts_dir, sched, sched)
+                if not os.path.isdir(sched_dir):
+                    continue
+                reject_sum = _sum_csv_column(
+                    os.path.join(sched_dir, "interval_fallback_log.txt"),
+                    "during_walk_reject_count",
+                )
+                improving_sum = _sum_csv_column(
+                    os.path.join(sched_dir, "interval_walk_stats.txt"),
+                    "improving_challenger_count",
+                )
+                if improving_sum == 0:
+                    continue  # ratio undefined; skip this taskset/scheduler
+                ratio = reject_sum / improving_sum
+                ratios_by_key.setdefault((num_tasks, sched), []).append(ratio)
+
+    records = []
+    for (num_tasks, sched), ratios in ratios_by_key.items():
+        arr = np.array(ratios, dtype=float)
+        records.append({
+            "num_tasks": num_tasks,
+            "scheduler": sched,
+            "mean_ratio": float(arr.mean()),
+            "std_ratio": float(arr.std()),
+        })
+    records.sort(key=lambda r: (r["num_tasks"], r["scheduler"]))
+    return records
+
+
+def _sum_csv_column(path, column_name):
+    """Sum one integer CSV column, tolerating a missing file or header-only file."""
+    if not os.path.isfile(path):
+        return 0
+    total = 0
+    with open(path, newline="") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None or column_name not in reader.fieldnames:
+            return 0
+        for row in reader:
+            val = row.get(column_name, "")
+            if val == "":
+                continue
+            try:
+                total += int(val)
+            except ValueError:
+                continue
+    return total
+
+
 def build_line_chart(
     records,
     scheduler_list,
@@ -456,6 +545,7 @@ def build_line_chart(
     output_stem,
     figsize=FIGSIZE_GROUPED,
     log_y=False,
+    ylim=None,
 ):
     """Generate a multi-line chart from aggregate records.
 
@@ -493,6 +583,10 @@ def build_line_chart(
         / 0.02 / 0.05 / 0.1``) without the labels overlapping into an
         unreadable wall of numbers. Labelling every sub-decade (2x..9x) was tried
         and overlapped; only the two well-spaced 2x/5x ticks are kept.
+    ylim : tuple(float, float) | None
+        Optional fixed y-axis limits ``(vmin, vmax)``. Use for metrics with a
+        bounded domain (e.g. a ratio in [0, 1]) so the frame reads cleanly
+        regardless of how small the observed values are. ``None`` autoscales.
     """
     if not MATPLOTLIB_AVAILABLE:
         print("matplotlib not available; skipping figure generation.")
@@ -572,6 +666,9 @@ def build_line_chart(
             )
         ax.grid(which="minor", axis="y", linestyle=":", alpha=0.3)
         ax.grid(which="major", axis="y", linestyle="--", alpha=0.5)
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
     plt.tight_layout()
     save_figure(fig, output_stem)
@@ -734,6 +831,35 @@ def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
     plt.tight_layout()
     save_figure(fig, os.path.join(figures_dir, "fig3b_non_important_task_miss_rate"))
     plt.close(fig)
+
+
+def generate_fig_fallback_rejection_ratio(records, cfg, figures_dir=None):
+    """Fig: fraction of SP-improving challengers the during-walk gate rejected vs N.
+
+    ``ratio = during_walk_reject_count / improving_challenger_count`` in [0, 1]
+    -- of every challenger that would beat the incumbent on SP, the share the
+    important-task gate (P0.7 trigger b-i) had to veto. Quantifies the fall-back
+    gate's cost; pairs with the P0.7 A/B SP penalty. One line per scheduler.
+    """
+    if not MATPLOTLIB_AVAILABLE:
+        print("matplotlib not available; skipping fallback-rejection-ratio figure.")
+        return
+    if not records:
+        print("No fallback-ratio records; skipping fallback-rejection-ratio figure.")
+        return
+    scheduler_list = cfg.get("main_scheduler_list", [])
+    figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
+
+    build_line_chart(
+        records,
+        scheduler_list=scheduler_list,
+        metric_key="mean_ratio",
+        std_key="std_ratio",
+        ylabel="Fallback Rejection Ratio",
+        title="Fraction of SP-Improving Challengers Rejected by the Gate",
+        output_stem=os.path.join(figures_dir, "fig_fallback_rejection_ratio"),
+        ylim=(0.0, 1.0),
+    )
 
 
 def generate_ablation_group_figures(records, cfg, figures_dir=None):
@@ -1048,6 +1174,13 @@ def main():
 
     print("Generating Fig 3: Important-Task Miss Rate ...")
     generate_important_task_miss_rate_figure(records, cfg, figures_dir=figures_dir)
+
+    # fig_fallback_rejection_ratio reads the per-interval counter logs directly
+    # (comparison_summary.csv does not aggregate them), so it builds its own
+    # records from the run's sim/ tree.
+    print("Generating fallback-rejection-ratio figure ...")
+    ratio_records = aggregate_fallback_ratio_from_directories(cfg, run_root)
+    generate_fig_fallback_rejection_ratio(ratio_records, cfg, figures_dir=figures_dir)
 
     print(f"\nAll figures saved to: {figures_dir}")
 

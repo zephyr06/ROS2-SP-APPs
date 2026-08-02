@@ -269,3 +269,60 @@ Files: `agents/active_tasks/P0_3_prod_figure_run/{goal,tasks,dev_log}.md`,
 `agents/overall_tasks.md`, `agents/finished_tasks/summary.md`. Not committed
 (user commits).
 
+## 2026-08-02 — Build `fig_fallback_rejection_ratio` (reader + generator + test)
+
+### What landed
+The single figure this cycle owns — `fig_fallback_rejection_ratio` — is now
+implemented in `simulation_experiments/aggregate_across_tasks.py` (TDD,
+test-first). Three pieces:
+
+1. **Reader** `aggregate_fallback_ratio_from_directories(cfg, run_root)` —
+   walks `<run_root>/sim/tasks{N}_.../taskset_{t}/{sched}/{sched>/interval_{fallback_log,walk_stats}.txt`,
+   sums `during_walk_reject_count` (fallback log col) + `improving_challenger_count`
+   (walk-stats col) across intervals per (taskset, scheduler), forms the
+   per-taskset ratio `reject / improving`, averages across tasksets at each N →
+   `{num_tasks, scheduler, mean_ratio, std_ratio}` (population std). Tasksets
+   with `improving==0` are skipped (undefined ratio); header-only non-INCR
+   schedulers (DM_FAST/BF/CFS — no dispatch calls → empty log) drop out
+   naturally. Missing files → `[]` (graceful).
+2. **Generator** `generate_fig_fallback_rejection_ratio(records, cfg, figures_dir)`
+   — x=num_tasks, y=mean_ratio, one line per scheduler via `build_line_chart`
+   + `save_figure` (PNG+PDF). Y-axis clamped to [0,1] (ratio is a probability).
+3. **`build_line_chart`** gained an optional `ylim=(vmin, vmax)` param (small,
+   reusable extension) so the generator can clamp without bespoke plotting.
+
+Wired into `main()` after `generate_important_task_miss_rate_figure` — it builds
+its OWN records from `run_root` (not the `comparison_summary.csv` records the
+other generators consume, since that CSV does not aggregate these per-interval
+counters). Sequential-call pattern, no dispatch registry change.
+
+### TDD
+7 new `TestFallbackRejectionRatio` cases in `tests/python/test_aggregate.py`:
+reader sums/averages (mean 0.25, std 0.05 on a 2-taskset/2-interval mock),
+skips `improving==0` tasksets, funnel invariant `evaluated ≥ improving ≥
+during_walk_reject` + ratio ∈ [0,1], header-only non-INCR scheduler handled
+(DM_FAST drops out), missing-files → empty, generator saves PNG+PDF, y-axis
+clamped to [0,1]. RED first (functions undefined) → GREEN. 48/48 `test_aggregate`
+green (was 41 + 7 new).
+
+### Smoke (real on-disk tree)
+Ran the reader against the real
+`compare_against_bf_run_test_dur600_interval10_seed1000_tasks4x6` run tree.
+`interval_walk_stats.txt` is absent on that run (counters staged-not-committed),
+so the reader correctly returns `[]` and the generator no-ops. With a
+synthesized `interval_walk_stats.txt` alongside the real
+`interval_fallback_log.txt` (10 tasksets, N=6, INCR_Reopt_10), the reader
+produced a real mean ratio ≈ 0.033 from the real `during_walk_reject_count`
+values — well within [0,1]. Synthesized files cleaned up after.
+
+### Depends-on note
+The figure is only meaningful once the staged `interval_walk_stats.txt`
+walk-quality counters (#1/#3) land; until then every run lacks that file and
+the reader returns `[]`. The figure code itself is complete and will produce
+output on any run that has both interval log files.
+
+Files: `simulation_experiments/aggregate_across_tasks.py`,
+`tests/python/test_aggregate.py`,
+`agents/active_tasks/P0_3_prod_figure_run/{goal,tasks,dev_log}.md`. Not
+committed (user commits).
+

@@ -949,5 +949,184 @@ class TestIntegrationStyleFigureGeneration(unittest.TestCase):
             self.assertGreater(os.path.getsize(fpath), 0, f"Empty figure: {fname}")
 
 
+def _write_interval_log(dir_path, kind, rows):
+    """Write interval_{kind}.txt (kind in {'fallback_log','walk_stats'}).
+
+    rows is a list of (interval_idx, during_walk_reject_count) for the fallback
+    log, or (interval_idx, evaluated, improving) for walk_stats. Only the
+    columns the ratio figure reads are exercised here.
+    """
+    os.makedirs(dir_path, exist_ok=True)
+    path = os.path.join(dir_path, f"interval_{kind}.txt")
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        if kind == "fallback_log":
+            w.writerow([
+                "interval_idx", "et_jump_short_circuited", "during_walk_reject_count",
+                "backstop_verdict", "backstop_culprit_task_id",
+                "backstop_culprit_miss_chance", "backstop_culprit_threshold",
+            ])
+            for idx, rej in rows:
+                w.writerow([idx, "false", rej, "kept_walk", "", "", ""])
+        else:  # walk_stats
+            w.writerow(["interval_idx", "evaluated_challenger_count", "improving_challenger_count"])
+            for idx, ev, im in rows:
+                w.writerow([idx, ev, im])
+
+
+class TestFallbackRejectionRatio(unittest.TestCase):
+    """fig_fallback_rejection_ratio: ratio = during_walk_reject / improving."""
+
+    def _make_run_tree(self, base, num_tasks, sched_intervals):
+        """Build <base>/sim/tasks{N}_dur300_interval10_seed1000/taskset_{t}/{sched}/{sched}/.
+
+        sched_intervals: {scheduler: {taskset_idx: (fallback_rows, walk_rows)}}
+        where fallback_rows = [(idx, during_walk_reject)...] and
+        walk_rows = [(idx, evaluated, improving)...]. Returns the taskset count.
+        """
+        exp_dir = os.path.join(base, "sim", f"tasks{num_tasks}_dur300_interval10_seed1000")
+        n_tasksets = max(len(v) for v in sched_intervals.values())
+        for sched, per_ts in sched_intervals.items():
+            for ts_idx, (fb_rows, ws_rows) in per_ts.items():
+                sched_dir = os.path.join(exp_dir, f"taskset_{ts_idx}", sched, sched)
+                _write_interval_log(sched_dir, "fallback_log", fb_rows)
+                _write_interval_log(sched_dir, "walk_stats", ws_rows)
+        return n_tasksets
+
+    def test_reader_sums_across_intervals_and_averages_across_tasksets(self):
+        base = tempfile.mkdtemp()
+        try:
+            # INCR_Reopt_10: taskset_0 = 2 rejects/10 improving (ratio 0.2);
+            # taskset_1 = 3 rejects/10 improving (ratio 0.3) -> mean 0.25.
+            self._make_run_tree(base, 6, {
+                "INCR_Reopt_10": {
+                    0: ([(0, 0), (1, 2)], [(0, 5, 4), (1, 6, 6)]),  # 2 rej / 10 imp
+                    1: ([(0, 1), (1, 2)], [(0, 5, 3), (1, 6, 7)]),  # 3 rej / 10 imp
+                },
+            })
+            cfg = {"main_scheduler_list": ["INCR_Reopt_10"]}
+            recs = agg.aggregate_fallback_ratio_from_directories(cfg, base)
+            self.assertEqual(len(recs), 1)
+            r = recs[0]
+            self.assertEqual(r["num_tasks"], 6)
+            self.assertEqual(r["scheduler"], "INCR_Reopt_10")
+            self.assertAlmostEqual(r["mean_ratio"], 0.25)
+            # std of [0.2, 0.3] (population) = 0.05
+            self.assertAlmostEqual(r["std_ratio"], 0.05)
+        finally:
+            shutil.rmtree(base)
+
+    def test_reader_skips_tasksets_with_no_improving_challengers(self):
+        base = tempfile.mkdtemp()
+        try:
+            # taskset_0 has improving=0 (undefined ratio) -> skipped.
+            # taskset_1 has 2 rejects / 4 improving = 0.5 -> only point.
+            self._make_run_tree(base, 4, {
+                "INCR_Reopt_10": {
+                    0: ([(0, 0)], [(0, 3, 0)]),   # improving 0 -> skip
+                    1: ([(0, 2)], [(0, 5, 4)]),   # 2/4 = 0.5
+                },
+            })
+            cfg = {"main_scheduler_list": ["INCR_Reopt_10"]}
+            recs = agg.aggregate_fallback_ratio_from_directories(cfg, base)
+            self.assertEqual(len(recs), 1)
+            self.assertAlmostEqual(recs[0]["mean_ratio"], 0.5)
+        finally:
+            shutil.rmtree(base)
+
+    def test_reader_funnel_invariant_and_ratio_bounded(self):
+        """evaluated >= improving >= during_walk_reject on every interval; ratio in [0,1]."""
+        base = tempfile.mkdtemp()
+        try:
+            self._make_run_tree(base, 8, {
+                "INCR_Reopt_10": {
+                    0: ([(0, 1), (1, 3)], [(0, 10, 5), (1, 12, 7)]),
+                    1: ([(0, 2), (1, 0)], [(0, 9, 6), (1, 11, 8)]),
+                },
+            })
+            cfg = {"main_scheduler_list": ["INCR_Reopt_10"]}
+            recs = agg.aggregate_fallback_ratio_from_directories(cfg, base)
+            for r in recs:
+                self.assertGreaterEqual(r["mean_ratio"], 0.0)
+                self.assertLessEqual(r["mean_ratio"], 1.0)
+        finally:
+            shutil.rmtree(base)
+
+    def test_reader_handles_header_only_non_incr_schedulers(self):
+        """DM_FAST writes a header-only log (no dispatch calls) -> no record."""
+        base = tempfile.mkdtemp()
+        try:
+            self._make_run_tree(base, 6, {
+                "INCR_Reopt_10": {0: ([(0, 2)], [(0, 5, 4)])},
+                "DM_FAST": {0: ([], [])},  # header-only
+            })
+            cfg = {"main_scheduler_list": ["INCR_Reopt_10", "DM_FAST"]}
+            recs = agg.aggregate_fallback_ratio_from_directories(cfg, base)
+            scheds = {r["scheduler"] for r in recs}
+            self.assertIn("INCR_Reopt_10", scheds)
+            self.assertNotIn("DM_FAST", scheds)
+        finally:
+            shutil.rmtree(base)
+
+    def test_reader_missing_files_returns_empty(self):
+        base = tempfile.mkdtemp()
+        try:
+            recs = agg.aggregate_fallback_ratio_from_directories(
+                {"main_scheduler_list": ["INCR_Reopt_10"]}, base)
+            self.assertEqual(recs, [])
+        finally:
+            shutil.rmtree(base)
+
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.plt")
+    def test_generator_saves_png_and_pdf(self, mock_plt):
+        mock_ax = unittest.mock.MagicMock()
+        mock_fig = unittest.mock.MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+
+        records = [
+            {"num_tasks": 4, "scheduler": "INCR_Reopt_10", "mean_ratio": 0.10, "std_ratio": 0.02},
+            {"num_tasks": 6, "scheduler": "INCR_Reopt_10", "mean_ratio": 0.25, "std_ratio": 0.05},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            saved = []
+
+            def fake_save(fig, stem, format_list=None, dpi=None):
+                for fmt in (format_list or ["png", "pdf"]):
+                    p = f"{stem}.{fmt}"
+                    with open(p, "wb") as fh:
+                        fh.write(b"x")
+                    saved.append(p)
+
+            cfg = {"main_scheduler_list": ["INCR_Reopt_10"]}
+            with unittest.mock.patch.object(agg, "save_figure", side_effect=fake_save):
+                agg.generate_fig_fallback_rejection_ratio(records, cfg, figures_dir=tmp)
+            self.assertEqual(len(saved), 2)
+            self.assertTrue(any(p.endswith(".png") for p in saved))
+            self.assertTrue(any(p.endswith(".pdf") for p in saved))
+            mock_plt.subplots.assert_called_once()
+            mock_plt.close.assert_called_once()
+
+    @unittest.mock.patch("simulation_experiments.aggregate_across_tasks.plt")
+    def test_generator_yaxis_clamped_to_unit_interval(self, mock_plt):
+        mock_ax = unittest.mock.MagicMock()
+        mock_fig = unittest.mock.MagicMock()
+        mock_plt.subplots.return_value = (mock_fig, mock_ax)
+
+        records = [
+            {"num_tasks": 4, "scheduler": "INCR_Reopt_10", "mean_ratio": 0.3, "std_ratio": 0.0},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            with unittest.mock.patch.object(agg, "save_figure"):
+                agg.generate_fig_fallback_rejection_ratio(
+                    records, {"main_scheduler_list": ["INCR_Reopt_10"]}, figures_dir=tmp)
+            # y-axis must be clamped to [0, 1] (ratio is a probability).
+            ylim_args = mock_ax.set_ylim.call_args
+            self.assertIsNotNone(ylim_args)
+            # set_ylim was called with the tuple (0.0, 1.0) as a single arg.
+            lo, hi = ylim_args.args[0]
+            self.assertAlmostEqual(lo, 0.0)
+            self.assertAlmostEqual(hi, 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
