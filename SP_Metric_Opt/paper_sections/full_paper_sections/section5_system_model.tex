@@ -19,7 +19,7 @@ Deadline                                                              & $D_i$   
 Priority                                                              & $P_i$           \\
 \begin{tabular}[c]{@{}l@{}}Response Time Probability Distribution of $\tau_i$  \end{tabular} & $\rtDist{i}$           \\
 Scalar Response Time Value                                                         & $r_i$   \\
-Task's configuration                                                  & $\lambda_i$     \\
+QoS budget                                                  & $\mathcal{Q}_i$     \\
 Task's deadline miss threshold                                        & $\Theta_i$      \\
 Task's importance                                                     & $w_i$           \\  \midrule
 Scheduling Algorithm                                                  & $\mathcal{A}$   \\
@@ -45,9 +45,9 @@ Probability Distribution & $\mathcal{D}$ \\
 	
 	Most robotic tasks are modeled as periodic tasks\footnote{Tasks with non-constant periods, called sporadic tasks, have a minimum arrival interval between successive executions. These sporadic tasks are often treated as periodic tasks during schedulability analysis to simplify the modeling process} $\tau$. 
     We use $\boldsymbol{\tau}$ to denote the task set under consideration, $\tau_i$ to denote the \ith{i} task.
-    Each task $\tau_i$ is characterized by five parameters: probability distribution of execution time $\extDist{i}$, period $T_i$, deadline $D_i$, and its run-time configurations $\lambda_i$:
+    Each task $\tau_i$ is characterized by five parameters: probability distribution of execution time $\extDist{i}$, period $T_i$, deadline $D_i$, and its Quality-of-Service (QoS) budget $\mathcal{Q}_i$:
 	\begin{equation}
-		\tau_i: [\extDist{i}, T_i, D_i, \lambda_i] 
+		\tau_i: [\extDist{i}, T_i, D_i, \mathcal{Q}_i]
 		\label{eq_notation_task}
 	\end{equation}
 	
@@ -77,15 +77,18 @@ Probability Distribution & $\mathcal{D}$ \\
 	However, the propsoed system also works well for systems with other deadlien configurations.
 	
 	
-	\begin{definition}[Task configurations, $\lambda_i$]
+	\begin{definition}[QoS budget, $\mathcal{Q}_i$]
 		\label{def_task_config}
-		A task $\tau_i$'s configuration $\lambda_i$ includes the parameters that influence the tasks' execution time distribution and output quality.
+		A task $\tau_i$'s Quality-of-Service (QoS) budget $\mathcal{Q}_i$ is the parameter that influences the task's execution time distribution and output quality.
+		For anytime algorithms, the QoS budget is the maximum execution-time limit allocated to the algorithm: a larger budget yields a higher-quality output (and a longer execution time).
 	\end{definition}
 	
-	For example, some tasks such as motion planning may adopt a searching-based algorithm, which often takes the running time limits as one configuration parameter.
-	The running time limits influence both the execution time distribution and the task's output quality (longer time limits mean higher output quality).
-	In this paper, we focus on the running time limit because it is related to both the performance and safety of a task.
-	However, other parameters can be incorporated into our framework in a similar way.
+	For example, motion planning may adopt a searching-based anytime algorithm, which takes the running-time limit as its QoS budget: a larger budget lets the search find a higher-quality plan (and runs longer).
+	
+	Only anytime algorithms have a QoS budgets. Tasks where each invocation terminates on its own independent of computation budgets do not have a QoS budget and therefore do not involve QoS optimization.
+	
+	In this paper, we focus on the running-time limit as the QoS budget because it governs both the performance and safety of a task.
+	Other parameters can be incorporated into our framework in a similar way.
 	
 	
 \begin{figure*}[htbp]
@@ -99,9 +102,9 @@ Probability Distribution & $\mathcal{D}$ \\
 	
 	\subsection{Computation Platform}
 	\label{section_rta_distribution}
-    This paper adopts a computation platform that is common in practice and the literature~\cite{Ash23RAL, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO}.
+    This paper uses a widely-adopted computation platform configurations~\cite{Ash23RAL, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO}.
 	The computation platform is modelled as a multi-core system where each task is assigned to a known core using partitioned scheduling~\cite{Buttazzo2011HardRC}.
-	Disabling task migration reduces scheduling overheads and provides more predictable response time~\cite{Brandenburg2016GlobalSN}.
+	The system disables task migration to reduce scheduling overheads and provides more predictable response time~\cite{Brandenburg2016GlobalSN}.
     Each task is assigned a unique priority $P_i$, which could change from time to time based on scheduling algorithms.
     Under preemptive scheduling, higher-priority tasks could preempt lower-priority tasks when high-priority tasks become ready, which are paused and resumed later.
     In this paper, we focus on soft real-time systems, where tasks that miss deadlines by small margins can still contribute to system functionality.
@@ -116,21 +119,24 @@ Probability Distribution & $\mathcal{D}$ \\
 	\subsection{Schedulability Analysis}
 	\label{sectino_schedulability_analysis}
 
-    \textit{Schedulability} determines whether all tasks can meet their deadlines under a given scheduling algorithm.
+    \textit{Schedulability} determines whether all tasks can meet their deadline requirements under a given scheduling algorithm.
     There are two types of schedulability: \textit{Hard} Schedulability, where all tasks must always finish before their deadlines;
     \textit{Soft} Schedulability, where the probability of any task missing its deadline is below a given threshold (some papers may use a slightly different definition).
-    This paper focuses on soft schedulability because it is not only more general than hard schedulability, but also more practical for robotic systems and balances resource constraints with system performance.
+    
+	This paper focuses on soft schedulability because it is not only more general than hard schedulability, but also more practical for robotic systems and balances resource constraints with system performance.
     
 	
-	Response time analysis is one of the most well-studied methods to analyze schedulability:
+	Response time analysis (RTA) is one of the most well-studied methods to analyze schedulability:
 	\begin{definition}[Response time $r_i$]
 		A task $\tau_i$'s response time $r_i$ includes its execution time $\extDist{i}$ and the time that it waits to obtain the required computation resources (\eg being preempted).
 	\end{definition}
-	Considering the random nature of execution, analyzing the probability distribution of response time is more reliable:
+	Considering the random nature of execution, using a probability distribution rather than a single worst-case value to quantify the response time is more accurate and less pessimistic:
 	\begin{definition}[Response time distribution $\rtDist{i}$]
 		A task $\tau_i$'s response time distribution $\rtDist{i} = \{r_i^{(k)}: p_i^{(k)}\}$ is a discrete probability distribution of $k$ items, where each item describes that the probability of having response time as $r_i^{(k)}$ is $p_i^{(k)}$.
 	\end{definition}
     
-	Response time distribution can be obtained either experimentally or analytically. The analytical methods are much faster and simpler than the experimental methods but are also more pessimistic. Section~\ref{section_rta} introduces the two analytical methods.
+	Response time distribution can be obtained either experimentally or analytically. 
+	The analytical methods are much faster and simpler than the experimental methods but are also more pessimistic. 
+	Check Section~\ref{section_rta} for more details.
 	
 	
