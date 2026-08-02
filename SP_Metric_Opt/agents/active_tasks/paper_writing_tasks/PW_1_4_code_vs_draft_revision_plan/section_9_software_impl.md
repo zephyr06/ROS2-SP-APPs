@@ -41,6 +41,14 @@ offline `OptimizeIncre_w_TL_UntilConvergence` loop.
   `OptimizeIncre_w_TL_UntilConvergence` loop (offline ONLY) refines the seed.
   Forward-link to the new important-task-guarantee subsection (PW.3). See
   `sketch_fallback.md`.
+- **QoS reframe (content change 6):** the TSP task description
+  (`section_generate_tsp_perf`, `:76-78`, `:120-153`, Table `table_tsp_perf`)
+  frames the running-time limit as a configurable optimization variable. Reframe
+  it as the TSP anytime algorithm's **QoS budget** (longer budget ⇒ shorter path
+  ⇒ higher quality, per the anytime property). This is the concrete QoS instance
+  the abstract/§8/§6.7 all reference. Symbol rename `\lambda`→`\mathcal{Q}` if
+  any λ appears in this block (check `:130-153`); most of §9 uses "running time
+  limit" prose, so the reframe is mostly terminological.
 
 ## Ryan Cat-1
 

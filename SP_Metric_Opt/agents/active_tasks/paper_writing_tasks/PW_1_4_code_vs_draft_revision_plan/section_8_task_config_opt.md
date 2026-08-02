@@ -15,6 +15,18 @@ the patience-bounded outward coordinate descent the code actually runs; the
 `\agent` algorithm note must be promoted to body prose; and the 1-task-ET-diff
 property must be stated (not proven as a theorem).
 
+**QoS reframe (content change 6) — §8 is heavily affected:** the section title
+("Task configuration Optimization"), the lede ("task configuration parameters"),
+`eq: incremental_configuration` (`\boldsymbol{\lambda}` / `\lambda^{(k)}`), the
+TSP Example ("running time limit options"), and the coordinate-descent
+`\agent` note ("execution time limit configuration `\boldsymbol{\lambda}^{(0)}`")
+all reframe to **QoS budget** language with symbol `\boldsymbol{\mathcal{Q}}` /
+`\mathcal{Q}_i` / `\boldsymbol{\mathcal{Q}}^{(k)}`. The TSP anytime algorithm's
+running-time limit IS the QoS budget (longer budget ⇒ better solution quality) —
+use it as the concrete QoS instance. Equation structure unchanged; only the
+glyph λ→𝒬 changes. Renames also hit `eq: incremental_configuration` (26) and the
+coordinate-descent prose (37-49).
+
 ## Subsection rows
 
 ### §8 lede + env-task reframing — DRIFT → implement `\sen` directive (content change 3)

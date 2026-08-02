@@ -73,3 +73,12 @@ heuristic.
   handling).
 - **Ryan:** (indirect) 1.4 assumptions/regimes — the incremental premise is
   empirical, state so.
+
+## QoS reframe note (content change 6)
+
+§7.1 (`section7_pa_opt.tex:16`) says "we assume that task configurations
+`$\configs$` are fixed." Under the QoS reframe + symbol rename: the prose
+becomes "QoS budgets `$\boldsymbol{\mathcal{Q}}$` are fixed," and the undefined
+`\configs` macro is replaced (or defined as `\boldsymbol{\mathcal{Q}}`). No
+equation change in §7. The `$\configs$` uses at 16 (and the §6.7 itemize rows
+that parallel it) are the only §7 touchpoints.

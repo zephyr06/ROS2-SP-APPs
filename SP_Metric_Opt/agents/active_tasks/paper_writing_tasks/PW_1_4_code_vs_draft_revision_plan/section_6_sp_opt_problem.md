@@ -6,11 +6,11 @@
 ## High-level change
 
 §6 is the densest revision target: GP example + RTA defs + Normalize + benefits
-claim all need work, AND framework/important-task material must be added. Four of
-the five cross-cutting conventions converge here: GP removal (6.1), dynamic env
+claim all need work, AND framework/important-task material must be added. Five of
+the six cross-cutting conventions converge here: GP removal (6.1), dynamic env
 (6.1, 6.9), framework update + important-task guarantee (6.7), Θ_i Option A
-(6.3). Most Ryan 1.2 math fixes land here, though several are already fixed
-(VERIFY). Θ-table drift is in §12, NOT §6.
+(6.3), QoS reframe (6.4, 6.7). Most Ryan 1.2 math fixes land here, though
+several are already fixed (VERIFY). Θ-table drift is in §12, NOT §6.
 
 ## Subsection rows
 
@@ -79,6 +79,11 @@ the five cross-cutting conventions converge here: GP removal (6.1), dynamic env
   error). Matches.
 - **action:** **VERIFY** — no drift. Optional minor: tie to perf-WCET =
   execution_time_mu decision (P0.8) if performance/ET coupling is mentioned. Low.
+- **QoS reframe (content change 6):** the "Task Configurations (Parameters like
+  runtime limits …)" parenthetical at 149 → reframe as the task's **QoS
+  parameters**, with the running-time budget as the concrete QoS knob.
+  **Symbol rename:** `\boldsymbol{\lambda}` → `\boldsymbol{\mathcal{Q}}` here and
+  throughout §6 (see §6.7).
 
 ### §6.5 SP-Metric — VERIFY (Ryan 1.2 already fixed) + FIX (Example 2 ref)
 - **label `eq_sp_def`** (150), `fig_sp_threshold` (181).
@@ -133,6 +138,13 @@ the five cross-cutting conventions converge here: GP removal (6.1), dynamic env
   important-task guarantee is *self-guaranteed*, so §6.7 framing should state it
   as a built-in constraint, not a conditional claim). Links to new guarantee
   subsection.
+- **QoS reframe (content change 6):** rename the optimization variable symbol in
+  `eq_overall_obj` (245) and `eq_prob_rta_in_opt` (249) —
+  `\boldsymbol{\lambda}` → `\boldsymbol{\mathcal{Q}}`, `\lambda_i` →
+  `\mathcal{Q}_i`. Reframe the prose (259-260 "task configurations … running time
+  limits", 271, 285-288, 293) to describe λ as the **QoS budget** vector of the
+  anytime algorithms. Equation structure unchanged. Symbol defined in §5
+  `def_task_config` + notation table.
 
 ### §6.8 Challenges of SP-metric optimization — VERIFY (minor ADD)
 - **draft claim** (237-244): mixed combinatorial+continuous vars; complicated

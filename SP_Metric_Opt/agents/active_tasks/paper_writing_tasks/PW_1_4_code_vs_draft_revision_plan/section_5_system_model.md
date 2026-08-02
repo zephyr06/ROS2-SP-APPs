@@ -30,6 +30,13 @@ I escape bug (`:12`, Ryan 1.1) if the notation table lives here.
   `\ith{i}` instead of "i-th".
 - **VERIFY** soft-schedulability definition (`:104-105`) is consistent with
   Option A (`Pr(r_i>D_i)≤Θ_i`), not a "meets deadline %" reading.
+- **QoS reframe + symbol rename (content change 6 — §5 is the canonical site):**
+  notation-table row 22 `Task's configuration & $\lambda_i$` →
+  `QoS budget & $\mathcal{Q}_i$`; `def_task_config:80-83` (label, def text, the
+  `$\lambda_i$` in the def header); `eq_notation_task:50` (`\lambda_i` →
+  `\mathcal{Q}_i`); prose 48 ("run-time configurations $\lambda_i$"), 85-87
+  ("running time limits" → reframe as QoS budget of the anytime algorithm).
+  §5 owns the definition every other section references.
 
 ## Ryan Cat-1
 

@@ -56,6 +56,26 @@
    (§12): the experiment table gives the most critical task (MPC) the *largest* Θ
    (0.99) — the reverse of Option A. If inverting the table numbers is required, a
    re-run is needed; PW.4 owns the check.
+6. **QoS reframe of the optimization variables (content change 6).** Reframe the
+   task-configuration optimization variables — currently called "task
+   configurations / running time limits" — as classical **Quality of Service (QoS)
+   parameters**, and **rename the symbol** from `\lambda_i` / `\boldsymbol{\lambda}`
+   to `\mathcal{Q}_i` / `\boldsymbol{\mathcal{Q}}` ("QoS budget"). The underlying
+   math is unchanged: the equations (`eq_overall_obj`, `eq_prob_rta_in_opt`,
+   `eq: incremental_configuration`, `eq_notation_task`) keep their structure, only
+   the symbol glyph changes; we still optimize anytime algorithms' execution-time
+   limits / budgets. Apply wherever λ / "task configuration" / "running time limit"
+   is named: **§5** (notation-table row 22 `Task's configuration & $\lambda_i$` →
+   `QoS budget & $\mathcal{Q}_i$`; `eq_notation_task:50`; `def_task_config:80-83`;
+   prose 48, 85-87), **§6.4** (perf-metric "Task Configurations" parenthetical at
+   `def_perf_metric`/149), **§6.7** (opt-problem λ prose at 259-260, 271, 285-288,
+   293 + eqs `eq_overall_obj`/`eq_prob_rta_in_opt`), **§7.1** (`$\configs$ are
+   fixed`), **§8** (section title, lede, TSP Example, coordinate descent,
+   `eq: incremental_configuration`), **§9** (TSP anytime algorithm,
+   `section_generate_tsp_perf`). The undefined `\configs` macro (renders as literal
+   "configs") is in scope: replace its uses with `\boldsymbol{\mathcal{Q}}` (or
+   define `\configs` as that). Note: this is a **content change** (symbol glyph
+   change), so it lands in the *step-2 content commit*, NOT the step-1 reflow.
 
 ## Section index
 
