@@ -8,6 +8,18 @@
 
 ## 2026-08-02
 
+- **PW.1.4 revision_plan.md — methodology slice §6–8 DONE** (T-ASE revision). Row-per-subsection
+  edit plan (draft-claim → code-reality → action + Ryan Cat-1 mapping) for PW.3/PW.4 to execute
+  row-by-row. §6–8 (primary, highest-drift) complete; §1–5/9–16 (secondary) next. Key findings:
+  no monolithic `main.tex` (thin `\input` shell → plan uses label locators, not Ryan's stale
+  line numbers); draft edited post-review so several Cat-1.2 items already fixed (marked
+  VERIFY). §6: GP Example+`eq:gpr_predict1`→sliding-window+Gaussian-fit REPLACE; RTA hp(i)→strict
+  +init+C_i FIX; Normalize() FIX; "0.9⇒both≥0.9" FIX (false for weighted sum); §6.3 already
+  Option A (Θ-table drift is in §12, not §6). §7: Algorithm 1 pseudocode FIX (pool-shrink,
+  copy-before-push, SelectTop obj, "Optimal"→"Selected") + soften "provably optimal"; ADD DM
+  seed. §8 (most stale): `\sen` env-task reframing REWRITE; `‖λ−λ^(k)‖≤δ`/δ-radius REPLACE with
+  patience-bounded full-grid coordinate descent (δ-radius STALE); PROMOTE `\agent` note to body;
+  1-task-ET-diff = stated property (RTA-cache |diff|>1 throw), NOT a theorem.
 - **PW.1.1–PW.1.3 grounding sketches DONE** (T-ASE revision). Three code-read slices
   → `sketch_foundations` / `sketch_optimization` / `sketch_fallback.md`. No code
   changes; nothing committed; PW.1.4 (revision plan) unblocked. Findings: **Θ_i =

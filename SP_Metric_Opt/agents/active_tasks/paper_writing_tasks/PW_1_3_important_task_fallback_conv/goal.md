@@ -1,7 +1,7 @@
 # PW.1.3 — Important-Task Safe Fallback & Offline Convergence Loop
 
 **Priority:** P0 (grounding — third slice of the code read)
-**Status:** not started
+**Status:** done — `sketch_fallback.md` written; guarantee found to be SELF-guaranteed (not conditional); §13.3/§11 draft drift flagged
 **Depends on:** —
 
 ## Goal

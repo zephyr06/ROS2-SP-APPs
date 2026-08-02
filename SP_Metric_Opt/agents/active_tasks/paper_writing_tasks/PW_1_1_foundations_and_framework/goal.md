@@ -1,7 +1,7 @@
 # PW.1.1 — Foundations & Framework (SP / pRTA / RTA cache / dynamic environment)
 
 **Priority:** P0 (grounding — first slice of the code read)
-**Status:** not started
+**Status:** done — `sketch_foundations.md` written; Θ_i convention resolved → Option A
 **Depends on:** —
 
 ## Goal

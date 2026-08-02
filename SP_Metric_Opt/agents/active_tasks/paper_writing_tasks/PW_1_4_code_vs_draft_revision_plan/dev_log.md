@@ -13,3 +13,45 @@
   `revision_plan.md` (row-per-subsection: draft-claim → code-reality → action).
   Content layer; PW.2 remains the structural layer (cross-linked, not
   duplicated).
+- Started `revision_plan.md`. Wrote header + cross-cutting conventions (5: GP removal,
+  dynamic/continuous env, framework update, important-task guarantee, Θ_i Option A) +
+  the **methodology slice §6–§8** (primary, highest-drift). Row per subsection with
+  draft-claim → code-reality → action + Ryan Cat-1 mapping.
+- **Structural facts established**: (1) NO monolithic `main.tex` — it's a thin `\input`
+  shell (`full_paper_sections/main.tex`); Ryan's `main.tex:NNN` line numbers are stale
+  (former monolithic file) → plan uses content/label locators (e.g. `eq:gpr_predict1`,
+  `alg:modified_audsley`), not line numbers. (2) Draft was edited AFTER Ryan's review →
+  several Cat-1.2 items already fixed → plan marks FIX vs VERIFY (not blind transcription).
+- **§6 findings**: §6.1 GP Example + `eq:gpr_predict1` REPLACE (sliding-window + Gaussian-fit);
+  §6.2 RTA FIX hp(i)→strict + init+C_i (Ryan 1.2); §6.3 safety already Option A (VERIFY) +
+  FIX Normalize() (Ryan 1.2); §6.5 SP-eq + Example 2 already fixed (VERIFY); §6.6 FIX
+  "0.9⇒both≥0.9" (false for weighted sum, Ryan 1.2); §6.7 ADD framework + guarantee pointer;
+  §6.9 FIX smoothness premise → per-interval-ET-change. Θ-table drift is in §12, NOT §6.
+- **§7 findings**: §7.1 BF VERIFY (BF legitimately "optimal"); §7.2 FIX Algorithm 1
+  pseudocode (pool-shrink, copy-before-push, SelectTop objective, "Optimal"→"Selected",
+  lowest-priority-first convention — Ryan 1.2) + soften "provably optimal" (1.4); §7.3 FIX
+  smoothness + ADD DM seed + important-first group lock.
+- **§8 findings (MOST STALE)**: lede REWRITE to implement `\sen` env-task reframing (content
+  change 3); `eq: incremental_configuration` `‖λ−λ^(k)‖≤δ` + δ=150 Example REPLACE with
+  patience-bounded outward coordinate descent over full grid (δ-radius is STALE,
+  `RecordCloseTimeLimitOptions` only in tests); PROMOTE `\agent` coordinate-descent note to
+  body (matches code: weight-desc/deadline-asc/ID-asc ordering, O(M^N)→O(M·N));
+  RESOLVE 1-task-ET-diff as **stated property** backed by RTA-cache single-change invariant
+  (`RTA_Cache.cpp:358` throws on |diff|>1), NOT a formal theorem (PW.1.2 recommendation).
+- NEXT (after /compact): secondary slice §1–5, 9–16. §1/§2/abstract GP + headline + "first
+  work"; §9 DM building + fallback + UntilConvergence + Ryan 1.3 RRT; §11 GPR + polar footnote;
+  §12 Θ-table inversion (Option A) + covariance (Ryan 1.3); §16 guarantee wording.
+- **2026-08-02 (cont.) — split into per-section files per user request.** Decomposed the
+  monolithic `revision_plan.md` into one `section_{n}_{desc}.md` per included section +
+  a thin `overall_revision_plan.md` master. Skipped §1/§2/§16 per user (their Cat-1 items
+  still captured in the master's coverage map so nothing is dropped). The detailed §6/§7/§8
+  row-by-row content was relocated (lightly compressed) into `section_6/7/8_*.md` with a
+  High-level-change header per file. §3/§4/§5/§9/§10/§11/§12/§13/§14/§15 got high-level
+  change descriptions grounded against the actual `.tex` (Θ-table MPC=0.99 inversion
+  confirmed in `section12:29-32`; §13.3 conditional-guarantee drift confirmed at
+  `:72-83`; covariance PSD bug confirmed at `section14:30-32,45`; `\agent` INCR_WCET note
+  in `section15:15`), each marked "high-level pending row-by-row" with the gating items
+  flagged (Θ-table decision → re-run; covariance fix → re-run; §13.3/§11 guarantee
+  rewrite). Master holds: how-to-read, 5 cross-cutting conventions, section index table,
+  Ryan Cat-1 coverage map, skipped-sections note. Monolithic `revision_plan.md` deleted
+  (content fully redistributed).

@@ -1,7 +1,7 @@
 # PW.1.2 — Priority Assignment & Task-Config (TL) Optimization
 
 **Priority:** P0 (grounding — second slice of the code read)
-**Status:** not started
+**Status:** done — `sketch_optimization.md` written; `‖λ−λ^(k)‖≤δ`/3-candidates found STALE (patience-bounded walk); 1-task-ET-diff → stated property
 **Depends on:** —
 
 ## Goal
