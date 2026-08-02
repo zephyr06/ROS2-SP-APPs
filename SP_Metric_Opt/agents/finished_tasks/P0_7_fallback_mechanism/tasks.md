@@ -1,5 +1,13 @@
 # P0.7 — Tasks (working checklist)
 
+> **STATUS: CLOSED 2026-08-02.** All three triggers + refactor committed
+> (`c87ae0d4`…`1ef3c26c`…`aefed906`/`f371c543`). 17/17 ctest; `enable_fallback_use_`
+> default ON (= final prod state). A/B measurement (N=[4,6], 10 tasksets, dur=600)
+> = ≈1% SP penalty at both N (prod 0.7673/0.9220 vs `INCR_NO_FALLBACK`
+> 0.7742/0.9298); mechanism demonstrably fires (b-i: 25/59 rejects, b-ii: 6/6
+> `adopted_fallback`; trigger (a): 1/0). N=8 skipped per user (N=6 post-P2.18
+> clean). Folder → `finished_tasks/`. Code COMPLETE; closed.
+
 > See `goal.md` for the two-trigger design + budget asymmetry. Depends on P0.6
 > (`safe_fallback_`, worst-case-DAG → cross-interval safe) + P0.8. D1–D5 resolved
 > 2026-07-27; **D6 + D7 OVERTURNED 2026-07-31** (reject-and-continue, not halt;
@@ -58,8 +66,10 @@
 - [x] ET-bracket reframed: both run INSIDE (trigger (a) needs internal `dag_tasks_`;
       backstop is part of the scheduler decision). (a) skips walk on trip (reduces time);
       backstop adds one RTA eval only when it fires.
-- [ ] Confirm `scheduler_execution_time.txt` vs P0.6 baseline (expect small prod-arm rise;
-      measurement arm matches P0.6).
+- [x] Confirm `scheduler_execution_time.txt` vs P0.6 baseline. N=[4,6] A/B (dur=600,
+      10 tasksets): prod `Mean_Scheduler_Execution_Time_s` 0.00299 (N=4) / 0.00174
+      (N=6) vs `INCR_NO_FALLBACK` 0.00246 / 0.00134 — sub-ms rise vs the no-fallback
+      arm, consistent with the gate adding one RTA eval only when it fires.
 
 ## 4. Mode gating (D5) + logging — LANDED
 - [x] D5 VERIFIED by construction (triggers only in INCR dispatchers; orchestrator routes
@@ -106,11 +116,15 @@
       landed); full N=[4,6,8] A/B re-run waits on its commit. Crashed N=6/N=8 artifacts
       cleared; N=4 data point kept at
       `runs/measure_p07_.../sim/tasks4_.../comparison_summary.csv`. Flag default stays ON.
-- [ ] `dev_log.md` (this folder + top-level) + memory updated.
+- [x] `dev_log.md` (this folder + top-level) + memory updated.
 - [x] `git add` staged; user reviews (no commit). — COMMITTED: Step 2 `a8148dc7`,
       Step 3 configs/records `1ef3c26c` (2026-08-01).
 - [x] `enable_fallback_use_` default ON (= final prod state).
-- [ ] **Full N=[4,6,8] re-run BLOCKED by P2.18** (NOT P2.17 — P2.17 committed
-      `aefed906` + working; the re-run surfaced a DISTINCT P0.7-gate crash: the
-      gate arms the RTA cache mid from-scratch beam → `|diff|>1` throw in
-      `SeedBaselineAndArmCache:532`. See P2.18). Fix P2.18 first, then re-run.
+- [x] **Full N=[4,6] A/B re-run DONE** (P2.18 blocker fixed `f371c543`). 10 tasksets,
+      dur=600 (`compare_against_bf_run_test_dur600_interval10_seed1000_tasks4x6`):
+      prod SP 0.7673 (N=4) / 0.9220 (N=6) vs `INCR_NO_FALLBACK` 0.7742 / 0.9298
+      = ≈1% SP penalty at both N. Mechanism fires: b-i 25/59 during-walk rejects,
+      b-ii 6/6 `adopted_fallback` backstop adopts; trigger (a) 1/0. N=6 clean
+      post-P2.18 (was SIGABRT pre-`f371c543`). **N=8 SKIPPED per user** (N=6 clean
+      + consistent ≈1% penalty judged sufficient; config caps at N=6). Flag default
+      stays ON.

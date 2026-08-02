@@ -1,5 +1,12 @@
 # P0.10 — Tasks (working checklist)
 
+> **STATUS: CLOSED 2026-08-02.** Code committed `2f6c7c4c` (§1+§1b) + `02f3c8fd`
+> (§2, final placement in `OptimizePA_with_TimeLimitsStatus::Optimize()`).
+> 125/125 `testIncreOpt_w_TL`; legacy BF `testOptimizePA`/`testBF_w_TL`/`testBFRTimeout`
+> green; 16/17 ctest (sole failure pre-existing CFS). Deferred to later refactor
+> commits: D1 migration (existing fall-back code out of `OptimizeSP_TL_Incre`) +
+> inline DM-mode unification. Folder → `finished_tasks/`.
+
 > See `goal.md` for the design (BF gate on important-task schedulability; on
 > fail → RM-Fast important + RM-Fast non-important, group-locked like P0.9 but
 > period-keyed + fast min-grid TL). Depends on P0.8 (gate + `is_important`),
@@ -20,7 +27,7 @@
       fails throw (P0.8 certificate violation; loud not silent).
 - [x] **D3 — No standalone `RM_FAST` mode.** Internal BF-branch swap only.
 
-## 0a. Sequencing (open — awaiting user)
+## 0a. Sequencing — RESOLVED (P0.7 committed first, as recommended)
 - [x] Decide: commit P0.7 Groups B/C/D FIRST (so the D1 migration doesn't
       restructure files the user is mid-reviewing), THEN migration, THEN P0.10
       builder+gate. RECOMMENDED. — RESOLVED 2026-08-01: P0.7 code is fully
@@ -70,13 +77,13 @@
 - [x] Implement: free fn in `OptimizeFallback.{h,cpp}` (gate BF's res via the
       self-contained overload; on FAIL swap to `RateMonotonicFastGroupLocked`;
       re-gate the RM-Fast plan; on second FAIL `CoutWarning` + throw).
-- [x] Placement REVISED per user: gate lives INSIDE `EnumeratePA_with_TimeLimits`
-      (`OptimizeSP_TL_BF.cpp`, after `optimizer.Optimize()`) — every caller is
-      gated, not just the orchestrator's branch. Orchestrator BF branch reverted
-      to original 1-line form. Safe for legacy BF tests: `is_important` defaults
-      false → gate vacuously passes when no task is important
-      (`SP_Metric.cpp:238`). Legacy suites `testOptimizePA`/`testBF_w_TL`/
-      `testBFRTimeout` all green.
+- [x] Placement REVISED per user: gate lives INSIDE
+      `OptimizePA_with_TimeLimitsStatus::Optimize()` (`OptimizeSP_TL_BF.cpp`,
+      after the `Optimize(0,...)` call) — every caller is gated, not just the
+      orchestrator's branch. Orchestrator BF branch reverted to original 1-line
+      form. Safe for legacy BF tests: `is_important` defaults false → gate
+      vacuously passes when no task is important (`SP_Metric.cpp:238`). Legacy
+      suites `testOptimizePA`/`testBF_w_TL`/`testBFRTimeout` all green.
 - [x] End-to-end test `EnumeratePA_with_TimeLimits.SwapsToRmFastWhenImportant-
       TaskMissesGate` — proves the gate fires through the BF entry point.
 - [x] TDD green: 4/4 gate tests (3 free-fn + 1 e2e); `testIncreOpt_w_TL`
@@ -84,6 +91,6 @@
       `testScheduleSimulate`/`CFS_RunOrchestrator_Binary` pre-existing — shells
       out to an absent RELEASE binary, verified clean-HEAD 39 pass / 1 fail).
 
-## 3. Records + handoff — DONE (records); awaiting user commit
+## 3. Records + handoff — DONE + COMMITTED (`02f3c8fd`)
 - [x] `dev_log.md` (this folder + top-level) + memory updated.
-- [x] `git add` staged; user reviews (no commit).
+- [x] `git add` staged; user reviewed + committed `02f3c8fd` (§2). §1+§1b in `2f6c7c4c`.

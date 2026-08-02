@@ -278,3 +278,26 @@ The "P0.8-mean vs P0.6-worst-case gate-consistency gap" framing in the entries a
   step (1001) not the gate-widened +20 (1020) — proving the gate was OFF at generation.
 - P2.17 D1 LANDED (git add-only): route `compare_optimizers.py` through the gated
   pipeline + the +20 seed step, default ON. Full N=[4,6,8] A/B re-run waits on its commit.
+
+## 2026-08-02 — CLOSED
+
+P0.7 code is fully committed + the A/B measurement is done. P2.18 (the blocker)
+was fixed in `f371c543`; N=6 now runs clean.
+
+**A/B (prod `INCR_Reopt_10` flag ON vs `INCR_NO_FALLBACK` flag OFF), 10 tasksets,
+dur=600** (`compare_against_bf_run_test_dur600_interval10_seed1000_tasks4x6`):
+
+| N | prod SP | meas SP | Δ |
+|---|---|---|---|
+| 4 | 0.7673 | 0.7742 | −0.0069 (≈0.9%) |
+| 6 | 0.9220 | 0.9298 | −0.0078 (≈0.8%) |
+
+≈1% SP penalty at both N — the expected safety-for-SP trade. Mechanism fires:
+trigger (b-i) during-walk gate 25 (N=4) / 59 (N=6) rejects; trigger (b-ii)
+backstop `adopted_fallback` 6/6; trigger (a) ET-jump 1/0. No double-fail throws.
+`Mean_Scheduler_Execution_Time_s` sub-ms and within 1.2× of the no-fallback arm
+(gate adds one RTA eval only when it fires).
+
+**N=8 skipped per user** — N=6 clean post-P2.18 + the consistent ≈1% penalty
+across N=4/6 was judged sufficient. Flag `enable_fallback_use_` default stays ON.
+Folder → `finished_tasks/`. CLOSED.

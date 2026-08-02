@@ -237,3 +237,39 @@ shells out to an absent RELEASE binary).
 `OptimizeSP_TL_BF.cpp`, `testIncreOpt_w_TL.cpp` (+ records). The orchestrator
 file is NO LONGER touched by §2 (reverted to original). NOT committed — user
 reviews.
+
+## 2026-08-01 — §2 placement refined into OptimizePA_with_TimeLimitsStatus::Optimize()
+
+User redirect: move the gate call INTO `OptimizePA_with_TimeLimitsStatus::Optimize()`
+(the user's preferred site from the prior redirect) rather than the entry-point
+free fn. Grounding found NO strong reasons against — the no-arg `Optimize()` has
+exactly one caller (`EnumeratePA_with_TimeLimits:91`); the recursive
+`Optimize(uint,vec)` must stay ungated (it runs per-leaf); all gate inputs
+(`dag_tasks`/`sp_parameters`/`res_opt`) are members; the gate runs once on the
+final result; mirrors P0.7's in-optimizer placement
+(`AdoptFallbackIfUnschedulable` is a member of the INCR optimizer).
+
+**Change:** the gate line moved from the end of `EnumeratePA_with_TimeLimits`
+(operating on `optimizer.res_opt` before return) INTO the no-arg
+`OptimizePA_with_TimeLimitsStatus::Optimize()` —
+`res_opt = AdoptRmFastFallbackIfUnschedulable(dag_tasks, sp_parameters, res_opt);`
+after the `Optimize(0, ...)` call. `EnumeratePA_with_TimeLimits` reverted to
+`return optimizer.res_opt;`. The free fn stays the unit-testable seam; the e2e
+test still proves the gate fires through the BF entry point.
+
+**Green:** `testIncreOpt_w_TL` 125/125; legacy BF 10/5/2 green; 16/17 ctest
+(sole failure pre-existing CFS). Same blast radius (gate inside BF → every
+caller gated; vacuous-pass when no task is important).
+
+## 2026-08-02 — CLOSED
+
+Code fully committed: §1+§1b in `2f6c7c4c`, §2 (final placement in
+`OptimizePA_with_TimeLimitsStatus::Optimize()`) in `02f3c8fd`. 125/125
+`testIncreOpt_w_TL`; legacy BF suites `testOptimizePA`/`testBF_w_TL`/`testBFRTimeout`
+green; 16/17 ctest (sole failure pre-existing CFS). The two prior "staged NOT
+committed" notes were superseded by `02f3c8fd`. Folder → `finished_tasks/`.
+
+**Deferred** (later refactor commits, NOT part of P0.10): D1 migration of existing
+fall-back code out of `OptimizeSP_TL_Incre.{h,cpp}` into `OptimizeFallback.{h,cpp}`;
+inline DM-mode unification (the 3 `SimulationOrchestrator` `DM`/`DM_FAST`/`DM_SLOW`
+branches delegate to `BuildPriorityPlan`). Both behavior-identical.

@@ -287,11 +287,45 @@
   (was 121, +3); 16/17 ctest (sole failure pre-existing CFS). NEXT = §3 records,
   then D1 migration as its own later commit.
 - **2026-08-01 — P0.10 §2 placement REVISED.** Per user redirect, the gate+fallback
-  moved INSIDE `EnumeratePA_with_TimeLimits` (`OptimizeSP_TL_BF.cpp`, after
-  `optimizer.Optimize()`) so EVERY BF caller is gated, not just the orchestrator
-  branch. Orchestrator BF branch reverted to original 1-line form. Safe for
-  legacy BF tests: `is_important` defaults false → gate vacuously passes when no
-  task is important (`SP_Metric.cpp:238`); `testOptimizePA`/`testBF_w_TL`/
-  `testBFRTimeout` all green. New end-to-end test proves the gate fires through
-  the BF entry point. `testIncreOpt_w_TL` 125/125 (was 124, +1). Staged
-  `OptimizeSP_TL_BF.cpp` instead of `SimulationOrchestrator.cpp`.
+  moved INSIDE the BF computation (`OptimizeSP_TL_BF.cpp`) so EVERY BF caller is
+  gated, not just the orchestrator branch. Orchestrator BF branch reverted to
+  original 1-line form. Safe for legacy BF tests: `is_important` defaults false →
+  gate vacuously passes when no task is important (`SP_Metric.cpp:238`);
+  `testOptimizePA`/`testBF_w_TL`/`testBFRTimeout` all green. New end-to-end test
+  proves the gate fires through the BF entry point. `testIncreOpt_w_TL` 125/125
+  (was 124, +1).
+- **2026-08-01 — P0.10 §2 placement refined into OptimizePA_with_TimeLimitsStatus::Optimize().**
+  Second user redirect: move the gate call INTO the status class's no-arg
+  `Optimize()` (the preferred site) rather than the entry-point free fn. No-arg
+  `Optimize()` has exactly one caller; recursive `Optimize(uint,vec)` stays
+  ungated (per-leaf). Mirrors P0.7's in-optimizer placement. `EnumeratePA_with_TimeLimits`
+  reverted to `return optimizer.res_opt;`. 125/125; legacy BF 10/5/2 green.
+- **2026-08-01 — P2.19 LANDED (points 1 + 3); INCR_Reopt_10 SIGABRT fixed.** Root
+  cause: `BuildWorstCaseDagAcrossIntervals` over-inflated perf-task WCET (used
+  `execution_time_dist.max_time` = TL-grid bound, not faithful ET) → seed picked
+  the max TL → important perf task missed deadline → `ComputeSafeFallback`
+  loud-fail throw (P1.15 layer B) → SIGABRT. Fix (user 3-point design, scope:
+  (1)+(3) in P2.19, (2) → P2.20): (1) worst-case DAG perf task → point mass at
+  MIN TL option `timePerformancePairs[0].time_limit` (least-interference seed;
+  sound because the gate BAKES the chosen TL so the stored perf dist only feeds
+  the seed selector + DM tie-break, not the RTA); non-perf unchanged. (3) rename
+  → `BuildDAGForObtainSafeFallBAckAcrossIntervals` (user casing kept; suggested
+  normalized `BuildSafeFallbackDagAcrossIntervals` flagged for review). Removed
+  P2.19 temp diagnostics from `ComputeSafeFallback`; kept the loud-fail re-gate
+  (P1.15 net). TDD red→green (rewrote `PreservesPerfTaskTimeLimitGrid` + added
+  `WorstCaseDagUsesMinTimeLimitForPerfTasks`); 125/125 testIncreOpt_w_TL; legacy
+  BF green; 16/17 ctest (sole pre-existing CFS). Repro: taskset_3 INCR_Reopt_10
+  exit 0 (was SIGABRT). Point (2) convergence loop → P2.20 stub, not started.
+- **2026-08-02 — P0.7 + P0.10 CLOSED.** Both fall-back tasks code-complete +
+  committed; records synced; folders → `finished_tasks/`.
+  - **P0.10** (BF-side analogue of P0.7): §1+§1b `2f6c7c4c`, §2 `02f3c8fd`. BF gate
+    `AdoptRmFastFallbackIfUnschedulable` inside `OptimizePA_with_TimeLimitsStatus::Optimize()`
+    so every BF caller is gated; on fail → RM-Fast group-locked plan; on double-fail →
+    throw (D2). `is_important` defaults false → vacuous-pass for legacy tests. 125/125
+    testIncreOpt_w_TL; legacy BF green. Deferred: D1 migration + DM-mode unification.
+  - **P0.7** (INCR-side): triggers (a) `DetectETJump`, (b-i) during-walk gate, (b-ii)
+    `AdoptFallbackIfUnschedulable` backstop — committed `c87ae0d4`…`aefed906`/`f371c543`.
+    A/B (N=[4,6], 10 tasksets, dur=600): ≈1% SP penalty at both N (prod 0.7673/0.9220
+    vs `INCR_NO_FALLBACK` 0.7742/0.9298); mechanism fires (b-i 25/59 rejects, b-ii 6/6
+    adopts). N=6 clean post-P2.18 `f371c543` (was SIGABRT). N=8 skipped per user.
+    `enable_fallback_use_` default ON.
