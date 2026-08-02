@@ -1,342 +1,99 @@
 # Development Log
 
-> **Archived Historical Log**: Complete detailed chronological development records up to 2026-07-25 are archived in [`agents/finished_tasks/dev_log_2026-07-25.md`](finished_tasks/dev_log_2026-07-25.md).
+> **Archived log** (pre-2026-07-25): [`agents/finished_tasks/dev_log_2026-07-25.md`](finished_tasks/dev_log_2026-07-25.md).
+> Per-task detail (design, TDD, verification) lives in each task's folder under
+> `agents/active_tasks/` or `agents/finished_tasks/`; the status index is `MEMORY.md`.
 
 ---
 
-## 2026-07-29
+## 2026-08-02
 
-- **P0.8 FINISHED — Step 2 prod-wiring + e2e test + Step 3 rejection-rate
-  LANDED (working tree, git add-only — awaits user commit).** This makes the
-  gate's guarantee *enforced* in production, not just existing + unit-tested.
-  - Step 2 prod-wiring: `run_generator.py` routes through the gate BY DEFAULT
-    (`--no-important_tasks_schedulability_check` opt-out; surfaces
-    `attempts_used`); `run_sim_experiments.py`
-    routes both call sites through a single `_generate_taskset` helper + widens
-    the per-taskset seed step to `IMPORTANT_TASK_GATE_MAX_ATTEMPTS` (20) when the
-    gate is ON so its internal +0..19 retry window can't collide with the next
-    taskset's draw (silent-duplicates fix); legacy +1 when OFF (bit-identical
-    pre-gate). End-to-end REAL-pipeline test in `test_integration.py` asserts the
-    gate's certificate is GENUINE (independently re-runs the RTA primitives on
-    the emitted YAMLs; guards against a hollow gate).
-  - Step 3 rejection-rate: `measure_gate_rejection_rate --samples 5 --ns 4 8 16
-    --n_sec 100` (15 draws) → 0 rejections, 0 raises, max 3 attempts (within
-    budget-20). Second-lever generator-logic fix NOT needed (rejection rate = 0).
-  - Verify: `pytest Gen_Taskset/tests/` = 48 passed (was 47; +1 e2e gate test).
-    P0.8 now FULLY DONE; closable as "shipped" once the user commits this batch.
-
-- **P0.8 config-tuning round — make the gate pass within budget on the REAL
-  paper config (COMMITTED `7c8748c0` "update some configs to generate
-  schedulable task sets", 12 files +864/−81).** The committed gate (`3d2360ed`)
-  is a correct loud-raise certifier, but the real config made it reject too
-  often. Root cause was config + the perf-WCET rule, not the gate. Three fixes: (1) perf WCET → `execution_time_mu` (= et_mean)
-  — faithful (sim runs `min(et_mean, TL)`, TL is a downward cap) + tightest
-  sound; dropped `tl_grid_upper`/`cfgs` params + made the TL grid verdict-irrelevant;
-  (2) env cap 0.45→0.27 + variance [0.5,0.6]→[0.3,0.4] → env WCET/period ≤0.486;
-  (3) (3a) no-inflation: cpu_util [0.5,1.5]→[0.5,1.0] + DROP the proportional
-  redistribution block (raises non-env `u_i` above drawn; inflates perf
-  `execution_time_mu`); strictly safe. Plus `DEADLINE_MODE=implicit` (RM≡DM).
-  Verify: `pytest Gen_Taskset/tests/` = 47 passed; faithful gate
-  `measure_gate_rejection_rate --samples 2 --ns 4 8 16` → N=4/8 attempt 1,
-  N=16 ≤3 attempts, 0 rejections/0 raises. Step 2 prod-wiring + Step 3 landed
-  in a later entry this date (see above). (Committed 2026-07-29 as `7c8748c0`.)
-
-- **P0.8 Step 2b refactor — de-duplicate path/config scaffolding + fix
-  `dir_path=None` regression (user review).** The shell/body/gate split had
-  triplicated `OPT_SP_PROJECT_PATH`, config-path resolution, cfgs-load, and
-  dir-path resolution. The duplication also caused a regression: the original
-  resolved `dir_path=None` → `TaskData/<cfg>_gen_1` in the body; after the
-  split only the gate did, so the shell forwarded `None` to
-  `_run_pipeline_with_cfgs` (which raises) — would have broken the canonical
-  CLI's no-`--dir_path` invocation (no test caught it; all ~22 callers pass
-  `dir_path=` explicitly). Fix = extract `_resolve_config_path` /
-  `_load_and_validate_cfgs` / `_resolve_dir_path` helpers + hoist
-  `OPT_SP_PROJECT_PATH` to a module constant; the shell resolves `dir_path`
-  before the body (regression fixed), the gate shares the same helpers (no
-  divergence). `pytest Gen_Taskset/tests/` = 47 passed; end-to-end
-  `dir_path=None` run confirmed.
-
-## 2026-07-28
-
-- **P0.8 Step 2b — important-task gate wrapper LANDED + staged (NOT committed, awaits
-  user review).** `run_full_generation_pipeline_with_important_task_gate` (`orchestrator.py`):
-  a generation-time gate that certifies every emitted taskset is schedulable for the
-  important tasks under DM-with-top-priority-lock at the seed point. Seed-advancing
-  retry loop (budget 20, D4), loud `RuntimeError` on exhaustion (NEVER silent — prevents
-  re-creating the P1.8 substrate). **Design:** split `run_full_generation_pipeline` into
-  a thin shell + `_run_pipeline_with_cfgs(cfgs, ...)` (REQUIRED cfgs, no default args —
-  user preference) because the shell reloads cfgs from the config file each call, which
-  would discard an advanced seed (no-op-retry bug). **DRY refactor + key-normalization
-  fix:** extracted `_load_emitted_tasks_by_gid` (normalizes emitted `important` → RTA's
-  `is_important`; without it the gate would be hollow) + `_wcets_from_loaded_tasks`.
-  **Tests:** 4 TDD red→green wrapper tests (mock pipeline, real RTA); `pytest Gen_Taskset/tests/`
-  = 47 passed (+4, no regressions). Step 2 (prod wiring) + Step 3 (rejection-rate) deferred.
-
-## Historical Milestones & Summary (2026-06-20 – 2026-07-24)
-
-- **Pipeline Foundation & Optimization (2026-06-20 – 2026-07-01)**
-  - Initial pipeline completion, `opt_sp_` initialization fix, linear coordinate descent for task configuration optimization.
-  - Sourced library `scripts/lib/common.sh`, unified simulation runners into `run_simulation.sh`, per-run figure namespacing, line plots, PNG+PDF exports.
-  - **P12 SP Normalization**: Normalized SP by theoretical maximum ceiling ($\Sigma \text{sp\_weight} = 5.0$).
-  - **P10**: Unified End-to-End Orchestrator.
-
-- **Multi-Core & Period Optimization (2026-07-02 – 2026-07-04)**
-  - **P13 / P14 / P19**: Per-core CPU utilization fix, task-count ceiling removal, unified period pool & random CPU utilization range.
-  - **P24 / P25**: Periodic reoptimization & counter-driven dispatcher with compare-and-keep.
-  - **P25 Fix A & Fix B**: Baseline advancement fix (`OptimizeIncre`) + incumbent state preservation (`SeedStateFromIncumbent`) TDD-verified green.
-
-- **Incumbent Redesign & Algorithm Hygiene (2026-07-05 – 2026-07-13)**
-  - **P0.5 Incumbent Redesign (DONE)**: Owned once in `res_opt_` (removed `prev_optimizer_`), `CommitIncumbent` / `BuildChallengerFromIncumbent` helpers.
-  - **P1.1 Efficiency Optimizations**: Single-point convolve fast path (`ConvolveSinglePoint`), ~3× speedup per convolve. Closed 2026-07-24 as runtime adequate.
-  - **P2.3 / P0.1**: `FiniteDist::approx_equal` cleanup and test wiring.
-
-- **Serialized Optimization & RTA Cache Evolution (2026-07-17 – 2026-07-24)**
-  - **P1.10 Serialized Optimization**: Phase 1 `OptimizeIncre_SingleTask` extraction LANDED & COMMITTED. `FindEnvTaskWithDifferentEt` structural filter landed.
-  - **P1.11 / P1.12 / P1.13 RTA Cache Integration**: `RTACache` single-champion cache introduced & wired into sub-incremental evaluation.
-  - **P1.14 / P1.15 / P1.16 / P1.25 Cache Resilience & Budget**:
-    - P1.14: `BFDLSharedBudget` whole-call time limit enforcement for BF/INCR.
-    - P1.15: Python harness loud-failure detection & crash reporting.
-    - P1.16 & P1.25: Eager backup/restore on rejected sub-incremental walks, removing transient transaction overhead.
-  - **P1.18 ClassifyReusePerTask**: Fine-grained per-task reuse (Rule A & Rule B) DONE & CLOSED (2026-07-24).
-  - **P1.19 `--rerun_mode`**: `clear_all` & `clear_results` options implemented and verified (2026-07-24).
-  - **P1.20 Processor Map Vectorization**: Processor-to-task-set maps converted from hash table to O(1) vectors DONE (2026-07-23).
-
----
-
-## Active & Recent Development Logs
-
-### 2026-07-24 — P1.18 ClassifyReusePerTask Fine-Grained Reuse (DONE)
-- **Summary**: Upgraded `RTACache::ClassifyReusePerTask` to perform fine-grained per-task reuse instead of whole-core fallback.
-- **Rules Implemented**:
-  - **Rule A** (`has_et_diff == true`, Task ET Changed): `pos < p_min → FullReuse`, `pos >= p_min → NoReuse`.
-  - **Rule B** (`has_et_diff == false`, Pure Priority Move): `pos < p_min → FullReuse`, `[p_min, p_max] → NoReuse`, `pos > p_max → FullReuse`.
-- **Verification**: Monotonic safety bound preserved. 17/17 `ctest` + 63/63 `testRTA` green. Committed (`09d1fca9`). Full record in `agents/finished_tasks/P1_18_classify_reuse_per_task_more_types/`.
-
-### 2026-07-24 — P2.8 Scripts and Configs Refactor (In Progress)
-- **Summary**: Streamlined config hierarchy and entry-point scripts.
-- **Key Changes**:
-  - Consolidated JSON configs into `paper_simulation_config.json` (deleted `gate_eval_config.json` and redundant test configs).
-  - Renamed scripts: `run_end_to_end.sh` → `run_simulation_and_plot_figures.sh`, `run_evaluation_suite.sh` → `run_simulation_plot_eval_ns.sh`.
-  - D6: Removed double-build block from eval script (delegates to pipeline).
-- **Verification**: 43/43 Python tests green. `DRY_RUN=1` verified.
-
-### 2026-07-25 — P2.13 Important-Task Miss Rate vs SP Metric Study (FILED)
-- **Summary**: Investigated discrepancy where `Important_Miss_Rate` swings (0.48 → 0.567) while `Mean_SP_Metric` stays flat (~0.578) on N=10 `INCR_Reopt_1`/`_10`.
-- **Findings**:
-  1. Analytic RTA vs empirical job-history miss count measure different signals.
-  2. `SP_Func` saturation near miss probability 1.0 (large miss rate gap moves SP by ~0.008).
-  3. Weight dilution (1 important task @ 0.133 of sum 1.0; 9 low-miss tasks dominate).
-  4. 100% miss in both arms on the swing task yields zero SP differential.
-- **Action**: Perform feasibility check (DDL vs WCET) on existing run output.
-
-### 2026-07-25 — P2.14 & P2.15 Schema Harmonization & Weight Randomization
-- **P2.14**: Removed `SP_THRESHOLDS_SET` from generator schema; standardized on continuous `SP_THRESHOLD_RANGE: [0.001, 0.9]`.
-- **P2.15**: Replaced hardcoded 2:1 weight split (`sp_weight_base` 2.0 / 1.0) with continuous `SP_WEIGHT_RANGE: [0.1, 1.0]` sampling while preserving `SP_WEIGHTS_SUM` normalization. 372/372 Python tests green.
-
-### 2026-07-26 — P3.6 INCR_NO_REOPT Baseline (IMPL DONE — awaiting user review)
-- **Summary**: New scheduler arm `INCR_NO_REOPT` — pure incremental with RM-fast bootstrap at interval 0 (no from-scratch descent), `OptimizeIncre_w_TL` every interval after, NEVER `ReOptimizePeriodic`. Contrasts `INCR_Reopt_10` (production arm, reopts every 10th interval): does periodic reopt earn its cost? Paper-grade baseline, NOT an E3 gate.
-- **Behavior**: interval 0 = seed incumbent from RM-fast (`RateMonotonicPriorityVec` + `SmallestTimeLimitVec` via `ResetIncumbentBaseline(true)`, NO descent); intervals 1+ = `OptimizeIncre_w_TL` (warm-started from carried incumbent); persistent `incr_optimizer_` (like `INCR`), never fresh-each-interval.
-- **Code**: `OptimizePureIncremental(dag, beam)` + `BootstrapIncumbentFromRMFast(dag)` in `OptimizeSP_TL_Incre.{h,cpp}`; `INCR_NO_REOPT` construction condition + dispatch branch in `SimulationOrchestrator.cpp`; `INCR_NO_REOPT` in `ablation_scheduler_list` (test_mode + prod_mode) of `paper_simulation_config.json`.
-- **TDD**: 3 tests in `testIncreOpt_w_TL.cpp` under `CompareAndKeepSynthetic` (`Interval0IsSeedOnly`, `AdvancesCounterOncePerCall`, `NeverReoptsEvenAtPeriodOne`). "No descent" pin = `eval_count_==0` after interval 0.
-- **Verify**: `cmake --build build_test --target check.SP_OPT -j5` → 17/17 ctest green (16.20s). SP bit-identical for existing arms (additive change; `Optimize_w_TL_ScratchOrIncre` untouched).
-- **Status**: NOT committed (`git add`-only, user's standing rule). Awaits user review + `git commit`, rebuild `release/`, re-run the A/B. Full record in `agents/active_tasks/P3_6_incr_only_baseline/`.
-
-### 2026-07-28 — P0.9 System-wide DM + Important-First Priority Lock (LANDED — FULLY COMMITTED)
-- **Summary**: Switched the priority-assignment **seed** system-wide from plain Rate Monotonic (period sort) to **Deadline Monotonic (deadline sort) + important-first group lock**, so the C++ scheduler's seed agrees with P0.8's Python RTA certification. Generator sets `deadline = period·U(0.5,1.0)` → constrained deadlines (`D<T`), where DM ≥ RM (optimal fixed-priority). Group lock = important tasks (top-50% by `sp_weight`, `bool Task::is_important`) occupy TOP slots, non-important fill the bottom → the important-group RTA is self-contained. Lockstep prerequisite for P0.6 + P0.8 (both certify/seed against this exact order). D1–D7 ALL RESOLVED (D4 rename RM→DM, D7 FULL system-wide incl. orchestrator arms, D6 accept behavior change — NOT bit-identical; verify "schedulability improves/holds + SP within tolerance"; prod A/B = user-go, NOT run unilaterally).
-- **Step 1 — C++ seed PA (LANDED):** `RateMonotonicPriorityVec`→`DeadlineMonotonicPriorityVec` (group-locked DM sort: partition by `is_important`, sort each group deadline asc / ties avg ET asc, concat [important]++[non-important]); `SeedIncumbentFromRMFast`→`SeedIncumbentFromDMFast`, `BootstrapIncumbentFromRMFast`→`BootstrapIncumbentFromDMFast`. TDD red→green: 2 new discriminating tests (`RanksImportantGroupFirstThenDmOrdersEach`, `BreaksDeadlineTiesByExecutionTimeAscending`) + 3 call sites + test rename in `testIncreOpt_w_TL.cpp`. `check.SP_OPT` = 17/17.
-- **Step 2 — Python RTA (LANDED):** `_important_priority_order` (`important_task_rta.py`) sort key `period`→`deadline`; docstrings RM→DM; discriminating test `test_dm_ordering_is_deadline_based_not_period_based`. `pytest Gen_Taskset/tests/` = 43 green.
-- **Step 2 — Orchestrator baseline arms C++ (LANDED, D7):** `SimulationOrchestrator.cpp` arms `"RM"`/`"RM_FAST"`/`"RM_SLOW"`→`"DM"`/`"DM_FAST"`/`"DM_SLOW"` + each sort `period`→`deadline` (PLAIN deadline sort — NO group lock; group lock is seed-PA only); `RunOrchestrator.cpp` help/comments; `testScheduleSimulate.cpp` (mode strings + `/RM/`→`/DM/` export paths + test names). Fixture `deadline==period` → DM/RM agree → assertions unchanged. **Latent bug exposed+fixed:** `ExactResponseTimeValidation` parsed 7 cols (`+overrun`) but the P2.14 writer drops `is_overrun`→6 cols; test only passed via STALE June-21 `RM/` artifacts (never cleared dir, never set level 3). Fixed: `remove_all`+`EXPORT_DETAIL_LEVEL=3`+drop `overrun` from both parse sites. `check.SP_OPT` = 17/17.
-- **Step 2 — Configs + Python cascade (LANDED, D7 full system-wide):** renamed `RM_FAST`→`DM_FAST`, `RM_SLOW`→`DM_SLOW`, bare `"RM"`→`"DM"` (the bare `"RM"` arm was already retired in configs/Python per `evaluation_suite.py:122` — "replaced by RM_FAST+RM_SLOW") across **18 source files**: 3 active JSON configs (`paper_simulation_config` test+prod + 2 prose, `compare_against_bf`, `incr_et_profiling`); 6 `simulation_experiments/` scripts; 6 debug scripts (DISTINCT copies in both `simulation_experiments/debug_analysis/` AND `tests/debug_analysis/`); `visualize_SP_distribution.py`; 5 `tests/python/` fixtures (synthetic `"RM"` labels + the config-pin assertion coupled to the renamed config + `ALL_SCHEDULERS` coupled to renamed `compare_optimizers.py`). **2 user-decided LEAVES:** `draw_trajectory_error.py:16` (`"RM"` = SLAM-trajectory data-file key `CameraTrajectory_rm.txt`, a real Jan-2025 artifact, NOT a scheduler dispatch) + `p211_reopt_ab_config.json` (retained historical record, prose-only, "do not delete"). STALE result outputs LEFT for prod A/B (`tests/{radius_comparison,comparison_runs,e2e_eval_runs,k_variation}/` + `simulation_experiments/optimizer_comparison/runs/`).
-- **Step 4 — Records (LANDED this session):** relabeled P0.6 + P0.8 plan docs (`goal.md`+`tasks.md`) RM→DM system-wide via sed bulk — `AssignRMRespectingGroupOrder`→`AssignDMRespectingGroupOrder`, `RateMonotonicPriorityVec`→`DeadlineMonotonicPriorityVec`, seed point → "DM-grouped + min-TL + WCET", "RM-ordered"→"DM-ordered", "RM-with-top-lock"→"DM-with-top-lock". Residual RM check = clean. Historical `dev_log.md` entries in both folders left as point-in-time records (NOT rewritten — "don't falsify history"); each prepended with a dated 2026-07-28 P0.9-supersedence pointer.
-- **Issue-2 review (2026-07-28):** another agent flagged a `TestGateQ3` mock-key mismatch (`Q3_BASELINES` has `DM_FAST`/`DM_SLOW` but the mock uses bare `(8,"DM")`). Verified via `git show HEAD:` this is **NOT a P0.9 regression** — HEAD already had the identical gap (`Q3_BASELINES=["RM_FAST","RM_SLOW",...]` + mock bare `(8,"RM")`); `evaluate_q3`/`_q3_at_n` iterate ONLY `Q3_BASELINES`, so the bare key was dead weight (never consumed) both before and after. The rename faithfully carried it forward (bare RM→bare DM). DM_FAST/DM_SLOW are "missing baselines" (noted, not fatal per the gate's design). Filed as optional P2 test-quality cleanup (populate the mock with real `DM_FAST`/`DM_SLOW` keys) — OUT of P0.9 scope. Issue-3 (`compare_against_bf.json time_limit_seconds=10` vs expected `1`) confirmed pre-existing (P2.14-known; my edit touched only `main_scheduler_list`).
-- **Verify (Step 2 final):** `pytest Gen_Taskset/tests/` = 43 green; `pytest tests/python/` = 351/353 (2 fails PRE-EXISTING config — `compare_against_bf.json time_limit_seconds`, untouched by P0.9, = P2.14-known); `cmake --build build_test --target check.SP_OPT -j5` = 17/17 green.
-- **Commit state:** Steps 1+2 COMMITTED by the user in 3 commits — `0b9dae4a` (Step 1 C++ seed PA: `OptimizeSP_TL_Incre.{h,cpp}` + `testIncreOpt_w_TL.cpp`), `6a35080b` (Step 2 C++ orchestrator: `SimulationOrchestrator.cpp` + `RunOrchestrator.cpp` + `testScheduleSimulate.cpp`), `352f13d5` (Step 2 configs/Python: 18 source files + the P0.9 task-folder `dev_log.md`/`tasks.md` snapshot). Step 4 records (P0.6/P0.8 plan-doc relabels + dev_log pointers + this milestone) = COMMITTED by the user as `7dd1a7ac` ("update task records"; 9 files, 1297/11; exactly the Step-4 record paths, no unrelated files).
-- **Status**: Steps 1+2+4 ALL committed (`0b9dae4a`/`6a35080b`/`352f13d5`/`7dd1a7ac`). **D6 behavior-change flag**: seed PA shifts whenever `D≠T` (always) or the group lock reorders; schedulability should improve, global SP may move — the verification gate is "schedulability improves/holds + SP within tolerance", NOT bit-identical. Prod A/B re-run = user-go (NOT run unilaterally). Full record in `agents/active_tasks/P0_9_dm_and_important_first_priority/`.
-
-## 2026-07-31
-
-- **P0.6 FINISHED — offline safe-fallback artifact COMPLETE + COMMITTED (`630cda4d`).** Produces
-  a deterministic offline `{PA, TL}` (`safe_fallback_`, `ResourceOptResult`) computed ONCE before
-  the interval loop, for P0.7 to swap in on an online trigger. Algorithm: seed at the P0.8-certified
-  operating point (DM-grouped PA + TL = largest grid option ≤ `et_mean`) → TL-only walk with a HARD
-  per-candidate gate (`ImportantTasksMeetThresholds`: `ddl_miss_chance ≤ sp_threshold` for all
-  important tasks, at the `UpdateRecords` commit chokepoint) → keep the best-SP-feasible result.
-  - **§8 (cross-interval safety for P0.7 trigger (a)):** caller builds a worst-case DAG = per-task
-    point mass at `max(execution_time_max)` across ALL interval YAMLs (`BuildWorstCaseDagAcrossIntervals`,
-    NEW `sources/TaskModel/WorstCaseDAG.cpp`) → `ComputeSafeFallback(worst_case_dag)` → stochastic
-    dominance → the gate's `ddl_miss_chance` upper-bounds every interval. Loud-fail: post-walk
-    re-gate on the FINAL stored result; on fail raises + unstored (`HasSafeFallback()` false).
-  - **§9:** dispatcher THROWS when no fallback is pre-computed (was an unsound lazy backstop — it
-    couldn't build the worst-case DAG) + `ImportantTasksMeetThresholds` self-contained overload.
-  - **§10:** readability refactor — extracted the inlined `structure_matches` flag into header fn
-    `TaskStructureMatches(const Task&, const Task&)` (behavior-preserving; 5 TDD tests).
-  - **Verify:** `cmake --build build_test --target check.SP_OPT -j5` = **17/17 green** (re-verified
-    on the committed tree). Offline-only (online sim+optimizer byte-identical). P0.6 PRODUCES the
-    artifact end-to-end; P0.7 wires the fall-back USE. Full record in
-    `agents/active_tasks/P0_6_static_solution/`.
-
-- **P0.7 step 2 LANDED (UNCOMMITTED) + step 3 SP-penalty A/B PARTIAL (2026-08-01).** Step 2 =
-  the A/B exposure hook: new `GlobalVariables::enable_fallback_use` (default true) + new
-  `INCR_NO_FALLBACK` mode sets it false for the measurement arm (mirrors `INCR_NO_TL`/
-  `INCR_WCET`); read into `incr_optimizer_.enable_fallback_use_` at construction. TDD
-  `INCR_NO_FALLBACK_DisablesFallbackUse_ButStillComputesFallback` red→green; 17/17 ctest.
-  Step 3 (`measure_p07_penalty.json`, prod `INCR_Reopt_10` ON vs meas `INCR_NO_FALLBACK` OFF):
-  **N=4 done both arms** — prod Mean_SP=0.9133 vs meas 0.9228 (≈1% SP penalty, the expected
-  safety-for-SP trade); P0.7 demonstrably FIRED on prod N=4 taskset_3 (b-i reject + b-ii
-  backstop adopt, miss_chance 0.267>threshold 0.242). **N=6 BLOCKED by P0.6 loud-fail (NOT
-  P0.7):** taskset_3 dies SIGABRT in `ComputeSafeFallback` (`OptimizeSP_TL_Incre.cpp:1030`)
-  — BOTH arms crash identically ("No safe fallback exists — regenerate") because the
-  safe-fallback COMPUTE is unconditional and P0.7 only gates the USE. Root cause (re-confirmed
-  in P2.17) is NOT a P0.8-vs-P0.6 gate gap — `compare_optimizers.py` bypassed P0.8's gate
-  (called the ungated pipeline, no flag) so unschedulable-at-worst-case tasksets reached the
-  sim; P0.8's gate is the HARDER worst-case-WCET gate and correctly rejects them. Filed as
-  **P2.17** (gate wiring, D1 landed); the full N=[4,6,8] A/B re-run waits on its commit.
-  Full record in `agents/active_tasks/P0_7_fallback_mechanism/`.
+- **PW.1.1–PW.1.3 grounding sketches DONE** (T-ASE revision). Three code-read slices
+  → `sketch_foundations` / `sketch_optimization` / `sketch_fallback.md`. No code
+  changes; nothing committed; PW.1.4 (revision plan) unblocked. Findings: **Θ_i =
+  Option A** (`Pr(r_i>D_i)≤Θ_i`); prediction = sliding-window + Gaussian-dist fit,
+  NOT GP (grep-confirmed); guarantee SELF-guaranteed in code (draft §13.3 frames it
+  *conditional* → drift); `‖λ−λ^(k)‖≤δ`/3-candidates stale (prod walk = patience-bounded
+  full grid).
+- **P0.7 + P0.10 CLOSED** → `finished_tasks/`. P0.10 (BF-side) §1+§1b `2f6c7c4c`, §2
+  `02f3c8fd`: BF gate `AdoptRmFastFallbackIfUnschedulable` inside
+  `OptimizePA_with_TimeLimitsStatus::Optimize()` gates every BF caller; fail → RM-Fast
+  group-locked plan, double-fail → throw. P0.7 (INCR-side) triggers (a) `DetectETJump` /
+  (b-i) during-walk gate / (b-ii) `AdoptFallbackIfUnschedulable` — `c87ae0d4`…`aefed906`/`f371c543`;
+  A/B N=[4,6] ≈1% SP penalty (prod 0.7673/0.9220 vs `INCR_NO_FALLBACK` 0.7742/0.9298);
+  N=6 clean post-P2.18; N=8 skipped per user.
+- **P0.3 figure triage:** fig_p25_et_vs_period + P2.6 sim-RT SP → DEFER P3; P2.1 fig2
+  sweep → CLOSE; **fallback-rejection-ratio figure → KEEP & BUILD** (needs a NEW
+  per-interval-log reader).
 
 ## 2026-08-01
 
-- **Commit split LANDED — P0.7 + P2.17 work split into 3 modular commits.** The
-  staged index (P0.7 step 2/3 + P2.17 gate-wiring, all staged together) was
-  split per the ≤3-source-file rule: C1 `a8148dc7` (P0.7 step 2: `enable_fallback_use`
-  + `INCR_NO_FALLBACK`, 3 src + 2 test); C2 `1ef3c26c` (P0.7 step 3 configs +
-  records, incl. the stale-framing correction re-attributing the N=6 crash to
-  P2.17's gate *bypass*); C3 `aefed906` (P2.17 gate wiring: `compare_optimizers.py`
-  routed through the gated pipeline + `+20` seed step, default ON; 4 TDD tests;
-  28/28 compare tests; no C++). Records + memory updated.
+- **P2.18 fix COMMITTED `f371c543`** (P0.7-gate regression, NOT P2.17). During-walk
+  gate sourced RTA from `rta_cache_.Evaluate` in `UpdateRecords` (gated by
+  `enable_fallback_use_` not `rta_cache_active_`) → Reopt from-scratch beam ADOPTED a
+  champion mid-beam → `ComputeTaskSetDifference` throws `|diff|>1` → SIGABRT. Fix:
+  predicate `enable_fallback_use_ && rta_cache_active_ && !BFSharedBudgetCancelled()`.
+  INCR_WCET taskset_2 exit 0 (was 0-byte SIGABRT); 80/80 N=4 arms exit 0.
+- **Commit split LANDED** — P0.7+P2.17 → 3 modular commits (≤3-src-file rule): C1
+  `a8148dc7` (P0.7 step 2), C2 `1ef3c26c` (P0.7 step 3 configs+records), C3
+  `aefed906` (P2.17 gate wiring: `compare_optimizers.py` routed through gated
+  pipeline + `+20` seed step, default ON).
+- **P2.19 LANDED (points 1+3)** — `INCR_Reopt_10` SIGABRT fixed. Worst-case DAG
+  over-inflated perf WCET (TL-grid bound) → seed picks max TL → important perf task
+  missed → throw. Fix: perf task → point mass at MIN TL option; rename
+  `BuildDAGForObtainSafeFallBAckAcrossIntervals`. Point (2) → P2.20 (stub).
+- **P0.10 §1/§1b/§2 LANDED (TDD).** `RateMonotonicFastGroupLocked` + shared
+  `BuildPriorityPlan`/`PriorityBuilderConfig` in NEW TU `PriorityBuilders.{h,cpp}`;
+  gate settled INSIDE `OptimizePA_with_TimeLimitsStatus::Optimize()` (2 user
+  redirects). `testIncreOpt_w_TL` 125/125; legacy BF green; 16/17 ctest (pre-existing CFS).
+- **P0.8 CLOSED.** Important-task schedulability gate fully landed + committed:
+  `run_full_generation_pipeline_with_important_task_gate` (retry 20 → loud raise,
+  `seed+attempt`), prod-wired default-ON; P2.17 routed `compare_optimizers.py` through
+  it. Step 3 rejection-rate = 0 across N=4/8/16. Folder → `finished_tasks/`.
 
-- **P2.17 COMMITTED (`aefed906`) + verified working — but the re-run surfaced a
-  DISTINCT new crash → filed P2.18.** Re-ran `compare_against_bf.json` test_mode
-  (N=4) with P2.17's gate ON (seed=1040 ⇒ the widened +20 step ⇒ gate active).
-  Crashed again, but NOT the P2.17 signature: `taskset_2 / INCR_WCET` SIGABRT
-  with a 0-byte `run.log`, and `INCR_Reopt_10` FINISHED OK on taskset_2 ⇒ P0.6's
-  `ComputeSafeFallback` did NOT throw. Debug `gdb catch throw` pinned it to a
-  completely different site: `RTACache::ComputeTaskSetDifference` throws the
-  `|diff|>1` single-change invariant (`RTA_Cache.cpp:358`) ← `Evaluate` ←
-  `SeedBaselineAndArmCache` (Reopt branch, `OptimizeSP_TL_Incre.cpp:532`). **Root
-  cause = a P0.7-gate regression:** the during-walk gate (trigger b-i) sources its
-  challenger RTA from `rta_cache_.Evaluate` inside `UpdateRecords` (`:223`), gated
-  by `enable_fallback_use_` (NOT `rta_cache_active_`). In the Reopt from-scratch
-  beam (`SeedBaselineAndArmCache:520-533`, meant to run DISARMED), that `Evaluate`
-  calls `RTACache::Initialize` which ADOPTS A CHAMPION mid-beam → a later beam
-  step commits a `{pa,tl}` differing by >1 task → throw → uncaught →
-  `std::terminate` → SIGABRT. `git blame` `UpdateRecords:214-223` = P0.7 gate code;
-  before P0.7 the from-scratch path never called `Evaluate`, so the cache stayed
-  empty and `:532` was a safe `Initialize`. INCR_WCET trips it (WCET ET
-  distribution makes beam commits >1-diff); INCR_Reopt_10 lucked out on this
-  taskset. Filed as **P2.18** (D1: guard-the-call vs decouple-gate-from-cache;
-  D2: does the gate belong in the from-scratch beam at all). NO code yet —
-  planning next. This is what actually blocked the N=6/8 re-run, not P2.17.
-  Full record in `agents/active_tasks/P2_18_p07_gate_arms_rta_cache_mid_beam/`.
+## 2026-07-31
 
-- **P2.18 fix LANDED + verified TDD RED→GREEN + real crash path; COMMITTED `f371c543`
-  (also restructured the gate so `if (rta_cache_active_)` is the first discriminator
-  + an `else` documenting the post-eval reopt path). CLOSED.** D1=(a) guard-the-call
-  (settled pre-code): added `rta_cache_active_`
-  to the during-walk gate predicate at `UpdateRecords` →
-  `enable_fallback_use_ && rta_cache_active_ && !BFSharedBudgetCancelled()` (mirrors
-  the `CommitIncumbent` precedent); D2 = gate inert in the from-scratch beam, the
-  cache-free backstop `AdoptFallbackIfUnschedulable` covers the final result. New TDD
-  test `P07GateArmsCacheMidBeamSynthetic` (a `ControlledBeamOpt` subclass injects a
-  gate-infeasible >1-TL-diff beam triple, then calls the REAL `UpdateRecords`):
-  RED without the fix throws `ComputeTaskSetDifference: candidate differs from
-  champion by more than one task` (the exact SIGABRT signature, in-process); GREEN
-  with it. 116/116 `testIncreOpt_w_TL`; 16/17 ctest (sole failure
-  `CFS_RunOrchestrator_Binary` is pre-existing/env-related, identical on clean HEAD).
-  Real crash path: re-ran INCR_WCET on taskset_2 (release) → exit 0, all 60
-  intervals' SP metrics + fallback log (`kept_walk` ×60, zero rejects) written; was
-  0-byte run.log / SIGABRT at interval 0. Full `compare_against_bf.json` N=4 re-run
-  = 80/80 arms exit 0, zero crashes. P0.7's deferred N=6/8 SP-penalty A/B re-run
-  unblocked (owned by P0.7, not P2.18).
-- **2026-08-01 — P0.8 CLOSED.** Important-task schedulability gate fully landed +
-  committed at HEAD: wrapper `run_full_generation_pipeline_with_important_task_gate`
-  (retry budget 20 → loud raise, D4), seeded-retry advances `seed + attempt`, canonical
-  pipeline signature untouched. Prod-wired default-ON in `run_generator.py` +
-  `run_sim_experiments.py` (`--important_tasks_schedulability_check` opt-out); P2.17
-  (`aefed906`) routed `compare_optimizers.py` through it (+20 seed step). Step 3
-  rejection-rate = 0 across N=4/8/16 (clamp-first lever alone sufficed). Seed/WCET
-  consistency with P0.6 verified during P2.17 — both gates read the same global-max
-  WCETs and AGREE on the reject tasksets; no D2 tightening needed. Folder →
-  `finished_tasks/`.
-- **2026-08-01 — P0.10 §1 LANDED (TDD).** RM-Fast group-locked `{pa,tl}` builder
-  `RateMonotonicFastGroupLocked(const DAG_Model&) -> ResourceOptResult` in NEW TU
-  `sources/Optimization/OptimizeFallback.{h,cpp}` (the dedicated fallback TU per
-  D1; existing-code migration is a later commit). Free fn — BF has no optimizer
-  instance. Mirrors P0.9's `DeadlineMonotonicPriorityVec` group-lock shape +
-  `DM_FAST`'s fast-TL loop, period-keyed (RM not DM): important-first lock →
-  period asc within group → avg-ET tiebreak; TL = smallest grid option else -1.0.
-  3 TDD tests red→green; `testIncreOpt_w_TL` 119/119 (was 116); 16/17 ctest (sole
-  failure pre-existing `CFS_RunOrchestrator_Binary`). Sequencing concern resolved
-  (P0.7 committed, `OptimizeSP_TL_Incre` clean at HEAD). NEXT = §2 BF gate+swap.
-- **2026-08-01 — P0.10 §1b LANDED (TDD).** Extracted the shared "sort indices →
-  fill {priority_vec, id2time_limit}" shape (behind `RateMonotonicFastGroupLocked`
-  AND BF's inline DM/DM_FAST/DM_SLOW modes) into `BuildPriorityPlan(dag, config)`
-  + `PriorityBuilderConfig` (`SortKey`/`GroupLock`/`TimeLimitPolicy`) in NEW TU
-  `sources/Optimization/PriorityBuilders.{h,cpp}`. Rewrote `RateMonotonicFastGroupLocked`
-  as a 3-line delegate `{kPeriod, kImportantFirst, kSmallestGrid}` (3 existing
-  tests = regression net). 2 new `BuildPriorityPlan` tests (DM shape + DM_SLOW
-  largest-grid); `testIncreOpt_w_TL` 121/121 (was 119). Inline DM-mode unification
-  + D1 fall-back-code migration = later commits. NEXT = §2 BF gate+swap.
-- **2026-08-01 — P0.10 §2 LANDED (TDD).** BF gate + fallback swap. New free fn
-  `AdoptRmFastFallbackIfUnschedulable(dag, sp, bf_result)` in `OptimizeFallback.{h,cpp}`:
-  gates BF's `EnumeratePA_with_TimeLimits` result via the self-contained
-  `ImportantTasksMeetThresholds` overload; on FAIL swaps in
-  `RateMonotonicFastGroupLocked`; re-gates the RM-Fast plan; on second FAIL
-  `CoutWarning` + `throw std::runtime_error` (D2). The BF branch in
-  `SimulationOrchestrator.cpp` delegates to it (1 line). 3 new tests (BF-safe
-  kept / BF-unsafe→RM-Fast / double-fail throw); `testIncreOpt_w_TL` 124/124
-  (was 121, +3); 16/17 ctest (sole failure pre-existing CFS). NEXT = §3 records,
-  then D1 migration as its own later commit.
-- **2026-08-01 — P0.10 §2 placement REVISED.** Per user redirect, the gate+fallback
-  moved INSIDE the BF computation (`OptimizeSP_TL_BF.cpp`) so EVERY BF caller is
-  gated, not just the orchestrator branch. Orchestrator BF branch reverted to
-  original 1-line form. Safe for legacy BF tests: `is_important` defaults false →
-  gate vacuously passes when no task is important (`SP_Metric.cpp:238`);
-  `testOptimizePA`/`testBF_w_TL`/`testBFRTimeout` all green. New end-to-end test
-  proves the gate fires through the BF entry point. `testIncreOpt_w_TL` 125/125
-  (was 124, +1).
-- **2026-08-01 — P0.10 §2 placement refined into OptimizePA_with_TimeLimitsStatus::Optimize().**
-  Second user redirect: move the gate call INTO the status class's no-arg
-  `Optimize()` (the preferred site) rather than the entry-point free fn. No-arg
-  `Optimize()` has exactly one caller; recursive `Optimize(uint,vec)` stays
-  ungated (per-leaf). Mirrors P0.7's in-optimizer placement. `EnumeratePA_with_TimeLimits`
-  reverted to `return optimizer.res_opt;`. 125/125; legacy BF 10/5/2 green.
-- **2026-08-01 — P2.19 LANDED (points 1 + 3); INCR_Reopt_10 SIGABRT fixed.** Root
-  cause: `BuildWorstCaseDagAcrossIntervals` over-inflated perf-task WCET (used
-  `execution_time_dist.max_time` = TL-grid bound, not faithful ET) → seed picked
-  the max TL → important perf task missed deadline → `ComputeSafeFallback`
-  loud-fail throw (P1.15 layer B) → SIGABRT. Fix (user 3-point design, scope:
-  (1)+(3) in P2.19, (2) → P2.20): (1) worst-case DAG perf task → point mass at
-  MIN TL option `timePerformancePairs[0].time_limit` (least-interference seed;
-  sound because the gate BAKES the chosen TL so the stored perf dist only feeds
-  the seed selector + DM tie-break, not the RTA); non-perf unchanged. (3) rename
-  → `BuildDAGForObtainSafeFallBAckAcrossIntervals` (user casing kept; suggested
-  normalized `BuildSafeFallbackDagAcrossIntervals` flagged for review). Removed
-  P2.19 temp diagnostics from `ComputeSafeFallback`; kept the loud-fail re-gate
-  (P1.15 net). TDD red→green (rewrote `PreservesPerfTaskTimeLimitGrid` + added
-  `WorstCaseDagUsesMinTimeLimitForPerfTasks`); 125/125 testIncreOpt_w_TL; legacy
-  BF green; 16/17 ctest (sole pre-existing CFS). Repro: taskset_3 INCR_Reopt_10
-  exit 0 (was SIGABRT). Point (2) convergence loop → P2.20 stub, not started.
-- **2026-08-02 — P0.7 + P0.10 CLOSED.** Both fall-back tasks code-complete +
-  committed; records synced; folders → `finished_tasks/`.
-  - **P0.10** (BF-side analogue of P0.7): §1+§1b `2f6c7c4c`, §2 `02f3c8fd`. BF gate
-    `AdoptRmFastFallbackIfUnschedulable` inside `OptimizePA_with_TimeLimitsStatus::Optimize()`
-    so every BF caller is gated; on fail → RM-Fast group-locked plan; on double-fail →
-    throw (D2). `is_important` defaults false → vacuous-pass for legacy tests. 125/125
-    testIncreOpt_w_TL; legacy BF green. Deferred: D1 migration + DM-mode unification.
-  - **P0.7** (INCR-side): triggers (a) `DetectETJump`, (b-i) during-walk gate, (b-ii)
-    `AdoptFallbackIfUnschedulable` backstop — committed `c87ae0d4`…`aefed906`/`f371c543`.
-    A/B (N=[4,6], 10 tasksets, dur=600): ≈1% SP penalty at both N (prod 0.7673/0.9220
-    vs `INCR_NO_FALLBACK` 0.7742/0.9298); mechanism fires (b-i 25/59 rejects, b-ii 6/6
-    adopts). N=6 clean post-P2.18 `f371c543` (was SIGABRT). N=8 skipped per user.
-    `enable_fallback_use_` default ON.
-- **2026-08-02 — Pre-prod figure triage (P0.3).** Decided 4 proposed-but-unbuilt
-  figures: (1) `fig_p25_et_vs_period` → DEFER P3 (self-justification; P25 fix
-  shipped `986a9cfe`+`de4e9636`); (2) P2.6 sim-RT SP cross-check → DEFER P3 (big
-  lift, D1–D4 open, no gate reads it; folder → `finished_tasks/`); (3) P2.1 fig2
-  sweep confirmation → CLOSE (subsumed by the P0.3 prod run; stale-flags crash
-  fixed in code; memory `interval-sweep-stale-flags-bug` → RESOLVED; folder →
-  `finished_tasks/`); (4) **fallback-rejection-ratio figure → KEEP & BUILD**
-  (`during_walk_reject_count / improving_challenger_count` ∈ [0,1] vs N; justifies
-  the P0.7 gate's cost; `comparison_summary.csv` doesn't aggregate the counters →
-  needs a NEW per-interval-log reader). P0.3 now owns one new figure build this
-  cycle. No implementation this turn — docs/registry/memory only.
+- **P0.6 FINISHED + COMMITTED `630cda4d`.** Offline safe-fallback artifact: deterministic
+  `{PA,TL}` (`safe_fallback_`) computed once before the interval loop, for P0.7 to swap
+  in. Seed at P0.8-cert point → TL-only walk w/ hard per-candidate gate → keep
+  best-SP-feasible. §8 cross-interval worst-case DAG (`BuildWorstCaseDagAcrossIntervals`,
+  NEW `WorstCaseDAG.cpp`); loud-fail re-gate on final stored result. 17/17 ctest.
+- **P0.7 step 2 LANDED (uncommitted) + step 3 A/B PARTIAL.** A/B hook
+  (`enable_fallback_use` + `INCR_NO_FALLBACK`). N=4 A/B done (≈1% SP penalty); **N=6
+  blocked by P0.6 loud-fail (NOT P0.7)** → filed P2.17 (gate-wiring bypass).
+
+## 2026-07-29
+
+- **P0.8 config-tuning COMMITTED `7c8748c0`** (12 files +864/−81). (1) perf WCET →
+  `execution_time_mu`; (2) env cap 0.45→0.27 + variance [0.3,0.4]; (3) no-inflation
+  cpu_util [0.5,1.0] + drop proportional redistribution. `DEADLINE_MODE=implicit`.
+- **P0.8 Step 2 prod-wiring + Step 3 LANDED (git add-only).** `run_generator.py`
+  routes through gate BY DEFAULT; `run_sim_experiments.py` widens seed step to 20 when
+  gate ON (silent-duplicates fix); e2e test asserts gate certificate genuine. 48 py.
+
+## 2026-07-28
+
+- **P0.9 DM + important-first priority lock LANDED + FULLY COMMITTED**
+  (`0b9dae4a`/`6a35080b`/`352f13d5`/`7dd1a7ac`). Seed PA system-wide RM→**Deadline
+  Monotonic + important-first group lock** so C++ seed agrees with P0.8's Python RTA
+  cert. D1–D7 RESOLVED (D6 = behavior change, NOT bit-identical). Lockstep prereq for
+  P0.6 + P0.8. 43 py + 351/353 py + 17/17 ctest.
+- **P0.8 Step 2b gate wrapper LANDED + staged (uncommitted).**
+  `run_full_generation_pipeline_with_important_task_gate` (`orchestrator.py`):
+  generation-time gate certifying every emitted taskset schedulable for important tasks
+  under DM+top-priority-lock at the seed point. Seed-advancing retry (budget 20, D4),
+  loud `RuntimeError` on exhaustion (never silent).
+
+## 2026-07-25 – 2026-07-26
+
+- **P3.6 INCR_NO_REOPT baseline IMPL DONE (uncommitted).** New arm: pure incremental
+  w/ RM-fast bootstrap at interval 0, `OptimizeIncre_w_TL` after, NEVER
+  `ReOptimizePeriodic`. Paper-grade baseline, NOT an E3 gate. 17/17 ctest. Awaits A/B.
+- **P2.13/P2.14/P2.15.** P2.13 miss-rate-vs-SP filed (analytic RTA vs empirical miss
+  count). P2.14 `SP_THRESHOLD_RANGE: [0.001,0.9]` (scrub `1.0`); P2.15
+  `SP_WEIGHT_RANGE: [0.1,1.0]`. 372/372 py green.
+
+---
+
+> Pre-2026-07-25 milestones (pipeline foundation, multi-core/period, incumbent
+> redesign, RTA cache evolution) are in the archived log linked above.
