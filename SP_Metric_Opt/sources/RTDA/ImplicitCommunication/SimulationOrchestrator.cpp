@@ -313,10 +313,12 @@ void FixedTaskPrioritySchedulingOrchestrator::RunSimulation() {
         // scheduler-ET metric (this site is outside DeterminePrioritiesAndBudgets's
         // bracket) and profiles it separately. The throwaway-sibling compute leaves
         // the live incumbent untouched → online byte-identical. P0.7 wires the USE.
-        // §8: compute on the cross-interval WORST-CASE DAG (per-task point mass at
-        // max(execution_time_max) across all interval DAGs) → stochastically
-        // dominates every interval → the gate bounds every interval (trigger (a)).
-        DAG_Model worst_case_dag = BuildWorstCaseDagAcrossIntervals(dag_tasks_vecs_);
+        // §8 / P2.19: cross-interval DAG for the safe-fallback seed. Non-perf
+        // task dist = point mass at max(execution_time_max) across intervals
+        // (stochastic dominance); perf task dist = point mass at its MIN TL option
+        // (the gate bakes the chosen TL into the RTA, so the stored dist only
+        // seeds the walk — min TL = least interference, most feasible). Trigger (a).
+        DAG_Model worst_case_dag = BuildDAGForObtainSafeFallBAckAcrossIntervals(dag_tasks_vecs_);
         auto fallback_start = std::chrono::high_resolution_clock::now();
         incr_optimizer_.ComputeSafeFallback(worst_case_dag);
         auto fallback_end = std::chrono::high_resolution_clock::now();

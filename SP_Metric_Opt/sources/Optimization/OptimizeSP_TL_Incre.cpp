@@ -986,10 +986,8 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
     // and `HasSafeFallback()` is false on a fresh sibling → neither can fire.
     fallback_solver.enable_fallback_use_ = true;
 
-    // Seed at the certified point: DM PA + et_mean-bounded TL (TL ≤ et_mean →
-    // ddl_miss_chance = 0 → seed gate-feasible, so the gate can only REJECT). On the
-    // worst-case DAG each dist is a point mass → GetAvgValue()==max_time → seed TL
-    // ≤ max_time across ALL intervals → feasibility-by-construction cross-interval.
+    // Seed at DM PA + the least-interference TL (perf tasks' worst-case dist is a
+    // point mass at their MIN TL option → seed gate-feasible, so the walk only REJECTS).
     std::vector<double> tl_seed = fallback_solver.SeedTimeLimitsAtOrBelowEtMean();
     PriorityVec pa_dm = fallback_solver.DeadlineMonotonicPriorityVec();
     DAG_Model dag_with_tl =
