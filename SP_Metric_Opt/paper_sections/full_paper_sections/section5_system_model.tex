@@ -55,13 +55,15 @@ Probability Distribution & $\mathcal{D}$ \\
 	\begin{definition}[Execution time, $\extDist{i}$]
 		A task's execution time is a probability distribution of the time needed by one standard processor\footnote{Different processors may have different speed. A standard processor in this context means that the execution time is measured on a processor whose speed is normalized.} to finish its execution without interruption.
 	\end{definition}
+
     The task's execution time is modeled as a probability distribution~\cite{Maxim2013ResponseTA}, reflecting variability due to factors like input data, operating system (OS) behavior, and hardware performance.
     This approach captures uncertainty while avoiding pessimistic worst-case assumptions.
-    In experiments, due to the stringent need to maintain low scheduling overhead, we assume the execution time follows Gaussian distribution to reduce the optimization cost.
+    In experiments, due to the stringent need to maintain low scheduling overhead, we assume the execution time follows Gaussian distribution to reduce the optimization cost. 
+	This assumption is a safe assumption as long as the gaussian distribution is a safe upper-bound of the true underlying execution time distribution.
 
 	
 	\begin{definition}[Period, $T_i$]
-		A task $\tau_i$ releases one job\footnote{According to Buttazzo~\cite{Buttazzo2011HardRC}, ``Periodic tasks consist of an infinite sequence of identical activities, called instances or \textit{jobs}, that are regularly activated at a constant rate.''} J for execution every $T_i$ time units.
+		A task $\tau_i$ releases one job\footnote{According to Buttazzo~\cite{Buttazzo2011HardRC}, ``Periodic tasks consist of an infinite sequence of identical activities, called instances or \textit{jobs}, that are regularly activated at a constant rate.''} $J$ for execution every $T_i$ time units.
 	\end{definition}
     In other words, the periodic task $\tau_i$ needs to be run for one time every $T_i$ time units.
 	
@@ -70,7 +72,9 @@ Probability Distribution & $\mathcal{D}$ \\
 	\end{definition}
 	
 	% The deadline definition above is the same as the \textit{relative deadline} used in the real-time system community. 
-    In most cases, the deadline $D_i$ is assumed to be no larger than the period $T_i$~\cite{Buttazzo2011HardRC, Wang2023RTAS}.
+    In most cases, the deadline $D_i$ is no larger than the period $T_i$~\cite{Buttazzo2011HardRC, Wang2023RTAS}. 
+	In experiments, we use the implicit deadline configurations for simplicity: $D_i = T_i$.
+	However, the propsoed system also works well for systems with other deadlien configurations.
 	
 	
 	\begin{definition}[Task configurations, $\lambda_i$]
