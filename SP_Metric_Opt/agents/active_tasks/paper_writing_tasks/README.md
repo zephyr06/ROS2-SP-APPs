@@ -94,3 +94,10 @@ in `review_from_ryan_from_pdf_files.md`; each sub-task's `goal.md` owns its item
 - Writing changes go into `paper_sections/full_paper_sections/*.tex` (+ `main.tex`
   for cross-cutting fixes). The PW.1.* sketches and PW.1.4's `revision_plan.md` stay
   in their task folders as durable grounding artifacts.
+- **One-sentence-per-line reformat before any content edit.** Before modifying a
+  section `.tex`, first reflow it so each sentence occupies one line of code, with a
+  blank line separating paragraphs (sentences in the same paragraph stay on
+  consecutive lines; no blank line between them). This is a standalone, content-free
+  commit (no wording changes) made *before* the content-edit commit, so reviewers can
+  diff the reformat (whitespace-only) separately from the substantive changes. Apply
+  once per section the first time it is touched in a writing sub-task.
