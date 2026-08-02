@@ -134,3 +134,106 @@ CFS test's non-zero exit bubbling up). Unrelated to P0.10.
 
 **Staged:** `PriorityBuilders.h`, `PriorityBuilders.cpp`, `OptimizeFallback.cpp`,
 `testIncreOpt_w_TL.cpp` (+ records). NOT committed. NEXT = §2 BF gate + swap.
+
+## 2026-08-01 — §2 BF gate + fallback swap LANDED (TDD red→green)
+
+User's §1b review committed as `2f6c7c4c`; tree clean. Started §2 (the BF gate +
+swap), keeping the change modular + testable.
+
+**Design — a free fn, not an inline branch.** The §2 logic (gate BF's res → on
+FAIL swap to RM-Fast → on double-fail throw) is wired into
+`FixedTaskPrioritySchedulingOrchestrator::DeterminePrioritiesAndBudgets`, whose
+full construction (input folder, etc.) is a heavy harness. To keep the test
+harness light (just `DAG_Model` + `SP_Parameters`, like §1/§1b) the logic is a
+FREE fn `AdoptRmFastFallbackIfUnschedulable(dag, sp, bf_result)` in
+`OptimizeFallback.{h,cpp}` — mirrors `RateMonotonicFastGroupLocked` being free
+(BF has no optimizer instance). The BF branch becomes a 1-line delegate:
+```cpp
+} else if (scheduler_mode_ == "BF") {
+    res = EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+    res = AdoptRmFastFallbackIfUnschedulable(dag_tasks, sp_parameters, res);
+}
+```
+
+**Gate contract recap:** `ImportantTasksMeetThresholds(dag, sp, pa, tl)` (self-
+contained overload, `SP_Metric.h:174`) — `pa` is task IDs (== indices under the
+id-ordered taskset contract `UpdateTaskSetPriorities` enforces), `tl` is index-
+ordered (pairs with `dag_tasks.tasks[i]`). So the fn reconstructs the index-
+ordered `tl` from `bf_result.id2time_limit` (keyed by id) via a static helper
+`TimeLimitVecFromResult` (mirrors `ReconstructTimeLimitVecFromResOpt`). On FAIL
+it builds the RM-Fast plan, reconstructs its `tl`, re-gates; on second FAIL
+`CoutWarning` + `throw std::runtime_error` (D2 — mirror of
+`AdoptFallbackIfUnschedulable`'s certificate-violation throw; never silently
+ship an infeasible result).
+
+**TDD:** 3 tests `AdoptRmFastFallbackIfUnschedulable.*`:
+- `KeepsBfResultWhenImportantTasksFeasible` — loose deadline → gate PASSES → BF
+  `{pa,tl}` kept verbatim.
+- `AdoptsRmFastWhenBfFailsGate` — the discriminative case: important T0 (ET 10,
+  deadline 40) MEETS at the top slot (RTA 10) but MISSES below non-important T1
+  (ET 40, RTA 50 > 40). BF order `[1,0]` fails → swapped to RM-Fast `[0,1]`.
+  (First cut used an impossibly-tight deadline 1.0 — that double-fails under
+  ANY PA since RTA >= ET 10 > 1; corrected to a deadline tight enough to flip
+  with priority order but meettable at the top.)
+- `ThrowsWhenRmFastAlsoFailsGate` — BOTH important tasks deadline 1.0 → no PA
+  can meet → `EXPECT_THROW` `std::runtime_error`.
+
+RED vs stub (returns `bf_result`): tests 2+3 fail. GREEN after impl.
+
+**Green:** 3/3 new; `testIncreOpt_w_TL` 124/124 (was 121, +3); 16/17 ctest —
+sole failure `testScheduleSimulate`/`CFS_RunOrchestrator_Binary` pre-existing
+(shells out to an absent RELEASE binary; verified 39 pass / 1 fail, the same
+CFS test). Unrelated to §2.
+
+**Staged:** `OptimizeFallback.h`, `OptimizeFallback.cpp`,
+`SimulationOrchestrator.cpp`, `testIncreOpt_w_TL.cpp` (+ records). NOT
+committed — user reviews. NEXT = §3 records + handoff (then D1 migration as its
+own later commit, per the option-1 sequencing).
+
+## 2026-08-01 — §2 placement moved INSIDE EnumeratePA_with_TimeLimits (revised)
+
+User redirect: the gate+fallback should live INSIDE the BF computation (ideally
+`OptimizePA_with_TimeLimitsStatus`), not as a post-hoc orchestrator wrapper.
+Rationale: every `EnumeratePA_with_TimeLimits` caller is then gated
+automatically — the safety floor is a property of BF itself, not a call-site
+convention the orchestrator has to remember.
+
+**Change:** moved the gate call into `EnumeratePA_with_TimeLimits`
+(`OptimizeSP_TL_BF.cpp`): after `optimizer.Optimize()`,
+`return AdoptRmFastFallbackIfUnschedulable(dag_tasks, sp_parameters,
+optimizer.res_opt);` instead of `return optimizer.res_opt;`. Reverted the
+orchestrator's BF branch to its original 1-line form (`res =
+EnumeratePA_with_TimeLimits(...)`) + dropped the now-unneeded
+`OptimizeFallback.h` include there. The free fn
+`AdoptRmFastFallbackIfUnschedulable` stays — it's the unit-testable seam (the
+3 existing tests still call it directly) and the BF entry point now calls it.
+
+**Blast-radius check (decisive):** moving the gate inside BF means EVERY caller
+is gated, including legacy tests (`testOptimizePA`, `testBF_w_TL`,
+`testBFRTimeout`). Safe because `is_important` defaults `false`
+(`RegularTasks.h:111`) and the gate VACUOUSLY PASSES when no task is important
+(`SP_Metric.cpp:238` `return true; // every important task (vacuously, if none)`).
+So legacy BF tests are inert under the gate; only task sets that set
+`is_important` (the P0.10 tests) can trigger swap/throw. Confirmed: all three
+legacy suites stay green (10 + 5 + 2).
+
+**`priority_vec` populated?** Verified `OptimizePA_BruteForce` calls
+`res.UpdatePriorityVec(pa_vec)` (`OptimizeSP_BF.h:25`) → BF's `res_opt.priority_vec`
+is valid for the gate's `pa`.
+
+**New end-to-end test** `EnumeratePA_with_TimeLimits.SwapsToRmFastWhenImportant-
+TaskMissesGate` — calls the real BF entry point with the §2 interference task
+set (important T0 ET 10 / deadline 40, non-important T1 ET 40); asserts the
+returned plan has T0 in the top slot (BF-safe order kept OR RM-Fast swap
+applied — either way the important task is on top). Proves the gate fires
+through the BF computation, not just the free-fn seam.
+
+**Green:** 4/4 P0.10 gate tests (3 free-fn + 1 end-to-end); `testIncreOpt_w_TL`
+125/125 (was 124, +1); legacy BF suites 10/5/2 all green; 16/17 ctest (sole
+failure `testScheduleSimulate`/`CFS_RunOrchestrator_Binary` pre-existing —
+shells out to an absent RELEASE binary).
+
+**Staged (revised):** `OptimizeFallback.h`, `OptimizeFallback.cpp`,
+`OptimizeSP_TL_BF.cpp`, `testIncreOpt_w_TL.cpp` (+ records). The orchestrator
+file is NO LONGER touched by §2 (reverted to original). NOT committed — user
+reviews.

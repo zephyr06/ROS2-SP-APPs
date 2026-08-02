@@ -1720,6 +1720,118 @@ TEST(BuildPriorityPlan, LargestGridPolicyPicksBackPair) {
     EXPECT_DOUBLE_EQ(-1.0, res.id2time_limit[1]);  // no grid
 }
 
+// P0.10 §2 — the BF gate + fallback swap. BF's EnumeratePA_with_TimeLimits
+// result is gated via ImportantTasksMeetThresholds (self-contained overload); on
+// FAIL the result is replaced by the RM-Fast group-locked plan, on PASS it is
+// kept. If the RM-Fast plan ITSELF fails the gate → throw (certificate
+// violation, mirror of AdoptFallbackIfUnschedulable's loud double-fail).
+
+TEST(AdoptRmFastFallbackIfUnschedulable, KeepsBfResultWhenImportantTasksFeasible) {
+    // BF-safe: the important task's deadline is loose (period 1000, deadline
+    // 1000) so its RTA sits well under the deadline under ANY priority order →
+    // the gate PASSES → the fn returns BF's {pa, tl} unchanged.
+    std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
+    Task t0(0, d, 1000, 1000, 0, "T0");
+    Task t1(1, d, 100, 100, 1, "T1");
+    t0.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag);
+
+    ResourceOptResult bf_result;
+    bf_result.priority_vec = {1, 0};  // arbitrary BF order, non-important first
+    bf_result.id2time_limit[0] = -1.0;
+    bf_result.id2time_limit[1] = -1.0;
+
+    ResourceOptResult out =
+        AdoptRmFastFallbackIfUnschedulable(dag, sp, bf_result);
+    // BF-safe → kept verbatim.
+    EXPECT_EQ(bf_result.priority_vec, out.priority_vec);
+    EXPECT_DOUBLE_EQ(-1.0, out.id2time_limit[0]);
+    EXPECT_DOUBLE_EQ(-1.0, out.id2time_limit[1]);
+}
+
+TEST(AdoptRmFastFallbackIfUnschedulable, AdoptsRmFastWhenBfFailsGate) {
+    // BF-unsafe but RM-Fast-safe: the important task T0 (ET 10, deadline 40)
+    // MEETS its deadline when it holds the top slot (RTA = 10) but MISSES when
+    // a non-important task T1 (ET 40) is above it (RTA = 10 + 40 = 50 > 40).
+    // BF's order [1, 0] puts T1 above T0 → gate FAILS → the fn swaps in the
+    // RM-Fast plan, whose important-first group lock puts T0 on top → gate
+    // PASSES. Point-mass ETs make the RTA deterministic.
+    std::vector<Value_Proba> d0 = {Value_Proba(10.0, 1.0)};
+    std::vector<Value_Proba> d1 = {Value_Proba(40.0, 1.0)};
+    Task t0(0, d0, 100, 40, 0, "T0");
+    Task t1(1, d1, 100, 100, 1, "T1");
+    t0.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag);
+
+    ResourceOptResult bf_result;
+    bf_result.priority_vec = {1, 0};  // non-important above important → fails
+    bf_result.id2time_limit[0] = -1.0;
+    bf_result.id2time_limit[1] = -1.0;
+
+    ResourceOptResult expected_rm_fast = RateMonotonicFastGroupLocked(dag);
+    ResourceOptResult out =
+        AdoptRmFastFallbackIfUnschedulable(dag, sp, bf_result);
+    // BF-unsafe → swapped to RM-Fast (important task locked to the top slot).
+    EXPECT_EQ(expected_rm_fast.priority_vec, out.priority_vec);
+    EXPECT_EQ(0, out.priority_vec[0]);
+}
+
+TEST(AdoptRmFastFallbackIfUnschedulable, ThrowsWhenRmFastAlsoFailsGate) {
+    // Double-fail (D2): EVERY important task has an impossibly-tight deadline
+    // (1.0), so the gate fails under BF's order AND under RM-Fast's order too
+    // (no priority assignment can make RT 10 meet deadline 1). The fn must
+    // throw — never silently ship an infeasible result.
+    std::vector<Value_Proba> d = {Value_Proba(10.0, 1.0)};
+    Task t0(0, d, 200, 1.0, 0, "T0");
+    Task t1(1, d, 100, 1.0, 1, "T1");
+    t0.is_important = true;
+    t1.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag);
+
+    ResourceOptResult bf_result;
+    bf_result.priority_vec = {1, 0};
+    bf_result.id2time_limit[0] = -1.0;
+    bf_result.id2time_limit[1] = -1.0;
+
+    EXPECT_THROW(
+        AdoptRmFastFallbackIfUnschedulable(dag, sp, bf_result),
+        std::runtime_error);
+}
+
+TEST(EnumeratePA_with_TimeLimits, SwapsToRmFastWhenImportantTaskMissesGate) {
+    // P0.10 §2 end-to-end: the gate+fallback lives INSIDE the BF entry point, so
+    // an important-task-unschedulable BF result is swapped to RM-Fast by the time
+    // EnumeratePA_with_TimeLimits returns. Important T0 (ET 10, deadline 40) meets
+    // at the top slot (RTA 10) but misses below non-important T1 (ET 40, RTA 50).
+    // BF's brute force may rank either order; if it ranks T1 above T0 the gate
+    // fails → the returned plan must be the RM-Fast important-first lock (T0 on
+    // top). If BF already ranked T0 on top the gate passes → T0 stays on top.
+    // Either way the returned plan has T0 in the top slot.
+    std::vector<Value_Proba> d0 = {Value_Proba(10.0, 1.0)};
+    std::vector<Value_Proba> d1 = {Value_Proba(40.0, 1.0)};
+    Task t0(0, d0, 100, 40, 0, "T0");
+    Task t1(1, d1, 100, 100, 1, "T1");
+    t0.is_important = true;
+    MAP_Prev mapPrev;
+    TaskSet tasks = {t0, t1};
+    DAG_Model dag(tasks, mapPrev, 0, 0);
+    SP_Parameters sp(dag);
+
+    ResourceOptResult out = EnumeratePA_with_TimeLimits(dag, sp);
+    // The important task is guaranteed the top slot (BF-safe order kept, or
+    // RM-Fast swap applied).
+    EXPECT_EQ(0, out.priority_vec[0]);
+}
+
 TEST_F(CompareAndKeepSynthetic, SeedStateFromIncumbent_WritesFullFourTuple) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     EXPECT_FALSE(opt.IfInitialized());

@@ -1,4 +1,5 @@
 
+#include "sources/Optimization/OptimizeFallback.h"
 #include "sources/Optimization/OptimizeSP_TL_BF.h"
 
 namespace SP_OPT_PA {
@@ -65,6 +66,11 @@ void OptimizePA_with_TimeLimitsStatus::Optimize(
 void OptimizePA_with_TimeLimitsStatus::Optimize() {
     std::vector<double> time_limit_for_task(N, -1);
     Optimize(0, time_limit_for_task);
+    // P0.10 §2 — gate the final result on important-task schedulability; on FAIL
+    // swap in the RM-Fast plan; on double-fail throw. Inside the optimizer so
+    // every caller is gated. No-op when no task is important (gate vacuously
+    // passes); only `is_important` task sets can trigger the swap.
+    res_opt = AdoptRmFastFallbackIfUnschedulable(dag_tasks, sp_parameters, res_opt);
 }
 
 ResourceOptResult EnumeratePA_with_TimeLimits(

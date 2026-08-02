@@ -276,3 +276,22 @@
   tests = regression net). 2 new `BuildPriorityPlan` tests (DM shape + DM_SLOW
   largest-grid); `testIncreOpt_w_TL` 121/121 (was 119). Inline DM-mode unification
   + D1 fall-back-code migration = later commits. NEXT = §2 BF gate+swap.
+- **2026-08-01 — P0.10 §2 LANDED (TDD).** BF gate + fallback swap. New free fn
+  `AdoptRmFastFallbackIfUnschedulable(dag, sp, bf_result)` in `OptimizeFallback.{h,cpp}`:
+  gates BF's `EnumeratePA_with_TimeLimits` result via the self-contained
+  `ImportantTasksMeetThresholds` overload; on FAIL swaps in
+  `RateMonotonicFastGroupLocked`; re-gates the RM-Fast plan; on second FAIL
+  `CoutWarning` + `throw std::runtime_error` (D2). The BF branch in
+  `SimulationOrchestrator.cpp` delegates to it (1 line). 3 new tests (BF-safe
+  kept / BF-unsafe→RM-Fast / double-fail throw); `testIncreOpt_w_TL` 124/124
+  (was 121, +3); 16/17 ctest (sole failure pre-existing CFS). NEXT = §3 records,
+  then D1 migration as its own later commit.
+- **2026-08-01 — P0.10 §2 placement REVISED.** Per user redirect, the gate+fallback
+  moved INSIDE `EnumeratePA_with_TimeLimits` (`OptimizeSP_TL_BF.cpp`, after
+  `optimizer.Optimize()`) so EVERY BF caller is gated, not just the orchestrator
+  branch. Orchestrator BF branch reverted to original 1-line form. Safe for
+  legacy BF tests: `is_important` defaults false → gate vacuously passes when no
+  task is important (`SP_Metric.cpp:238`); `testOptimizePA`/`testBF_w_TL`/
+  `testBFRTimeout` all green. New end-to-end test proves the gate fires through
+  the BF entry point. `testIncreOpt_w_TL` 125/125 (was 124, +1). Staged
+  `OptimizeSP_TL_BF.cpp` instead of `SimulationOrchestrator.cpp`.

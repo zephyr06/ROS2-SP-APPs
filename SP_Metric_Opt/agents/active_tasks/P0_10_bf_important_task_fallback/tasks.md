@@ -60,16 +60,30 @@
       shape). `testIncreOpt_w_TL` 121/121 (was 119). DM-mode unification (the 3
       inline `SimulationOrchestrator` branches delegate too) = LATER, not here.
 
-## 2. BF gate + fallback swap — NOT STARTED
+## 2. BF gate + fallback swap — LANDED (TDD red→green), placement REVISED
 > Gate BF's `res` via `ImportantTasksMeetThresholds` (self-contained overload);
 > on FAIL → swap `res` to RM-Fast plan; on PASS → keep BF. On RM-Fast also-fail
 > → throw (per D2).
-- [ ] TDD red: BF-unsafe → RM-Fast adopted (assert gate verdicts + that `res`
-      became the RM-Fast plan); BF-safe → `res` kept (BF's {pa,tl} unchanged).
-- [ ] Implement gate+swap at the BF dispatch site
-      (`SimulationOrchestrator.cpp:353-354`).
-- [ ] TDD green: 17/17 ctest.
+- [x] TDD red: 3 tests on the free fn `AdoptRmFastFallbackIfUnschedulable`
+      (dag, sp, bf_result) — BF-safe → kept; BF-unsafe → RM-Fast adopted;
+      double-fail → `std::runtime_error`. RED vs stub (returns bf_result).
+- [x] Implement: free fn in `OptimizeFallback.{h,cpp}` (gate BF's res via the
+      self-contained overload; on FAIL swap to `RateMonotonicFastGroupLocked`;
+      re-gate the RM-Fast plan; on second FAIL `CoutWarning` + throw).
+- [x] Placement REVISED per user: gate lives INSIDE `EnumeratePA_with_TimeLimits`
+      (`OptimizeSP_TL_BF.cpp`, after `optimizer.Optimize()`) — every caller is
+      gated, not just the orchestrator's branch. Orchestrator BF branch reverted
+      to original 1-line form. Safe for legacy BF tests: `is_important` defaults
+      false → gate vacuously passes when no task is important
+      (`SP_Metric.cpp:238`). Legacy suites `testOptimizePA`/`testBF_w_TL`/
+      `testBFRTimeout` all green.
+- [x] End-to-end test `EnumeratePA_with_TimeLimits.SwapsToRmFastWhenImportant-
+      TaskMissesGate` — proves the gate fires through the BF entry point.
+- [x] TDD green: 4/4 gate tests (3 free-fn + 1 e2e); `testIncreOpt_w_TL`
+      125/125 (was 124, +1); legacy BF 10/5/2 green; 16/17 ctest (sole failure
+      `testScheduleSimulate`/`CFS_RunOrchestrator_Binary` pre-existing — shells
+      out to an absent RELEASE binary, verified clean-HEAD 39 pass / 1 fail).
 
-## 3. Records + handoff — NOT STARTED
-- [ ] `dev_log.md` (this folder + top-level) + memory updated.
-- [ ] `git add` staged; user reviews (no commit).
+## 3. Records + handoff — DONE (records); awaiting user commit
+- [x] `dev_log.md` (this folder + top-level) + memory updated.
+- [x] `git add` staged; user reviews (no commit).
