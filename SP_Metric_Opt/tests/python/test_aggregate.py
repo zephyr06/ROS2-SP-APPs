@@ -242,7 +242,6 @@ class TestBuildLineChart(unittest.TestCase):
                 records,
                 scheduler_list=["INCR", "BF"],
                 metric_key="mean_sp",
-                std_key="std_sp",
                 ylabel="Mean SP",
                 title="Test Chart",
                 output_stem=output_stem,
@@ -264,7 +263,7 @@ class TestBuildLineChart(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.build_line_chart(
-                records, ["INCR"], "mean_sp", "std_sp", "Y", "T",
+                records, ["INCR"], "mean_sp", "Y", "T",
                 os.path.join(tmpdir, "fig"), log_y=True,
             )
         mock_ax.set_yscale.assert_called_once_with("log")
@@ -299,7 +298,7 @@ class TestBuildLineChart(unittest.TestCase):
             ]
             with tempfile.TemporaryDirectory() as tmpdir:
                 agg.build_line_chart(
-                    records, ["INCR"], "mean_sp", "std_sp", "Y", "T",
+                    records, ["INCR"], "mean_sp", "Y", "T",
                     os.path.join(tmpdir, "fig"), log_y=True,
                 )
             loc = mock_ax.yaxis.set_minor_locator.call_args[0][0]
@@ -319,7 +318,7 @@ class TestBuildLineChart(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
             agg.build_line_chart(
-                records, ["INCR"], "mean_sp", "std_sp", "Y", "T",
+                records, ["INCR"], "mean_sp", "Y", "T",
                 os.path.join(tmpdir, "fig"),
             )
         mock_ax.set_yscale.assert_not_called()
@@ -527,7 +526,6 @@ class TestNormalizeRecordsSP(unittest.TestCase):
                 records,
                 scheduler_list=["INCR"],
                 metric_key="mean_sp",
-                std_key="std_sp",
                 ylabel="Y",
                 title="T",
                 output_stem=output_stem,

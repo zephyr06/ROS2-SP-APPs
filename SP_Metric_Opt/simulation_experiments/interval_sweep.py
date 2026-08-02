@@ -327,27 +327,25 @@ def _draw_interval_sweep_variant(data, cfg, output_path_stem, ylabel, title):
     for sched in schedulers:
         x = []
         y = []
-        yerr = []
         for iv in intervals:
             points = [d for d in data if d["interval"] == iv and d["scheduler"] == sched]
             if points:
                 x.append(iv)
                 y.append(points[0]["mean_sp"])
-                yerr.append(points[0]["std_sp"])
         if not x:
             continue
         if sched.startswith("INCR_Reopt_"):
             # The incremental optimizer (any INCR_Reopt_X arm) is the headline
-            # -- draw it as a prominent errorbar curve across the sweep. The
-            # bare "INCR" arm was a duplicate of INCR_Reopt_10 and is no longer
+            # -- draw it as a prominent mean curve across the sweep. The bare
+            # "INCR" arm was a duplicate of INCR_Reopt_10 and is no longer
             # scheduled, so match the whole family by prefix (a period sweep
             # with several INCR_Reopt_X arms draws one curve per arm, which is
             # the intended comparison; previously all of them were misdrawn as
             # flat baseline lines because only the literal "INCR" matched).
-            ax.errorbar(
-                x, y, yerr=yerr, marker="o", markersize=8, linewidth=2,
+            ax.plot(
+                x, y, marker="o", markersize=8, linewidth=2,
                 label=sched, color=color_map.get(sched, "gray"),
-                capsize=4, zorder=3,
+                zorder=3,
             )
         else:
             # Baselines — horizontal dashed lines across the full x-range

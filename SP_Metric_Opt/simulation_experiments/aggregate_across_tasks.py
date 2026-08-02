@@ -539,7 +539,6 @@ def build_line_chart(
     records,
     scheduler_list,
     metric_key,
-    std_key,
     ylabel,
     title,
     output_stem,
@@ -549,9 +548,10 @@ def build_line_chart(
 ):
     """Generate a multi-line chart from aggregate records.
 
-    One line per scheduler, plotted against the number of tasks (x-axis), with
-    error bars from the std field. Replaces the previous grouped bar chart --
-    line plots are used everywhere per the project convention.
+    One line per scheduler, plotted against the number of tasks (x-axis),
+    showing only the mean value per point. Per-project convention: with many
+    schedulers on one axis, error bars / shaded bands make the figure unreadable,
+    so each line is a plain mean curve. Replaces the previous grouped bar chart.
 
     Parameters
     ----------
@@ -561,8 +561,6 @@ def build_line_chart(
         Schedulers to include, in desired order (one line each).
     metric_key : str
         Key for the line value (e.g. ``"mean_sp"``).
-    std_key : str
-        Key for the error bar (e.g. ``"std_sp"``).
     ylabel : str
         Y-axis label string.
     title : str
@@ -592,10 +590,10 @@ def build_line_chart(
         print("matplotlib not available; skipping figure generation.")
         return
 
-    # Bucket data by num_tasks -> scheduler -> (metric, std)
+    # Bucket data by num_tasks -> scheduler -> mean metric.
     num_tasks_set = sorted({r["num_tasks"] for r in records})
     data = {
-        nt: {s: {"metric": 0.0, "std": 0.0} for s in scheduler_list}
+        nt: {s: 0.0 for s in scheduler_list}
         for nt in num_tasks_set
     }
 
@@ -603,8 +601,7 @@ def build_line_chart(
         nt = r["num_tasks"]
         sched = r["scheduler"]
         if nt in data and sched in data[nt]:
-            data[nt][sched]["metric"] = r[metric_key]
-            data[nt][sched]["std"] = r[std_key]
+            data[nt][sched] = r[metric_key]
 
     # Color map
     color_map = get_scheduler_color_map(scheduler_list)
@@ -613,16 +610,13 @@ def build_line_chart(
     x = np.arange(len(num_tasks_set))
 
     for sched in scheduler_list:
-        means = [data[nt][sched]["metric"] for nt in num_tasks_set]
-        stds = [data[nt][sched]["std"] for nt in num_tasks_set]
-        ax.errorbar(
+        means = [data[nt][sched] for nt in num_tasks_set]
+        ax.plot(
             x,
             means,
-            yerr=stds,
             marker="o",
             markersize=8,
             linewidth=2,
-            capsize=4,
             label=sched,
             color=color_map.get(sched, "gray"),
             zorder=3,
@@ -713,7 +707,7 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
                   else "fig1a_mean_sp_vs_tasks_main")
     build_line_chart(
         sp_records_1a, scheduler_list,
-        "mean_sp", "std_sp",
+        "mean_sp",
         sp_1a_ylabel, sp_1a_title,
         os.path.join(figures_dir, sp_1a_stem),
     )
@@ -730,7 +724,7 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
                   else "fig1b_std_sp_vs_tasks_main")
     build_line_chart(
         sp_records_1b, scheduler_list,
-        "std_sp", "std_sp",
+        "std_sp",
         sp_1b_ylabel, sp_1b_title,
         os.path.join(figures_dir, sp_1b_stem),
     )
@@ -739,7 +733,7 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     # between the optimizer search cost and fast baselines like RM/CFS).
     build_line_chart(
         records, scheduler_list,
-        "mean_sched_time", "std_sched_time",
+        "mean_sched_time",
         "Mean Execution Time (s)",
         "Mean Scheduler Execution Time vs. Number of Tasks",
         os.path.join(figures_dir, "fig1c_mean_exec_time_vs_tasks_main"),
@@ -749,7 +743,7 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     # Fig 1D: Mean miss rate (debug)
     build_line_chart(
         records, scheduler_list,
-        "mean_miss_rate", "std_miss_rate",
+        "mean_miss_rate",
         "Mean Miss Rate",
         "Mean Miss Rate vs. Number of Tasks (Debug)",
         os.path.join(figures_dir, "fig1d_mean_miss_rate_vs_tasks_main"),
@@ -758,7 +752,7 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     # Fig 1E: Std miss rate (debug)
     build_line_chart(
         records, scheduler_list,
-        "std_miss_rate", "std_miss_rate",
+        "std_miss_rate",
         "Std Miss Rate",
         "Std Miss Rate vs. Number of Tasks (Debug)",
         os.path.join(figures_dir, "fig1e_std_miss_rate_vs_tasks_main"),
@@ -795,15 +789,12 @@ def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
 
     means = [next((r["important_miss_rate"] for r in filtered if r["scheduler"] == s), 0.0)
              for s in scheduler_list]
-    # Use 0 std for now (per-taskset data not retained in summary CSV)
-    stds = [0.0] * len(scheduler_list)
 
     # Line plot over scheduler index (categorical x-axis, connected markers).
     x = np.arange(len(scheduler_list))
-    ax.errorbar(
-        x, means, yerr=stds, marker="o", markersize=8, linewidth=2,
-        capsize=4, zorder=3,
-        color=color_map.get(scheduler_list[0], "gray"),
+    ax.plot(
+        x, means, marker="o", markersize=8, linewidth=2,
+        zorder=3, color=color_map.get(scheduler_list[0], "gray"),
     )
     ax.set_xticks(x)
     ax.set_xticklabels(scheduler_list)
@@ -818,10 +809,9 @@ def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
     fig, ax = plt.subplots(figsize=FIGSIZE_GROUPED)
     means_non = [next((r["non_important_miss_rate"] for r in filtered if r["scheduler"] == s), 0.0)
                  for s in scheduler_list]
-    ax.errorbar(
-        x, means_non, yerr=stds, marker="o", markersize=8, linewidth=2,
-        capsize=4, zorder=3,
-        color=color_map.get(scheduler_list[0], "gray"),
+    ax.plot(
+        x, means_non, marker="o", markersize=8, linewidth=2,
+        zorder=3, color=color_map.get(scheduler_list[0], "gray"),
     )
     ax.set_xticks(x)
     ax.set_xticklabels(scheduler_list)
@@ -854,7 +844,6 @@ def generate_fig_fallback_rejection_ratio(records, cfg, figures_dir=None):
         records,
         scheduler_list=scheduler_list,
         metric_key="mean_ratio",
-        std_key="std_ratio",
         ylabel="Fallback Rejection Ratio",
         title="Fraction of SP-Improving Challengers Rejected by the Gate",
         output_stem=os.path.join(figures_dir, "fig_fallback_rejection_ratio"),
@@ -895,7 +884,7 @@ def generate_ablation_group_figures(records, cfg, figures_dir=None):
                else "fig_ablation_mean_sp_vs_tasks")
     build_line_chart(
         sp_records, scheduler_list,
-        "mean_sp", "std_sp",
+        "mean_sp",
         sp_ylabel, sp_title,
         os.path.join(figures_dir, sp_stem),
     )
@@ -903,7 +892,7 @@ def generate_ablation_group_figures(records, cfg, figures_dir=None):
     # Ab-B: Mean execution time (log y)
     build_line_chart(
         records, scheduler_list,
-        "mean_sched_time", "std_sched_time",
+        "mean_sched_time",
         "Mean Execution Time (s)",
         "Mean Execution Time vs. Number of Tasks (Ablation)",
         os.path.join(figures_dir, "fig_ablation_mean_exec_time_vs_tasks"),

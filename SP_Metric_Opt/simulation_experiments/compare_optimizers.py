@@ -105,14 +105,12 @@ def plot_optimizer_sp_line(results_by_scheduler, schedulers, output_path,
 
     valid_schedulers = []
     means = []
-    stds = []
     for s in schedulers:
         sp_vals = results_by_scheduler[s].get("sp_values", [])
         if sp_vals:
             valid_schedulers.append(s)
             arr = np.array(sp_vals)
             means.append(np.mean(arr))
-            stds.append(np.std(arr))
 
     if not valid_schedulers:
         print("No valid SP data for line plot.")
@@ -121,8 +119,8 @@ def plot_optimizer_sp_line(results_by_scheduler, schedulers, output_path,
     fig, ax = plt.subplots(figsize=(12, 6))
     colors = matplotlib.colormaps["tab10"]
     x = np.arange(len(valid_schedulers))
-    ax.errorbar(
-        x, means, yerr=stds, marker="o", markersize=8, linewidth=2, capsize=5,
+    ax.plot(
+        x, means, marker="o", markersize=8, linewidth=2,
         color=colors(0),
     )
     ax.set_xticks(x)
@@ -150,14 +148,12 @@ def plot_optimizer_exec_time_line(results_by_scheduler, schedulers, output_path)
 
     valid_schedulers = []
     means = []
-    stds = []
     for s in schedulers:
         times = results_by_scheduler[s].get("sched_times", [])
         if times:
             valid_schedulers.append(s)
             arr = np.array(times)
             means.append(np.mean(arr))
-            stds.append(np.std(arr))
 
     if not valid_schedulers:
         print("No valid execution-time data for plot.")
@@ -166,8 +162,8 @@ def plot_optimizer_exec_time_line(results_by_scheduler, schedulers, output_path)
     fig, ax = plt.subplots(figsize=(12, 6))
     colors = matplotlib.colormaps["tab10"]
     x = np.arange(len(valid_schedulers))
-    ax.errorbar(
-        x, means, yerr=stds, marker="o", markersize=8, linewidth=2, capsize=5,
+    ax.plot(
+        x, means, marker="o", markersize=8, linewidth=2,
         color=colors(0),
     )
     ax.set_xticks(x)
