@@ -216,3 +216,56 @@ Files: `sources/Optimization/OptimizeSP_TL_Incre.{h,cpp}`,
 `tests/RunOrchestrator.cpp`, `tests/testIncreOpt_w_TL.cpp`. Not committed (user
 commits).
 
+## 2026-08-02 — Figure triage: 4 proposed-but-unbuilt figures decided
+
+### Outcome (1 DEFER, 2 DEFER, 3 CLOSE, 4 BUILD)
+Pre-prod triage of every proposed-but-unbuilt figure/analysis. P0.3 now owns
+only ONE new figure build this cycle — the fallback-rejection-ratio figure.
+
+1. **`fig_p25_et_vs_period` (P0.3) — DEFER → P3.** ET vs reoptimization period
+   from the `INCR_Reopt_X` arms. Self-justification (the P25 bounded-ET fix
+   already shipped `986a9cfe`+`de4e9636`); ET awkward to SP-normalize. Spec
+   parked for a future P3 `optional_figures` task. `tasks.md` P25 block marked
+   DEFERRED→P3 (not deleted); `goal.md` P25 section marked deferred; done-when
+   for it removed.
+2. **P2.6 sim-RT SP cross-check — DEFER → P3.** Not a figure but a proposed
+   second SP column from `job_history_` RT samples through
+   `ObtainSP_DAG_From_Dists`. Big lift (D1–D4 open), zero implementation since
+   2026-07-12, no gate reads it. P2.6 folder → `finished_tasks/` (spec preserved
+   for revival into the same P3 `optional_figures` task). Memory
+   `sim-rt-based-sp-metric` → CLOSED/deferred.
+3. **P2.1 fig2 sweep confirmation — CLOSE (duplicated with P0.3).** Not a new
+   figure; a verification task for the already-built `fig2_sp_vs_interval`. Its
+   done-when is subsumed by THIS P0.3 prod run (which runs the sweep stage and
+   lists `fig2` as must-have). The stale-flags crash is already fixed in code
+   (`compare_optimizers.py:303`/`:333`). P2.1 folder → `finished_tasks/`;
+   memory `interval-sweep-stale-flags-bug` → RESOLVED.
+4. **Fallback-rejection-ratio figure — KEEP & BUILD (this cycle).**
+   `ratio = during_walk_reject_count / improving_challenger_count` ∈ [0,1] vs N.
+   The one figure that justifies the P0.7 fallback gate by showing it fires and
+   quantifying its cost; pairs with the P0.7 A/B (≈1% SP penalty). Depends on
+   the staged `interval_walk_stats.txt` counters (#1/#3) landing first.
+   `comparison_summary.csv` does NOT aggregate these counters → needs a NEW
+   per-interval-log reader. NEW must-have figure for this cycle; added to the
+   `goal.md` figure table + a new `tasks.md` build block + the done-when list.
+
+### Doc changes (this entry)
+- `goal.md`: figure table — `fig_p25_et_vs_period` row → DEFERRED→P3; NEW
+  `fig_fallback_rejection_ratio` row (NOT YET IMPLEMENTED); P25 section →
+  deferred note; NEW ratio-figure section; done-when updated.
+- `tasks.md`: P25 block → DEFERRED→P3 (kept); NEW ratio-figure build block;
+  must-have figure list + verification list updated.
+- `dev_log.md`: this entry.
+
+### Not started / next
+- The ratio figure generator + reader + unit test (the Step C build) — NOT
+  started this turn (user: "no implementation now"). Next action when greenlit.
+- The P3 `optional_figures` task folder itself is NOT created this turn; the
+  P2.6/P25 specs name it as the revival home.
+
+Files: `agents/active_tasks/P0_3_prod_figure_run/{goal,tasks,dev_log}.md`,
+`agents/finished_tasks/P2_1_fig2_sweep_confirmation/` (moved),
+`agents/finished_tasks/P2_6_sim_rt_based_sp_metric/` (moved),
+`agents/overall_tasks.md`, `agents/finished_tasks/summary.md`. Not committed
+(user commits).
+

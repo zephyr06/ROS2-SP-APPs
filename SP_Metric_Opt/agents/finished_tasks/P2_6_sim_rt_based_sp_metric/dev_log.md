@@ -75,3 +75,15 @@
   `git commit` (`git add` only); no A/B run by me (user runs
   `run_simulation_and_plot_figures.sh`); no gate reads the sim SP without an explicit user
   decision (D4).
+
+## 2026-08-02 — CLOSED (deferred → P3 optional_figures; not worked)
+
+Closed during the pre-prod figure triage. Genuine analysis richness (a sim-RT
+SP cross-check of the analytical RTA), but a big lift — four open design
+decisions (D1–D4) still unsettled, zero implementation since filing, no gate
+reads it. Not worth the plumbing this cycle. **Deferred, NOT discarded**: the
+full spec is preserved in this folder (moved to `finished_tasks/`) for revival
+into a future P3 `optional_figures` task alongside the deferred
+`fig_p25_et_vs_period` (P0.3). No code edited for the closure — only this note +
+the goal.md "Disposition" + memory/index/registry pointers. See `goal.md`
+"Disposition" section.

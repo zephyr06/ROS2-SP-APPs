@@ -2,10 +2,28 @@
 
 **Priority:** P2 (features / analysis — NOT a correctness fix; the analytical SP
 is sound). Deferred for later.
-**Status:** FILED 2026-07-12 (planning only; **no implementation**). User
-directive: "create a new task to add support from schedule simulation to report
-both the analytical SP and the true SP from tasks' true RTAs. put it as a P2
-task that we'll work on later."
+**Status:** CLOSED 2026-08-02 — DEFERRED to a future P3 `optional_figures` task
+(not worked this cycle). See "Disposition" below.
+**User directive:** "create a new task to add support from schedule simulation
+to report both the analytical SP and the true SP from tasks' true RTAs. put it
+as a P2 task that we'll work on later."
+
+## Disposition — CLOSED 2026-08-02 (deferred → P3 optional_figures; not worked)
+
+Closed during the pre-prod figure triage. P2.6 is genuine analysis richness
+(defends "is our analytical SP real?" by cross-checking it against a sim-RT SP
+derived from `job_history_`), but it is a big lift with **zero implementation**
+since filed 2026-07-12 and **no gate reads it**. Four open design decisions
+(D1–D4, below) remain unsettled. Not worth the plumbing this cycle.
+
+**Deferred, NOT discarded.** The full spec (gap trace, goal, the lever, D1–D4,
+done-when) is preserved in this folder as moved to `finished_tasks/`. Revival
+= re-open this spec into a future P3 `optional_figures` task alongside the
+deferred `fig_p25_et_vs_period` (P0.3), then settle D1–D4 with the user before
+coding (per `agent_coding_rules.md` — do NOT decide unilaterally).
+
+No code was edited for this closure — only this disposition note + the
+`dev_log.md` entry + the memory/index/registry pointers.
 
 ## The gap
 

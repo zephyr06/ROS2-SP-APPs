@@ -329,3 +329,14 @@
     vs `INCR_NO_FALLBACK` 0.7742/0.9298); mechanism fires (b-i 25/59 rejects, b-ii 6/6
     adopts). N=6 clean post-P2.18 `f371c543` (was SIGABRT). N=8 skipped per user.
     `enable_fallback_use_` default ON.
+- **2026-08-02 — Pre-prod figure triage (P0.3).** Decided 4 proposed-but-unbuilt
+  figures: (1) `fig_p25_et_vs_period` → DEFER P3 (self-justification; P25 fix
+  shipped `986a9cfe`+`de4e9636`); (2) P2.6 sim-RT SP cross-check → DEFER P3 (big
+  lift, D1–D4 open, no gate reads it; folder → `finished_tasks/`); (3) P2.1 fig2
+  sweep confirmation → CLOSE (subsumed by the P0.3 prod run; stale-flags crash
+  fixed in code; memory `interval-sweep-stale-flags-bug` → RESOLVED; folder →
+  `finished_tasks/`); (4) **fallback-rejection-ratio figure → KEEP & BUILD**
+  (`during_walk_reject_count / improving_challenger_count` ∈ [0,1] vs N; justifies
+  the P0.7 gate's cost; `comparison_summary.csv` doesn't aggregate the counters →
+  needs a NEW per-interval-log reader). P0.3 now owns one new figure build this
+  cycle. No implementation this turn — docs/registry/memory only.

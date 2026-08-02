@@ -13,7 +13,7 @@
 |------|-------------------|------------------|
 | **P0.1** Persist adopted TL to YAML | — | ~~RESOLVED 2026-07-10~~ (subsumed by P0.5; inspectability write discarded). |
 | **P0.2** Focused BF correctness audit | [`active_tasks/P0_2_bf_correctness_audit/`](active_tasks/P0_2_bf_correctness_audit/) | Verify `OptimizeSP_TL_BF` enumerates global optimum on small fixed taskset (`INCR ≤ BF`). |
-| **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + `fig_p25_et_vs_period`. |
+| **P0.3** Run prod pipeline + generate core figures | [`active_tasks/P0_3_prod_figure_run/`](active_tasks/P0_3_prod_figure_run/) | THE publication deliverable. Core figures 1a/1c/1f/ab_a/ab_b/2/3 + NEW `fig_fallback_rejection_ratio` (gate-cost). `fig_p25_et_vs_period` DEFERRED → P3; P2.1 (fig2 sweep) + P2.6 (sim-RT SP) CLOSED 2026-08-02 (subsumed / deferred). |
 | **P0.4** Project evaluation suite | [`active_tasks/P0_4_project_evaluation_suite/`](active_tasks/P0_4_project_evaluation_suite/) | Deterministic integration test on N=4/6/8 benchmarking avg SP + scheduler ET against north-star limits. |
 | **P0.5** Redesign optimizer iteration process | [`finished_tasks/P0_5_optimizer_iteration_redesign/`](finished_tasks/P0_5_optimizer_iteration_redesign/) | ~~RESOLVED 2026-07-10~~ (committed `a8dba07f`→`7fa2e9d2`). Single-owned `res_opt_` state redesign. |
 | **P0.6** Offline static solution (fall-back seed) | [`active_tasks/P0_6_static_solution/`](active_tasks/P0_6_static_solution/) | DESIGN locked 2026-07-27 (D1–D7). Offline seed DM-grouped PA + min-TL → WCET-mode TL walk (PA fixed) → skip-and-continue important-task filter → `static_solution_`. Depends on P0.8. **Superseded seed scheme by P0.9 (`AssignDMRespectingGroupOrder`).** |
@@ -55,12 +55,12 @@
 
 | Task | Location / Folder | Status & Summary |
 |------|-------------------|------------------|
-| **P2.1** Confirm Fig 2 sweep runs in prod | [`active_tasks/P2_1_fig2_sweep_confirmation/`](active_tasks/P2_1_fig2_sweep_confirmation/) | Confirm sweep execution on full production run. |
+| **P2.1** Confirm Fig 2 sweep runs in prod | [`finished_tasks/P2_1_fig2_sweep_confirmation/`](finished_tasks/P2_1_fig2_sweep_confirmation/) | ~~CLOSED 2026-08-02~~ (superseded by P0.3; not worked). Verification task for already-built `fig2_sp_vs_interval`; done-when subsumed by the P0.3 prod run. Stale-flags crash already fixed in code; memory `interval-sweep-stale-flags-bug` → RESOLVED. |
 | **P2.2** Doc & memory hygiene | [`active_tasks/P2_2_doc_memory_hygiene/`](active_tasks/P2_2_doc_memory_hygiene/) | Update stale memory files and investigation notes. |
 | **P2.3** `FiniteDist::approx_equal` cleanup | [`active_tasks/P2_3_finite_dist_dead_code/`](active_tasks/P2_3_finite_dist_dead_code/) | Clean up / wire up `approx_equal` delegation in `Probability.cpp`. |
 | **P2.4** Optimizer methods & mode-string refactor | [`active_tasks/P2_4_optimizer_methods_refactor/`](active_tasks/P2_4_optimizer_methods_refactor/) | Refactored mode strings (`INCR_Reopt_X`), updated tests and comments. |
 | **P2.5** Remove `INCR_SCRATCH` scheduler arm | [`finished_tasks/P2_5_incr_scratch_removal/`](finished_tasks/P2_5_incr_scratch_removal/) | ~~RESOLVED 2026-07-11~~ (Removed `INCR_SCRATCH` branch & 1-arg overload). |
-| **P2.6** Sim-RT-based SP metric | [`active_tasks/P2_6_sim_rt_based_sp_metric/`](active_tasks/P2_6_sim_rt_based_sp_metric/) | Report both analytical SP and empirical simulation-RT-based SP. |
+| **P2.6** Sim-RT-based SP metric | [`finished_tasks/P2_6_sim_rt_based_sp_metric/`](finished_tasks/P2_6_sim_rt_based_sp_metric/) | ~~CLOSED 2026-08-02~~ (deferred → P3 `optional_figures`; not worked). Report analytical SP AND true SP from `job_history_` RT samples. Big lift (D1–D4 open), zero implementation since 2026-07-12, no gate reads it. Spec preserved for revival. |
 | **P2.7** Code comment cleanup | [`active_tasks/P2_7_code_comment_cleanup/`](active_tasks/P2_7_code_comment_cleanup/) | Simplify and clean code comments across optimizer and RTA headers. |
 | **P2.8** Scripts & configs refactor | [`active_tasks/P2_8_scripts_and_configs_refactor/`](active_tasks/P2_8_scripts_and_configs_refactor/) | In progress. Consolidated JSON configs (`paper_simulation_config.json`) & entry scripts. |
 | **P2.9** Speed up reoptimization | [`finished_tasks/P2_9_speed_up_reoptimization/`](finished_tasks/P2_9_speed_up_reoptimization/) | ~~CLOSED 2026-07-25~~ (superseded/moot; flag `ReoptimizationUseSubIncrementalWalk` deleted by P2.11 Phase 2b). Lever A walk switch committed `5dfd146e`/`52e29e90`/`a6922ff5` (prod bit-identical, flag stayed OFF). |

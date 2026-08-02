@@ -88,6 +88,8 @@
   analytical SP and the true SP derived from the RunQueue's simulated RT samples
   (the user wants SP to eventually come from the actual schedule, not the
   analytic RTA). This P1.7 fix (honest per-core RT samples) is its prerequisite.
+  *(P2.6 itself was CLOSED 2026-08-02 as deferred → P3 `optional_figures`; not
+  worked — see [`P2_6_sim_rt_based_sp_metric/`](P2_6_sim_rt_based_sp_metric/).)*
 - *Detail: [`P1_7_cpu_partition_mismatch/`](P1_7_cpu_partition_mismatch/);
   memory `cpu-partition-mismatch.md`.*
 
