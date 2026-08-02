@@ -100,20 +100,33 @@ remaining Stage 1 content on top.
   macro breakage, PW.2 preamble fix, NOT §7 scope). LaTeX verified: 14/14
   begin/end, no IDE diagnostics.
 
-**OPEN DECISION (§7.3 four-scenario table) — needs user input.** The draft's
-four scenarios (important+ET↑→raise / important+ET↓→no change / not-important+
-ET↑→lower / not-important+ET↓→no change) do **NOT** match code. The real
-`AnalyzePriorityChangeStatus` (`OptimizeSP_Incre.cpp:290-308`) is a 2×2 over
-`{et_increased, if_highest_weight_unique(task_id)}` mapping to a priority-search
-**direction** `{Increase, Decrease}` — i.e. it selects *which half* of the
-priority positions to re-search, never "no change"; and the discriminator is
-`if_highest_weight_unique` (the single highest-weight task), NOT a binary
-important/not-important split. Two of the draft's four scenarios (the two "no
-priority change is required" cases) have no code counterpart. Rewriting the table
-to the real 2×2 changes what the paper claims the heuristic does → left for the
-user to decide: (A) rewrite the table to match `AnalyzePriorityChangeStatus`
-exactly; (B) keep the draft's four scenarios as a simplified motivational
-framing and add a caveat; (C) defer to Stage 2. Not silently rewritten.
+**RESOLVED (§7.3 four-scenario table) — applied 2026-08-02.** Option A chosen
+by user ("do it"). The draft's four scenarios (important+ET↑→raise / important+
+ET↓→no change / not-important+ET↑→lower / not-important+ET↓→no change) did **NOT**
+match code. The real `AnalyzePriorityChangeStatus` (`OptimizeSP_Incre.cpp:290-308`)
+is a 2×2 over `{et_increased, if_highest_weight_unique(task_id)}` mapping to a
+priority-search **direction** `{Increase, Decrease}` — it selects *which half*
+of the priority positions to re-search, never "no change"; the discriminator is
+`if_highest_weight_unique` (the single uniquely-highest-weight task,
+`ParametersSP.h:34-43`), NOT a binary important/not-important split. Table
+rewritten to the real 2×2: highest-weight-unique + ET↑→upward; highest-weight-
+unique + ET↓→downward; not-highest-weight-unique + ET↑→downward; not-highest-
+weight-unique + ET↓→upward. Closing sentence added stating the task is removed
+and re-inserted at each position in the chosen half, adopting the best strictly-
+improving position (matches `FindPriorityVec1D_Variations` `:248-286` +
+`OptimizeIncre_SingleTask`'s strict-`>` adoption `:354-362`). Worded to avoid
+"important" (the top-50% subset `\boldsymbol{\tau}^{safe}`) to prevent conflation
+with `is_important`. LaTeX verified 13/13 begin/end after edit.
+
+**FIXED (§7.3 "at most one level" — applied 2026-08-02).** Stage 1 pass had
+marked "≤ one level" VERIFY; that was WRONG. Code does NOT move the changed task
+by ±1 position — `FindPriorityVec1D_Variations` (`:248-286`) removes the task and
+re-inserts it at EVERY position in the chosen half (`[0,old]` for Increase,
+`[old,end]` for Decrease, `:254-261`), adopting the best strictly-better position
+(`OptimizeIncre_SingleTask` `:354-362`). The changed task can jump many levels;
+only the OTHER tasks retain relative order. L122 rewritten: "re-search each such
+task's priority position over one half of the priority range, adopting the best
+position found." Surfaced in the 2026-08-02 code-vs-text double-check.
 
 ## Subsection rows
 

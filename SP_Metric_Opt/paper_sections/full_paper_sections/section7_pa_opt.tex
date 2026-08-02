@@ -119,25 +119,21 @@ The pseudocode for the modified Audsley's algorithm is shown below:
     Additionally, not all tasks' execution time distributions vary significantly across environments or over time.
 
     The incremental search is seeded from a Deadline-Monotonic priority assignment in which every important task is locked above every non-important task (the important-first group lock of Section~\ref{eq_safety}).
-    Starting from this seed, when performing priority assignments, we identify tasks with significant changes in execution time distribution and adjust their priorities by at most one level.
+    Starting from this seed, when performing priority assignments, we identify tasks with significant changes in execution time distribution and re-search each such task's priority position over one half of the priority range, adopting the best position found.
     For all other tasks, we retain their \textit{relative} priority assignments, as their execution time distributions remain unchanged, and thus their optimal relative priorities are likely to remain the same.
     If multiple tasks experience significant changes, this adjustment is applied individually to each task.
 
 
 Let $\tau_i$ represent a task whose execution time distribution changes significantly.
-The adjustment to $\tau_i$'s priority assignment is categorized based on:
-\begin{itemize}
-    \item Importance of $\tau_i$: Determined by its weight parameter in the SP metric~\eqref{eq_sp_def}.
-    \item Change in execution time: Whether $\tau_i$'s execution time increases or decreases.
-\end{itemize}
-
+The direction of $\tau_i$'s priority re-search is categorized based on two factors: whether $\tau_i$ holds the uniquely highest SP weight $w_i$ in the task set~\eqref{eq_sp_def}, and whether $\tau_i$'s execution time increases or decreases.
 The four possible scenarios are:
 \begin{enumerate}
-    \item If $\tau_i$ is important and its execution time increases, increase $\tau_i$'s priority (or leave it unchanged if $\tau_i$ will still meet its deadline).
-    \item If $\tau_i$ is important and its execution time decreases, no priority change is required.
-    \item If $\tau_i$ is not important and its execution time increases, reduce $\tau_i$'s priority to minimize its interference with higher-priority tasks.
-    \item If $\tau_i$ is not important and its execution time decreases, no priority change is required.
+    \item If $\tau_i$ has the uniquely highest weight and its execution time increases, the re-search direction is \emph{upward}: scan positions of higher priority than $\tau_i$'s current one.
+    \item If $\tau_i$ has the uniquely highest weight and its execution time decreases, the re-search direction is \emph{downward}: scan positions of lower priority.
+    \item If $\tau_i$ does not have the uniquely highest weight and its execution time increases, the re-search direction is \emph{downward}.
+    \item If $\tau_i$ does not have the uniquely highest weight and its execution time decreases, the re-search direction is \emph{upward}.
 \end{enumerate}
+In every scenario $\tau_i$ is removed from the current priority vector and re-inserted at each position within the chosen half; the position yielding the highest SP metric is adopted if it strictly improves on the current assignment, otherwise the current position is retained.
 Potential issues in terms of optimal solution drift caused by the incremental optimization is discussed in Section~\ref{sec: drift}.
 
 

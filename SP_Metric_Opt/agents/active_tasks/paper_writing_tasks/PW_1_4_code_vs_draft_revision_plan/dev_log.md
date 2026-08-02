@@ -257,3 +257,41 @@
   LaTeX verified: 14/14 begin/end, no IDE diagnostics. Status unchanged (.tex
   edits APPLIED, awaiting user review). §7.3 four-scenario-table OPEN DECISION
   still pending.
+
+2026-08-02 (cont.) — §7.3 code-vs-text double-check + two fixes.
+
+User asked to double-check §7.2 (beam search) and §7.3 (incremental PA) against
+the code.
+
+§7.2 (Algorithm 1, `OptimizeFromScratch`) — CLEAN. Every pseudocode line checks
+out: pool shrinks (`AssignAndUpdateSP:92` erase), copy-before-extend (`:118`),
+`SelectTop` = lowest accumulated `sp_lost` (`CompPriorityPath:34-55`), beam width
+K (`:100`), lowest-priority-first (`:95`/`:102`), output `partial_paths[0]`
+(`:151`). Two minor omissions (acceptable for methodology, not errors): the
+`CompPriorityPath` tie-break when `sp_lost` within 5e-2 (weight, then ET,
+`:39-50`) and the `std::reverse` (`:152`) flipping internal lowest-first to the
+§5 highest-first convention.
+
+§7.3 — TWO discrepancies found.
+
+(1) "at most one level" (L122) was WRONG. Stage 1 pass had marked it VERIFY;
+corrected. Code does NOT move the changed task by ±1 position —
+`FindPriorityVec1D_Variations` (`:248-286`) removes the task and re-inserts it at
+EVERY position in the chosen half (`[0,old]` Increase, `[old,end]` Decrease,
+`:254-261`), adopting the best strictly-better position (`OptimizeIncre_SingleTask`
+`:354-362`). The changed task can jump many levels; only OTHER tasks retain
+relative order. L122 rewritten: "re-search each such task's priority position
+over one half of the priority range, adopting the best position found."
+
+(2) Four-scenario table (L134-140) did NOT match code — OPEN DECISION RESOLVED
+(user chose option A "do it"). Real `AnalyzePriorityChangeStatus` (`:290-308`)
+is a 2×2 over `{et_increased, if_highest_weight_unique(task_id)}` → direction
+`{Increase, Decrease}`, never "no change"; discriminator = single uniquely-
+highest-weight task (`ParametersSP.h:34-43`), NOT binary important/not-important.
+Table rewritten to the real 2×2 (upward/downward by the two factors); closing
+sentence states the remove+re-insert-at-each-position + strict-improvement
+adoption. Worded to avoid "important" to prevent conflation with `\boldsymbol{\tau}^{safe}`.
+
+All code locators re-verified against current source before editing. LaTeX
+verified 13/13 begin/end after edits. §7.3 plan row updated (OPEN DECISION →
+RESOLVED; "≤ one level" → FIXED). Nothing committed.
