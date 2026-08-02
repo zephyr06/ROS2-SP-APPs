@@ -857,6 +857,20 @@ PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL(
     return opt_pa_;
 }
 
+// P2.20: convergence loop — see header. No cap: termination is guaranteed by
+// monotonicity over a finite config space. The 1e-3 tolerance and explicit >
+// stop the loop once a pass fails to strictly improve opt_sp_ beyond RTA noise,
+// and guard against a monotonicity regression spinning the loop.
+PriorityVec OptimizePA_Incre_with_TimeLimits::OptimizeIncre_w_TL_UntilConvergence(
+    const DAG_Model& dag_tasks_update, int beam_search_width) {
+    for (;;) {
+        double sp_before = opt_sp_;
+        OptimizeIncre_w_TL(dag_tasks_update, beam_search_width);
+        if (opt_sp_ <= sp_before || ApproxEqualSP(opt_sp_, sp_before, 1e-3)) break;
+    }
+    return opt_pa_;
+}
+
 // Reconstruct the positional time-limit vector (one entry per task, in task
 // order) from the recorded id→TL map. Tasks with no recorded TL get -1.
 std::vector<double>
@@ -997,7 +1011,7 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
     fallback_solver.SeedStateFromIncumbent(dag_with_tl, pa_dm, sp_seed, tl_seed);
 
     // Gate-governed incremental walk; PA descent runs normally under the gate.
-    fallback_solver.OptimizeIncre_w_TL(
+    fallback_solver.OptimizeIncre_w_TL_UntilConvergence(
         fallback_solver.dag_tasks_,
         GlobalVariables::Layer_Node_During_Incremental_Optimization);
     // (The forced `enable_fallback_use_` on the throwaway sibling needs no

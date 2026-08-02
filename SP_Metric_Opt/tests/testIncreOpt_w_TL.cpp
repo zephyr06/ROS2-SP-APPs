@@ -3825,6 +3825,42 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_DOUBLE_EQ(pre.sp_opt, opt.GetSafeFallback().sp_opt);
 }
 
+// P2.20: the convergence loop must re-run OptimizeIncre_w_TL until a full pass
+// cannot improve opt_sp_, then stop. This stub overrides OptimizeIncre_w_TL to
+// inject a controlled SP-per-pass sequence (0.5 → 0.8 → 0.8): pass 1 sets the
+// baseline, pass 2 strictly improves it, pass 3 fails to improve → loop stops.
+// Asserting pass-count and termination isolates the loop's control flow from the
+// (hard-to-build) real-fixture case where pass 2 provably beats pass 1.
+class ConvergenceStubOpt : public OptimizePA_Incre_with_TimeLimits {
+   public:
+    std::vector<double> injected_sp_sequence;
+    int passes_run = 0;
+    using OptimizePA_Incre_with_TimeLimits::OptimizePA_Incre_with_TimeLimits;
+    PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update,
+                                   int beam_search_width) override {
+        EXPECT_LT(passes_run, static_cast<int>(injected_sp_sequence.size()))
+            << "loop ran more passes than the injected sequence provides";
+        opt_sp_ = injected_sp_sequence.at(passes_run);
+        ++passes_run;
+        return opt_pa_;
+    }
+};
+
+TEST_F(CompareAndKeepSynthetic,
+       OptimizeIncre_w_TL_UntilConvergence_StopsOnNonImprovingPass) {
+    ConvergenceStubOpt opt(dag_tasks, sp_parameters);
+    opt.injected_sp_sequence = {0.5, 0.8, 0.8};
+    opt.opt_sp_ = -1.0;  // pre-seed baseline the loop reads before pass 1
+
+    opt.OptimizeIncre_w_TL_UntilConvergence(
+        dag_tasks, GlobalVariables::Layer_Node_During_Incremental_Optimization);
+
+    // Pass 1 sets 0.5 (improves over -1), pass 2 sets 0.8 (strictly improves),
+    // pass 3 sets 0.8 (no improvement → converged). All three run; the loop stops.
+    EXPECT_EQ(opt.passes_run, 3);
+    EXPECT_DOUBLE_EQ(opt.opt_sp_, 0.8);  // best SP carried
+}
+
 // ============================================================================
 // P0.7 trigger (a) — ET-jump short-circuit in the dispatcher.
 // `Optimize_w_TL_ScratchOrIncre` (and `OptimizePureIncremental`) run DetectETJump

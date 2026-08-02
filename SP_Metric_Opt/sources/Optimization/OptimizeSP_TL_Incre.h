@@ -121,7 +121,15 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
         time_limit_option_for_each_task_ = RecordTimeLimitOptions(dag_tasks_);
     }
 
-    PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update, int beam_search_width);
+    // Virtual so P2.20's convergence loop can be unit-tested via a stub that
+    // injects a controlled SP-per-pass sequence (see OptimizeIncre_w_TL_UntilConvergence).
+    virtual PriorityVec OptimizeIncre_w_TL(const DAG_Model& dag_tasks_update,
+                                           int beam_search_width);
+
+    // P2.20: OptimizeIncre_w_TL until a full pass cannot improve opt_sp_ (offline
+    // safe-fallback compute). Virtual so a test stub can override the per-pass call.
+    virtual PriorityVec OptimizeIncre_w_TL_UntilConvergence(
+        const DAG_Model& dag_tasks_update, int beam_search_width);
 
     PriorityVec ReOptimizePeriodic(const DAG_Model& dag_tasks_update, int beam_search_width);
 
