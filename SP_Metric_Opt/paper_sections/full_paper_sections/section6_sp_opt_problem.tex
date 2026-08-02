@@ -1,18 +1,21 @@
-	\section{Safety-Performance Optimization Problem}
-	A robotic system is considered ``good'' if it produces high-quality outputs while maintaining safety with high probabilities. This section defines a general metric function to evaluate the performance of robotic computation systems, building on Sifat~\etal~\cite{Ash23RAL}, and formulates an online optimization problem to enhance safety and performance.
+\section{Safety-Performance Optimization Problem}
+	A robotic system is considered ``good'' if it produces high-quality outputs while maintaining safety with high probabilities.
+	This section defines a general metric function to evaluate the performance of robotic computation systems, building on Sifat~\etal~\cite{Ash23RAL}, and formulates an online optimization problem to enhance safety and performance.
 
-    
+
     \subsection{Modelling Execution Time Distribution}
 
     \label{section_et_model_gp}
-	
+
     % \rkw{A diagram of different GPs across different enviroment classes would be very helpful to aid visualization.}
     % \Sen{to be honest, it's probably difficult to draw it based on real-world data}
 
 
-    The execution time distribution of tasks can vary significantly, both temporally and spatially, as robots encounter different environments and inputs. For instance, a visual-SLAM algorithm may follow different execution paths or even switch between algorithms when operating in different environments, such as a crowded city, a farmland, or an empty indoor space. Capturing and predicting these variations are crucial for making optimal decisions about scheduling and resource allocation.
-	
-    Therefore, this section proposes to use a mathematical model to capture the dependency of tasks' execution time distribution on environments. 
+    The execution time distribution of tasks can vary significantly, both temporally and spatially, as robots encounter different environments and inputs.
+    For instance, a visual-SLAM algorithm may follow different execution paths or even switch between algorithms when operating in different environments, such as a crowded city, a farmland, or an empty indoor space.
+    Capturing and predicting these variations are crucial for making optimal decisions about scheduling and resource allocation.
+
+    Therefore, this section proposes to use a mathematical model to capture the dependency of tasks' execution time distribution on environments.
 
 \begin{definition}[Environment vector, $\textbf{E}$]
     An environment vector $\textbf{E} \in \mathbb{R}^m$ is an abstraction that quantitatively describes environmental factors influencing the execution time or performance of robotic system tasks.
@@ -20,81 +23,92 @@
 
 Since a robot's computation requirements may vary temporally, the operating time $t$ can also be incorporated into the environment vector $\textbf{E}$.
 
-Therefore, when the robot is operated under the environment $\textbf{E}$, we can use regression to predict a task's execution time distribution: $\mathcal{F}_i(\textbf{E}) \rightarrow \extDist{i} $. 
+Therefore, when the robot is operated under the environment $\textbf{E}$, we can use regression to predict a task's execution time distribution: $\mathcal{F}_i(\textbf{E}) \rightarrow \extDist{i} $.
 
 
 Theoretically speaking, such kind of regression can be performed with many methods, as long as we have a parameterized model for execution time distribution and enough training data.
 \begin{Example}
-Under a smooth environment \footnote{We consider the environment $\textbf{E}$ smooth if $\textbf{E}$ is a smooth function with respect to the robot's position vector.}, we can use Gaussian process regression (GPR)~\cite{Rasmussen2005GaussianPF} to predict the execution time distribution $\extDistStar{i}$ of a task $\tau_i$ under a new environment $\textbf{E}^{*}$: 
+Under a smooth environment \footnote{We consider the environment $\textbf{E}$ smooth if $\textbf{E}$ is a smooth function with respect to the robot's position vector.}, we can use Gaussian process regression (GPR)~\cite{Rasmussen2005GaussianPF} to predict the execution time distribution $\extDistStar{i}$ of a task $\tau_i$ under a new environment $\textbf{E}^{*}$:
 	\begin{equation}
 		\extDistStar{i} \sim \mathcal{N}(\bm{\mathcal{K}}_*^T (\bm{\mathcal{K}} + \sigma^2\bm{I})^{-1}\bm{C}^{\mathcal{D}}, \ \bm{\mathcal{K}}_{**} - \bm{\mathcal{K}}_{*}^T (\bm{\mathcal{K}} + \sigma^2\bm{I})^{-1}\bm{\mathcal{K}}_*)
         \label{eq: gpr_predict1}
 	\end{equation}
 	\begin{equation}
-		\bm{\mathcal{K}}_* = \mathcal{K}(\bm{E}, E_* ), \ 
+		\bm{\mathcal{K}}_* = \mathcal{K}(\bm{E}, E_* ), \
 		\bm{\mathcal{K}}_{**}=\mathcal{K}(E_*, E_*)
 	\end{equation}
-    where we assume there is an observation noise that follows a normal distribution $\mathcal{N}(0, \sigma)$, $\mathcal{K}()$ denotes the kernel function, $\bm{C}^{\mathcal{D}}$ and $\textbf{E}$ denote the history data for training GPR.    
+    where we assume there is an observation noise that follows a normal distribution $\mathcal{N}(0, \sigma)$, $\mathcal{K}()$ denotes the kernel function, $\bm{C}^{\mathcal{D}}$ and $\textbf{E}$ denote the history data for training GPR.
 \end{Example}
 
 \sen{we need more discussion on this topic. although we believe the actual ET follows GP, it is a bad idea to use GP for prediction tasks as GP is essentially an interpolation method. FOR SLAM's ET prediction task, GP actually shows neutral performance against the sampling+constant method (what we use in the paper). if we want better perf, we can use exponential moving average, EMA. EMA has the fastest possible efficiency while cut the MSE by one half in ET prediction presicion. in practice, i doubt whether implementing MSE matters. so we need to carefully write the paper to avoid readers think that we made up a theorem that we didn't even use in experiments. the sampling-based ET prediction method actually already implements this idea where we dynamically predict ET. we should give less emphasis on GP in my opinion.}
 \sen{so if we want to implement the EMA alg, we can divide the 10s interval into sub-intervals to trigger re-priority optimization. but i think it is actually not needed. we shoulr re-frame the paper writing rather than alg implementation to respect the fact.}
-In practice, obtaining an accurate prediction function $\mathcal{F}$ could be challenging, considering that the prediction target is a probability distribution rather than a scalar value. Furthermore, due to the limited computation resources available for this task, the regression algorithms also need to have a low run-time complexity. Therefore, we introduce an efficient implementation for the prediction function $\mathcal{F}$ in Section~\ref{section: predict_ET_exp}.
+In practice, obtaining an accurate prediction function $\mathcal{F}$ could be challenging, considering that the prediction target is a probability distribution rather than a scalar value.
+Furthermore, due to the limited computation resources available for this task, the regression algorithms also need to have a low run-time complexity.
+Therefore, we introduce an efficient implementation for the prediction function $\mathcal{F}$ in Section~\ref{section: predict_ET_exp}.
 
-	
+
 	\subsection{Response Time Distribution Analysis}
 	\label{section_rta}
 
-    
-    This section discusses two methods for analyzing response time distributions: experimental and analytical. Both approaches aim to evaluate task schedulability and improve system safety, but they differ in accuracy, computational complexity, and applicability. Both these two methods are used in our system design and implementation to exploit their advantages. 
-    
-\subsubsection{Experimental method}
-    The experimental method involves measuring response times over a finite time interval. Since task execution time distributions $\extDist{i}$ can change dynamically, it is practical to measure response times only within a specific time window rather than over an indefinite period.
 
-    To estimate the response time distribution $\rtDist{i}$ for a given interval, the following steps are performed: 
+    This section discusses two methods for analyzing response time distributions: experimental and analytical.
+    Both approaches aim to evaluate task schedulability and improve system safety, but they differ in accuracy, computational complexity, and applicability.
+    Both these two methods are used in our system design and implementation to exploit their advantages.
+
+\subsubsection{Experimental method}
+    The experimental method involves measuring response times over a finite time interval.
+    Since task execution time distributions $\extDist{i}$ can change dynamically, it is practical to measure response times only within a specific time window rather than over an indefinite period.
+
+    To estimate the response time distribution $\rtDist{i}$ for a given interval, the following steps are performed:
     \begin{itemize}
         \item Data Collection: Measure and record the response times $r_i$ of all executed tasks $\boldsymbol{\tau}$ over the chosen interval.
         \item Data Segmentation: Sort all the obtained $N$ response time samples in ascending order and divide them into $K$ contiguous subsets, each containing approximately $N/K$ data points.
         \item Probability Assignment: Extract a response time and probability pair from each subset containing $n_k$ data points: the response time value is the maximum response time of the subset, the probability is $n_k / N$.
     \end{itemize}
-    This process generates a probability mass function (PMF) that provides a conservative estimate of the response time distribution, ensuring better safety. The PMF is designed to never underestimate the actual response time distribution.
-	
-	
-	\subsubsection{Analytical method}
-    The analytical method derives response time distributions using mathematical models, offering faster and more flexible analysis compared to the experimental method. We start the review with the basic worst-case response analysis, and then move to the probabilistic analysis.
+    This process generates a probability mass function (PMF) that provides a conservative estimate of the response time distribution, ensuring better safety.
+    The PMF is designed to never underestimate the actual response time distribution.
 
-    
+
+	\subsubsection{Analytical method}
+    The analytical method derives response time distributions using mathematical models, offering faster and more flexible analysis compared to the experimental method.
+    We start the review with the basic worst-case response analysis, and then move to the probabilistic analysis.
+
+
 	When a task’s execution time is modeled as a single worst-case value $\extDist{i}$, its response time can be computed using fixed-point iteration~\cite{Joseph1986FindingRT}:
 	\begin{equation}
 		r_i = c_i +\sum_{j \in \text{hp}(i)} \ceil{\frac{r_i}{T_j}}{c_j}
         \label{eq: rta_scalar}
 	\end{equation}
     where $hp(i)$ denotes the set of tasks with higher or equal priority than $\tau_i$.
-	
-	When task execution times are described by probability distributions ($\extDist{i}$) instead of single values ($c_i$), a probabilistic approach is employed~\cite{Maxim2013ResponseTA, Maxim2022ProbabilisticA}. 
-	This section provides a rough high-level review of how to obtain it. Interested readers should refer to Maxim~\etal~\cite{Maxim2022ProbabilisticA} for more accurate definitions and examples. Our released code provides efficient code implementation. 
-    
-    
+
+    When task execution times are described by probability distributions ($\extDist{i}$) instead of single values ($c_i$), a probabilistic approach is employed~\cite{Maxim2013ResponseTA, Maxim2022ProbabilisticA}.
+    This section provides a rough high-level review of how to obtain it.
+    Interested readers should refer to Maxim~\etal~\cite{Maxim2022ProbabilisticA} for more accurate definitions and examples.
+    Our released code provides efficient code implementation.
+
     The response time distribution $\rtDist{i}$ is initialized as:
 	\begin{equation}
 		R_i^0 = \bigotimes_{j \in hp(i)} \extDist{j}
 	\end{equation}
-	where $\otimes$ denotes convolution, $hp(i)$ denotes the tasks with higher or equal priority than $\tau_i$. After initialization, $R_i$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline). Let $R_i^{k}$ to denote the \ith{k} iteration when calculating $R_i$:
+	where $\otimes$ denotes convolution, $hp(i)$ denotes the tasks with higher or equal priority than $\tau_i$.
+    After initialization, $R_i$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline).
+    Let $R_i^{k}$ to denote the \ith{k} iteration when calculating $R_i$:
 	\begin{equation}
 		R_i^k = R_i^{k-1, head} \oplus (R_i^{k-1, tail} \otimes C_j^{pr})
 		\label{eq_prob_rta}
 	\end{equation}
-	where $C_j^{pr}$ denotes the execution time distribution of a high-priority task $\tau_j$ that preempts $\tau_i$ in the \ith{k} iteration. 
-    $R_i^{k-1, head}$ is part of the response time distribution not affected by $\tau_j$ in the \ith{k} iteration, $R_i^{k-1, tail}$ denotes the remaining part, $\oplus$ merges the two parts of a probability distribution into one distribution. 
-	
+	where $C_j^{pr}$ denotes the execution time distribution of a high-priority task $\tau_j$ that preempts $\tau_i$ in the \ith{k} iteration.
+    $R_i^{k-1, head}$ is part of the response time distribution not affected by $\tau_j$ in the \ith{k} iteration, $R_i^{k-1, tail}$ denotes the remaining part, $\oplus$ merges the two parts of a probability distribution into one distribution.
+
     While this approach provides a safe estimation under worst-case conditions, the actual response time distribution is often better in practice.
 
     \subsubsection{Comparison}
-    Both methods have their strengths and limitations. Experimental approaches are more precise but impractical or infeasible for dynamic, real-time environments, while analytical methods provide valuable insights for online optimization despite their conservatism.
-	
+    Both methods have their strengths and limitations.
+    Experimental approaches are more precise but impractical or infeasible for dynamic, real-time environments, while analytical methods provide valuable insights for online optimization despite their conservatism.
+
 	\subsection{Safety metric}
-	Unlike traditional physical safety concerns (e.g., collision avoidance), this paper focuses on computation safety, which ensures that safety-critical tasks meet their deadlines. 
-    
+    Unlike traditional physical safety concerns (e.g., collision avoidance), this paper focuses on computation safety, which ensures that safety-critical tasks meet their deadlines.
+
     Physical safety, if desired, can be incorporated into the performance metric discussed in the next subsection.
 	\begin{definition}[Safety, \cite{Ash23RAL}]
 		A robot system is safe (or schedulable) from the computation perspective if:
@@ -102,17 +116,18 @@ In practice, obtaining an accurate prediction function $\mathcal{F}$ could be ch
 			\forall \tau_i, Pr(r_i > D_i) \leq \Theta_i
 			\label{eq_safety}
 		\end{equation}
-		where $\Theta_i \geq 0$ denotes the probability that the system can tolerate the task $\tau_i$ to miss deadline. 
+		where $\Theta_i \geq 0$ denotes the probability that the system can tolerate the task $\tau_i$ to miss deadline.
 	\end{definition}
-	
+
 	\begin{definition}[Safety Metric]
 		A task $\tau_i$'s safety function quantifies the penalty (or the reward) when the probability for $\tau_i$ to miss its deadline $D_i$ becomes higher (or lower) than $\Theta_i$:
 		\begin{equation}
-			\mathcal{S}(Pr(r_i > D_i ; \mathcal{A}) - \Theta_i) 
+			\mathcal{S}(Pr(r_i > D_i ; \mathcal{A}) - \Theta_i)
 			\label{eq_safety_function}
 		\end{equation}
 	\end{definition}
-	where $\mathcal{S}(\cdot)$ is a function that quantifies the consequence of missing deadlines. For example, in our experiments, we adopt the normalized penalty function in \cite{Ash23RAL}:
+	where $\mathcal{S}(\cdot)$ is a function that quantifies the consequence of missing deadlines.
+    For example, in our experiments, we adopt the normalized penalty function in \cite{Ash23RAL}:
 	\begin{equation}
 		\mathcal{S}(x)  = \text{Normalize}(\hat{\mathcal{S}}(x))
 	\end{equation}
@@ -122,25 +137,30 @@ In practice, obtaining an accurate prediction function $\mathcal{F}$ could be ch
 			-0.01 e^{10|x|}  & x > 0
 		\end{cases}
 	\end{equation}
-	where the $\text{Normalize}()$ function transforms a given function's output into $[0,1]$, ensuring interpretability when defining system-level thresholds. This enables a standardized measure for evaluating safety across different applications.
-	
-	As noted in the introduction, a robotic system is unsafe if its computation tasks fail to meet their deadlines. Equation~\eqref{eq_safety} quantifies the acceptable tolerance for deadline misses, with $\Theta_i$ providing flexibility in design based on application requirements.
-	
+	where the $\text{Normalize}()$ function transforms a given function's output into $[0,1]$, ensuring interpretability when defining system-level thresholds.
+    This enables a standardized measure for evaluating safety across different applications.
+
+    As noted in the introduction, a robotic system is unsafe if its computation tasks fail to meet their deadlines.
+    Equation~\eqref{eq_safety} quantifies the acceptable tolerance for deadline misses, with $\Theta_i$ providing flexibility in design based on application requirements.
+
 	\subsection{Performance metric}
-	The performance metric reflects the quality of a task’s output. For example, in SLAM, it may correspond to localization error, while in path planning, it could reflect the travel distance of the generated path. In real-world scenarios, task performance depends on \textit{Task Configurations} (Parameters like runtime limits, which can affect both execution time and output quality) and \textit{Environment} (External factors, \eg sensor noise in rainy conditions, that influence the accuracy of task outputs, such as object detection).
-    	
-	
-	
+	The performance metric reflects the quality of a task’s output.
+    For example, in SLAM, it may correspond to localization error, while in path planning, it could reflect the travel distance of the generated path.
+    In real-world scenarios, task performance depends on \textit{Task Configurations} (Parameters like runtime limits, which can affect both execution time and output quality) and \textit{Environment} (External factors, \eg sensor noise in rainy conditions, that influence the accuracy of task outputs, such as object detection).
+
 	\begin{definition}[Performance Metric]
     \label{def_perf_metric}
 		A computation task $\tau_i$'s performance function $\mathcal{P}(\tau_i, \textbf{E}_k) \rightarrow [0,1]$ is a normalized function that estimates a task's output quality under an environment described by $\textbf{E}_k$.
 	\end{definition}
-	
-	Note that the task's configuration parameters are implicitly incorporated into $\tau_i$ based on the notation~\eqref{eq_notation_task}. 
 
-    
-    The performance metric can be determined through offline profiling and regression, with its exact format depending on the application. For example, in motion planning, the metric could be the total path length, normalized to a range of 0 (worst) to 1 (best). In SLAM, the metric could be the localization error. A typical process involves identifying the minimum and maximum values of the target metric, then mapping these values into a [0,1] range for interpretability. Please check Section~\ref{section_generate_tsp_perf} for more details.
-	
+	Note that the task's configuration parameters are implicitly incorporated into $\tau_i$ based on the notation~\eqref{eq_notation_task}.
+
+    The performance metric can be determined through offline profiling and regression, with its exact format depending on the application.
+    For example, in motion planning, the metric could be the total path length, normalized to a range of 0 (worst) to 1 (best).
+    In SLAM, the metric could be the localization error.
+    A typical process involves identifying the minimum and maximum values of the target metric, then mapping these values into a [0,1] range for interpretability.
+    Please check Section~\ref{section_generate_tsp_perf} for more details.
+
 	\subsection{SP-Metric}
 	The Safety-Performance (SP) metric combines the safety and performance metrics to evaluate the overall performance of a robotic computation system:
 	\begin{equation}
@@ -149,7 +169,8 @@ In practice, obtaining an accurate prediction function $\mathcal{F}$ could be ch
 		\mathcal{S}(Pr(r_i > D_i ; \mathcal{A}) - \Theta_i)
 		\label{eq_sp_def}
 	\end{equation}
-	where $w_i > 0$ represents the importance of task $\tau_i$, with the task weights being normalized. Both the safety function $\mathcal{S}$ and the performance function $\mathcal{P}$ produce normalized outputs in the range $[0,1]$.
+	where $w_i > 0$ represents the importance of task $\tau_i$, with the task weights being normalized.
+    Both the safety function $\mathcal{S}$ and the performance function $\mathcal{P}$ produce normalized outputs in the range $[0,1]$.
 
     % \item $\mathcal{P}(\tau_i) \in [0, 1]$ describes the normalized performance of task $\tau_i$, influenced by algorithm implementation and allocated computation resources.
     %     \item $Pr(r_i \leq D_i; \mathcal{A}) \in [0, 1]$ represents the probability of task $\tau_i$'s response time $r_i$ meeting its deadline $D_i$ within a time interval $H$.
@@ -164,7 +185,7 @@ In practice, obtaining an accurate prediction function $\mathcal{F}$ could be ch
         \item Performance metrics: $\mathcal{P}(\tau_0) = 0.5$, $\mathcal{P}(\tau_1) = 1.0$.
         \item Task weights: $w_0 = w_1 = 1$.
     \end{itemize}
-    
+
     Using \eqref{eq_sp_def}, the SP-metric is calculated as:
     \begin{align}
         & \frac{1}{1+1} \cdot 0.5\cdot \text{Normalize}(\log(1.2)) \ + \nonumber \\
@@ -172,7 +193,7 @@ In practice, obtaining an accurate prediction function $\mathcal{F}$ could be ch
     \end{align}
     where the \textit{Normalize} function scales the safety function output linearly to the range $[0,1]$, providing better interpretability.
 
-    
+
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.45\textwidth]{pictures/SP_threshold_plot.pdf}
@@ -181,78 +202,96 @@ In practice, obtaining an accurate prediction function $\mathcal{F}$ could be ch
 \label{fig_sp_threshold}
 \end{figure}
     \end{Example}
-    
+
     \subsection{Benefits of the new SP metric}
     % Compared with the previous work~\cite{Ash23RAL}, the major differences are:
     % \begin{itemize}
     %     \item Safety and performance metrics are combined via multiplication rather than addition
     %     \item The safety, performance, and overall SP metrics are all normalized into the range [0, 1] rather than varying within an unbounded range.
     % \end{itemize}
-    
+
     % The new SP metric formulation~\eqref{eq_sp_def} offers the following benefits:
-    
+
     The new SP-metric formulation in \eqref{eq_sp_def} offers several advantages compared to Sifat~\etal~\cite{Ash23RAL}:
-    
-    \textbf{Improved Guarantee for Both Safety and Performance.} The approach~\cite{Ash23RAL} used an additive combination of safety and performance metrics, which could lead to misleading interpretations. For example, high performance values might compensate for low safety values, falsely indicating adequate system behavior. Another potential pitfall is that trivial algorithms with minimal execution time could easily meet safety requirements but fail to guarantee useful output (For example, a SLAM algorithm which always outputs the same GPS location runs extremely fast but the results are wrong).  
-    The new SP metric addresses these issues by using multiplication to combine the safety and performance metrics. For instance, if an SP-metric threshold of $0.9$ is required, both the safety and performance metrics must independently achieve at least $0.9$, ensuring a balanced trade-off and stronger performance or safety penalization when these values are low.
-    
-    
-    \textbf{Enhanced interpretability}. 
-    The previous SP metric~\cite{Ash23RAL} had unbounded values (\eg from $-2000$ to $2$), making it difficult to intuitively interpret the meanings of SP values (such as when the system always meets/misses deadlines) without reference points. The new metric normalizes values to $[0,1]$, inherently encoding worst- and best-case scenarios. This standardization simplifies threshold setting for robotic engineers.
+
+    \textbf{Improved Guarantee for Both Safety and Performance.}
+    The approach~\cite{Ash23RAL} used an additive combination of safety and performance metrics, which could lead to misleading interpretations.
+    For example, high performance values might compensate for low safety values, falsely indicating adequate system behavior.
+    Another potential pitfall is that trivial algorithms with minimal execution time could easily meet safety requirements but fail to guarantee useful output (For example, a SLAM algorithm which always outputs the same GPS location runs extremely fast but the results are wrong).
+    The new SP metric addresses these issues by using multiplication to combine the safety and performance metrics.
+    For instance, if an SP-metric threshold of $0.9$ is required, both the safety and performance metrics must independently achieve at least $0.9$, ensuring a balanced trade-off and stronger performance or safety penalization when these values are low.
+
+
+    \textbf{Enhanced interpretability}.
+    The previous SP metric~\cite{Ash23RAL} had unbounded values (\eg from $-2000$ to $2$), making it difficult to intuitively interpret the meanings of SP values (such as when the system always meets/misses deadlines) without reference points.
+    The new metric normalizes values to $[0,1]$, inherently encoding worst- and best-case scenarios.
+    This standardization simplifies threshold setting for robotic engineers.
     The safety term can also be interpreted as a discount to the performance term in the objective function~\eqref{eq_overall_obj}: a higher deadline missing rate would reduce the system's overall performance.
 
 
-		
+
     % \textbf{Flexibility in Task-Level Configuration.} The new SP-metric allows individualized constraints. For example, critical tasks can be assigned minimum SP values (e.g., $0.9$), ensuring high reliability while permitting flexibility for less critical tasks.
 
-        
+
 
 	\subsection{SP Metric Optimization Problem}
-    This paper addresses the problem of optimizing the scheduling algorithms of a robotic computation system operating under unknown and dynamic environments. Task computation requirements often vary across different environments, necessitating dynamic adjustments to scheduling algorithms to improve the overall safety and performance of the system.
+    This paper addresses the problem of optimizing the scheduling algorithms of a robotic computation system operating under unknown and dynamic environments.
+    Task computation requirements often vary across different environments, necessitating dynamic adjustments to scheduling algorithms to improve the overall safety and performance of the system.
 
-	
+
     The optimization problem is defined as follows:
-	
+
 	\begin{equation}
-		\max_{\mathcal{A}, \boldsymbol{\lambda}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k) 
+		\max_{\mathcal{A}, \boldsymbol{\lambda}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
 		\label{eq_overall_obj}
 	\end{equation}
 	\begin{equation}
 		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\lambda_i), \hptasks{i})
 		\label{eq_prob_rta_in_opt}
 	\end{equation}
-        
-        The objective function is defined in \eqref{eq_sp_def}.
-        $\mathcal{A}$ denotes the scheduling algorithm configurations. In this paper, we adopt fixed-task priority scheduling, so the optimization variables of $\mathcal{A}$ are the priority assignments for each task. $\textbf{E}_k$ denotes the environment vector estimated online at time $k$.
-        
-        Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$. $C_i^D$ denotes $\tau_i$'s execution time distribution, $\boldsymbol{\lambda}$ represents the task configurations. This paper focuses on optimizing tasks' running time limits. $\hptasks{i}$ denotes the tasks whose priority is higher than $\tau_i$.
-  
 
-    
-	
-	
+        The objective function is defined in \eqref{eq_sp_def}.
+        $\mathcal{A}$ denotes the scheduling algorithm configurations.
+        In this paper, we adopt fixed-task priority scheduling, so the optimization variables of $\mathcal{A}$ are the priority assignments for each task.
+        $\textbf{E}_k$ denotes the environment vector estimated online at time $k$.
+
+        Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$.
+        $C_i^D$ denotes $\tau_i$'s execution time distribution, $\boldsymbol{\lambda}$ represents the task configurations.
+        This paper focuses on optimizing tasks' running time limits.
+        $\hptasks{i}$ denotes the tasks whose priority is higher than $\tau_i$.
+
+
+
+
+
 	\subsection{Challenges of SP-metric optimization}
 
     The optimization problem in \eqref{eq_overall_obj} presents several challenges:
 \begin{itemize}
     \item \textbf{Mixed combinatorial and continuous variables:} The problem involves both continuous variables (task configurations $\boldsymbol{\lambda}$) and combinatorial variables (priority assignments included in $\mathcal{A}$).
     \item \textbf{Complicated objective function:} The SP metric's formulation \eqref{eq_sp_def} includes probabilistic components and lacks properties like convexity or continuity, complicating the optimization process.
-    \item \textbf{Limited computation resources:} The optimization problem~\eqref{eq_overall_obj} has to be solved online to be useful as the robot is expected to work under unknown environments. However, most mobile robots are powered by batteries and are equipped with very limited computation resources, most of which are dedicated to major functional tasks such as motion planning and SLAM. Therefore, the optimization algorithm to solve problem~\eqref{eq_overall_obj} must be lightweight, preferably, with only linear run-time complexity. 
+    \item \textbf{Limited computation resources:} The optimization problem~\eqref{eq_overall_obj} has to be solved online to be useful as the robot is expected to work under unknown environments.
+    However, most mobile robots are powered by batteries and are equipped with very limited computation resources, most of which are dedicated to major functional tasks such as motion planning and SLAM.
+    Therefore, the optimization algorithm to solve problem~\eqref{eq_overall_obj} must be lightweight, preferably, with only linear run-time complexity.
 \end{itemize}
-    These challenging properties together prevent straightforward usage of available optimization frameworks such as convex optimization or linear integer programming. 
+    These challenging properties together prevent straightforward usage of available optimization frameworks such as convex optimization or linear integer programming.
     Furthermore, a large body of literatures~\cite{zhao2018unified, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO} that performs offline optimization for similar problems, but with exponential complexities, also cannot be considered.
     Therefore, a customized optimization algorithm must be developed to efficiently solve the optimization problem in an online environment with good solution quality.
-	
-	\subsection{Motivation for solution algorithms}
-    Due to the challenges mentioned above, directly leveraging existing optimization frameworks (e.g., integer linear programming) is infeasible. Instead, we analyze the SP metric for exploitable properties to guide algorithm design:
-	\begin{itemize}
-		\item The performance metric only depends on the task configuration $\configs$ and is independent of the priority assignments $\mathcal{A}$. 
-		\item The safety metric depends on both $\configs$ and $\mathcal{A}$.
-        However, since many tasks do not involve runtime limits in their configurations, the safety metric is primarily influenced by priority assignments. When $\boldsymbol{\lambda}$ is fixed, the SP metric reduces to a problem similar to classical response time optimization~\cite{Zhao2020AnOF, Wang2023RTAS}.
-		\item Although not always true, environment often changes smoothly as the robot is moving, and it causes the execution time distributions to vary smoothly. Thus, optimal solutions are likely to evolve continuously in some situations.  
-	\end{itemize}
-    Based on these observations, we propose a divide-and-conquer approach to solve \eqref{eq_overall_obj}. The task configurations $\boldsymbol{\lambda}$ and priority assignments $\mathcal{A}$ are optimized separately and then combined. While brute-force methods guarantee optimal solutions, their high computational cost makes them unsuitable for online platforms. Instead, we trade off optimality for computational efficiency by employing heuristics derived from problem analysis and related literature.
-    
-    In the following sections, we present new algorithms for online priority assignment optimization based on detailed problem analysis and incorporate execution time optimization into the overall framework.
 
-	
+	\subsection{Motivation for solution algorithms}
+    Due to the challenges mentioned above, directly leveraging existing optimization frameworks (e.g., integer linear programming) is infeasible.
+    Instead, we analyze the SP metric for exploitable properties to guide algorithm design:
+	\begin{itemize}
+		\item The performance metric only depends on the task configuration $\configs$ and is independent of the priority assignments $\mathcal{A}$.
+		\item The safety metric depends on both $\configs$ and $\mathcal{A}$.
+        However, since many tasks do not involve runtime limits in their configurations, the safety metric is primarily influenced by priority assignments.
+        When $\boldsymbol{\lambda}$ is fixed, the SP metric reduces to a problem similar to classical response time optimization~\cite{Zhao2020AnOF, Wang2023RTAS}.
+		\item Although not always true, environment often changes smoothly as the robot is moving, and it causes the execution time distributions to vary smoothly.
+        Thus, optimal solutions are likely to evolve continuously in some situations.
+	\end{itemize}
+    Based on these observations, we propose a divide-and-conquer approach to solve \eqref{eq_overall_obj}.
+    The task configurations $\boldsymbol{\lambda}$ and priority assignments $\mathcal{A}$ are optimized separately and then combined.
+    While brute-force methods guarantee optimal solutions, their high computational cost makes them unsuitable for online platforms.
+    Instead, we trade off optimality for computational efficiency by employing heuristics derived from problem analysis and related literature.
+
+    In the following sections, we present new algorithms for online priority assignment optimization based on detailed problem analysis and incorporate execution time optimization into the overall framework.
