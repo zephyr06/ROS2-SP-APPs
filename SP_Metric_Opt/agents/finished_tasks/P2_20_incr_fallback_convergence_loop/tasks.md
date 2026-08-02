@@ -33,6 +33,8 @@
 
 ## 3. Regression + records
 - [x] `testIncreOpt_w_TL` 126→127/127; ctest 16/17 (sole pre-existing CFS).
-- [ ] Repro: P2.19 repro still exits 0 (no regression to the crash fix) — TODO.
+- [x] Repro: P2.19 repro (`taskset_3 INCR_Reopt_10`) exits 0 — release rebuild from
+      staged source, `Average SP Metric: 4.99439`, no abort/throw, loop converged
+      (`SafeFallbackComputeTime_s: 4.5e-05`). No regression to the `58264b20` crash fix.
 - [x] `dev_log.md` + memory + MEMORY.md.
-- [ ] `git add` staged; user reviews (no commit) — TODO.
+- [x] `git add` staged; user reviews (no commit).

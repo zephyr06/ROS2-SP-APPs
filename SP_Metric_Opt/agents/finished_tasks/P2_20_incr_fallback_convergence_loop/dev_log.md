@@ -85,6 +85,9 @@ overrides `OptimizeIncre_w_TL` to inject `{0.5, 0.8, 0.8}`: pass 1 sets baseline
 - `tests/testIncreOpt_w_TL.cpp` — `ConvergenceStubOpt` + the red→green test.
 - `agents/active_tasks/P2_20_*/{tasks,dev_log}.md` + memory.
 
-### TODO before review handoff
-- P2.19 repro (`taskset_3 INCR_Reopt_10`) still exits 0 (no regression to the crash fix).
-- `git add` the staged changes; user reviews + commits.
+### Review handoff
+- **P2.19 repro verified.** Rebuilt `release/tests/RunOrchestrator` from staged source;
+  ran `taskset_3 INCR_Reopt_10` (was SIGABRT/0-byte log pre-`58264b20`). Exit 0,
+  `Average SP Metric: 4.99439`, `SafeFallbackComputeTime_s: 4.5e-05` (loop converged
+  fast), no abort/throw. No regression to the crash fix.
+- `git add` staged; user reviews + commits.
