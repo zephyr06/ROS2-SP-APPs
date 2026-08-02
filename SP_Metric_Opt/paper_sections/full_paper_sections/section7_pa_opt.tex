@@ -1,25 +1,22 @@
 	\section{Priority Assignments Optimization}
     \label{section_priority_opt}
 
+    This section addresses the \emph{priority-assignment subproblem}: given a task set $\boldsymbol{\tau}$ operating under environment $\textbf{E}_k$ with the QoS budgets $\boldsymbol{\mathcal{Q}}$ held \emph{fixed}, find the priority assignment $\mathcal{A}$ that maximizes $\textbf{SP}(\mathcal{A}; \textbf{E}_k)$ subject to the important-task constraint~\eqref{eq_important_task_constraint}.
+    That is, throughout this section we solve only for $\mathcal{A}$ in~\eqref{eq_overall_obj}; Section~\ref{section_config_opt} lifts the QoS-fixed restriction and optimizes $\mathcal{A}$ and $\boldsymbol{\mathcal{Q}}$ jointly.
 
-    This section presents online priority assignment algorithms aimed at improving the SP metric in real-time.
     Priority assignment is a fundamental and influential scheduling technique, particularly in real-time systems, where effective scheduling ensures strong performance guarantees.
     Such guarantees are crucial in robotics applications, including autonomous driving and aerospace systems.
-
-    However, designing an efficient online optimization algorithm is hard due to the stringent run-time complexity requirements.
-    However, simply evaluating the SP metric requires going through all the tasks and therefore has at least a linear complexity, not to mention performing further optimization.
-    Therefore, we designed an efficient incremental optimization algorithm which trades off optimality for better run-time efficiency.
+    However, designing an efficient online optimization algorithm is hard due to stringent run-time complexity requirements: even a single evaluation of the SP metric requires going through all tasks and therefore has at least linear complexity, not to mention performing further optimization.
+    We therefore design an efficient incremental optimization algorithm that trades off optimality for better run-time efficiency.
 
     To simplify the presentation, we first describe a brute-force algorithm for priority assignments.
     We then propose improvements inspired by the classical Audsley’s algorithm~\cite{Audsley91optimalpriority} and introduce incremental optimization techniques to balance computational speed and performance.
-
-    Throughout this section, we assume that the QoS budgets $\boldsymbol{\mathcal{Q}}$ are fixed.
-    Optimization of QoS budgets will be discussed in the next section.
 
 
 	\subsection{Brute-Force Priority Assignments}
 	\label{section_bf_pa}
     Given a task set of $n$ tasks, the brute-force algorithm enumerates and evaluates all $n!$ possible priority assignment vectors to identify the optimal solution.
+    The brute-force algorithm is optimal by construction, and we use it as an offline optimality reference in our experiments (Section~\ref{section: simulation}).
     While straightforward, this approach has significant computational limitations.
     As the number of tasks increases, the factorial growth of possible assignments leads to prohibitive computation costs.
     This makes brute-force methods impractical for online use, particularly in embedded systems where resource constraints and real-time demands are prevalent.
@@ -34,7 +31,7 @@
 
     The core idea of Audsley's algorithm is straightforward: in each iteration, the algorithm identifies tasks from a candidate pool (\ie, tasks that have not been assigned priorities yet) that can tolerate the lowest priority while still meeting their deadlines.
     If such a task is found, its priority is assigned; otherwise, the algorithm concludes that the task set is not schedulable.
-    Under certain conditions~\cite{Audsley91optimalpriority}, this approach is provably optimal for maximizing schedulability.
+    Under certain conditions~\cite{Audsley91optimalpriority}, this approach is optimal for maximizing schedulability (note: optimal for schedulability, not for the SP metric).
 
 
     	However, several issues prevent direct application of Audsley's algorithm in our case:
@@ -49,13 +46,13 @@
     The modified algorithm retains Audsley's iterative structure but incorporates additional mechanisms to evaluate and prioritize assignments based on SP metric performance.
 
     The modified algorithm works iteratively.
-    Initially, all tasks without assigned priorities are placed into a task pool, $\taskpool$.
+    Each partial priority assignment $p$ carries its own pool of not-yet-assigned tasks; assigning a task to $p$ appends it at the current priority level and removes it from that pool.
     In the \ith{k} iteration, the algorithm identifies the task to assign the \ith{k} lowest priority.
     The key steps within each iteration are:
 \begin{itemize}
-    \item For each recorded partial priority assignment vector ($\partialpa$ in Algorithm~\ref{alg:modified_audsley}), denoted as $p$, evaluate the accumulated SP-value loss for the tasks in $p$.
-    \item For each partial priority assignment vector $p$, for each task $\tau_i$ from $\taskpool$, try to assign $\tau_i$ the \ith{k} lowest priority and compute the SP metric loss associated with $\tau_i$.
-    \item Retain the top-$m$ ($m$>0 is a hyper-parameter) partial priority assignment vectors based on the lowest SP loss.
+    \item For each recorded partial priority assignment vector $p$ (the set $\partialpa$ in Algorithm~\ref{alg:modified_audsley}), evaluate the accumulated SP-value loss incurred by the tasks already placed in $p$.
+    \item For each $p$, for each task $\tau_i$ still in $p$'s pool, form a copy of $p$, assign $\tau_i$ the \ith{k} lowest priority, and compute the SP metric loss associated with $\tau_i$.
+    \item Retain the top-$m$ ($m>0$ is the beam width) partial priority assignment vectors with the \emph{lowest} accumulated SP loss.
     These candidates are passed to the next iteration.
 \end{itemize}
 
@@ -64,25 +61,20 @@ The pseudocode for the modified Audsley's algorithm is shown below:
 
 	\begin{algorithm}[htbp]
 		\caption{Modified Audsley's Algorithm} \label{alg:modified_audsley}
-		% \SetAlgoLined
-		% \SetKwInOut{a}{b}
-		\KwIn{Task set $\taskset$, partial paths to keep $m$}
-		\KwOut{Optimal priority assignment}
-		$\taskpool = \{\tau_0,...,\tau_{N-1}\}$
-		$\partialpa = \{\emptyset\}$ \tcp{lowest priority task appears first}
-
+		\KwIn{Task set $\boldsymbol{\tau}$, beam width $m$}
+		\KwOut{Selected priority assignment}
+		$\partialpa = \{$ a single empty partial path $p$ with $p.\textsc{Pool} \leftarrow \boldsymbol{\tau}$ $\}$ \tcp{lowest-priority task appended first}
 		\For{$k$ in $0,...,N-1$}
 		{
 			$\partialpacur=\{\emptyset\}$\\
 			\For{$p$ in $\partialpa$}{
-				\For{$\tau_i$ in $\taskpool$}{
-					$p.\textbf{Push}(\tau_i)$\\
-					$\partialpacur.\textbf{Push}(p)$\\
-					$p.\textbf{Pop}(\tau_i)$\\
+				\For{$\tau_i$ in $p.\textsc{Pool}$}{
+					$p' \leftarrow \textbf{copy}(p)$ \tcp{copy before extending}
+					$p'.\textsc{Assign}(\tau_i)$ \tcp{append $\tau_i$ at priority $k$; remove $\tau_i$ from $p'.\textsc{Pool}$; accumulate SP loss}
+					$\partialpacur.\textbf{Push}(p')$\\
 				}
 			}
-			$\partialpa = \textbf{SelectTop}(\partialpacur, m)$\\
-
+			$\partialpa = \textbf{SelectTop}(\partialpacur, m)$ \tcp{keep the $m$ paths of \emph{lowest} accumulated SP loss}
 		}
 		\KwRet $\textbf{SelectTop}(\partialpa, 1)$
 	\end{algorithm}
@@ -123,11 +115,12 @@ The pseudocode for the modified Audsley's algorithm is shown below:
 	\subsection{Incremental Priority Assignment Optimization}
 	\label{section_increment_pa}
 
-    Incremental optimization can further accelerate the priority assignment process by leveraging the observation that a robot's environment often changes \textit{continuously} as it moves.
+    Incremental optimization can further accelerate the priority assignment process by leveraging the observation that, between consecutive re-optimization intervals, typically only a small number of tasks' execution time distributions change significantly.
     Additionally, not all tasks' execution time distributions vary significantly across environments or over time.
 
-    To minimize runtime overhead, we propose the following heuristic: when performing priority assignments, identify tasks with significant changes in execution time distribution and adjust their priorities by at most one level.
-    For all other tasks, retain their \textit{relative} priority assignments, as their execution time distributions remain unchanged, and thus their optimal relative priorities are likely to remain the same.
+    The incremental search is seeded from a Deadline-Monotonic priority assignment in which every important task is locked above every non-important task (the important-first group lock of Section~\ref{eq_safety}).
+    Starting from this seed, when performing priority assignments, we identify tasks with significant changes in execution time distribution and adjust their priorities by at most one level.
+    For all other tasks, we retain their \textit{relative} priority assignments, as their execution time distributions remain unchanged, and thus their optimal relative priorities are likely to remain the same.
     If multiple tasks experience significant changes, this adjustment is applied individually to each task.
 
 
@@ -146,3 +139,72 @@ The four possible scenarios are:
     \item If $\tau_i$ is not important and its execution time decreases, no priority change is required.
 \end{enumerate}
 Potential issues in terms of optimal solution drift caused by the incremental optimization is discussed in Section~\ref{sec: drift}.
+
+
+	\subsection{RTA Cache: Reusing Response-Time Computation}
+	\label{section_rta_cache}
+
+    Both the modified Audsley search (Section~\ref{section_audsley_pa}) and the incremental adjustment above evaluate the SP metric many times per interval, and a single evaluation already requires a response-time analysis (RTA) over all tasks.
+    Recomputing RTA from scratch for every candidate is too costly for online use.
+    The RTA cache makes incremental optimization practical by reusing prior computation whenever a candidate differs only slightly from one already scored.
+
+    \textbf{Champion and the single-change condition.}
+    The cache holds a \emph{champion}: a priority assignment together with the full per-task response-time distributions $\rtDist{i}$ it induces.
+    A candidate is served from the cache only if it differs from the champion by \emph{at most one task}---the single-change invariant, $|\mathrm{diff}| \leq 1$.
+    Relative to the champion, a candidate may change the execution-time distribution $\extDist{m}$ of at most one task $\tau_m$, the priority position of at most one task $\tau_m$ on its core, or both; when both change they must concern the \emph{same} task on the \emph{same} core (a combined execution-time and priority change counts as one).
+    Any broader change---two tasks' execution times, a task migrating to another core, two independent priority moves, or an execution-time change on one task paired with a priority move of another---violates the invariant ($|\mathrm{diff}| > 1$) and is rejected by a single-change check.
+    When candidate and champion are identical ($|\mathrm{diff}| = 0$), every $\rtDist{i}$ is reused unchanged.
+
+    \textbf{Which response times can be reused.}
+    We now state precisely which $\rtDist{i}$ the cache reuses.
+    Let $\boldsymbol{\tau}$ be the champion task set with per-task response times $r_i$, and let $\boldsymbol{\tau}^{m}$ denote the candidate obtained by changing a single task $\tau_m$ on core $c$ (its execution-time distribution and/or its priority position); $r_i^{m}$ denotes $\tau_i$'s response time under $\boldsymbol{\tau}^{m}$.
+    Number priority positions on each core from highest ($0$) to lowest, and let $\tau_m$ move from $\mathit{old\_pos}$ to $\mathit{new\_pos}$ on core $c$ (equal for an execution-time-only change), with $p_{\min}=\min(\mathit{old\_pos},\mathit{new\_pos})$ and $p_{\max}=\max(\mathit{old\_pos},\mathit{new\_pos})$.
+    Throughout, $hp(i)$ is the set of tasks with strictly higher priority than $\tau_i$ on the \emph{same} core, and we rely on the fixed-priority scheduling property that $r_i$ depends only on $\tau_i$'s own execution time and on the execution times, periods, and membership of $hp(i)$---never on lower-priority tasks.
+
+    \begin{observation}[Cross-core reuse]
+    \label{obs:rta_cross_core}
+    If $\tau_i$ is not on core $c$, then $r_i^{m} = r_i$.
+    \end{observation}
+    \noindent\textit{Proof.}
+    Under partitioned scheduling, $hp(i)$ contains only tasks on $\tau_i$'s own core, so neither $\tau_m$'s execution time nor its priority position on core $c$ enters $\tau_i$'s response-time computation~\eqref{eq_prob_rta}.
+    Hence $r_i^{m}=r_i$, and the champion $\rtDist{i}$ is reused verbatim. \hfill$\square$
+
+    \begin{lemma}[Execution-time change]
+    \label{lem:rta_et_change}
+    Suppose the candidate differs from the champion only in $\tau_m$'s execution-time distribution (possibly together with a priority move of $\tau_m$ on core $c$).
+    Then on core $c$, every task at position $< p_{\min}$ satisfies $r_i^{m} = r_i$ (bit-identical); every task at position $\geq p_{\min}$ must be recomputed.
+    \end{lemma}
+    \noindent\textit{Proof.}
+    For a task $\tau_i$ at position $< p_{\min}$, $\tau_m$ sits at position $\geq p_{\min}$ in both the champion and the candidate, so $\tau_m \notin hp(i)$ in both and $\tau_i \neq \tau_m$; $\tau_i$'s own execution time and the membership, execution times, and order of $hp(i)$ are all unchanged.
+    By the fixed-priority property, $r_i$ is determined solely by these quantities, so $r_i^{m}=r_i$.
+    For a task at position $\geq p_{\min}$, either $\tau_i = \tau_m$ (its own execution time changed) or $\tau_m \in hp(i)$ with a changed execution-time distribution, so $r_i^{m} \neq r_i$ and the value is recomputed. \hfill$\square$
+
+    \begin{lemma}[Pure priority move]
+    \label{lem:rta_priority_move}
+    Suppose the candidate differs from the champion only by moving $\tau_m$ from $\mathit{old\_pos}$ to $\mathit{new\_pos}$ on core $c$, with all execution-time distributions unchanged.
+    Then on core $c$:
+    \begin{enumerate}
+        \item position $< p_{\min}$: $r_i^{m} = r_i$ (bit-identical);
+        \item $p_{\min} \leq \text{position} \leq p_{\max}$: recompute;
+        \item position $> p_{\max}$: $r_i^{m} = r_i$ in the lossless analysis, and the cached $r_i$ is a safe upper bound on $r_i^{m}$ under the implementation's conservative compression.
+    \end{enumerate}
+    \end{lemma}
+    \noindent\textit{Proof.}
+    \emph{(1)} For $\tau_i$ at position $< p_{\min}$, $\tau_m$ is below $\tau_i$ in both orderings, so $\tau_m \notin hp(i)$ in both; $hp(i)$ is unchanged in membership, execution times, and order, giving $r_i^{m}=r_i$.
+    \emph{(2)} For $\tau_i$ inside $[p_{\min},p_{\max}]$, $\tau_m$ crosses $\tau_i$, so the membership of $hp(i)$ differs between champion and candidate; $r_i^{m}$ is recomputed.
+    \emph{(3)} For $\tau_i$ at position $> p_{\max}$, $\tau_m \in hp(i)$ in both orderings (at $\mathit{old\_pos} \leq p_{\max}$ and $\mathit{new\_pos} \leq p_{\max}$, both below $\tau_i$) with the same execution-time distribution; the \emph{set} $hp(i)$ is identical and only the order within $[p_{\min},p_{\max}]$ is permuted.
+    The response-time computation~\eqref{eq_prob_rta} convolves the higher-priority execution-time distributions and counts preempting jobs of each $\tau_j \in hp(i)$ as $\lceil r_i/T_j \rceil$; both are independent of the order within $hp(i)$ (convolution is commutative), so the lossless $r_i^{m}=r_i$.
+    The implementation interleaves lossy compression steps that are stochastically conservative---probability mass is only moved to later (larger) response-time values---so the order-dependent cached $r_i$ stochastically dominates the true $r_i^{m}$; reusing $r_i$ therefore never underestimates the deadline-miss probability. \hfill$\square$
+
+    In both lemmas the recomputed tasks form a contiguous range on a single core, so an incremental evaluation touches only a slice of one core rather than all $N$ tasks.
+
+    \textbf{Interface.}
+    The cache exposes three operations:
+    \begin{itemize}
+        \item \textsc{Initialize} performs a full RTA and establishes the champion, used at the start of each interval where the carried assignment may differ from the previous champion by more than one task.
+        \item \textsc{Evaluate} patches a candidate that satisfies $|\mathrm{diff}| \leq 1$ against the champion and returns its $\rtDist{i}$, reusing the champion's per-task computation; it does not modify the champion.
+        \item \textsc{AdoptChampion} commits a candidate (with its already-computed $\rtDist{i}$) as the new champion, so that subsequent candidates are compared against it and the single-change invariant is preserved across successive moves.
+    \end{itemize}
+
+    The collaborative PA+QoS loop of Section~\ref{section_config_opt} is structured around this invariant---every step changes exactly one task, so every evaluation reuses the cache.
+    Implementation details (per-core higher-priority-prefix checkpoints and the per-task reuse classification) are deferred to Section~\ref{section_implementation}.

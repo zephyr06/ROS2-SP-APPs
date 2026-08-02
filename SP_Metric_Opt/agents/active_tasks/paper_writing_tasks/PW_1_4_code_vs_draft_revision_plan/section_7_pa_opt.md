@@ -1,8 +1,9 @@
 # §7 — Priority Assignments Optimization
 
-> Draft: `section7_pa_opt.tex`. Status: **RE-PLANNED** (was DONE; superseded by the
-> PA-only scoping below). See `overall_revision_plan.md` for conventions.
-> Source of code truth: `sketch_optimization.md` (PW.1.2).
+> Draft: `section7_pa_opt.tex`. Status: **.tex edits APPLIED** (Stage 1 content
+> commit pending user review). See `overall_revision_plan.md` for conventions.
+> Source of code truth: `sketch_optimization.md` (PW.1.2); code locators
+> re-verified against current source 2026-08-02.
 
 ## High-level guidance (user instruction)
 
@@ -15,6 +16,104 @@ constant. §7 then presents the three PA algorithms in order of decreasing cost:
 a **NEW subsection introducing the RTA cache** — the data structure that makes
 the incremental algorithms in §7.3 (and the unified loop in §8) fast enough for
 online use, and whose single-change invariant the §8 collaborative loop exploits.
+
+## Implementation log (Stage 1 .tex edits — applied, awaiting user review)
+
+All four subsection rows below have been applied to `section7_pa_opt.tex`
+(2026-08-02). Code-truth facts re-verified against current source before each
+edit. The QoS reframe (convention #6) was already committed in a prior session
+(`\configs` gone, `\boldsymbol{\mathcal{Q}}` in use) — this pass layered the
+remaining Stage 1 content on top.
+
+- **§7.0** — Lede rewritten as an explicit partial problem statement: given
+  $\boldsymbol{\tau}$ under $\textbf{E}_k$ with $\boldsymbol{\mathcal{Q}}$ held
+  *fixed*, find $\mathcal{A}$ maximizing $\textbf{SP}(\mathcal{A};\textbf{E}_k)$
+  s.t. `eq_important_task_constraint`; states QoS fixed *throughout §7*, §8
+  lifts it. Forward-ref `section_config_opt`. Redundant "However…However" fixed.
+- **§7.1** — VERIFY. Added one line: BF is optimal by construction and used as
+  the offline optimality reference in experiments. Forward-ref
+  `section: simulation` (real label in `section14_simu_exp.tex`).
+- **§7.2** — FIX (Ryan 1.2 + 1.4). Algorithm 1 pseudocode rewritten against the
+  real `OptimizeFromScratch(int K)` (`OptimizeSP_Incre.cpp:100`):
+  (a) pool **shrinks** per partial path — each path carries its own
+  `tasks_to_assign` (`unordered_set`), `AssignAndUpdateSP` does `.erase(task_id)`
+  (`:92`); the draft's full `\taskpool` reused across iterations was wrong.
+  (b) **copy before push** — code does `PriorityPartialPath new_path = path;`
+  then mutates the copy (`:118`); the draft's `Push;Push;Pop` aliasing pattern
+  was wrong. (c) `SelectTop` objective **defined** = lowest accumulated `sp_lost`
+  (`CompPriorityPath`, `OptimizeSP_Incre.h:60`, `sp_lost` field `:55`); beam
+  width $m$. (d) output "Optimal"→"Selected" (Ryan 1.4). Surrounding prose
+  aligned; broken `\taskpool` usages replaced with real prose. "provably
+  optimal"→"optimal for maximizing schedulability (not the SP metric)".
+- **§7.3** — smoothness FIX + DM-seed ADD applied. "continuously"→"typically
+  only a small number of tasks' ETs change between intervals" (content change 2).
+  Seed stated as Deadline-Monotonic + important-first group lock (verified
+  `DeadlineMonotonicPriorityVec` `OptimizeSP_TL_Incre.cpp:920` + `GroupLock::
+  kImportantFirst` `PriorityBuilders.h:17`; `BuildPriorityPlan` `:34`). **OPEN
+  DECISION below — four-scenario table NOT applied.**
+- **§7.4** — ADD new subsection `section_rta_cache`. Why (many SP evals/interval,
+  each ≥ linear); **champion + single-change condition stated explicitly** — a
+  candidate may change ≤1 task's ET, ≤1 task's priority position on its core, or
+  both on the SAME task/core; broader changes (2 ETs, core migration, 2 moves,
+  ET+move on different tasks) violate $|\mathrm{diff}|>1$ (verified
+  `IsSingleTaskChange` `RTA_Cache.cpp:262-347`, throw at `:358`); **which RTs
+  reuse** — other cores verbatim; on the changed core, $p_{\min}/p_{\max}$ bracket:
+  Rule A (ET changed, `has_et_diff`) `pos≥p_min`→recompute, above→verbatim;
+  Rule B (pure priority move) `[p_min,p_max]`→recompute, above $p_{\min}$ AND
+  below $p_{\max}$→reuse (below is safe upper bound, NOT bit-identical: HP set
+  same members/ETs only permuted, convolution commutative, lossy Compress makes
+  cached ≥ true — `ClassifyReusePerTask` `:368-426`, comment `:406-418`);
+  interface (`Initialize`/`Evaluate`/`AdoptChampion`, `RTA_Cache.h:70/78/90`);
+  forward-ref `section_config_opt` (§8 structured around the invariant) +
+  `section_implementation` (micro-architecture: per-core HP-prefix checkpoints,
+  per-task reuse classification). Kept methodology-level per user "concise, not a
+  cache paper." **EXPANDED per user 2026-08-02** ("more explanation, explicit
+  conditions from code, single-task-change condition, and for N tasks with one
+  task's ET+priority changed how other tasks' RTA changes / which reuse") —
+  replaced the prior terse key-idea paragraph with the champion+condition +
+  reuse-rules block above. **FORMALIZED per user 2026-08-02** ("instead of using
+  rules, add lemmas and proof; proof mostly based on the FTP scheduling property
+  that high-priority tasks' RTA are not impacted by low-priority tasks' ET and
+  priority; this section needs more mathematical and rigorous description;
+  high-level description: N tasks sorted by priorities, one task tau_c's ET and
+  priority may differ → new task set bold tau^c; for each tau_i with old RTA r_i,
+  how does r_i change in bold tau^c, denoted r_i^c, described based on old r_i if
+  reusable"). The two Rule A/B itemize items → **Observation (cross-core reuse)
+  + Lemma (execution-time change, Rule A) + Lemma (pure priority move, Rule B)**,
+  each with a `\noindent\textit{Proof.}…\hfill$\square$` paragraph. Rigor framing
+  per user: champion task set bold tau with RTA r_i; candidate bold tau^m (index
+  renamed m not c to avoid clash with core c) with RTA r_i^m; p_min/p_max
+  bracket; proofs rest on the fixed-priority property that r_i depends only on
+  tau_i's own ET + hp(i) membership/ETs/order, never lower-priority tasks
+  (eq_prob_rta). Lemma A proof: pos<p_min → tau_m notin hp(i) in both, unchanged
+  → r_i^m=r_i; pos>=p_min → tau_m in hp(i) with changed ET (or tau_i=tau_m) →
+  recompute. Lemma B proof: (1) pos<p_min verbatim; (2) [p_min,p_max] tau_m
+  crosses → membership changes → recompute; (3) pos>p_max — HP SET identical,
+  only permuted within window, convolution commutative ⇒ lossless r_i^m=r_i; the
+  implementation's lossy Compress steps are stochastically conservative (mass
+  moved to later/larger RT values only) ⇒ cached r_i stochastically dominates
+  true r_i^m ⇒ safe upper bound, never underestimates miss-prob (code comment
+  `RTA_Cache.cpp:406-418`). Environments: `lemma`/`observation` already
+  `\newtheorem`-defined in `main.tex:31/33`; `proof` env NOT available (no
+  `amsthm`) → manual `\noindent\textit{Proof.}` + `\hfill$\square$` (`amsfonts`
+  loaded). `\rtDist{i}`/`\extDist{i}` still literal (pre-existing repo-wide
+  macro breakage, PW.2 preamble fix, NOT §7 scope). LaTeX verified: 14/14
+  begin/end, no IDE diagnostics.
+
+**OPEN DECISION (§7.3 four-scenario table) — needs user input.** The draft's
+four scenarios (important+ET↑→raise / important+ET↓→no change / not-important+
+ET↑→lower / not-important+ET↓→no change) do **NOT** match code. The real
+`AnalyzePriorityChangeStatus` (`OptimizeSP_Incre.cpp:290-308`) is a 2×2 over
+`{et_increased, if_highest_weight_unique(task_id)}` mapping to a priority-search
+**direction** `{Increase, Decrease}` — i.e. it selects *which half* of the
+priority positions to re-search, never "no change"; and the discriminator is
+`if_highest_weight_unique` (the single highest-weight task), NOT a binary
+important/not-important split. Two of the draft's four scenarios (the two "no
+priority change is required" cases) have no code counterpart. Rewriting the table
+to the real 2×2 changes what the paper claims the heuristic does → left for the
+user to decide: (A) rewrite the table to match `AnalyzePriorityChangeStatus`
+exactly; (B) keep the draft's four scenarios as a simplified motivational
+framing and add a caveat; (C) defer to Stage 2. Not silently rewritten.
 
 ## Subsection rows
 

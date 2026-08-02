@@ -153,3 +153,107 @@
   with $\boldsymbol{\tau}^{safe}$ at all §6.7 sites + the §5 `notation_table` row.
   "safe" reads more naturally alongside the safety-threshold semantics (the subset
   whose $\Theta_i$ safety thresholds are honored as hard constraints). Status unchanged.
+- **2026-08-02 (cont.) — §7 .tex Stage 1 edits APPLIED (PA-only re-plan).** Per
+  the §6→§7 sequence, applied all four §7 subsection rows to
+  `section7_pa_opt.tex`. QoS reframe was already committed in a prior session
+  (`\configs` gone, `\boldsymbol{\mathcal{Q}}` in use); this pass layered the
+  remaining Stage 1 content. Code locators re-verified against current source
+  (an earlier Explore agent to verify §7 locators failed with "Model not found";
+  verified directly instead). (1) §7.0: lede rewritten as explicit partial
+  problem statement scoping $\boldsymbol{\mathcal{Q}}$ fixed throughout §7,
+  §8 lifts it; forward-ref `section_config_opt`; fixed redundant "However…However".
+  (2) §7.1: VERIFY + added BF-as-offline-optimality-reference line (forward-ref
+  `section: simulation`, the real simu-exp label in `section14_simu_exp.tex`).
+  (3) §7.2: Algorithm 1 pseudocode rewritten against `OptimizeFromScratch(int K)`
+  (`OptimizeSP_Incre.cpp:100`) — pool shrinks per partial path
+  (`AssignAndUpdateSP` `.erase` at `:92`; draft's full `\taskpool` was wrong);
+  copy-before-push (`new_path = path` at `:118`; draft's `Push;Push;Pop` aliasing
+  was wrong); `SelectTop` objective defined = lowest accumulated `sp_lost`
+  (`CompPriorityPath` `OptimizeSP_Incre.h:60`, `sp_lost` `:55`); "Optimal"→
+  "Selected" (Ryan 1.4); surrounding prose aligned; broken `\taskpool` usages
+  replaced with real prose; "provably optimal"→"optimal for schedulability, not
+  SP". (4) §7.3: smoothness FIX ("continuously"→per-interval-small-ET-change,
+  content change 2) + DM-seed ADD (`DeadlineMonotonicPriorityVec`
+  `OptimizeSP_TL_Incre.cpp:920` + `GroupLock::kImportantFirst`
+  `PriorityBuilders.h:17` + `BuildPriorityPlan` `:34`). (5) §7.4: ADD new
+  `section_rta_cache` — why / key idea (champion + single-change invariant
+  $|\mathrm{diff}|\leq1$) / interface (`Initialize`/`Evaluate`/`AdoptChampion`,
+  `RTA_Cache.h:70/78/90`) / invariant (`ComputeTaskSetDifference` throws on
+  $|\mathrm{diff}|>1$, `RTA_Cache.cpp:358`) / forward-ref §8; micro-architecture
+  deferred to `section_implementation`. **OPEN DECISION flagged for user: §7.3
+  four-scenario table does NOT match code.** Real `AnalyzePriorityChangeStatus`
+  (`OptimizeSP_Incre.cpp:290-308`) is a 2×2 over `{et_increased,
+  if_highest_weight_unique}` → search direction `{Increase, Decrease}` (selects
+  which half of priority positions to re-search; never "no change"; discriminator
+  is the single highest-weight task, not a binary important split). Draft's four
+  scenarios (incl. two "no change" cases) have no code counterpart. Left
+  unwritten — three options recorded in `section_7_pa_opt.md` (rewrite-to-code /
+  simplified-framing-with-caveat / defer-to-Stage-2). Plan file + status updated.
+  NEXT: §8 .tex (collaborative PA+QoS, complete rewrite per
+  `section_8_task_config_opt.md`).
+- **2026-08-02 (cont.) — §7.4 RTA cache EXPANDED per user request.** User:
+  "rta cache needs more explanation, explicit conditions from code, single-task-
+  change condition, and for a task set with N tasks and only one task's ET and
+  priority change, how does other tasks' RTA change, which tasks' RTA can be
+  safely reused, etc." Re-read `RTA_Cache.h` (full) + `RTA_Cache.cpp` (full) +
+  §6.2 RTA notation for symbol consistency (`\rtDist{i}`, `\extDist{i}`, `hp(i)`).
+  Replaced the prior terse "Key idea" paragraph with three grounded blocks:
+  (1) **Champion + single-change condition** — candidate may change ≤1 task's ET,
+  ≤1 task's priority position on its core, or both on the SAME task/core;
+  enumerates the violations (2 ETs / core migration / 2 moves / ET+move on
+  different tasks) that trigger `|diff|>1`; `|diff|==0` reuses all verbatim.
+  Sourced from `IsSingleTaskChange` (`RTA_Cache.cpp:262-347`) + the throw at
+  `:358`. (2) **Which RTs reuse** — other cores verbatim (partitioned scheduling
+  ⇒ hp(i) is same-core only); on the changed core, p_min=min(old,new_pos),
+  p_max=max(old,new_pos): Rule A (`has_et_diff`, ET changed ±move) `pos≥p_min`→
+  recompute, above→verbatim bit-identical; Rule B (pure priority move)
+  `[p_min,p_max]`→recompute, above p_min AND below p_max→reuse — the below-p_max
+  reuse is a SAFE UPPER BOUND not bit-identical (HP set same members/ETs only
+  permuted within the window, convolution commutative, but the lossy Compress
+  step makes cached ≥ true). Sourced from `ClassifyReusePerTask` (`:368-426`) +
+  its code comment (`:406-418`). Recomputed tasks form a contiguous range on one
+  core. (3) Interface (Initialize/Evaluate/AdoptChampion) kept; dropped the
+  standalone "The invariant" block (folded into the condition block). Plan file
+  `section_7_pa_opt.md` §7.4 row updated to match. Status unchanged (.tex edits
+  APPLIED, awaiting user review). §7.3 four-scenario-table OPEN DECISION still
+  pending.
+- **2026-08-02 (cont.) — §7.4 RTA reuse FORMALIZED into lemmas+proofs per user
+  request.** User: "instead of using rules, we'll add lemmas and proof for these
+  rules; proof doesn't need to be complicated, mostly based on the FTP scheduling
+  property that high-priority tasks' RTA are not impacted by low-priority tasks'
+  ET and priority; this section needs more mathematical and rigorous description;
+  high-level description: N tasks sorted by priorities, one task tau_c's ET and
+  priority may be different → new task set bold tau^c; for each tau_i with old
+  RTA r_i, how does r_i change in bold tau^c, denoted r_i^c, described based on
+  old r_i if reusable." Replaced the two Rule A/B `\begin{itemize}` items with
+  formal statements + proofs in `section7_pa_opt.tex`:
+  (1) **Observation (cross-core reuse)** — tau_i not on core c ⇒ r_i^m=r_i;
+  proof: partitioned scheduling ⇒ hp(i) same-core only ⇒ tau_m's change never
+  enters tau_i's eq_prob_rta. (2) **Lemma (execution-time change) = Rule A** —
+  ET change (±priority move of tau_m): pos<p_min → r_i^m=r_i bit-identical;
+  pos>=p_min → recompute; proof via fixed-priority property (r_i depends only on
+  tau_i's own ET + hp(i) membership/ETs/order, never lower-priority tasks):
+  pos<p_min ⇒ tau_m notin hp(i) in both orderings, tau_i!=tau_m, hp(i)
+  unchanged ⇒ r_i^m=r_i; pos>=p_min ⇒ tau_m in hp(i) with changed ET (or
+  tau_i=tau_m) ⇒ recompute. (3) **Lemma (pure priority move) = Rule B** —
+  pos<p_min verbatim; [p_min,p_max] recompute (tau_m crosses, membership
+  changes); pos>p_max — HP SET identical, only permuted within window,
+  convolution commutative + preempting-job count ceil(r_i/T_j) order-independent
+  ⇒ lossless r_i^m=r_i; implementation's lossy Compress steps are stochastically
+  conservative (mass moved to later/larger RT values only) ⇒ cached r_i
+  stochastically dominates true r_i^m ⇒ safe upper bound, never underestimates
+  miss-prob (code comment RTA_Cache.cpp:406-418). Rigor framing adopted user's
+  bold tau / bold tau^c notation but renamed the changed-task index c→m to avoid
+  clash with core c (candidate task set bold tau^m, candidate RTA r_i^m); p_min/
+  p_max bracket kept. Environments: `\newtheorem{lemma}{Lemma}` (main.tex:31) +
+  `\newtheorem{observation}{Observation}` (:33) already defined; `proof` env NOT
+  available (no amsthm) → manual `\noindent\textit{Proof.}…\hfill$\square$`
+  (amsfonts loaded for $\square$). Re-verified code conditions before writing:
+  IsSingleTaskChange `:262-347`, throw `:358`, ClassifyReusePerTask `:368-426`
+  (Rule A `:397-404`, Rule B `:406-425`, comment `:406-418`), GetRTA_OneTask
+  `RTA.cpp:32-44` (Compress placement, Convolve commutativity),
+  ResolvePreemptionsAndCompress `RTA.cpp:9-30` (CompressDeadlineMissProbability +
+  CompressDistributionWithOnlySize conservative). Plan file §7.4 row updated.
+  LaTeX verified: 14/14 begin/end, no IDE diagnostics. Status unchanged (.tex
+  edits APPLIED, awaiting user review). §7.3 four-scenario-table OPEN DECISION
+  still pending.
