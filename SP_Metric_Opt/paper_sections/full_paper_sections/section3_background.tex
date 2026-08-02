@@ -1,4 +1,4 @@
-	\section{Background}
+	\section{Background and Overview}
     % organization:
     % - what is scheduling
     % - why do we care about scheduling
@@ -6,11 +6,23 @@
 
 
     Most computing systems such as embedded systems need to run multiple tasks. Due to the limited computation resources available on these platforms, deciding the appropriate running order for all the tasks is critical to achieving the expected performance.
-    Scheduling algorithms design and analysis have long been critical topics in the computer systems community. In many general-purpose computing platforms, such as Linux, the default scheduling algorithm is Complete Fairness Scheduling (CFS)~\cite{Bovet2000UnderstandingTL}. These algorithms aim to distribute computational resources evenly among all running tasks but provide no guarantees on meeting timing constraints. This lack of schedulability guarantees can be especially dangerous in safety-critical robotic systems such as autonomous vehicles, where limited computational resources must be carefully managed to ensure safe and timely execution of essential tasks. 
+    Scheduling algorithms design and analysis have long been critical topics in the computer systems community. In many general-purpose computing platforms, such as Linux, the default scheduling algorithm is Complete Fairness Scheduling (CFS)~\cite{Bovet2000UnderstandingTL}. These algorithms aim to distribute computational resources evenly among all running tasks but provide no guarantees on meeting timing constraints. This lack of schedulability guarantees can be especially dangerous in safety-critical robotic systems such as autonomous vehicles, where limited computational resources must be carefully managed to ensure safe and timely execution of essential tasks.
 
-    Real-time systems (RTS) are computing systems with strong timing guarantees for computation tasks. Most real-world robotic systems require some levels of timing guarantee to be applicable, because a robotic task, such as SLAM~\cite{Dellaert2017FactorGF} and motion planning~\cite{Mukadam18ar_steap, Zhang2024SelfAdaptiveRM, Mo2024PrecisionKP} provides no realistic values if they require a very long time to run and potentially put the robot systems into danger.
+    Real-time systems (RTS) are computing systems with timing guarantees for computation tasks. Most real-world robotic systems require some levels of timing guarantee to be applicable, because a robotic task, such as SLAM~\cite{Dellaert2017FactorGF} and motion planning~\cite{Mukadam18ar_steap, Zhang2024SelfAdaptiveRM, Mo2024PrecisionKP} provides no realistic values if they require a very long time to run and potentially put the robot systems into danger.
 
-    In real-time systems, one of the most widely used and reliable scheduling algorithms is \textit{fixed-task priority}(FTP) scheduling, where each tasks with higher priority always execute earlier than tasks with lower priority. The central part of FTP is assigning priorities to tasks. Most works assume static priorities, making it ineffective for robotic systems where task requirements and environmental conditions vary dynamically. 
-    
-	
-	% \todo check all the notations in all equations are well defined!!!
+    % \todo check all the notations in all equations are well defined!!!
+    In real-time systems, one of the most widely used and reliable scheduling algorithms is \textit{fixed-task priority}(FTP) scheduling, where each task with higher priority always executes earlier than tasks with lower priority. The central part of FTP is assigning priorities to tasks. Most works assume static priorities, making it ineffective for robotic systems where task requirements and environmental conditions vary dynamically.
+
+    This paper considers an online resource optimization problem for robot computation systems. Informally, given a robot system equipped with multiple computation tasks to run, we want to perform online scheduling optimization to achieve good overall (computational) safety and performance as the robot moves into different, unknown, environments.
+
+    To that end, we first build theoretical models to quantify the safety and performance metrics for a robot computation system, then we propose efficient online optimization algorithms to optimize priority assignments and tasks' run-time configurations under different environments.
+
+
+\begin{figure*}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{pictures/framework.pdf}
+\caption{Overall System Framework. Consider situations where a robot is exploring an unknown environment, which cannot be fully known during offline design stages.
+As the robot moves around, its computation tasks' execution time distribution may vary spatially and temporally. Therefore, it is necessary to perform online scheduling and configuration optimization to reallocate the limited computation resources available to computation tasks during the exploration process. Such kind of optimization is expected to improve tasks' output quality and the system's overall safety, as measured by the proposed safety-performance (SP) metric.
+}
+\label{fig_framework}
+\end{figure*}

@@ -1,0 +1,122 @@
+\documentclass[lettersize,journal]{IEEEtran}
+\usepackage{amsmath,amsfonts}
+\usepackage{algorithmic}
+% \usepackage{algorithm}
+\usepackage[ruled,linesnumbered]{algorithm2e}
+\usepackage{hyperref}
+\usepackage{array}
+\usepackage{subcaption}
+\usepackage{color}
+% \usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{bm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{amsmath}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{amssymb}
+\usepackage{cite}
+\hyphenation{op-tical net-works semi-conduc-tor IEEE-Xplore}
+% updated with editorial comments 8/9/2021
+
+\usepackage{mathtools}
+\DeclarePairedDelimiter\ceil{\lceil}{\rceil}
+\DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
+
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+\newtheorem{corollary}{Corollary}
+\newtheorem{observation}{Observation}
+\newtheorem{assumption}{Assumption}
+\newtheorem{Example}{Example}
+\newtheorem{definition}{Definition}[section]
+
+
+
+\newcommand {\haibo}[1]{{\color{red}\textbf{Haibo: }#1}\normalfont}
+\newcommand {\Sen}[1]{{\color{green}\textbf{Sen: }#1}\normalfont}
+\newcommand {\rkw}[1]{{\color{blue}\textbf{Ryan: }#1}\normalfont}
+\newcommand {\rkwprev}[1]{{\color{cyan}\textbf{Ryan-prev: }#1}\normalfont}
+\newcommand {\dong}[1]{{\color{magenta}\textbf{Dong: }#1}\normalfont}
+\newcommand{\CJ}[1]{\todo[color=orange,inline]{CJ:#1}}
+\newcommand{\SH}[1]{\todo[color=green,inline]{SH:#1}}
+\newcommand {\ash}[1]{{\color{red}\textbf{Ashrarul: }#1}\normalfont}
+
+
+\begin{document}
+	\include{Symbols}
+	
+	\title{Optimizing Robot Computation for Safety and Performance in Dynamic Environments}
+	
+	% \author{IEEE Publication Technology,~\IEEEmembership{Staff,~IEEE,}
+	% 	% <-this % stops a space
+	% 	% \thanks{This paper was produced by the IEEE Publication Technology Group. They are in Piscataway, NJ.}% <-this % stops a space
+	% 	% \thanks{Manuscript received April 19, 2021; revised August 16, 2021.}
+	% }
+    
+% \author{%
+%  \IEEEauthorblockN{Sen Wang\thanks{This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version may no longer be accessible. The authors are with Virginia Tech, and Seven Lakes High School. Emails: $\{$swang666, dongli, ashrar7, hbzeng, rywilli1, $\}$@vt.edu, heyuanboryan814@gmail.com.}, 
+%       Dong Li,
+%       Ryan He,
+%       Ashrarul H. Sifat,
+%       Haibo Zeng,
+%       Ryan Williams }
+% }
+	
+	% The paper headers
+	\markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2021}%
+	{Shell \MakeLowercase{\textit{et al.}}: A Sample Article Using IEEEtran.cls for IEEE Journals}
+	
+	% \IEEEpubid{0000--0000/00\$00.00~\copyright~2021 IEEE}
+	% Remember, if you use this you must call \IEEEpubidadjcol in the second
+	% column for its text to clear the IEEEpubid mark.
+	
+	\maketitle
+	
+	\begin{abstract}
+		As robotic systems continue to advance, their reliance on resource-constrained embedded systems for mission-critical tasks presents unique challenges in ensuring safety and performance guarantees. This paper addresses the coupling between computational resource allocation and safety-performance (SP) metrics, especially in dynamic environments where task execution demands change temporally and spatially. We improve the SP metric proposed in prior work to enhance interpretability and extend theoretical results using Gaussian processes and probabilistic models to analyze safety and performance guarantees. Building on these insights, we propose an online optimization framework to dynamically adjust computational task priorities and runtime configurations, minimizing resource waste while maintaining robust safety guarantees. To mitigate the overhead of online optimization, we introduce an incremental optimization strategy that achieves significant performance gains with low computational cost. 
+        
+        We built an autonomous driving system on an Nvidia Jetson embedded computing board. The system mainly runs 4 popular robotic tasks: control, path planning, SLAM, and TSP. 
+        We implemented the scheduler in a Linux operating system and compared the proposed scheduler with widely-used scheduling algorithms such as Complete Fairness Scheduling (CFS) and Rate Monotonic (RM).
+        Both real-world and large-scale simulated experiments demonstrated that the proposed methods improve the SP metric by 15–50\% compared to the baseline scheduling algorithms. This work contributes to the fields of robotics and real-time systems by integrating safety and performance considerations for resource-constrained robots operating in dynamic environments.
+	\end{abstract}
+	
+	\begin{IEEEkeywords} Scheduling, Safety, Online Optimization, Real-Time Systems.
+	\end{IEEEkeywords}
+	
+	\input{sections/section1_introduction}
+    \input{sections/section2_related_work}
+    \input{sections/section3_background}
+    \input{sections/section5_system_model}
+    \input{sections/section6_sp_opt_problem}
+    \input{sections/section7_pa_opt}
+    \input{sections/section8_task_config_opt}
+    \input{sections/section9_software_impl}
+    \input{sections/section10_complexity}
+    \input{sections/section11_limitations}
+    \input{sections/section12_real_exp}
+    \input{sections/section13_real_exp_analysis}
+    \input{sections/section14_simu_exp}
+    \input{sections/section15_simu_exp_analysis}
+    \input{sections/section16_conclusion}
+    
+
+
+
+
+
+
+
+    	
+	
+	\bibliographystyle{ieeetr}
+	\bibliography{scheduling} 
+	
+	
+\end{document}
+
+
