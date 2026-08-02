@@ -55,3 +55,27 @@
   rewrite). Master holds: how-to-read, 5 cross-cutting conventions, section index table,
   Ryan Cat-1 coverage map, skipped-sections note. Monolithic `revision_plan.md` deleted
   (content fully redistributed).
+- **2026-08-02 (cont.) — §7/§8 re-planned + NEW §9 safety fallback per user guidance.**
+  User instruction: §7 = PA-only (QoS fixed) → add explicit partial problem statement;
+  §8 = collaborative PA+QoS, COMPLETE REWRITE around the unified incremental loop
+  (sort by SP weight → per-task dispatch: TL task → trial-and-error, env task →
+  incremental PA solver), motivation = RTA-cache reuse; §7 also gets a NEW RTA-cache
+  subsection. Rewrote `section_7_pa_opt.md` (§7.0 partial-problem ADD / §7.1 VERIFY /
+  §7.2 FIX Alg.1 / §7.3 FIX+DM seed / §7.4 NEW RTA cache) and `section_8_task_config_opt.md`
+  (§8.0–§8.5: lede+joint problem / overall flow / serialization / QoS walk / env-task PA
+  move / complexity+single-change). Grounded in verified code locators
+  (`BuildSerializedTaskQueue` `OptimizeSP_TL_Incre.cpp:436-484`, `WalkSerializedTaskQueue`
+  `:486-514`, `WalkOneTaskWithTimeLimitOptions` `:647-694`, `RTACache` `RTA_Cache.h:61`).
+  Corrected a prior-plan error: the queue sort is weight-desc stable ONLY (the old
+  "deadline asc" was wrong — `TaskSortingHeuristic` uses threshold-asc, and the queue
+  doesn't even use that helper). Then **added NEW §9 = safety fallback** per user
+  ("why / how / when"): `section_9_safety_fallback.md` grounded in `sketch_fallback.md`
+  — §9.0 guarantee statement (self-guarantee, Option A `Pr(r_i>D_i)≤Θ_i`, important-task
+  scope) / §9.1 why (SP-vs-sched tension + dynamic-env ET-jump) / §9.2 how
+  (`ComputeSafeFallback:1002` on worst-case DAG `BuildDAGForObtainSafeFallBAckAcrossIntervals`
+  + offline `OptimizeIncre_w_TL_UntilConvergence:889` + BF gate `AdoptRmFastFallbackIfUnschedulable`)
+  / §9.3 when (3 triggers: a=`DetectETJump`, b-i=`UpdateRecords` gate, b-ii=`AdoptFallbackIfUnschedulable`)
+  / §9.4 complexity + loud-fail contract. Master section index + Ryan coverage map + tasks.md
+  updated for the new section + the 9→10…15→16, concl→§17 renumber cascade (final numbering
+  deferred to PW.2 `reorg_plan.md`, not yet started). Ryan 1.4 "soften guarantee" row now
+  points to §9 as the methodology home.

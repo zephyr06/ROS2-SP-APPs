@@ -24,6 +24,37 @@
   subsection detail. §3–5, 9–15 are high-level change descriptions; row-by-row
   detailing is deferred (see each section file's status line).
 
+## Revision stages
+
+The revision proceeds in two stages, in order. Stage 1 is what this plan
+captures; Stage 2 is a later polish pass.
+
+**Stage 1 — content completeness (this plan).** Get every technical claim,
+equation, symbol, algorithm description, and experimental result into the
+paper and correct vs code truth + Ryan's review. The cross-cutting conventions
+and per-section rows below are Stage 1. Verbs: FIX/VERIFY/DRIFT/ADD. Done when
+content is complete and accurate — no missing pieces, no drift, no broken
+claims — even if the prose is rough.
+
+**Stage 2 — accuracy, clarity, conciseness (polish pass).** Refine the
+*expression* of Stage 1's content; do NOT introduce new content or change
+technical claims. Runs after Stage 1 is substantially complete (per section or
+globally) so we don't polish text that's about to be rewritten. Three lenses,
+in priority order:
+- **Accuracy** — re-verify every claim, number, and symbol against code and
+  experiments; catch what Stage 1 missed (experiment-table numbers vs actual run
+  outputs, equation↔code correspondence, notation consistency vs §5's table).
+- **Clarity** — fix ambiguous prose; ensure every symbol is introduced before
+  use; smooth transitions; resolve forward/backward references; make examples
+  self-contained.
+- **Conciseness** — cut redundancy and wordiness; merge overlapping passages;
+  tighten sentences; remove anything that doesn't carry its weight. Target: the
+  shortest paper that says exactly what Stage 1 says.
+
+Stage 2 owns no per-section plan files of its own — it's a review rubric applied
+to Stage 1's output. Track its progress in the section index Status column when
+that pass begins.
+
 ## Cross-cutting conventions (apply everywhere, not per-row)
 
 1. **GP removal (content change 1).** grep `gaussian.process`/`GPR`/`Rasmussen`/
@@ -87,16 +118,26 @@
 | 4 | `section_4_overview.md` | `section4_overview.tex` | pending | high-level |
 | 5 | `section_5_system_model.md` | `section5_system_model.tex` | pending | high-level |
 | 6 | `section_6_sp_opt_problem.md` | `section6_sp_opt_problem.tex` | **DONE** | row-by-row |
-| 7 | `section_7_pa_opt.md` | `section7_pa_opt.tex` | **DONE** | row-by-row |
-| 8 | `section_8_task_config_opt.md` | `section8_task_config_opt.tex` | **DONE** | row-by-row |
-| 9 | `section_9_software_impl.md` | `section9_software_impl.tex` | pending | high-level |
-| 10 | `section_10_complexity.md` | `section10_complexity.tex` | pending | high-level |
-| 11 | `section_11_limitations.md` | `section11_limitations.tex` | pending | high-level |
-| 12 | `section_12_real_exp.md` | `section12_real_exp.tex` | pending | high-level |
-| 13 | `section_13_real_exp_analysis.md` | `section13_real_exp_analysis.tex` | pending | high-level |
-| 14 | `section_14_simu_exp.md` | `section14_simu_exp.tex` | pending | high-level |
-| 15 | `section_15_simu_exp_analysis.md` | `section15_simu_exp_analysis.tex` | pending | high-level |
-| 16 | — (conclusion) | `section16_conclusion.tex` | **SKIPPED** per user | — |
+| 7 | `section_7_pa_opt.md` | `section7_pa_opt.tex` | **RE-PLANNED** | row-by-row |
+| 8 | `section_8_task_config_opt.md` | `section8_task_config_opt.tex` | **RE-PLANNED** | row-by-row |
+| 9 | `section_9_safety_fallback.md` | **NEW** (no `.tex` yet) | **NEW SECTION** | row-by-row |
+| 10 | `section_9_software_impl.md` | `section9_software_impl.tex` | pending (renumbered 9→10) | high-level |
+| 11 | `section_10_complexity.md` | `section10_complexity.tex` | pending (renumbered 10→11) | high-level |
+| 12 | `section_11_limitations.md` | `section11_limitations.tex` | pending (renumbered 11→12) | high-level |
+| 13 | `section_12_real_exp.md` | `section12_real_exp.tex` | pending (renumbered 12→13) | high-level |
+| 14 | `section_13_real_exp_analysis.md` | `section13_real_exp_analysis.tex` | pending (renumbered 13→14) | high-level |
+| 15 | `section_14_simu_exp.md` | `section14_simu_exp.tex` | pending (renumbered 14→15) | high-level |
+| 16 | `section_15_simu_exp_analysis.md` | `section15_simu_exp_analysis.tex` | pending (renumbered 15→16) | high-level |
+| 17 | — (conclusion) | `section16_conclusion.tex` | **SKIPPED** per user | — |
+
+> **Renumber note (new §9 safety fallback).** Adding §9 = safety fallback
+> displaces the current §9 (software impl) → §10 and cascades §10–§15 → §11–§16,
+> conclusion → §17. The plan *files* keep their current names (e.g.
+> `section_9_software_impl.md` still covers software impl) — only their section
+> *number* changes. **Final numbering is deferred to PW.2's `reorg_plan.md`** (not
+> yet started; Ryan Cat-2.4 may merge/fold software-impl or the split results
+> sections, changing the cascade). The renumber is a PW.2/PW.3 execution concern;
+> each section's *content* is fixed regardless of final number.
 
 Cross-cutting (not a §): `main.tex` — Table I `\ith{i}` escape bug (Ryan 1.1),
 confirmed typos list (Ryan 1.1), Note to Practitioners (Ryan 1.5). Handled inline
@@ -119,7 +160,7 @@ Every Cat-1 item maps to ≥1 section row (so nothing is dropped):
 | 1.3 sim covariance matrix | §14 |
 | 1.3 headline number consolidation | §12/§13/§15/§16 (skipped) → note in §12 |
 | 1.4 relabel "optimal"→heuristic | §7.2 FIX |
-| 1.4 soften "guarantee" + assumptions/regimes | §6.7 + §11/§13.3 |
+| 1.4 soften "guarantee" + assumptions/regimes | **§9 (new safety-fallback)** = methodology home + §13.3 (discussion) + §6.7 |
 | 1.4 "first work" softening | §2 (SKIPPED — note here) |
 | 1.4 GP overclaim removal | §6.1 + `main.tex` (abstract/contribution) |
 | 1.4 polar-coordinate footnote | §11 |

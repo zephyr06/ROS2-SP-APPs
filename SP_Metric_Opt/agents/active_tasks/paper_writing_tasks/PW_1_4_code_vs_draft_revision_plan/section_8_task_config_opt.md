@@ -1,111 +1,197 @@
-# §8 — Task Configuration Optimization
+# §8 — QoS Budget + Priority Collaborative Optimization
 
-> Draft: `section8_task_config_opt.tex`. Status: row-by-row DONE.
-> See `overall_revision_plan.md` for conventions.
+> Draft: `section8_task_config_opt.tex`. Status: **COMPLETE REWRITE planned**
+> (supersedes the prior row-by-row plan; that plan kept the stale δ-radius
+> framing and only promoted the `\agent` note — both discarded). See
+> `overall_revision_plan.md` for conventions. Source of code truth:
+> `sketch_optimization.md` (PW.1.2), esp. §env-task + §coord-descent.
 
-## High-level change
+## High-level guidance (user instruction)
 
-§8 is the single highest-rewrite-density section (MOST STALE). The whole section
-is built on a δ-radius local-search framing the code does NOT use, plus two
-unresolved `\sen`/`\agent`/`\rkwprev` note threads. The new organizing idea: a
-TL-optimizable task is a *special kind of env-dependent task* (the `\sen`
-reframing, content change 3), so the §7.3 incremental mechanism handles both
-ET-change and TL-flex under one path. The δ-radius equation must be replaced with
-the patience-bounded outward coordinate descent the code actually runs; the
-`\agent` algorithm note must be promoted to body prose; and the 1-task-ET-diff
-property must be stated (not proven as a theorem).
+§7 optimized priority only, with QoS budgets `\boldsymbol{\mathcal{Q}}` held fixed.
+**§8 lifts that restriction: it incorporates QoS into PA optimization and performs
+collaborative PA+QoS optimization.** The section is therefore **very different
+from the existing §8 draft** (which framed QoS optimization as an isolated
+δ-radius local search). The new §8 follows the **unified incremental optimization
+framework** that the code actually runs:
 
-**QoS reframe (content change 6) — §8 is heavily affected:** the section title
-("Task configuration Optimization"), the lede ("task configuration parameters"),
-`eq: incremental_configuration` (`\boldsymbol{\lambda}` / `\lambda^{(k)}`), the
-TSP Example ("running time limit options"), and the coordinate-descent
-`\agent` note ("execution time limit configuration `\boldsymbol{\lambda}^{(0)}`")
-all reframe to **QoS budget** language with symbol `\boldsymbol{\mathcal{Q}}` /
-`\mathcal{Q}_i` / `\boldsymbol{\mathcal{Q}}^{(k)}`. The TSP anytime algorithm's
-running-time limit IS the QoS budget (longer budget ⇒ better solution quality) —
-use it as the concrete QoS instance. Equation structure unchanged; only the
-glyph λ→𝒬 changes. Renames also hit `eq: incremental_configuration` (26) and the
-coordinate-descent prose (37-49).
+1. **Sort tasks by SP weight** (descending).
+2. **Iterate tasks one-by-one** through the serialized queue.
+3. **Per-task dispatch** — for each task:
+   - if it is a **QoS-budget (TL) task** (an anytime algorithm with a time-limit
+     grid) → run the **trial-and-error QoS walk** (patience-bounded outward
+     coordinate descent over the TL grid);
+   - otherwise (it is an **environment-dependent task** whose ET changed) → call
+     the **incremental PA solver** (±1 priority move, the §7.3 mechanism).
 
-## Subsection rows
+That per-task dispatch is the final algorithm §8 presents. **Major motivation of
+this design: utilize incremental optimization + the RTA cache** (§7.4) — each step
+changes exactly one task, so every SP evaluation is a cache hit (the `|diff| ≤ 1`
+invariant), making collaborative PA+QoS optimization feasible online.
 
-### §8 lede + env-task reframing — DRIFT → implement `\sen` directive (content change 3)
-- **draft claim:** two strategies (brute-force + incremental); opens with two
-  unresolved `\sen` notes (4-5): "treat tasks that need to optimize TLs as a
-  special type of env-dependent task, then trigger incremental optimization
-  after assuming tasks' ET change" + "modify the paper's scope and definition …
-  more precise and consistent."
-- **code reality:** this is EXACTLY what the code does —
-  `FindEnvTaskWithDifferentEt` (`OptimizeSP_TL_Incre.cpp`) treats TL-flexible
-  tasks as a special env-dependent task and triggers the incremental walk by
-  assuming their ET changed. The `\sen` directive IS the section-8 conceptual
-  reframing (content change 3). See `sketch_optimization.md` §env-task.
-- **action:** **REWRITE** §8 lede to implement the `\sen` reframing (delete the
-  `\sen` notes, promote their content into body prose): define TL-optimizable
-  tasks as a special kind of env-dependent task; the incremental mechanism (§7.3)
-  then handles both ET-change and TL-flex under one path. This is the section's
-  new organizing idea.
+§8 needs a **complete rewrite**. It first presents this **overall flow** (the
+serialized queue + per-task dispatch), then introduces **each step one-by-one**:
+the task serialization, the QoS-budget trial-and-error walk, and the env-task
+incremental PA move.
 
-### §8 smooth assumption + `eq: incremental_configuration` — DRIFT (STALE)
-- **draft claim** (9): "incremental strategy assumes environment changes smoothly
-  … influence on optimal config changes smoothly." `eq: incremental_configuration`
-  (22-25): `‖λ − λ^(k)‖ ≤ δ`, "δ controls tradeoff between run-time complexity and
-  solution quality." Example (27-30): δ=150 → "only 2 candidates: 200, 300."
-- **code reality:** the code does NOT use a δ-radius local search. TL
-  optimization is a **patience-bounded outward coordinate-descent walk over the
-  FULL grid** (`WalkOneTaskWithTimeLimitOptions` `OptimizeSP_TL_Incre.cpp:647-694`,
-  patience 0/1, `parameters.yaml:30-31`). There is no δ cap; the walk expands
-  outward until SP stops improving (patience bound). The "3 candidates"/"δ-radius"
-  framing is STALE (`RecordCloseTimeLimitOptions` exists only in tests, per
-  `sketch_optimization.md`).
-- **action:** **REPLACE** the δ-radius framing entirely: delete
-  `eq: incremental_configuration` (22-25) and the δ=150 Example (27-30); rewrite
-  as patience-bounded outward coordinate descent over the full TL grid. State the
-  actual stopping rule (walk expands to neighbors while SP strictly improves,
-  patience bound halts after K non-improving steps). Drop the "smooth assumption"
-  (9) — replace with the dynamic/continuous framing. Cross-link
-  `section: relax_smooth_assumption` (10) — verify that target still exists or
-  update the `\ref`.
-- **Ryan:** (related) 1.4 assumptions/regimes — the smoothness assumption is
-  being removed.
+## Code truth (verified locators — re-grep before writing prose, lines may drift)
 
-### §8 coordinate-descent algorithm — PROMOTE `\agent` note to body (VERIFY content)
-- **draft claim:** the actual algorithm is currently buried in an `\agent` margin
-  note (32-39): linear-time sequential coordinate descent; init λ^(0) from closest
-  valid TL option; prioritized task ordering (weight desc, deadline asc, ID asc);
-  coordinate descent over each task's options keeping others fixed;
-  resource-aware tie-break (min sum of TLs); O(M^N) → O(M·N).
-- **code reality:** MATCHES code — `BuildSerializedTaskQueue`
-  (`OptimizeSP_TL_Incre.cpp:435-484`) orders tasks (weight desc, deadline asc, ID
-  asc); `WalkOneTaskWithTimeLimitOptions` does the per-task coordinate descent;
-  tie-break minimizes total TL; O(M·N) complexity holds.
-- **action:** **PROMOTE** the `\agent` note (32-39) into body prose (delete the
-  `\agent` wrapper, keep the content as a numbered algorithm description).
-  **VERIFY** each step still matches code after the §8 lede rewrite. State the
-  O(M^N)→O(M·N) reduction as a proposition (see complexity row below).
-- **Ryan:** (none directly — but this is the substance Ryan 1.2/2.4 want made
-  rigorous).
+- **Top-level entry:** `OptimizeIncre_w_TL` (`OptimizeSP_TL_Incre.cpp:864`) →
+  `RunIntervalDescent` (`:570`) → `BuildSerializedTaskQueue` (`:436`) +
+  `WalkSerializedTaskQueue` (`:486`).
+- **Task serialization:** `BuildSerializedTaskQueue` (`:436-484`) builds TWO
+  **disjoint** sets — **Type-E** = `FindEnvTaskWithDifferentEt` (env-changed,
+  `OptimizeSP_Incre.cpp:176`); **Type-L** = `CollectTLFlexibleTaskIds` (QoS-budget
+  tasks). Sort key = **SP weight descending**, `stable_sort` (`:478-482`) —
+  weight-desc ONLY (stable: equal-weight Type-E/Type-L keep insertion order). The
+  comment "mirrors `TaskSortingHeuristic`" refers to the primary key only.
+  `TaskSortingHeuristic` itself (`OptimizeSP_TL_Incre.cpp:11-42`, used by the PA-only
+  path, NOT this queue) is weight-desc → **threshold (Θ_i) asc** → ID asc. (Old plan
+  claimed "deadline asc" — WRONG, it's threshold asc. State weight-desc for the
+  queue; mention the full heuristic only if §8.2 also describes the PA-only sort.)
+- **Per-task dispatch:** `WalkSerializedTaskQueue` (`:486-514`) — THE dispatch:
+  - `Kind::EnvChanged` → `OptimizeIncreSingleTask` (incremental PA solver, **no**
+    QoS walk) `:502`;
+  - `Kind::TLFlexible` → `OptimizeOneTaskWithTimeLimit` (trial-and-error QoS walk)
+    `:508`.
+- **QoS trial-and-error walk:** `OptimizeOneTaskWithTimeLimit` (`:696`) wraps
+  `WalkOneTaskWithTimeLimitOptions` (`:647-694`) — **full TL grid, NO δ cap**;
+  backward pass (`step=-1`) then forward pass (`step=+1`) from the current TL
+  index; **patience** = total non-improvement budget (no reset on improvement;
+  `:667-689`); stops at grid boundary or patience exhaustion; resource-aware
+  tie-break toward smaller TL (via the backward-first ordering). Patience value is
+  mode-selected: `IncrementalTimeLimitSearchPatience` vs
+  `ReoptimizationTimeLimitSearchPatience` (`parameters.yaml`).
+- **Env-task incremental PA:** `OptimizeIncreSingleTask` — the §7.3 ±1 priority
+  move applied to the one env-changed task (carries `et_increased` direction).
+- **RTA cache integration:** the walk's `eval` lambda routes every trial TL through
+  the cache (`OptimizeIncreSingleTask` → `Evaluate`); each step changes exactly one
+  task → `|diff| ≤ 1` holds → every eval is a reuse hit. Cache armed/disarmed via
+  `rta_cache_active_` (`SeedBaselineAndArmCache` `:516`); `CommitIncumbent` adopts
+  the champion after each step.
+- **Convergence wrapper (offline only):** `OptimizeIncre_w_TL_UntilConvergence`
+  (`:889`) loops `OptimizeIncre_w_TL` until a pass fails to strictly improve
+  `opt_sp_` (`ApproxEqualSP` 1e-3, NO cap); called ONLY by `ComputeSafeFallback`
+  (`:1002`, offline worst-case-DAG certification), NOT the online walk. Mention
+  only if §8 covers the offline safety path; otherwise defer to §13.
 
-### §8 complexity + solution-quality notes — RESOLVE (`\rkwprev`/`\Sen`/`\agent`)
-- **draft claim:** `\rkwprev` (41) asks "can we prove anything about complexity or
-  solution quality?"; `\Sen` (42) defers complexity to §10 and says quality is
-  "very hard due to black-box probabilistic RTA"; `\agent` (45-47) claims
-  "initializing a challenger from the champion guarantees each incremental
-  optimization only handles 1 task with ET difference" and says "we should add a
-  theorem with proof to this claim."
-- **code reality:** complexity IS in §10 (matches `\Sen`). The 1-task-ET-diff
-  property is enforced *structurally* by the RTA cache: `RTACache` throws on
-  `|diff|>1` (`RTA_Cache.cpp:358`, `ComputeTaskSetDifference`) — the single-change
-  invariant is a precondition the cache asserts, not a proven theorem. Per
-  `sketch_optimization.md` recommendation: state it as a **stated property**
-  (backed by the structural invariant), NOT a full formal theorem-with-proof (the
-  proof would require formalizing the cache's move model, out of scope for
-  T-ASE).
-- **action:** **RESOLVE** the three notes: (1) delete `\rkwprev`/`\Sen`/`\agent`
-  wrappers; (2) state the O(M·N) complexity as a proposition with a one-line
-  argument (forward-pointer to §10 for full analysis); (3) state the
-  1-task-ET-diff property as a **stated property / observation** backed by the
-  single-change invariant the RTA cache enforces (cite the invariant, not a
-  theorem). Do NOT add a formal theorem+proof (PW.1.2 recommendation).
-- **Ryan:** 1.4 (honest claim calibration — don't overclaim a proof that isn't
-  there).
+## Subsection rows (new §8 structure)
+
+### §8.0 Lede + collaborative problem statement — REWRITE
+- **draft claim:** current lede (7-17) presents "two strategies (brute-force +
+  incremental)" for QoS optimization in isolation, framed by the stale "smooth
+  assumption." Two unresolved `\sen` notes (4-5) direct the reframing but were never
+  implemented.
+- **code reality:** QoS optimization is NOT a separate problem; it is fused with PA
+  optimization in `OptimizePA_Incre_with_TimeLimits`. The `\sen` directive (4-5) IS
+  the correct reframing: a QoS-budget task is treated as a *special kind of
+  env-dependent task* — flexing its QoS budget is modeled as an ET change, so the
+  same incremental machinery handles both.
+- **action:** **REWRITE** the lede to implement the `\sen` reframing (delete the
+  `\sen` notes, promote content into body): §8 lifts §7's QoS-fixed restriction and
+  performs **collaborative PA+QoS optimization**. State the joint problem
+  (`\max_{\mathcal{A},\boldsymbol{\mathcal{Q}}} \textbf{SP}`). Introduce the
+  organizing idea: a QoS-budget task is a special env-dependent task, so ONE
+  incremental framework handles both QoS flex and ET change. Delete the
+  "brute-force vs incremental" two-strategy framing and the "smooth assumption"
+  (content change 2 — use dynamic/continuous framing). **DELETE** the stale
+  `eq: incremental_configuration` (δ-radius) and the δ=150 TSP Example entirely
+  (they describe an algorithm the code does not run).
+
+### §8.1 Overall flow: serialized queue + per-task dispatch — ADD (new body)
+- **draft claim:** no such description exists; the algorithm was buried in an
+  `\agent` margin note (37-49).
+- **code reality:** the unified loop = `BuildSerializedTaskQueue` →
+  `WalkSerializedTaskQueue` (locators above).
+- **action:** **ADD** the overall flow as the section's spine. Present it as a
+  high-level procedure (numbered list or Algorithm 2): (1) build the merged queue
+  of env-changed (Type-E) + QoS-flexible (Type-L) tasks; (2) sort by SP weight
+  descending; (3) for each task, dispatch by kind — QoS task → trial-and-error walk;
+  env task → incremental PA move; (4) each adoption updates the champion, so the
+  next task's eval sees the new incumbent. **State the motivation explicitly:**
+  structuring the loop so each step changes exactly one task makes every SP
+  evaluation an RTA-cache hit (`|diff| ≤ 1`), which is what makes collaborative
+  optimization feasible online. Forward-reference §7.4 (cache) and §7.3 (the ±1 PA
+  move reused for env tasks).
+
+### §8.2 Task serialization — ADD
+- **draft claim:** not present (was inside the `\agent` note as "prioritized task
+  ordering: weight desc, deadline asc, ID asc").
+- **code reality:** `BuildSerializedTaskQueue` (`:436-484`); weight-desc stable
+  sort; Type-E and Type-L are disjoint by construction (a task in both is a
+  contract violation, hard-fail `:449`).
+- **action:** **ADD** a subsection: define Type-E (env-dependent, ET changed) and
+  Type-L (QoS-budget / anytime) tasks; state they are disjoint; state the sort key
+  (SP weight descending — the queue uses weight-desc stable ONLY; the full
+  `TaskSortingHeuristic` weight→Θ→ID is the PA-only path's sort, not this queue's);
+  justify weight-desc (optimize the highest-impact task first so its adoption
+  informs the rest). Promote the relevant content from the old `\agent` note (init
+  `\boldsymbol{\mathcal{Q}}^{(0)}` from the closest valid TL option —
+  `InitializeTimeLimitsFromETConfig` `:611`).
+
+### §8.3 QoS-budget trial-and-error walk — ADD (replaces δ-radius framing)
+- **draft claim:** `eq: incremental_configuration` δ-radius local search +
+  δ=150 TSP Example. STALE — code does not use δ.
+- **code reality:** `OptimizeOneTaskWithTimeLimit` + `WalkOneTaskWithTimeLimitOptions`
+  (`:647-694`) — patience-bounded outward coordinate descent over the FULL TL grid,
+  no δ cap (locators above).
+- **action:** **ADD** the real algorithm. For a QoS-budget task, walk its TL-option
+  grid outward from the current budget: backward pass then forward pass, evaluating
+  SP at each option (via the cache-routed eval), keeping the best; the walk halts at
+  the grid boundary or when the **patience** budget (non-improving steps) is
+  exhausted. State the tie-break (smaller TL preferred, via backward-first
+  ordering — conserves compute). Keep the TSP anytime-algo example BUT reframe it:
+  the TL grid is `[100,200,300,500]`; from a current budget of 300 the walk tries
+  200,100 (backward) then 400.../500 (forward), not "δ=150 → 2 candidates." **DELETE**
+  `eq: incremental_configuration` and the δ=150 framing entirely.
+
+### §8.4 Env-task incremental PA move — ADD (cross-link to §7.3)
+- **draft claim:** not present as a §8 step (the four-scenario table lives in §7.3).
+- **code reality:** `OptimizeIncreSingleTask` — the §7.3 ±1 priority move applied to
+  the env-changed task, carrying the `et_increased` direction.
+- **action:** **ADD** a short subsection: for an env-dependent task (ET changed
+  between intervals), the dispatch calls the §7.3 incremental PA solver (±1 priority
+  move, four scenarios) — NO QoS walk. This is the unification the `\sen` directive
+  asked for: both task kinds flow through one serialized loop, differing only in the
+  per-task handler. Cross-link §7.3 for the four-scenario detail; do not duplicate it.
+
+### §8.5 Complexity + the single-change property — RESOLVE (delete `\rkwprev`/`\Sen`/`\agent`)
+- **draft claim:** `\rkwprev` (51) asks "can we prove anything?"; `\Sen` (52-53)
+  defers complexity to §10 and says quality is "very hard"; `\agent` (56-58) claims
+  the 1-task-ET-diff property and says "add a theorem."
+- **code reality:** complexity IS in §10. The 1-task-per-step property is enforced
+  *structurally* by the loop (each iteration changes exactly one task) and asserted
+  by the RTA cache (`ComputeTaskSetDifference` throws on `|diff|>1`,
+  `RTA_Cache.cpp:358`). It is a stated property backed by a structural invariant,
+  NOT a theorem-with-proof.
+- **action:** **RESOLVE** the three notes: delete the `\rkwprev`/`\Sen`/`\agent`
+  wrappers; state the per-pass complexity as `O(M·N)` (M = TL options per QoS task,
+  N = tasks in the queue) with a one-line argument and a forward-pointer to §10 for
+  full analysis; state the **single-change property** — each step changes exactly one
+  task, so every SP evaluation is an RTA-cache reuse hit — as a stated
+  property/observation backed by the cache's `|diff| ≤ 1` invariant (cite the
+  invariant, §7.4). Do **NOT** add a formal theorem+proof (out of scope for T-ASE;
+  would require formalizing the cache's move model).
+
+## QoS reframe note (content change 6)
+
+§8 is heavily affected by the QoS reframe (already staged as a glyph-only change):
+section title, lede, `eq: incremental_configuration`, TSP Example, and the
+`\agent` note all reframe to **QoS budget** language with symbol
+`\boldsymbol{\mathcal{Q}}` / `\mathcal{Q}_i`. The complete rewrite above **subsumes**
+that staged reframe — the new prose is written in QoS-budget language from the
+start. The staged §8 QoS-reframe diff can be discarded in favor of this rewrite
+(commit the rewrite, not the glyph-swap-on-stale-framing).
+
+## What is REMOVED from the prior §8 plan (superseded)
+
+The prior row-by-row plan (lede/env-task reframing; δ-radius replacement; `\agent`
+promotion; complexity resolution) is **superseded** by the five subsection rows
+above. The prior plan kept the section's two-strategy / δ-radius *structure* and
+only patched within it; the user instruction replaces the structure entirely with
+the unified-loop presentation. Specific discards:
+- "two strategies (brute-force + incremental)" framing → REMOVED (§8.0 rewrite).
+- `eq: incremental_configuration` (δ-radius) + δ=150 Example → DELETED (§8.3).
+- "smooth assumption" → DELETED, replaced by dynamic/continuous framing (§8.0).
+- promoting the `\agent` note *in place* → REPLACED by promoting its *content* into
+  the new §8.1/§8.2/§8.3 body structure.
