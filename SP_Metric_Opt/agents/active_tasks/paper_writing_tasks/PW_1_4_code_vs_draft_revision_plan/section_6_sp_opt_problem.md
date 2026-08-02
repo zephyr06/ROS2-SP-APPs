@@ -1,7 +1,8 @@
 # §6 — Safety-Performance Optimization Problem
 
 > Draft: `section6_sp_opt_problem.tex`. Highest-drift methodology section.
-> Status: row-by-row DONE. See `overall_revision_plan.md` for conventions.
+> Status: row-by-row DONE; **.tex edits APPLIED** (Stage 1 content commit pending
+> user review). See `overall_revision_plan.md` for conventions.
 
 ## High-level change
 
@@ -11,6 +12,79 @@ the six cross-cutting conventions converge here: GP removal (6.1), dynamic env
 (6.1, 6.9), framework update + important-task guarantee (6.7), Θ_i Option A
 (6.3), QoS reframe (6.4, 6.7). Most Ryan 1.2 math fixes land here, though
 several are already fixed (VERIFY). Θ-table drift is in §12, NOT §6.
+
+## Implementation log (Stage 1 .tex edits — applied, awaiting user review)
+
+All seven subsection rows below have been applied to `section6_sp_opt_problem.tex`
+(2026-08-02). Per the user's instruction, this was a **complete §6 modification**,
+not a QoS-only change. Code-truth facts re-verified against current source before
+editing:
+
+- **§6.1** — GPR Example + `eq:gpr_predict1` + both `\sen` notes + stale
+  `\rkw`/`\Sen` DELETED. Lede rewritten: ET distribution is environment-dependent
+  and varies across re-optimization intervals (dynamic/continuous framing). GPR
+  kept as a one-line "one applicable option" mention (NOT highlighted, NOT a core
+  contribution) per user. Prediction function `eq: et_predict` (`F_i(E)→extDist_i`)
+  retained. Exact method deferred to §9 `predict_ET_exp`; NEW rolling-average
+  Example illustrates the idea. Label `section_et_model_gp`→`section_et_model`
+  (no external `\ref` users). Code: sliding-window `ReadExtTimeData` +
+  Gaussian-dist fit (§9 owns detail).
+- **§6.2** — `hp(i)`→"strictly higher priority" at both the scalar `eq:rta_scalar`
+  and the probabilistic `R_i^0` init (Ryan 1.2). `R_i^0` init FIXED to include
+  τ_i's own `C_i`: `R_i^0 = C_i ⊗ ⊗_{j∈hp(i)} C_j` (was hp-conv only). Verified
+  `RTA.cpp:33,47` (`rta_cur = task_curr.execution_time_dist` then convolve hp).
+- **§6.3** — Option A wording VERIFY (already `Pr(r_i>D_i)≤Θ_i`, correct).
+  `Normalize()` FIXED: precise definition added as `eq_normalize` — linear
+  interpolation between `Ŝ(Θ_i−1)=−0.01·e^{10(1−Θ_i)}` (worst, Pr=1, maps to 0)
+  and `Ŝ(Θ_i)=log(Θ_i+1)` (best, Pr=0, maps to 1), clipped to [0,1]. Verified
+  `SP_Metric.h:31-41` (`interpolate(val, PenaltyFunc(1,Θ), 0, RewardFunc(0,Θ), 1)`).
+  Θ-table inversion (MPC=0.99) still lives in §12, NOT §6 — flagged there.
+- **§6.5** — `eq_sp_def` + Example 2 arithmetic VERIFY (already fixed). Example 2's
+  Normalize reference FIXED to point at `eq_normalize`, with the branch selection
+  spelled out (τ_0 reward branch `log(1.2)`; τ_1 penalty branch `−0.01·e^{10·0.3}`).
+- **§6.6** — "0.9 ⇒ both ≥ 0.9" claim FIXED (Ryan 1.2): restricted to a single
+  per-task product term `P_i·S_i≥0.9 ⇒ both ≥ 0.9`; explicit caveat added that
+  system-level weighted-sum SP≥0.9 does NOT imply every task's term ≥0.9 (a strong
+  task can mask a weak one).
+- **§6.7** — ADD forward pointers: to §7/§8 solver (`section_priority_opt`,
+  `section_config_opt`) + to the new §9 important-task guarantee
+  (`section_safety_fallback`, forward-looking — resolves when §9 .tex is created in
+  PW.3). Guarantee stated as a built-in constraint (self-guaranteed, NOT
+  conditional on user-supplied ET upper bound). `eq_prob_rta_in_opt` `\hptasks{i}`
+  wording aligned with §6.2 ("strictly higher priority").
+- **§6.7 (cont.) — important-task concept + explicit constraint ADDED** (per user
+  follow-up 2026-08-02). §6.7 now (a) introduces the important-task subset
+  $\boldsymbol{\tau}^{safe} \subseteq \boldsymbol{\tau}$ (notation added to the §5
+  symbol table) — the top-50% by SP weight $w_i$, reflecting that the designer's
+  most safety-critical tasks must not miss deadlines — and (b) adds a NEW formal
+  constraint `eq_important_task_constraint`: $Pr(r_i > D_i) \leq \Theta_i,\ \forall
+  \tau_i \in \boldsymbol{\tau}^{safe}$, sitting beside `eq_overall_obj`. Verified the code truth:
+  `ImportantTasksMeetThresholds` (`SP_Metric.cpp:208-239`) gates each important task
+  (`tasks_prioritized[i].is_important`, top-50% by sp_weight, `SP_Metric.h:131`)
+  on `GetDDL_MissProbability(node_rtas[i], deadline_i) <= thresholds_node[i]` — i.e.
+  the SAME $\Theta_i$ as the §6.3 safety metric (Option A), not a separate SP
+  threshold. Non-important tasks are NOT individually constrained (contribute to
+  the objective only, may be traded against performance). The constraint is
+  enforced as a hard gate, NOT left to the objective to satisfy softly — ties the
+  §6.7 formulation to the §9 safety-fallback mechanism. `eq_important_task_constraint`
+  label introduced (no prior users).
+- **§6.9** — smoothness premise FIXED: "environment changes smoothly ⇒ solutions
+  evolve continuously" → "typically only a small number of tasks' ETs change
+  between consecutive intervals ⇒ optimal solution differs by a small perturbation
+  ⇒ motivating incremental warm-start search" (content change 2). Ties to
+  `FindTaskWithDifferentEt` (§7.3).
+
+**Forward-looking `\ref` introduced:** `section_safety_fallback` (§9 new section,
+not yet a `.tex`). Will resolve when PW.3 creates `section9_safety_fallback.tex`
+with `\label{section_safety_fallback}`. All other §6 `\ref`/`\eqref` targets
+verified to exist.
+
+**Pre-existing breakage NOT in §6 scope (left as-is):** the math macros
+`\extDist`, `\rtDist`, `\hptasks`, `\configs` and the lowercase `\sen` are
+**undefined** in `main.tex` (no `\newcommand`); they render as literal text. This
+is repo-wide, predates this task. §6's edits replaced all `\sen`/`\configs`
+*usages* in §6 with real prose/symbols, but the macro definitions themselves are a
+separate preamble fix (PW.2/main.tex cross-cutting), not a §6 content change.
 
 ## Subsection rows
 

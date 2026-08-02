@@ -26,8 +26,8 @@
 
 ## Revision stages
 
-The revision proceeds in two stages, in order. Stage 1 is what this plan
-captures; Stage 2 is a later polish pass.
+The revision proceeds in three stages, in order. Stage 1 is what this plan
+captures; Stages 2 and 3 are later polish passes.
 
 **Stage 1 — content completeness (this plan).** Get every technical claim,
 equation, symbol, algorithm description, and experimental result into the
@@ -36,24 +36,39 @@ and per-section rows below are Stage 1. Verbs: FIX/VERIFY/DRIFT/ADD. Done when
 content is complete and accurate — no missing pieces, no drift, no broken
 claims — even if the prose is rough.
 
-**Stage 2 — accuracy, clarity, conciseness (polish pass).** Refine the
-*expression* of Stage 1's content; do NOT introduce new content or change
-technical claims. Runs after Stage 1 is substantially complete (per section or
-globally) so we don't polish text that's about to be rewritten. Three lenses,
-in priority order:
+**Stage 2 — accuracy + clarity (polish pass).** Refine the *expression* of
+Stage 1's content; do NOT introduce new content or change technical claims.
+Runs after Stage 1 is substantially complete (per section or globally) so we
+don't polish text that's about to be rewritten. Two lenses, in priority order:
 - **Accuracy** — re-verify every claim, number, and symbol against code and
   experiments; catch what Stage 1 missed (experiment-table numbers vs actual run
   outputs, equation↔code correspondence, notation consistency vs §5's table).
 - **Clarity** — fix ambiguous prose; ensure every symbol is introduced before
   use; smooth transitions; resolve forward/backward references; make examples
-  self-contained.
-- **Conciseness** — cut redundancy and wordiness; merge overlapping passages;
-  tighten sentences; remove anything that doesn't carry its weight. Target: the
-  shortest paper that says exactly what Stage 1 says.
+  self-contained. Keep prose tight as you go (don't write wordy new text), but
+  defer aggressive cutting to Stage 3.
 
-Stage 2 owns no per-section plan files of its own — it's a review rubric applied
-to Stage 1's output. Track its progress in the section index Status column when
-that pass begins.
+**Stage 3 — simplify + reduce length (length pass).** Cut the paper to its
+shortest form that still says exactly what Stages 1 and 2 established. Runs
+after Stage 2 so cuts land on stable, already-correct prose — never cut text
+that's about to be rewritten or re-verified. This is the dedicated
+length-reduction pass: Stage 2's "keep tight as you go" is incremental, Stage 3
+is whole-paper and aggressive. Do NOT change technical claims or introduce new
+content — only remove, merge, and condense. Moves:
+- **Cut redundancy** — delete repeated points, overlapping examples, and
+  restatements of the same result across sections.
+- **Merge passages** — combine adjacent paragraphs/subsections that say
+  compatible things; fold one-paragraph subsections into their neighbors.
+- **Tighten prose** — shorten sentences, remove hedging and filler, prefer the
+  shorter equivalent wording.
+- **Structural condensation** — defer to PW.2's `reorg_plan.md` for
+  section-level merges/folds (e.g. Ryan Cat-2.4 split-results consolidation);
+  Stage 3 handles the prose-level condensation those merges expose.
+
+Target length is an open decision (journal limit or user-set page/word count);
+flag it here when set. Stage 3 owns no per-section plan files of its own — it's
+a rubric applied to Stage 2's output. Track its progress in the section index
+Status column when that pass begins.
 
 ## Cross-cutting conventions (apply everywhere, not per-row)
 

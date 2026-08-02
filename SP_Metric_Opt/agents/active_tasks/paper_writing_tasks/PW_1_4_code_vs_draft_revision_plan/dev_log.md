@@ -79,3 +79,77 @@
   updated for the new section + the 9→10…15→16, concl→§17 renumber cascade (final numbering
   deferred to PW.2 `reorg_plan.md`, not yet started). Ryan 1.4 "soften guarantee" row now
   points to §9 as the methodology home.
+- **2026-08-02 (cont.) — added Stage 3 to the revision-stages model per user request.** Was
+  two stages (Stage 1 content completeness / Stage 2 accuracy+clarity+conciseness polish);
+  now three. Split Stage 2's conciseness lens out into a dedicated **Stage 3 = simplify +
+  reduce length** (length pass), so Stage 2 = accuracy + clarity only. Rationale: Stage 2's
+  "conciseness" lens was doing double duty — incremental "keep tight as you go" while
+  writing/verifying vs whole-paper aggressive cutting are different operations and want to
+  run at different times. Stage 2 now keeps prose tight incrementally but defers aggressive
+  cutting; Stage 3 runs AFTER Stage 2 so cuts land on stable, already-correct prose (never
+  cut text about to be rewritten/re-verified). Stage 3 moves = cut redundancy, merge
+  passages, tighten prose, structural condensation (section-level merges still owned by
+  PW.2 `reorg_plan.md`; Stage 3 handles the prose-level condensation those merges expose).
+  Stage 3 changes no technical claims / introduces no new content — remove, merge, condense
+  only. Target length is an open decision (journal limit or user-set page/word count);
+  flagged as a TODO in the master. Like Stage 2, Stage 3 owns no per-section plan files —
+  it's a rubric applied to the prior stage's output, tracked in the section-index Status
+  column when the pass begins.
+- **2026-08-02 (cont.) — §6 .tex Stage 1 edits APPLIED (complete modification, not QoS-only).**
+  Per user instruction: "complete modification of all related records, rather than only
+  QoS change, fix all the issues that you can find." All seven §6 subsection rows landed in
+  `section6_sp_opt_problem.tex` (file was clean in git — QoS reframe already committed in a
+  prior session; this pass layered the remaining Stage 1 content on top). Code-truth
+  re-verified before each edit. (1) §6.1: deleted GPR Example + `eq:gpr_predict1` + both
+  `\sen` notes + stale `\rkw`/`\Sen`; rewrote lede as environment-dependent ET varying across
+  re-optimization intervals; GPR kept as a one-line "one applicable option" mention (NOT
+  highlighted, per user "not the paper's core contributions"); exact method deferred to §9
+  `predict_ET_exp`; NEW rolling-average Example; label `section_et_model_gp`→`section_et_model`
+  (no external `\ref` users). (2) §6.2: `hp(i)`→strictly-higher (both sites); `R_i^0` init
+  includes own `C_i` (verified `RTA.cpp:33,47`). (3) §6.3: Option A VERIFY; `Normalize()`
+  precise def added as `eq_normalize` (verified `SP_Metric.h:31-41` interpolate between
+  `PenaltyFunc(1,Θ)`→0 and `RewardFunc(0,Θ)`→1, clipped). (4) §6.5: Example 2 Normalize ref →
+  `eq_normalize` + branch spelling-out. (5) §6.6: "0.9⇒both≥0.9" restricted to per-task product
+  term + system-level caveat (Ryan 1.2). (6) §6.7: ADD forward pointers to §7/§8
+  (`section_priority_opt`/`section_config_opt`) + new §9 guarantee (`section_safety_fallback`,
+  forward-looking — resolves at PW.3 §9 .tex creation); guarantee as built-in self-constraint.
+  (7) §6.9: smoothness premise → per-interval-small-ET-change + incremental warm-start
+  (content change 2). Forward-looking `\ref{section_safety_fallback}` flagged (only unresolved
+  ref). Pre-existing repo-wide macro breakage (`\extDist`/`\rtDist`/`\hptasks`/`\configs`/
+  lowercase `\sen` undefined in `main.tex`) left as-is — preamble fix is PW.2 cross-cutting,
+  not §6 content. Plan file `section_6_sp_opt_problem.md` updated with implementation log;
+  status → ".tex edits APPLIED, awaiting user review." NEXT: §7 .tex (PA-only re-plan: §7.0
+  partial problem + §7.4 RTA cache + §7.2 Alg.1 FIX + §7.3 smoothness+DM seed).
+- **2026-08-02 (cont.) — §6.7 important-task concept + explicit constraint ADDED.**
+  Per user follow-up ("add the explicit constraints that important tasks must meet
+  their specified SP thresholds… first introduce the concept of important tasks…
+  in the same subsection"). §6.7 now (a) introduces the important-task subset
+  $\mathcal{I}$ = top-50% by SP weight $w_i$ (designer's most safety-critical
+  tasks must not miss deadlines), and (b) adds NEW formal constraint
+  `eq_important_task_constraint` ($Pr(r_i > D_i) \leq \Theta_i,\ \forall \tau_i \in
+  \mathcal{I}$) beside `eq_overall_obj`. Non-important tasks contribute to the
+  objective only, NOT individually constrained. Code truth verified:
+  `ImportantTasksMeetThresholds` (`SP_Metric.cpp:208-239`) gates each important
+  task (`is_important`, top-50% by sp_weight, `SP_Metric.h:131`) on
+  `GetDDL_MissProbability(...) <= thresholds_node[i]` — the SAME Θ_i as §6.3 safety
+  metric (Option A), NOT a separate SP threshold. Constraint stated as a hard gate
+  (enforced by §9 fallback, NOT left to the objective to satisfy softly).
+  LaTeX verified: 13 equation begins = 13 ends; no IDE diagnostics. Plan file
+  updated. Status unchanged (.tex edits APPLIED, awaiting user review).
+- **2026-08-02 (cont.) — important-task symbol adopted: $\boldsymbol{\tau}^{VIP}$.**
+  Per user ("we need a notation for important tasks, let's use
+  $\boldsymbol{\tau}^{VIP}$, also update the symbol table in section system models").
+  Replaced the provisional $\mathcal{I} \subseteq \mathcal{T}$ at all four §6.7 sites
+  (eq_important_task_constraint + three prose occurrences) with
+  $\boldsymbol{\tau}^{VIP} \subseteq \boldsymbol{\tau}$ — consistent with §5's existing
+  task-set symbol $\boldsymbol{\tau}$ (NOT $\mathcal{T}$, which the draft does not use
+  as the task set). Added a NEW row to the §5 `notation_table`
+  (`section5_system_model.tex:25`): "Important task subset & $\boldsymbol{\tau}^{VIP}$",
+  placed right after the "Task's importance & $w_i$" row (mid-rule boundary preserved).
+  Plan file `section_6_sp_opt_problem.md` updated to match the adopted symbol.
+  Status unchanged (.tex edits APPLIED, awaiting user review).
+- **2026-08-02 (cont.) — important-task symbol renamed ^{VIP} → ^{safe}.** Per user
+  ("let's call it with ^{safe} rather than ^{vip}"). Replaced $\boldsymbol{\tau}^{VIP}$
+  with $\boldsymbol{\tau}^{safe}$ at all §6.7 sites + the §5 `notation_table` row.
+  "safe" reads more naturally alongside the safety-threshold semantics (the subset
+  whose $\Theta_i$ safety thresholds are honored as hard constraints). Status unchanged.
