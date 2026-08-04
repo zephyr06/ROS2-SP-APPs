@@ -62,7 +62,7 @@ For instance, a rolling average over the most recent $N$ measured execution time
     We start the review with the basic worst-case response analysis, and then move to the probabilistic analysis.
 
 
-	When a task’s execution time is modeled as a single worst-case value $\extDist{i}$, its response time can be computed using fixed-point iteration~\cite{Joseph1986FindingRT}:
+	When a task’s execution time is modeled as a single worst-case value $c_i$, its response time can be computed using fixed-point iteration~\cite{Joseph1986FindingRT}:
 	\begin{equation}
 		r_i = c_i +\sum_{j \in \text{hp}(i)} \ceil{\frac{r_i}{T_j}}{c_j}
         \label{eq: rta_scalar}
@@ -76,17 +76,17 @@ For instance, a rolling average over the most recent $N$ measured execution time
 
     The response time distribution $\rtDist{i}$ is initialized from $\tau_i$'s own execution time distribution and the interference of the strictly higher-priority tasks:
 	\begin{equation}
-		R_i^0 = \extDist{i} \otimes \bigotimes_{j \in hp(i)} \extDist{j}
+		\rtDistIter{i}{0} = \extDist{i} \otimes \bigotimes_{j \in hp(i)} \extDist{j}
 	\end{equation}
 	where $\otimes$ denotes convolution and $hp(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$.
-    After initialization, $R_i$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline).
-    Let $R_i^{k}$ to denote the \ith{k} iteration when calculating $R_i$:
+    After initialization, $\rtDist{i}$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline).
+    Let $\rtDistIter{i}{k}$ denote the \ith{k} iteration when calculating $\rtDist{i}$:
 	\begin{equation}
-		R_i^k = R_i^{k-1, head} \oplus (R_i^{k-1, tail} \otimes C_j^{pr})
+		\rtDistIter{i}{k} = \rtDistIterHead{i}{k-1} \oplus (\rtDistIterTail{i}{k-1} \otimes \extDist{j})
 		\label{eq_prob_rta}
 	\end{equation}
-	where $C_j^{pr}$ denotes the execution time distribution of a high-priority task $\tau_j$ that preempts $\tau_i$ in the \ith{k} iteration.
-    $R_i^{k-1, head}$ is part of the response time distribution not affected by $\tau_j$ in the \ith{k} iteration, $R_i^{k-1, tail}$ denotes the remaining part, $\oplus$ merges the two parts of a probability distribution into one distribution.
+	where $\extDist{j}$ denotes the execution time distribution of a high-priority task $\tau_j$ that preempts $\tau_i$ in the \ith{k} iteration.
+    $\rtDistIterHead{i}{k-1}$ is the part of the response time distribution not affected by $\tau_j$ in the \ith{k} iteration, $\rtDistIterTail{i}{k-1}$ denotes the remaining part, $\oplus$ merges the two parts of a probability distribution into one distribution.
 
     While this approach provides a safe estimation under worst-case conditions, the actual response time distribution is often better in practice.
 
@@ -110,7 +110,7 @@ For instance, a rolling average over the most recent $N$ measured execution time
 	\begin{definition}[Safety Metric]
 		A task $\tau_i$'s safety function quantifies the penalty (or the reward) when the probability for $\tau_i$ to miss its deadline $D_i$ becomes higher (or lower) than $\Theta_i$:
 		\begin{equation}
-			\mathcal{S}(Pr(r_i > D_i ; \mathcal{A}) - \Theta_i)
+			\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}) - \Theta_i)
 			\label{eq_safety_function}
 		\end{equation}
 	\end{definition}
@@ -156,16 +156,16 @@ For instance, a rolling average over the most recent $N$ measured execution time
 	\subsection{SP-Metric}
 	The Safety-Performance (SP) metric combines the safety and performance metrics to evaluate the overall performance of a robotic computation system:
 	\begin{equation}
-		\textbf{SP}(\mathcal{A}; \textbf{E}_k) \triangleq \sum_{\tau_i \in \boldsymbol{\tau}} \
+		\textbf{SP}(\boldsymbol{P}; \textbf{E}_k) \triangleq \sum_{\tau_i \in \boldsymbol{\tau}} \
 		\frac{w_i}{\sum_j w_j} \cdot \mathcal{P}(\tau_i; \textbf{E}_k) \cdot
-		\mathcal{S}(Pr(r_i > D_i ; \mathcal{A}) - \Theta_i)
+		\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}) - \Theta_i)
 		\label{eq_sp_def}
 	\end{equation}
 	where $w_i > 0$ represents the importance of task $\tau_i$, with the task weights being normalized.
     Both the safety function $\mathcal{S}$ and the performance function $\mathcal{P}$ produce normalized outputs in the range $[0,1]$.
 
     % \item $\mathcal{P}(\tau_i) \in [0, 1]$ describes the normalized performance of task $\tau_i$, influenced by algorithm implementation and allocated computation resources.
-    %     \item $Pr(r_i \leq D_i; \mathcal{A}) \in [0, 1]$ represents the probability of task $\tau_i$'s response time $r_i$ meeting its deadline $D_i$ within a time interval $H$.
+    %     \item $Pr(r_i \leq D_i; \boldsymbol{P}) \in [0, 1]$ represents the probability of task $\tau_i$'s response time $r_i$ meeting its deadline $D_i$ within a time interval $H$.
     % 	Section~\ref{section_rta} introduces how to calculate the response time distribution $\rtDist{i}$.
 
 
@@ -235,11 +235,11 @@ For instance, a rolling average over the most recent $N$ measured execution time
     The optimization problem is defined as follows:
 
 	\begin{equation}
-		\max_{\mathcal{A}, \boldsymbol{\mathcal{Q}}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
+		\max_{\boldsymbol{P}, \boldsymbol{\mathcal{Q}}}  \textbf{SP}(\boldsymbol{P}; \textbf{E}_k)
 		\label{eq_overall_obj}
 	\end{equation}
 	\begin{equation}
-		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \hptasks{i})
+		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \text{hp}(i))
 		\label{eq_prob_rta_in_opt}
 	\end{equation}
 	\begin{equation}
@@ -248,19 +248,19 @@ For instance, a rolling average over the most recent $N$ measured execution time
 	\end{equation}
 
         The objective function is defined in \eqref{eq_sp_def}.
-        $\mathcal{A}$ denotes the scheduling algorithm configurations.
-        In this paper, we adopt fixed-task priority scheduling, so the optimization variables of $\mathcal{A}$ are the priority assignments for each task.
+        $\boldsymbol{P}$ denotes the priority assignment vector.
+        In this paper, we adopt fixed-task priority scheduling under the scheduling algorithm $\mathcal{A}$, so the optimization variable $\boldsymbol{P}$ is the priority assignment for each task.
         $\textbf{E}_k$ denotes the environment vector estimated online at time $k$.
 
         Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$.
-        $C_i^D$ denotes $\tau_i's execution time distribution, $\boldsymbol{\mathcal{Q}}$ represents the tasks' QoS budgets.
+        $\extDist{i}$ denotes task $\tau_i$'s execution time distribution, and $\boldsymbol{\mathcal{Q}}$ represents the tasks' QoS budgets.
         This paper focuses on the running-time limit as the QoS budget for anytime algorithms.
-        $\hptasks{i}$ denotes the tasks with strictly higher priority than $\tau_i$.
+        $hp(i)$ denotes the tasks with strictly higher priority than $\tau_i$.
 
         Not all tasks are equally safety-critical.
         We therefore designate a subset $\boldsymbol{\tau}^{safe} \subseteq \boldsymbol{\tau}$ of \emph{important tasks}: the tasks whose safety thresholds must be honored as hard constraints.
         Concretely, $\boldsymbol{\tau}^{safe}$ is taken as the tasks carrying the highest safety weights (the top-$50\%$ by SP weight $w_i$), reflecting that the tasks the designer cares most about should not have their deadlines violated.
-        Equation~\eqref{eq_important_task_constraint} imposes this as an explicit constraint of the optimization: for every important task $\tau_i \in \boldsymbol{\tau}^{safe}$, the deadline-miss probability under the chosen $\{\mathcal{A}, \boldsymbol{\mathcal{Q}}\}$ must not exceed its safety threshold $\Theta_i$ (the same $\Theta_i$ defined in the safety metric of Section~\ref{eq_safety}).
+        Equation~\eqref{eq_important_task_constraint} imposes this as an explicit constraint of the optimization: for every important task $\tau_i \in \boldsymbol{\tau}^{safe}$, the deadline-miss probability under the chosen $\{\boldsymbol{P}, \boldsymbol{\mathcal{Q}}\}$ must not exceed its safety threshold $\Theta_i$ (the same $\Theta_i$ defined in the safety metric of Section~\ref{eq_safety}).
         The remaining tasks contribute to the objective \eqref{eq_overall_obj} but are not individually constrained, so the optimizer may trade their safety against overall performance when necessary.
 
         The optimization in \eqref{eq_overall_obj} is solved online by a lightweight incremental algorithm that interleaves priority assignment and QoS-budget optimization; its design is presented in Sections~\ref{section_priority_opt} and~\ref{section_config_opt}.
@@ -275,7 +275,7 @@ For instance, a rolling average over the most recent $N$ measured execution time
 
     The optimization problem in \eqref{eq_overall_obj} presents several challenges:
 \begin{itemize}
-    \item \textbf{Mixed combinatorial and continuous variables:} The problem involves both continuous variables (QoS budgets $\boldsymbol{\mathcal{Q}}$) and combinatorial variables (priority assignments included in $\mathcal{A}$).
+    \item \textbf{Mixed combinatorial and continuous variables:} The problem involves both continuous variables (QoS budgets $\boldsymbol{\mathcal{Q}}$) and combinatorial variables (the priority assignment $\boldsymbol{P}$).
     \item \textbf{Complicated objective function:} The SP metric's formulation \eqref{eq_sp_def} includes probabilistic components and lacks properties like convexity or continuity, complicating the optimization process.
     \item \textbf{Limited computation resources:} The optimization problem~\eqref{eq_overall_obj} has to be solved online to be useful as the robot is expected to work under unknown environments.
     However, most mobile robots are powered by batteries and are equipped with very limited computation resources, most of which are dedicated to major functional tasks such as motion planning and SLAM.
@@ -289,15 +289,15 @@ For instance, a rolling average over the most recent $N$ measured execution time
     Due to the challenges mentioned above, directly leveraging existing optimization frameworks (e.g., integer linear programming) is infeasible.
     Instead, we analyze the SP metric for exploitable properties to guide algorithm design:
 	\begin{itemize}
-		\item The performance metric only depends on the QoS budget $\boldsymbol{\mathcal{Q}}$ and is independent of the priority assignments $\mathcal{A}$.
-		\item The safety metric depends on both $\boldsymbol{\mathcal{Q}}$ and $\mathcal{A}$.
+		\item The performance metric only depends on the QoS budget $\boldsymbol{\mathcal{Q}}$ and is independent of the priority assignment $\boldsymbol{P}$.
+		\item The safety metric depends on both $\boldsymbol{\mathcal{Q}}$ and $\boldsymbol{P}$.
         However, since not all tasks expose a running-time limit as a tunable QoS budget, the safety metric is primarily influenced by priority assignments.
         When $\boldsymbol{\mathcal{Q}}$ is fixed, the SP metric reduces to a problem similar to classical response time optimization~\cite{Zhao2020AnOF, Wang2023RTAS}.
 		\item Although not always true, typically only a small number of tasks' execution time distributions change between consecutive re-optimization intervals as the robot moves through similar environments.
         Thus, the optimal priority assignment and QoS budget usually differ from the previous solution by only a small perturbation, motivating an incremental search that warm-starts from the previous solution.
 	\end{itemize}
     Based on these observations, we propose a divide-and-conquer approach to solve \eqref{eq_overall_obj}.
-    The QoS budgets $\boldsymbol{\mathcal{Q}}$ and priority assignments $\mathcal{A}$ are optimized separately and then combined.
+    The QoS budgets $\boldsymbol{\mathcal{Q}}$ and priority assignment $\boldsymbol{P}$ are optimized separately and then combined.
     While brute-force methods guarantee optimal solutions, their high computational cost makes them unsuitable for online platforms.
     Instead, we trade off optimality for computational efficiency by employing heuristics derived from problem analysis and related literature.
 
