@@ -1,13 +1,10 @@
-\section{Software Systems and Implementation}
+\section{Real-World Software Systems Implementation Details}
 \label{section_implementation}
 
 \subsection{System Overview}
-We designed and implemented a prototype system based on Linux, incorporating two types of periodic tasks: robotic application tasks and a scheduler task.
-All tasks are scheduled using FIFO, Linux's real-time fixed-task priority scheduling algorithm.
-The scheduler task is assigned the highest priority, and it optimizes the priority assignments and runtime configurations of robotic tasks based on the proposed algorithms.
-
-The scheduler task executes once every $T$ time units.
-During each execution, it:
+We designed a prototype system based on Linux, incorporating two types of periodic tasks: robotic application tasks and a scheduler task.
+% Fixed-task priority scheduling is implemented based on FIFO, Linux's real-time fixed-task priority scheduling algorithm.
+The scheduler task is assigned the highest priority and does the following in each call:
 \begin{itemize}
     \item Collects recently recorded execution time data from each robotic task.
     \item Predicts execution time distributions for the next period.
@@ -20,32 +17,6 @@ Although user-space implementation introduces higher overhead, it remains lightw
 Further optimizations could significantly reduce this overhead, such as enhancing task communication mechanisms (\eg replacing the current local text file approach with more efficient alternatives).
 Nonetheless, the current implementation is adequate for validating the proposed concepts within the scope of this research.
 
-\subsection{Using approximation to predict tasks' execution time distribution}
-\label{section: predict_ET_exp}
-Due to the highly limited computation resources available to perform online scheduling and resource allocation optimization, we use a simple heuristic to predict tasks' execution time distribution online by assuming the robot's working environment will not have a significant change within each short time interval.
-Although this assumption may not hold true in discrete environments, it provides a good trade-off in balancing prediction accuracy and computation cost.
-
-Specifically, under this assumption, we use $T^W$ to denote the length of the time interval where we assume the environment $\textbf{E}$'s changes can be upper-bounded by $\Theta^W$:
-\begin{equation}
-    \|\textbf{E}_{t_0+T^W} - \textbf{E}_{t_0} \| \leq \Theta^W
-\end{equation}
-where $\textbf{E}_{t_0+t}$ denotes the environment vector at time $t_0+t$.
-
-Under the assumption that the environment changes smoothly, there always exist a time window of length $T^W$ such that $\Theta^W \approx 0$ if only $T^W$ is small enough.
-In this case, given a task $\tau_i$, its execution time distribution during the time window $[t_0 + T^W/2, t_0 + T^W]$ can be predicted based on the measured execution time data during the time interval $[t_0, t_0 + T^W/w]$.
-
-In our experiments, we assume that $\Theta^W \approx 0$ when the length of time window $T^W$ equals the task $\tau_i$'s release period $T_i$.
-Under this assumption, we can obtain multiple execution time measurements, and therefore establish a probability distribution.
-
-To further reduce the computation cost, we assume each task's execution time distribution follows normal distribution, and only use the measurement data's mean, variance, minimum, and maximum values to characterize its probability distribution.
-Therefore, the overall computation cost is reduced into linear complexity.
-In experiments, the time window $T^W$ is set to be the same as the proposed scheduler's running period for simplicity.
-
-However, the assumptions above may not always hold in all situations, especially when the environment does not change smoothly.
-This will lead to inaccurate execution time distribution prediction.
-However, as will be emphasized in Section~\ref{section: relax_smooth_assumption}, such error is the necessary cost for low computation cost.
-Furthermore, such errors can be automatically corrected as long as the environment does not keep changing un-smoothly.
-The proposed framework may not work well in those kinds of extremely unsmooth situations.
 
 \subsection{Computation tasks}
 \label{section_computation_tasks}
@@ -84,6 +55,34 @@ The RRT's execution time varies from 1 to 3 seconds, depending on input map conf
 \textit{Model Predictive Controller (MPC):}
 We implemented a constrained linear-quadratic MPC using the OSQP solver~\cite{stellato18OSQP}.
 MPC exhibits relatively stable execution times, ranging from 5 ms to 9 ms.
+
+\subsection{Using approximation to predict tasks' execution time distribution}
+\label{section: predict_ET_exp}
+Due to the highly limited computation resources available to perform online scheduling and resource allocation optimization, we use a simple heuristic to predict tasks' execution time distribution online by assuming the robot's working environment will not have a significant change within each short time interval.
+Although this assumption may not hold true in discrete environments, it provides a good trade-off in balancing prediction accuracy and computation cost.
+
+Specifically, under this assumption, we use $T^W$ to denote the length of the time interval where we assume the environment $\textbf{E}$'s changes can be upper-bounded by $\Theta^W$:
+\begin{equation}
+    \|\textbf{E}_{t_0+T^W} - \textbf{E}_{t_0} \| \leq \Theta^W
+\end{equation}
+where $\textbf{E}_{t_0+t}$ denotes the environment vector at time $t_0+t$.
+
+Under the assumption that the environment changes smoothly, there always exist a time window of length $T^W$ such that $\Theta^W \approx 0$ if only $T^W$ is small enough.
+In this case, given a task $\tau_i$, its execution time distribution during the time window $[t_0 + T^W/2, t_0 + T^W]$ can be predicted based on the measured execution time data during the time interval $[t_0, t_0 + T^W/w]$.
+
+In our experiments, we assume that $\Theta^W \approx 0$ when the length of time window $T^W$ equals the task $\tau_i$'s release period $T_i$.
+Under this assumption, we can obtain multiple execution time measurements, and therefore establish a probability distribution.
+
+To further reduce the computation cost, we assume each task's execution time distribution follows normal distribution, and only use the measurement data's mean, variance, minimum, and maximum values to characterize its probability distribution.
+Therefore, the overall computation cost is reduced into linear complexity.
+In experiments, the time window $T^W$ is set to be the same as the proposed scheduler's running period for simplicity.
+
+However, the assumptions above may not always hold in all situations, especially when the environment does not change smoothly.
+This will lead to inaccurate execution time distribution prediction.
+However, as will be emphasized in Section~\ref{section: relax_smooth_assumption}, such error is the necessary cost for low computation cost.
+Furthermore, such errors can be automatically corrected as long as the environment does not keep changing un-smoothly.
+The proposed framework may not work well in those kinds of extremely unsmooth situations.
+
 
 \subsection{Mapping priority assignments to priority values}
 \label{section_pa_values}
