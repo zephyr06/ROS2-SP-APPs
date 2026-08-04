@@ -1,0 +1,110 @@
+
+	\section{Execution time distribution modeling and prediction}
+    \label{section_et_model_gp}
+	
+    \rkwprev{this smoothness/continuity may not hold in general.  this is better stated as an assumption and then we can provide insight into how to extend.  also, we will need to substantiate this assumption, i.e., why do we anticipate that the execution time distributions can be modeled in this way?}.
+    \rkw{A diagram of different GPs across different enviroment classes would be very helpful to aid visualization.}
+    \Sen{to be honest, it's probably difficult to draw it based on real-world data}
+
+    \rkwprev{I just realized that you should check how others have measured probability distributions for timing on the literature. have others used GPs? \Sen{Nobody has done it} }
+    \subsection{Gaussian Process Regression Model}
+    
+    The execution time distribution of tasks can vary significantly, both temporally and spatially, as robots encounter different environments and inputs. For instance, a visual-SLAM algorithm may follow different execution paths or even switch between algorithms when operating in different environments, such as a crowded city, a farmland, or an empty indoor space. Capturing and predicting these variations are crucial for making optimal decisions about scheduling and resource allocation.
+
+    However, generally speaking, it is challenging and computationally intractable to build a very accurate model to predict the execution time distribution online for an unknown environment, especially considering that the available computation resources for underlying scheduling and operating systems are very limited. Therefore, denote a robot's physical location with $\textbf{p}\in \mathbb{R}^l$,
+    we make the following smoothness assumption to simplify this process:
+    
+\begin{definition}[Environment vector, $\textbf{E}$]
+    An environment vector $\textbf{E} \in \mathbb{R}^m$ is an abstraction that quantitatively describes environmental factors influencing the execution time or performance of robotic system tasks.
+\end{definition}
+    \begin{assumption}
+    \label{env_smooth_assumption}
+    The environment $\textbf{E}$ is smooth, \ie, $\textbf{E}$ is first-order derivable with respect to physical positions:
+    \begin{equation}
+        \frac{\partial \textbf{E}}{\partial \textbf{p}} = k
+    \end{equation}
+    where $k$ denotes a constant number.
+    \end{assumption}
+    \begin{assumption}
+        During operation, the robot moves ``continuously'' in an environment.
+    \end{assumption}
+
+    In practice, such assumptions may not always hold. Section~\ref{section: relax_smooth_assumption} discusses more about how to relax it.
+
+    Under the smoothness assumption, one theoretical model that may be suitable in our case is regression, such as Gaussian Process Regression (GPR)~\cite{Rasmussen2005GaussianPF}. 
+    \rkw{need example of environment vector}\Sen{I think it's better not to give such an example because we did not use it in our experiments, and I don't want to mislead the readers to expect that we did.}
+    
+    
+    
+	Given an increasing time sequence $\bm{t}=\{t_0 ... t_N\}$, we denote the robot's operating environment as $\bm{E}=\{E_0 ... E_N\}$ where each of the environment vector $E_i \in \mathbb{R}^{n}$. At each time instance $k$, we model the execution time distribution of a task $\tau$ as a Gaussian distribution (\rkw{add notation here}).
+    
+	For a task $\tau$ at different times $\bm{t}=\{t_0 ... t_N\}$ with the same configurations (Defitnion~\ref{def_task_config}), we assume the execution time distributions follow a joint Gaussian distribution:
+	\begin{equation}
+		\bm{\mathcal{C}} = [C(E_0) ... C(E_N)]^T \sim \mathcal{N}(\bm{\mu}, \bm{\mathcal{K}})
+	\end{equation}
+	where the mean vector $\bm{\mu}$ and the covariance kernel $\bm{\mathcal{K}}$ are defined as
+	\begin{equation}
+		\bm{\mu}=[\bm{\mu}_0 ... \bm{\mu}_N]^T, \ 
+		\bm{\mathcal{K}} = [\mathcal{K}(E_i, E_j)]_{ij, 0 \leq i,j \leq N}
+	\end{equation}
+	where the kernel function $\mathcal{K}(E_i, E_j)$  encodes the similarity measurement between two environments. 
+
+    Therefore, theoretically speaking, when the robot is moved into a new environment $E_{*}$, we can predict that the task $\tau$'s execution time probability distribution $C_{*}$~\cite{Rasmussen2005GaussianPF}:
+	\begin{equation}
+		C_{*}(E_*) \sim \mathcal{N}(\bm{\mathcal{K}}_*^T (\bm{\mathcal{K}} + \sigma^2\bm{I})^{-1}\bm{C}, \ \bm{\mathcal{K}}_{**} - \bm{\mathcal{K}}_{*}^T (\bm{\mathcal{K}} + \sigma^2\bm{I})^{-1}\bm{\mathcal{K}}_*)
+        \label{eq: gpr_predict1}
+	\end{equation}
+	\begin{equation}
+		\bm{\mathcal{K}}_* = \mathcal{K}(\bm{E}, E_* ), \ 
+		\bm{\mathcal{K}}_{**}=\mathcal{K}(E_*, E_*)
+	\end{equation}
+    where we assume there is an observation noise that follows a normal distribution $\mathcal{N}(0, \sigma)$.
+
+    \subsection{Challenges associated with Equation~\eqref{eq: gpr_predict1}}
+    However, there are two important issues with the GPR above:
+    \begin{itemize}
+        \item Generally speaking, we cannot know the environment vector $E_k$ until an environment detection algorithm finishes execution. However, such environment detection algorithms are oftentimes the tasks that we want to predict the execution time distribution from! After finishing executing such algorithms, there is no need to predict its execution time distribution anymore.
+        \item Equation~\eqref{eq: gpr_predict1} potentially has a high run-time complexity of $O(n^3)$, which may not be affordable for an online algorithm.
+    \end{itemize}
+    The first issue can be avoided if the environment vector can be easily calculated before the tasks that we need to predict execution time distribution. An example would be only considering the temporal variances of the environments, and use only the time vector $\textbf{t}$ to describe the environment. However, we agree that this is not a general solution for all the cases. 
+
+    The second issue can only be resolved if the number of data points is small. If needed, we can sample the data points to control the run-time overhead. However, reducing the number of source data points also potentially reduce the prediction accuracy.
+
+    \subsection{Locally constant environment assumption}
+    Therefore, to make the GPR applicable to our case, we make the following assumption:
+    \begin{assumption}
+    \label{assumption: same_env}
+        When predicting the probability distribution of execution time, consider a physical space that is small enough, and assume the robot is moving in this physical space at a speed that is low enough, the environment $\textbf{E}$ can be locally approximated with a constant function. In other words:
+        \begin{equation}
+        \label{eq: same_e_over_p}
+            \frac{\partial \textbf{E}}{\partial \textbf{p}} \approx \textbf{0}
+        \end{equation}
+    \end{assumption}
+
+
+    Assumption~\ref{assumption: same_env} is derived from Assumption~\ref{env_smooth_assumption} but is stronger. 
+    However, under such an assumption, notice that $\bm{\mathcal{K}}_* = \mathcal{K}(\bm{E}, E_* ) = \textbf{1}$, $ \bm{\mathcal{K}}_{**}=\mathcal{K}(E_*, E_*)=1$, equation~\eqref{eq: gpr_predict1} degrades into a much simpler form:
+	\begin{equation}
+	P(C_{*}(E_*) | \textbf{C}, \textbf{E}, C_{*}) \sim \mathcal{N}(\frac{1}{N+\sigma^2}\sum_{i=1}^N C(E_i), \ \frac{\sigma^2}{N+\sigma^2})
+        \label{eq: gpr_predict_constant_env}
+	\end{equation}
+
+    Therefore, we have:
+    \begin{equation}
+        C_{*}(E_*) = \frac{1}{N+\sigma^2}\sum_{i=1}^N C(E_i)
+    \end{equation}
+    Considering that we cannot directly obtain accurate measurement of $C(E_i)$, an approximation to Gaussian distribution would be
+    \begin{equation}
+        C_{*}(E_*) ~ \mathcal{N}(\frac{1}{N}\sum_{i=1}^N c(E_i), \textit{Var}(c(E_i) | i=0...N) )
+        \label{eq: estiamte_execution_time_distribution}
+    \end{equation}
+    where $c(E_i)$ denotes random data samples from the execution time distribution $C(E_i)$, $N$ denotes the total number of data samples, the function $\textit{Var}(\cdot)$ estimates the variance of data samples.
+
+    It is interesting to point out that Equation~\eqref{eq: estiamte_execution_time_distribution} is a simple and clean formulta and it does not involve the environment vector $\textbf{E}$. Therefore, there is also no need to define or estimate these vectors in practice. As for the  observation noise $\sigma$, we can assume it is small and treat as 0.
+    
+    
+    Readers may interpret Equation~\eqref{eq: same_e_over_p} as that the environment $\textbf{E}$ remains the same over all the possible positions $\textbf{p}$. Although such an explanation is mathematically correct, readers should also realize that such an approximation is also not accurate (This is why equation~\eqref{eq: same_e_over_p} uses the symbol $~\approx$). Therefore, to account for the gap between the theoretical models and the reality, we can only trust the recorded data samples that are fresh enough. Therefore, we only use the most recent data measurements when we need to predict the execution time distribution.
+
+    \todo discuss what if the data distribution does not follow Gaussian? OR, maybe put it into limitation
+	
+	

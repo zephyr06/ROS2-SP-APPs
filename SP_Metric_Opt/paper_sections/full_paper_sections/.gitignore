@@ -1,0 +1,3 @@
+latex_build/
+*.synctex.gz
+.vscode/settings.json

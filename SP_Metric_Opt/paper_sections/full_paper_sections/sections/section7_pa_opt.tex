@@ -134,6 +134,16 @@ The four possible scenarios are:
     \item If $\tau_i$ does not have the uniquely highest weight and its execution time decreases, the re-search direction is \emph{upward}.
 \end{enumerate}
 In every scenario $\tau_i$ is removed from the current priority vector and re-inserted at each position within the chosen half; the position yielding the highest SP metric is adopted if it strictly improves on the current assignment, otherwise the current position is retained.
+
+Concretely, let $\mathcal{C}(\tau_i) \subseteq \{1,\dots,N\}$ denote the ordered set of candidate priority positions scanned for $\tau_i$ within the chosen half of the priority range.
+The \emph{local search radius}
+\begin{equation}
+    \delta = |\mathcal{C}(\tau_i)|
+    \label{eq:incremental_configuration}
+\end{equation}
+caps the number of positions evaluated per re-search, bounding the per-task optimization cost to $O(\delta)$ response-time evaluations.
+A smaller $\delta$ reduces overhead at the cost of a coarser search, while a larger $\delta$ explores more of the priority range but increases computation; the choice of $\delta$ is discussed together with the other hyperparameters in Section~\ref{section_implementation}.
+
 Potential issues in terms of optimal solution drift caused by the incremental optimization is discussed in Section~\ref{sec: drift}.
 
 

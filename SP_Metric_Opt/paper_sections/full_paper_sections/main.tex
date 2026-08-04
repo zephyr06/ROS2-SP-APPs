@@ -6,7 +6,7 @@
 \usepackage{hyperref}
 \usepackage{array}
 \usepackage{subcaption}
-\usepackage{color}
+\usepackage{xcolor}
 % \usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
 \usepackage{textcomp}
 \usepackage{stfloats}
@@ -35,8 +35,6 @@
 \newtheorem{Example}{Example}
 \newtheorem{definition}{Definition}[section]
 
-\newcommand{\ith}[1]{#1-th}
-
 \newcommand {\haibo}[1]{{\color{red}\textbf{Haibo: }#1}\normalfont}
 \newcommand {\Sen}[1]{{\color{green}\textbf{Sen: }#1}\normalfont}
 \newcommand {\rkw}[1]{{\color{blue}\textbf{Ryan: }#1}\normalfont}
@@ -45,12 +43,14 @@
 \newcommand{\CJ}[1]{\todo[color=orange,inline]{CJ:#1}}
 \newcommand{\SH}[1]{\todo[color=green,inline]{SH:#1}}
 \newcommand {\ash}[1]{{\color{red}\textbf{Ashrarul: }#1}\normalfont}
+\newcommand {\sen}[1]{{\color{orange}\textbf{Sen: }#1}\normalfont}
+\newcommand {\agent}[1]{{\color{violet}\textbf{Agent: }#1}\normalfont}
 
 
 \begin{document}
-	\include{Symbols}
+	\input{symbols}
 	
-	\title{Optimizing Robot Computation for Safety and Performance in Dynamic Environments}
+	\title{Optimizing 2 Robot Computation for Safety and Performance in Dynamic Environments}
 	
 	% \author{IEEE Publication Technology,~\IEEEmembership{Staff,~IEEE,}
 	% 	% <-this % stops a space
@@ -95,6 +95,7 @@
     \input{sections/section6_sp_opt_problem}
     \input{sections/section7_pa_opt}
     \input{sections/section8_task_config_opt}
+    \input{sections/section8b_safety_fallback}
     \input{sections/section9_software_impl}
     \input{sections/section10_complexity}
     \input{sections/section11_limitations}
