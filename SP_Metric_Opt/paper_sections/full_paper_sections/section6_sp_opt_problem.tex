@@ -110,7 +110,7 @@ For instance, a rolling average over the most recent $N$ measured execution time
 	\begin{definition}[Safety Metric]
 		A task $\tau_i$'s safety function quantifies the penalty (or the reward) when the probability for $\tau_i$ to miss its deadline $D_i$ becomes higher (or lower) than $\Theta_i$:
 		\begin{equation}
-			\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}) - \Theta_i)
+			\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{\mathcal{Q}}) - \Theta_i)
 			\label{eq_safety_function}
 		\end{equation}
 	\end{definition}
@@ -156,9 +156,9 @@ For instance, a rolling average over the most recent $N$ measured execution time
 	\subsection{SP-Metric}
 	The Safety-Performance (SP) metric combines the safety and performance metrics to evaluate the overall performance of a robotic computation system:
 	\begin{equation}
-		\textbf{SP}(\boldsymbol{P}; \textbf{E}_k) \triangleq \sum_{\tau_i \in \boldsymbol{\tau}} \
+		\textbf{SP}(\boldsymbol{P}, \boldsymbol{\mathcal{Q}}; \textbf{E}_k) \triangleq \sum_{\tau_i \in \boldsymbol{\tau}} \
 		\frac{w_i}{\sum_j w_j} \cdot \mathcal{P}(\tau_i; \textbf{E}_k) \cdot
-		\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}) - \Theta_i)
+		\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{\mathcal{Q}}) - \Theta_i)
 		\label{eq_sp_def}
 	\end{equation}
 	where $w_i > 0$ represents the importance of task $\tau_i$, with the task weights being normalized.
@@ -235,9 +235,10 @@ For instance, a rolling average over the most recent $N$ measured execution time
     The optimization problem is defined as follows:
 
 	\begin{equation}
-		\max_{\boldsymbol{P}, \boldsymbol{\mathcal{Q}}}  \textbf{SP}(\boldsymbol{P}; \textbf{E}_k)
+		\max_{\boldsymbol{P}, \boldsymbol{\mathcal{Q}}}  \textbf{SP}(\boldsymbol{P}, \boldsymbol{\mathcal{Q}}; \textbf{E}_k)
 		\label{eq_overall_obj}
 	\end{equation}
+    % TODO: improve notations of RTA description, make dependency more clear 
 	\begin{equation}
 		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \text{hp}(i))
 		\label{eq_prob_rta_in_opt}
@@ -249,7 +250,7 @@ For instance, a rolling average over the most recent $N$ measured execution time
 
         The objective function is defined in \eqref{eq_sp_def}.
         $\boldsymbol{P}$ denotes the priority assignment vector.
-        In this paper, we adopt fixed-task priority scheduling under the scheduling algorithm $\mathcal{A}$, so the optimization variable $\boldsymbol{P}$ is the priority assignment for each task.
+        In this paper, we adopt fixed-task priority scheduling, so the optimization variable $\boldsymbol{P}$ is the priority assignment for each task.
         $\textbf{E}_k$ denotes the environment vector estimated online at time $k$.
 
         Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$.

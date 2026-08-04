@@ -1,7 +1,7 @@
 	\section{Priority Assignments Optimization}
     \label{section_priority_opt}
 
-    This section addresses the \emph{priority-assignment subproblem}: given a task set $\boldsymbol{\tau}$ operating under environment $\textbf{E}_k$ with the QoS budgets $\boldsymbol{\mathcal{Q}}$ held \emph{fixed}, find the priority assignment $\boldsymbol{P}$ that maximizes $\textbf{SP}(\boldsymbol{P}; \textbf{E}_k)$ subject to the important-task constraint~\eqref{eq_important_task_constraint}.
+    This section addresses the \emph{priority-assignment subproblem}: given a task set $\boldsymbol{\tau}$ operating under environment $\textbf{E}_k$ with the QoS budgets $\boldsymbol{\mathcal{Q}}$ held \emph{fixed}, find the priority assignment $\boldsymbol{P}$ that maximizes $\textbf{SP}(\boldsymbol{P}, \boldsymbol{\mathcal{Q}}; \textbf{E}_k)$ subject to the important-task constraint~\eqref{eq_important_task_constraint}.
     That is, throughout this section we solve only for the priority assignment $\boldsymbol{P}$ in~\eqref{eq_overall_obj}; Section~\ref{section_config_opt} lifts the QoS-fixed restriction and optimizes the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{\mathcal{Q}}$ jointly.
 
     Priority assignment is a fundamental and influential scheduling technique, particularly in real-time systems, where effective scheduling ensures strong performance guarantees.
