@@ -295,3 +295,42 @@ adoption. Worded to avoid "important" to prevent conflation with `\boldsymbol{\t
 All code locators re-verified against current source before editing. LaTeX
 verified 13/13 begin/end after edits. §7.3 plan row updated (OPEN DECISION →
 RESOLVED; "≤ one level" → FIXED). Nothing committed.
+
+---
+
+2026-08-02 (cont.) — §8 .tex COMPLETE REWRITE applied (Stage 1, awaiting user
+review). Per `section_8_task_config_opt.md` high-level guidance: replaced the
+prior draft (two-strategy / δ-radius framing + 4 review-note wrappers) wholesale
+with the unified-loop presentation the code actually runs.
+
+Re-verified all code locators against current source before writing prose:
+- `BuildSerializedTaskQueue` (`OptimizeSP_TL_Incre.cpp:436-484`): Type-E +
+  Type-L disjoint (hard-fail `:449`), weight-desc `stable_sort` (`:478-482`).
+- `WalkSerializedTaskQueue` (`:486-514`): dispatch EnvChanged→`OptimizeIncreSingleTask`,
+  TLFlexible→`OptimizeOneTaskWithTimeLimit`.
+- `WalkOneTaskWithTimeLimitOptions` (`:647-694`): backward then forward, patience
+  = total non-improvement budget (no reset), grid-boundary halt.
+- `OptimizeOneTaskWithTimeLimit` (`:696`): eval lambda routes trial TL through
+  `OptimizeIncreSingleTask` (`et_up = sign(trial−committed)`).
+- `InitializeTimeLimitsFromETConfig` (`:611`): closest-option seed.
+
+New §8 structure: §8.0 lede + joint problem `eq:joint_pa_qos` (collaborative
+PA+QoS, QoS-budget task = special env-dependent task); §8.1 overall flow
+(serialized queue + per-task dispatch + single-change/cache-hit motivation);
+§8.2 task serialization (Type-E/Type-L disjoint, weight-desc stable sort, closest-
+option seed); §8.3 QoS walk (outward grid walk, patience, backward-first tie-break,
+TSP example reframed); §8.4 env-task incremental PA move (cross-link §7.3, no
+duplication); §8.5 complexity `O(M·N)` + single-change property (structural, no
+theorem+proof). Deleted: brute-force/incremental two-strategy framing, "smooth
+assumption", `eq: incremental_configuration` δ-radius, δ=150 TSP Example, all four
+review-note wrappers (`\sen`×2, `\agent`, `\rkwprev`, `\Sen`).
+
+Ref fix: `section: complexity` (stale, undefined) → `section_complexity_analysis`
+(VERIFIED in `section10_complexity.tex:3`). QoS reframe (convention #6) subsumed —
+prose written in QoS-budget language from the start. LaTeX verified 2/2 begin/end.
+§8 plan row updated (Implementation log added above Code truth section). Nothing
+committed (git-add-only rule).
+
+NEXT: §9 .tex — CREATE NEW `section9_safety_fallback.tex` per
+`section_9_safety_fallback.md` (defines `\label{section_safety_fallback}`,
+resolves the forward ref introduced in §6.7).

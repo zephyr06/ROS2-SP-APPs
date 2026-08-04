@@ -122,6 +122,26 @@ Status column when that pass begins.
    "configs") is in scope: replace its uses with `\boldsymbol{\mathcal{Q}}` (or
    define `\configs` as that). Note: this is a **content change** (symbol glyph
    change), so it lands in the *step-2 content commit*, NOT the step-1 reflow.
+7. **Name every symbol at point of reference (writing convention).** When a symbol
+   appears in running prose, pair it with its name in the same sentence — write
+   "the priority assignment $\mathcal{A}$" / "the QoS budgets
+   $\boldsymbol{\mathcal{Q}}$", not a bare "$\mathcal{A}$ and
+   $\boldsymbol{\mathcal{Q}}$ together." The reader must not have to recall a
+   prior introduction to parse the sentence. A first mention *introduces* the
+   symbol (name + glyph); a later mention that reads as a bare symbol should
+   re-state the name (or be reworded so the symbol is not the subject). Apply
+   across all Stage 1/2 writing; sweep every symbol occurrence in Stage 2 clarity.
+   Bad example (§8.0 lede, now fixed): "optimizing $\mathcal{A}$ and
+   $\boldsymbol{\mathcal{Q}}$ together" → "optimizing the priority assignment
+   $\mathcal{A}$ and the QoS budgets $\boldsymbol{\mathcal{Q}}$ together."
+8. **Notation follows the §5 System Models tables (writing convention).** Every
+   symbol used anywhere in the paper — in prose, equations, algorithms, figures,
+   tables — must match its glyph and meaning as defined in the notation tables of
+   `\section{System Models}` (§5). Do not introduce a variant glyph, ad-hoc
+   shorthand, or an undefined symbol in a later section; if a needed symbol is not
+   in the §5 tables, add it there first, then use it. This makes §5 the single
+   source of truth for notation and pairs with convention #7 (name + glyph at
+   point of reference). Sweep during Stage 2 clarity (consistency lens).
 
 ## Section index
 

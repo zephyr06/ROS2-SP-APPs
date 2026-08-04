@@ -34,6 +34,78 @@ serialized queue + per-task dispatch), then introduces **each step one-by-one**:
 the task serialization, the QoS-budget trial-and-error walk, and the env-task
 incremental PA move.
 
+## Implementation log (Stage 1 .tex edits — applied, awaiting user review)
+
+The complete §8 rewrite was applied to `section8_task_config_opt.tex` (2026-08-02).
+The prior draft (two-strategy / δ-radius framing + four unresolved review-note
+wrappers `\sen`×2 / `\agent` / `\rkwprev` / `\Sen`) was **replaced wholesale** with
+the unified-loop presentation per the high-level guidance. Code-truth locators
+re-verified against current source before writing prose:
+
+- **§8.0 (lede + collaborative problem statement)** — REWRITE DONE. New lede
+  states §8 lifts §7's QoS-fixed restriction and solves the joint problem
+  `eq:joint_pa_qos` (`\max_{\mathcal{A},\boldsymbol{\mathcal{Q}}} SP`). Organizing
+  idea: a QoS-budget task is a special env-dependent task (flexing `\mathcal{Q}_i`
+  changes `\extDist{i}`, same as an env change), so ONE incremental framework
+  handles both. Stated motivation: structuring each step to change exactly one
+  task makes every SP eval a cache reuse hit (§7.4 invariant) → collaborative
+  optimization feasible online. Deleted: "brute-force vs incremental" two-strategy
+  framing, "smooth assumption" (content change 2 — dynamic/continuous framing),
+  `eq: incremental_configuration` (δ-radius), δ=150 TSP Example, all four review-
+  note wrappers.
+- **§8.1 (overall flow)** — ADD DONE. `section_overall_flow`. 4-step enumerate:
+  (1) build merged queue of Type-E + Type-L; (2) sort by SP weight desc; (3) per-
+  task dispatch (Type-L → §8.3 QoS walk, Type-E → §8.4 incremental PA move);
+  (4) adopt each step as new champion so next task's challenger differs by exactly
+  one task. Motivation stated: every step satisfies `|diff|≤1` → every eval is a
+  cache hit, no from-scratch RTA repeated within the walk. Matches
+  `BuildSerializedTaskQueue` + `WalkSerializedTaskQueue`
+  (`OptimizeSP_TL_Incre.cpp:436-484` / `:486-514`).
+- **§8.2 (task serialization)** — ADD DONE. `section_task_serialization`. Defines
+  Type-E (env-changed, carries `et_increased` direction) + Type-L (QoS-budget /
+  anytime, discrete TL grid). States they are DISJOINT by construction (QoS-budget
+  task's ET is governed by budget not env → cannot also be Type-E), matching the
+  hard-fail at `:449`. Sort key = SP weight desc, stable (equal-weight E/L keep
+  insertion order), matching `stable_sort` `:478-482`. States the queue uses
+  weight-desc ONLY (NOT the full `TaskSortingHeuristic` weight→Θ→ID — that is the
+  PA-only path's sort, `:11-42`, NOT this queue's). Initial `\boldsymbol{\mathcal{Q}}^{(0)}`
+  = grid option closest to pre-optimization ET, matching
+  `InitializeTimeLimitsFromETConfig` `:611` (`Find_Close_ExecutionTime`).
+- **§8.3 (QoS walk)** — ADD DONE. `section_qos_walk`. Real algorithm: walk TL grid
+  outward from current option, backward pass (`step=-1`) then forward (`step=+1`),
+  halt at grid boundary or patience exhaustion; patience = total non-improvement
+  budget (NOT reset on improvement); backward-first = resource-aware tie-break
+  (smaller TL preferred on SP ties). Patience mode-selected (incremental vs
+  reoptimization). Each trial TL evaluated through the incremental priority solver
+  (`OptimizeIncreSingleTask`, `et_up = sign(trial−committed)`), cache-routed.
+  Matches `OptimizeOneTaskWithTimeLimit` (`:696`) + `WalkOneTaskWithTimeLimitOptions`
+  (`:647-694`). TSP example reframed: grid `{100,200,300,500}` from 300 tries
+  200,100 then 500 — NOT "δ=150 → 2 candidates." Deleted δ-radius framing entirely.
+- **§8.4 (env-task incremental PA move)** — ADD DONE. `section_env_pa_move`.
+  Type-E dispatch calls §7.3 incremental priority solver directly (NO QoS walk —
+  task has no TL grid). Re-searches priority position over one half, half selected
+  by the four-scenario rule (§7.3) from carried direction; adopts best strictly-
+  improving position. Cross-links §7.3 (`section_increment_pa`) for detail, does
+  NOT duplicate the table. Matches `OptimizeIncreSingleTask` (`WalkSerializedTaskQueue:502`).
+- **§8.5 (complexity + single-change property)** — RESOLVE DONE. Per-pass
+  complexity `O(M·N)` (M = TL options per QoS task, N = queue tasks) vs `O(M^N)`
+  exhaustive; full RTA-inclusive analysis deferred to §10
+  (`section_complexity_analysis` — label VERIFIED in `section10_complexity.tex:3`,
+  ref fixed from the stale `section: complexity`). Single-change property stated as
+  STRUCTURAL (each loop iteration adjusts exactly one task; committed before next
+  iteration → every eval `|diff|≤1` → cache reuse lemmas apply). NO theorem+proof
+  (out of scope for T-ASE; would require formalizing the cache's move model).
+  Deleted `\rkwprev`/`\Sen`/`\agent` wrappers.
+
+LaTeX verified: 2/2 begin/end (1 `equation` + 1 `enumerate`); all `\ref` targets
+exist (`section_priority_opt` §7, `section_et_model` §6, `section_rta_cache` +
+`section_increment_pa` §7, `def_task_config` §5, `eq_important_task_constraint` §6,
+`section_complexity_analysis` §10). QoS reframe (convention #6) subsumed — new
+prose written in QoS-budget language from the start; the staged glyph-only §8
+reframe diff is discarded in favor of this rewrite. Pre-existing repo-wide macro
+breakage (`\extDist`, `\rtDist`, `\hptasks` undefined in `main.tex`) NOT in §8
+scope (PW.2 preamble fix).
+
 ## Code truth (verified locators — re-grep before writing prose, lines may drift)
 
 - **Top-level entry:** `OptimizeIncre_w_TL` (`OptimizeSP_TL_Incre.cpp:864`) →

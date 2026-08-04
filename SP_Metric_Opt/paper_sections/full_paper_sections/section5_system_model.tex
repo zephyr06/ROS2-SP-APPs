@@ -17,6 +17,7 @@ Single Execution Time Value                                           & $c_i$   
 Period                                                                & $T_i$           \\
 Deadline                                                              & $D_i$           \\
 Priority                                                              & $P_i$           \\
+Priority Assignment Vector                                            & $\boldsymbol{P}$           \\
 \begin{tabular}[c]{@{}l@{}}Response Time Probability Distribution of $\tau_i$  \end{tabular} & $\rtDist{i}$           \\
 Scalar Response Time Value                                                         & $r_i$   \\
 QoS budget                                                  & $\mathcal{Q}_i$     \\
@@ -111,8 +112,8 @@ Probability Distribution & $\mathcal{D}$ \\
     In this paper, we focus on soft real-time systems, where tasks that miss deadlines by small margins can still contribute to system functionality.
 	
 	We use priority assignments to describe the relative importance of tasks:
-	\begin{definition}[Priority Assignments, $\mathcal{A}$]
-		A priority assignment vector for a task set $\boldsymbol{\tau}$ is a complete ordered sequence of tasks $\boldsymbol{\tau}$, where higher-priority tasks appear earlier.
+	\begin{definition}[Priority Assignments, $\boldsymbol{P}$]
+		A priority assignment vector $\boldsymbol{P}$ for a task set $\boldsymbol{\tau}$ is a complete ordered sequence of tasks $\boldsymbol{\tau}$, where higher-priority tasks appear earlier.
 	\end{definition}
     
     In most operating systems such as Linux, the priority assignment needs to be converted into priority values to be useful, see more in Section~\ref{section_pa_values}.
@@ -129,7 +130,7 @@ Probability Distribution & $\mathcal{D}$ \\
 	
 	Response time analysis (RTA) is one of the most well-studied methods to analyze schedulability:
 	\begin{definition}[Response time $r_i$]
-		A task $\tau_i$'s response time $r_i$ includes its execution time $\extDist{i}$ and the time that it waits to obtain the required computation resources (\eg being preempted).
+		A task $\tau_i$'s response time $r_i$ includes its execution time $c_i$ and the time that it waits to obtain the required computation resources (\eg being preempted).
 	\end{definition}
 	Considering the random nature of execution, using a probability distribution rather than a single worst-case value to quantify the response time is more accurate and less pessimistic:
 	\begin{definition}[Response time distribution $\rtDist{i}$]

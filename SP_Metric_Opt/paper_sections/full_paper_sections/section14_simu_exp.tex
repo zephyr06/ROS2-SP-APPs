@@ -13,9 +13,9 @@
     In each task set, 2 random tasks' execution times are assumed to be dependent on the environments and vary spatially. The SP deadline thresholds of all the tasks are randomly generated from 50\% to 100\% relative to the tasks' periods. The SP thresholds of each task are randomly selected from a limited set: $[0.2, 0.4, 0.6, 0.8, 1.0]$ to simulate a real-world setting with both safety-critical tasks and soft tasks that do not have a major influence to the overall system's safety and functionality. The soft tasks can be discarded when the system is under high computation load to make sure the safety-critical tasks can finish before deadline. 
 
     
-    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location $(x, y)$ and each task's execution time distribution $C_i$ follows a joint 3D Gaussian distribution, the probability density function $f^{E}()$ is assumed to be
+    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location $(x, y)$ and each task's execution time distribution $\extDist{i}$ follows a joint 3D Gaussian distribution, the probability density function $f^{E}()$ is assumed to be
     \begin{equation}
-        f^{E}(x, y, C_i) =\mathcal{N}(\boldsymbol{\mu}^E, \boldsymbol{\Sigma}^E)
+        f^{E}(x, y, \extDist{i}) =\mathcal{N}(\boldsymbol{\mu}^E, \boldsymbol{\Sigma}^E)
         \label{eq: pdf_gmm}
     \end{equation}
     \begin{equation}
@@ -41,8 +41,8 @@
     \begin{equation}
         \mu^E_y = 0, \sigma_y = H^E/4
     \end{equation}
-    As for the execution time $C_i$ of the task $\tau_i$, its average execution time $\mu^E_{c,i}$ is assumed to be generated from the Uunifast algorithm, its standard variance $\sigma_{c,i}$ is assumed to be a random portion of its average execution time: $\sigma_{c,i}=k\mu^E_{c,i}$. Based on our experiment measurements, the ratio $k$ is generated randomly from $50\%$ to $60\%$.
-    In the covariance matrix $\boldsymbol{\Sigma}^E$, the covariance ratios $\rho_{x,c,i}, \rho_{y,c,i}$ are randomly generated in the range $[-1,1]$. These two parameters capture the execution time distribution $C_i$'s dependency on the physical environment.
+    As for the execution time $\extDist{i}$ of the task $\tau_i$, its average execution time $\mu^E_{c,i}$ is assumed to be generated from the Uunifast algorithm, its standard variance $\sigma_{c,i}$ is assumed to be a random portion of its average execution time: $\sigma_{c,i}=k\mu^E_{c,i}$. Based on our experiment measurements, the ratio $k$ is generated randomly from $50\%$ to $60\%$.
+    In the covariance matrix $\boldsymbol{\Sigma}^E$, the covariance ratios $\rho_{x,c,i}, \rho_{y,c,i}$ are randomly generated in the range $[-1,1]$. These two parameters capture the execution time distribution $\extDist{i}$'s dependency on the physical environment.
 
     \agent{Simulation task set generation distinguishes three task types. (1)~\textbf{Environment-dependent tasks} ($N_{\text{env}}$ tasks whose execution times vary with the robot's physical location): they use the full GMM model with spatial correlations $\rho_{x,c,i}, \rho_{y,c,i}$ and a randomly generated $\sigma_{c,i}=k\mu^E_{c,i}$ with $k\sim[0.5,0.6]$. (2)~\textbf{Normal tasks} (all remaining non-performance tasks): their execution times also follow a Gaussian distribution with the same random $\sigma_{c,i}$ ratio, but with zero spatial correlation ($\rho_{x,c,i}=\rho_{y,c,i}=0$) so execution time does not depend on location; their minimum and maximum execution time bounds are set to $\mu^E_{c,i}\pm 2\sigma_{c,i}$. (3)~\textbf{Performance tasks}: selected from normal tasks with period $\ge 100$~ms via a $50\%$ probability; they have deterministic execution times (tiny $\sigma_{c,i}$) and their ``time-limit'' options span the full configurable range $[0.05,0.9]$ times their period. Performance tasks are mutually exclusive with environment-dependent tasks. Each task set has 6 tasks (2 long-period + 4 short-period), mean CPU utilization of $1.2$ on 2 cores, threshold set $[0.2, 0.4, 0.6, 0.8, 1.0]$, 4 GMM components per task, and seed $40$.}
 
