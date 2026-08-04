@@ -145,7 +145,7 @@ Potential issues in terms of optimal solution drift caused by the incremental op
     The RTA cache makes incremental optimization practical by reusing prior computation whenever a candidate differs only slightly from one already scored.
 
     \textbf{Champion and the single-change condition.}
-    The cache holds a \emph{champion}: a priority assignment together with the full per-task response-time distributions $\rtDist{i}$ it induces.
+    The cache holds a \emph{champion}: the current best solution $(\boldsymbol{P}^{(s)*},\boldsymbol{\mathcal{Q}}^{(s)*})$ together with the full per-task response-time distributions $\rtDist{i}$ it induces, against which the $s$-th challenger $(\boldsymbol{P}^{(s)},\boldsymbol{\mathcal{Q}}^{(s)})$ is evaluated.
     A candidate is served from the cache only if it differs from the champion by \emph{at most one task}---the single-change invariant, $|\mathrm{diff}| \leq 1$.
     Relative to the champion, a candidate may change the execution-time distribution $\extDist{m}$ of at most one task $\tau_m$, the priority position of at most one task $\tau_m$ on its core, or both; when both change they must concern the \emph{same} task on the \emph{same} core (a combined execution-time and priority change counts as one).
     Any broader change---two tasks' execution times, a task migrating to another core, two independent priority moves, or an execution-time change on one task paired with a priority move of another---violates the invariant ($|\mathrm{diff}| > 1$) and is rejected by a single-change check.
@@ -155,14 +155,14 @@ Potential issues in terms of optimal solution drift caused by the incremental op
     We now state precisely which $\rtDist{i}$ the cache reuses.
     Let $\boldsymbol{\tau}$ be the champion task set with per-task response-time distributions $\rtDist{i}$, and let $\boldsymbol{\tau}^{m}$ denote the candidate obtained by changing a single task $\tau_m$ on core $c$ (its execution-time distribution and/or its priority position); $\rtDistCand{i}$ denotes $\tau_i$'s response-time distribution under $\boldsymbol{\tau}^{m}$.
     Number priority positions on each core from highest ($0$) to lowest, and let $\tau_m$ move from $\mathit{old\_pos}$ to $\mathit{new\_pos}$ on core $c$ (equal for an execution-time-only change), with $p_{\min}=\min(\mathit{old\_pos},\mathit{new\_pos})$ and $p_{\max}=\max(\mathit{old\_pos},\mathit{new\_pos})$.
-    Throughout, $hp(i)$ is the set of tasks with strictly higher priority than $\tau_i$ on the \emph{same} core, and we rely on the fixed-priority scheduling property that $\rtDist{i}$ depends only on $\tau_i$'s own execution-time distribution $\extDist{i}$ and on the execution-time distributions, periods, and membership of $hp(i)$---never on lower-priority tasks or on the order within $hp(i)$.
+    Throughout, $\text{hp}(i)$ abbreviates $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{\mathcal{Q}})$ (Section~\ref{section_rta}) evaluated at the solution under consideration---the champion $(\boldsymbol{P}^{(s)*},\boldsymbol{\mathcal{Q}}^{(s)*})$ or the challenger $(\boldsymbol{P}^{(s)},\boldsymbol{\mathcal{Q}}^{(s)})$---and is the set of tasks with strictly higher priority than $\tau_i$ on the \emph{same} core. We rely on the fixed-priority scheduling property that $\rtDist{i}$ depends only on $\tau_i$'s own execution-time distribution $\extDist{i}$ and on the execution-time distributions, periods, and membership of $\text{hp}(i)$---never on lower-priority tasks or on the order within $\text{hp}(i)$.
 
     \begin{observation}[Cross-core reuse]
     \label{obs:rta_cross_core}
     If $\tau_i$ is not on core $c$, then $\rtDistCand{i} = \rtDist{i}$.
     \end{observation}
     \noindent\textit{Proof.}
-    Under partitioned scheduling, $hp(i)$ contains only tasks on $\tau_i$'s own core, so neither $\tau_m$'s execution-time distribution nor its priority position on core $c$ enters $\tau_i$'s response-time computation~\eqref{eq_prob_rta}.
+    Under partitioned scheduling, $\text{hp}(i)$ contains only tasks on $\tau_i$'s own core, so neither $\tau_m$'s execution-time distribution nor its priority position on core $c$ enters $\tau_i$'s response-time computation~\eqref{eq_prob_rta}.
     Hence $\rtDistCand{i}=\rtDist{i}$, and the champion $\rtDist{i}$ is reused verbatim. \hfill$\square$
 
     \begin{lemma}[Execution-time change]
@@ -171,9 +171,9 @@ Potential issues in terms of optimal solution drift caused by the incremental op
     Then on core $c$, every task at position $< p_{\min}$ satisfies $\rtDistCand{i} = \rtDist{i}$ (bit-identical); every task at position $\geq p_{\min}$ must be recomputed.
     \end{lemma}
     \noindent\textit{Proof.}
-    For a task $\tau_i$ at position $< p_{\min}$, $\tau_m$ sits at position $\geq p_{\min}$ in both the champion and the candidate, so $\tau_m \notin hp(i)$ in both and $\tau_i \neq \tau_m$; $\tau_i$'s own execution-time distribution and the membership, execution-time distributions, and order of $hp(i)$ are all unchanged.
+    For a task $\tau_i$ at position $< p_{\min}$, $\tau_m$ sits at position $\geq p_{\min}$ in both the champion and the candidate, so $\tau_m \notin \text{hp}(i)$ in both and $\tau_i \neq \tau_m$; $\tau_i$'s own execution-time distribution and the membership, execution-time distributions, and order of $\text{hp}(i)$ are all unchanged.
     By the fixed-priority property, $\rtDist{i}$ is determined solely by these quantities, so $\rtDistCand{i}=\rtDist{i}$.
-    For a task at position $\geq p_{\min}$, either $\tau_i = \tau_m$ (its own execution-time distribution changed) or $\tau_m \in hp(i)$ with a changed execution-time distribution, so $\rtDistCand{i} \neq \rtDist{i}$ and the distribution is recomputed. \hfill$\square$
+    For a task at position $\geq p_{\min}$, either $\tau_i = \tau_m$ (its own execution-time distribution changed) or $\tau_m \in \text{hp}(i)$ with a changed execution-time distribution, so $\rtDistCand{i} \neq \rtDist{i}$ and the distribution is recomputed. \hfill$\square$
 
     \begin{lemma}[Pure priority move]
     \label{lem:rta_priority_move}
@@ -186,10 +186,10 @@ Potential issues in terms of optimal solution drift caused by the incremental op
     \end{enumerate}
     \end{lemma}
     \noindent\textit{Proof.}
-    \emph{(1)} For $\tau_i$ at position $< p_{\min}$, $\tau_m$ is below $\tau_i$ in both orderings, so $\tau_m \notin hp(i)$ in both; $hp(i)$ is unchanged in membership, execution-time distributions, and order, giving $\rtDistCand{i}=\rtDist{i}$.
-    \emph{(2)} For $\tau_i$ inside $[p_{\min},p_{\max}]$, $\tau_m$ crosses $\tau_i$, so the membership of $hp(i)$ differs between champion and candidate; $\rtDistCand{i}$ is recomputed.
-    \emph{(3)} For $\tau_i$ at position $> p_{\max}$, $\tau_m \in hp(i)$ in both orderings (at $\mathit{old\_pos} \leq p_{\max}$ and $\mathit{new\_pos} \leq p_{\max}$, both below $\tau_i$) with the same execution-time distribution; the \emph{set} $hp(i)$ is identical and only the order within $[p_{\min},p_{\max}]$ is permuted.
-    The response-time computation~\eqref{eq_prob_rta} forms $\rtDist{i}$ by convolving $\extDist{i}$ with the execution-time distributions $\{\extDist{j} : \tau_j \in hp(i)\}$ and iteratively folding in each higher-priority task's interference, which is governed by that task's period $T_j$ alone; convolution is commutative, and the interference of each $\tau_j \in hp(i)$ depends only on $\extDist{j}$ and $T_j$, not on the order within $hp(i)$. Hence the lossless $\rtDistCand{i}=\rtDist{i}$.
+    \emph{(1)} For $\tau_i$ at position $< p_{\min}$, $\tau_m$ is below $\tau_i$ in both orderings, so $\tau_m \notin \text{hp}(i)$ in both; $\text{hp}(i)$ is unchanged in membership, execution-time distributions, and order, giving $\rtDistCand{i}=\rtDist{i}$.
+    \emph{(2)} For $\tau_i$ inside $[p_{\min},p_{\max}]$, $\tau_m$ crosses $\tau_i$, so the membership of $\text{hp}(i)$ differs between champion and candidate; $\rtDistCand{i}$ is recomputed.
+    \emph{(3)} For $\tau_i$ at position $> p_{\max}$, $\tau_m \in \text{hp}(i)$ in both orderings (at $\mathit{old\_pos} \leq p_{\max}$ and $\mathit{new\_pos} \leq p_{\max}$, both below $\tau_i$) with the same execution-time distribution; the \emph{set} $\text{hp}(i)$ is identical and only the order within $[p_{\min},p_{\max}]$ is permuted.
+    The response-time computation~\eqref{eq_prob_rta} forms $\rtDist{i}$ by convolving $\extDist{i}$ with the execution-time distributions $\{\extDist{j} : \tau_j \in \text{hp}(i)\}$ and iteratively folding in each higher-priority task's interference, which is governed by that task's period $T_j$ alone; convolution is commutative, and the interference of each $\tau_j \in \text{hp}(i)$ depends only on $\extDist{j}$ and $T_j$, not on the order within $\text{hp}(i)$. Hence the lossless $\rtDistCand{i}=\rtDist{i}$.
     The implementation interleaves lossy compression steps that are stochastically conservative---probability mass is only moved to later (larger) response-time values---so the order-dependent cached $\rtDist{i}$ stochastically dominates the true $\rtDistCand{i}$; reusing $\rtDist{i}$ therefore never underestimates the deadline-miss probability. \hfill$\square$
 
     In both lemmas the recomputed tasks form a contiguous range on a single core, so an incremental evaluation touches only a slice of one core rather than all $N$ tasks.

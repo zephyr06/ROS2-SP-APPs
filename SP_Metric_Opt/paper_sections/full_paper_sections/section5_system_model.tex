@@ -23,10 +23,13 @@ Scalar Response Time Value                                                      
 QoS budget                                                  & $\mathcal{Q}_i$     \\
 Task's deadline miss threshold                                        & $\Theta_i$      \\
 Task's importance                                                     & $w_i$           \\
-Important task subset                                                  & $\boldsymbol{\tau}^{safe}$           \\  \midrule
-\begin{tabular}[c]{@{}l@{}}Environment   vector\end{tabular}         & $\textbf{E}$           \\
+Important task subset                                                  & $\boldsymbol{\tau}^{safe}$           \\
+Higher-priority task set of $\tau_i$ (given $\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{\mathcal{Q}}$) & $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{\mathcal{Q}})$ \\  \midrule
+\begin{tabular}[c]{@{}l@{}}Environment vector at the\\ $k$-th interval ($k$: interval index)\end{tabular}         & $\textbf{E}_k$           \\
 $\tau_i$'s execution time distribution prediction function & $\mathcal{F}_i(\textbf{E}) \rightarrow \extDist{i} $ \\
 Safety-Performance metric                                                             & $\textbf{SP}$   \\
+$s$-th challenger solution during search                              & $\boldsymbol{P}^{(s)},\boldsymbol{\mathcal{Q}}^{(s)}$ \\
+Champion solution while evaluating the $s$-th challenger              & $\boldsymbol{P}^{(s)*},\boldsymbol{\mathcal{Q}}^{(s)*}$ \\
 Performance Metric                                                    & $\mathcal{P}()$ \\
 Safety Metric                                                         & $\mathcal{S}()$ \\
 Probability of an event                                                    & $\text{Pr}(event)$ \\

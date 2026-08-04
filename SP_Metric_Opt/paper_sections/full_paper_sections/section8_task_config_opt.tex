@@ -23,7 +23,7 @@
         \item Build a merged queue of the tasks eligible for adjustment this interval---the environment-dependent tasks whose execution-time distributions changed and the QoS-budget tasks that admit a time-limit grid.
         \item Sort the queue by SP weight $w_i$ descending, so the highest-impact task is optimized first and its adoption informs the rest.
         \item For each task in the sorted queue, dispatch by kind: a QoS-budget task undergoes the trial-and-error QoS walk of Section~\ref{section_qos_walk}, and an environment-dependent task undergoes the incremental priority move of Section~\ref{section_env_pa_move}.
-        \item Adopt each accepted step as the new champion, so the next task's challenger differs from the champion by exactly one task.
+        \item Adopt each accepted challenger $(\boldsymbol{P}^{(s)},\boldsymbol{\mathcal{Q}}^{(s)})$ as the champion for the next step, so the next challenger differs from the champion by exactly one task.
     \end{enumerate}
     Because every step mutates a single task's execution-time distribution or priority position, every evaluation satisfies $|\mathrm{diff}| \leq 1$ against the champion and is served from the RTA cache (Section~\ref{section_rta_cache}); a from-scratch response-time analysis is never repeated within the walk.
 

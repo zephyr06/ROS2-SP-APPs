@@ -67,7 +67,7 @@ For instance, a rolling average over the most recent $N$ measured execution time
 		r_i = c_i +\sum_{j \in \text{hp}(i)} \ceil{\frac{r_i}{T_j}}{c_j}
         \label{eq: rta_scalar}
 	\end{equation}
-    where $hp(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$ (a task is not in its own $hp$ set).
+    where $\text{hp}(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$ (a task is not in its own $\text{hp}$ set).
 
     When task execution times are described by probability distributions ($\extDist{i}$) instead of single values ($c_i$), a probabilistic approach is employed~\cite{Maxim2013ResponseTA, Maxim2022ProbabilisticA}.
     This section provides a rough high-level review of how to obtain it.
@@ -76,9 +76,9 @@ For instance, a rolling average over the most recent $N$ measured execution time
 
     The response time distribution $\rtDist{i}$ is initialized from $\tau_i$'s own execution time distribution and the interference of the strictly higher-priority tasks:
 	\begin{equation}
-		\rtDistIter{i}{0} = \extDist{i} \otimes \bigotimes_{j \in hp(i)} \extDist{j}
+		\rtDistIter{i}{0} = \extDist{i} \otimes \bigotimes_{j \in \text{hp}(i)} \extDist{j}
 	\end{equation}
-	where $\otimes$ denotes convolution and $hp(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$.
+	where $\otimes$ denotes convolution and $\text{hp}(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$.
     After initialization, $\rtDist{i}$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline).
     Let $\rtDistIter{i}{k}$ denote the \ith{k} iteration when calculating $\rtDist{i}$:
 	\begin{equation}
@@ -238,9 +238,8 @@ For instance, a rolling average over the most recent $N$ measured execution time
 		\max_{\boldsymbol{P}, \boldsymbol{\mathcal{Q}}}  \textbf{SP}(\boldsymbol{P}, \boldsymbol{\mathcal{Q}}; \textbf{E}_k)
 		\label{eq_overall_obj}
 	\end{equation}
-    % TODO: improve notations of RTA description, make dependency more clear 
 	\begin{equation}
-		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \text{hp}(i))
+		\rtDist{i} = \mathcal{R}\!\left(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i),\; \text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{\mathcal{Q}})\right)
 		\label{eq_prob_rta_in_opt}
 	\end{equation}
 	\begin{equation}
@@ -251,12 +250,12 @@ For instance, a rolling average over the most recent $N$ measured execution time
         The objective function is defined in \eqref{eq_sp_def}.
         $\boldsymbol{P}$ denotes the priority assignment vector.
         In this paper, we adopt fixed-task priority scheduling, so the optimization variable $\boldsymbol{P}$ is the priority assignment for each task.
-        $\textbf{E}_k$ denotes the environment vector estimated online at time $k$.
+        $\textbf{E}_k$ denotes the environment vector estimated online at the $k$-th re-optimization interval.
 
         Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$.
         $\extDist{i}$ denotes task $\tau_i$'s execution time distribution, and $\boldsymbol{\mathcal{Q}}$ represents the tasks' QoS budgets.
         This paper focuses on the running-time limit as the QoS budget for anytime algorithms.
-        $hp(i)$ denotes the tasks with strictly higher priority than $\tau_i$.
+        $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{\mathcal{Q}})$ denotes the set of tasks with strictly higher priority than $\tau_i$; its membership is determined by the task set $\boldsymbol{\tau}$ and the priority assignment $\boldsymbol{P}$, while $\boldsymbol{\mathcal{Q}}$ is carried as context because computing $\rtDist{i}$ requires the higher-priority tasks' execution-time distributions, which depend on their QoS budgets.
 
         Not all tasks are equally safety-critical.
         We therefore designate a subset $\boldsymbol{\tau}^{safe} \subseteq \boldsymbol{\tau}$ of \emph{important tasks}: the tasks whose safety thresholds must be honored as hard constraints.
