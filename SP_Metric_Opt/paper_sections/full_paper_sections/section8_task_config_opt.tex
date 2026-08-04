@@ -1,58 +1,68 @@
-	\section{QoS Budget Optimization}
+	\section{QoS Budget and Priority Collaborative Optimization}
 	\label{section_config_opt}
 
-    \sen{we'll change the idea of this section, and treat tasks that need to optimize TLs as a special type of env-dependent task, then trigger incremental optimization after assuming tasks' ET change.}
-    \sen{we shall modify the paper's scope and definition of such types of tasks to be more precise and consistent. this method is a more elegant method than simplying searching the possible combination.}
-
-    We consider two strategies for QoS budget optimization: \textit{brute-force} and \textit{incremental}.
-    The brute-force strategy enumerates all possible QoS budgets and selects the one that maximizes the SP metric.
-    While exhaustive, this approach is computationally expensive and impractical for online optimization due to the large search space.
-
-    The incremental strategy assumes that the environment changes smoothly and that the influence of environments to the optimal task configuration also changes smoothly.
-    Although these two assumptions may not always hold true in all the environments, they provide a good trade-off between optimality and the low run-time complexity requirements.
-    Section~\ref{section: relax_smooth_assumption} discusses more about relaxing these two assumptions.
-
-    Under the smooth assumption, the incremental optimization algorithm only performs a local search for each optimization variable each time.
-    More specifically, during the \ith{k} iteration, denote the optimization variables from the task set $\boldsymbol{\tau}$ as $\boldsymbol{\mathcal{Q}}$, and denote its initial value before the optimization as $\boldsymbol{\mathcal{Q}}^{(k)}$, the incremental optimization solves the following problem:
-	\begin{equation}
-		\max_{\boldsymbol{\mathcal{Q}}}  \textbf{SP}(\mathcal{A}; \textbf{E}_k)
-	\end{equation}
-
-	\begin{equation}
-		\rtDist{i} = \mathcal{R}(\extDist{i}(\textbf{E}_k;\mathcal{Q}_i), \hptasks{i})
-	\end{equation}
-
+    Section~\ref{section_priority_opt} optimized the priority assignment $\boldsymbol{P}$ with the QoS budgets $\boldsymbol{\mathcal{Q}}$ held fixed.
+    This section lifts that restriction and solves the joint problem
     \begin{equation}
-        \|\boldsymbol{\mathcal{Q}} - \boldsymbol{\mathcal{Q}}^{(k)} \| \leq \delta
-        \label{eq: incremental_configuration}
+        \max_{\boldsymbol{P},\, \boldsymbol{\mathcal{Q}}} \textbf{SP}(\boldsymbol{P}; \textbf{E}_k)
+        \label{eq:joint_pa_qos}
     \end{equation}
-    where $\delta$ controls the tradeoff between run-time complexity and the solution quality.
-    \begin{Example}
-        Consider the QoS budget optimization for the traveling salesman problem (TSP) solved by an anytime algorithm.
-        There are only a few QoS budget options to choose from: [100, 200, 300, 500], where a larger budget implies a shorter solution path (higher quality) per the anytime property.
-        During the last iteration, if the budget is 300ms, and assume $\delta=150$ in equation~\eqref{eq: incremental_configuration}.
-        In this case, we only consider 2 potential solution candidates: $200,300$ to be selected from.
-    \end{Example}
+    subject to the important-task constraint~\eqref{eq_important_task_constraint}, optimizing the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{\mathcal{Q}}$ together.
 
-    \agent{To solve this optimization problem efficiently, we implement a linear-time sequential coordinate descent algorithm instead of an exponential exhaustive search over the local search space.
-    The algorithm proceeds as follows:
+    The organizing idea is that a QoS-budget task is a special kind of environment-dependent task.
+    Recall from Section~\ref{section_et_model} that an environment-dependent task's execution-time distribution $\extDist{i}$ varies with $\textbf{E}_k$ between re-optimization intervals; flexing a QoS-budget task's budget $\mathcal{Q}_i$ likewise changes its $\extDist{i}$ (a larger budget yields a longer, higher-quality execution per Definition~\ref{def_task_config}).
+    Both effects are therefore realized as a change to one task's $\extDist{i}$, so a single incremental optimization framework handles QoS flex and genuine environment change alike.
+    The framework is structured so that each step changes exactly one task, which makes every safety-performance evaluation a cache reuse hit under the single-change invariant of Section~\ref{section_rta_cache}; this is what makes collaborative priority and QoS optimization feasible online.
+
+    \subsection{Overall Flow: Serialized Queue with Per-Task Dispatch}
+    \label{section_overall_flow}
+
+    The collaborative optimizer processes one task at a time through a serialized queue, adopting each improvement into the incumbent before moving on, so that each subsequent evaluation sees the updated configuration.
+    The procedure is:
     \begin{enumerate}
-        \item \textbf{Initialization:} The initial QoS budget $\boldsymbol{\mathcal{Q}}^{(0)}$ is set to match the closest valid budget options corresponding to the pre-optimization execution time (ET) configuration.
-        \item \textbf{Prioritized Task Ordering:} Rather than updating variables in an arbitrary order, the tasks are sorted and processed according to a heuristic.
-        Specifically, tasks are ordered in descending order of their weights, ascending order of their deadlines, and ascending order of their IDs.
-        This prioritization ensures that tasks with higher importance and tighter deadlines are optimized first.
-        \item \textbf{Coordinate Descent:} For each task in the sorted list, we evaluate all its available QoS budget options (either the full set in the scratch mode or the local candidate set constrained by $\delta$ in the incremental mode) one-by-one while keeping the budgets of all other tasks fixed.
-        The option yielding the highest SP metric is chosen.
-        \item \textbf{Resource-Aware Tie-Breaking:} If multiple budget options yield the same optimal SP metric, we select the option that minimizes the sum of the tasks' QoS budgets.
-        This tie-breaker rule prioritizes budgets with lower execution times to conserve computational resources.
+        \item Build a merged queue of the tasks eligible for adjustment this interval---the environment-dependent tasks whose execution-time distributions changed and the QoS-budget tasks that admit a time-limit grid.
+        \item Sort the queue by SP weight $w_i$ descending, so the highest-impact task is optimized first and its adoption informs the rest.
+        \item For each task in the sorted queue, dispatch by kind: a QoS-budget task undergoes the trial-and-error QoS walk of Section~\ref{section_qos_walk}, and an environment-dependent task undergoes the incremental priority move of Section~\ref{section_env_pa_move}.
+        \item Adopt each accepted step as the new champion, so the next task's challenger differs from the champion by exactly one task.
     \end{enumerate}
-    By optimizing each task sequentially, the complexity is reduced from exponential in the number of tasks, $O(M^N)$, to linear, $O(M \cdot N)$, where $M$ is the number of options per task and $N$ is the number of tasks.}
+    Because every step mutates a single task's execution-time distribution or priority position, every evaluation satisfies $|\mathrm{diff}| \leq 1$ against the champion and is served from the RTA cache (Section~\ref{section_rta_cache}); a from-scratch response-time analysis is never repeated within the walk.
 
-    \rkwprev{Can we prove anything about the complexity or solution quality of the above algorithms?}
-    \Sen{The algorithm run-time complexity analysis is presented in the next section.
-    As for solution quality, I think it is very hard due to the black-box probabilistic response time analysis part}
+    \subsection{Task Serialization}
+    \label{section_task_serialization}
 
+    The queue is built from two disjoint task sets.
+    \textit{Type-E} tasks are the environment-dependent tasks whose execution-time distributions differ from the previous interval ($\extDist{i}$ changed under $\textbf{E}_k$); the change direction (increase or decrease) is carried with each entry so the handler avoids recomputing it.
+    \textit{Type-L} tasks are the QoS-budget tasks, each carrying an anytime algorithm with a discrete time-limit grid $\{\mathcal{Q}_i^{(0)}, \mathcal{Q}_i^{(1)}, \dots\}$.
+    The two sets are disjoint by construction: a QoS-budget task's execution time is governed by its budget rather than by the environment, so it cannot also be a Type-E task.
+    Both sets are merged and sorted by SP weight $w_i$ in descending order, with a stable sort so that equal-weight Type-E and Type-L tasks retain their insertion order.
+    Ordering by weight ensures the task with the largest contribution to the SP metric is optimized first.
 
-    \agent{By initializing a challenger from the champion, during time limit optimization, we guarnatee that each incremental optimization only handles 1 task with ET difference during iterations.
-    This is a very good case for calling incremental optimization to perform small adjustment to the priority assignments.
-    we should add a theorem with proof to this claim.}
+    The initial QoS budget $\boldsymbol{\mathcal{Q}}^{(0)}$ for each Type-L task is set to the grid option closest to the task's pre-optimization execution time, anchoring the walk to the carried configuration.
+
+    \subsection{QoS-Budget Trial-and-Error Walk}
+    \label{section_qos_walk}
+
+    For a Type-L task, the optimizer walks its time-limit grid outward from the current budget, evaluating the SP metric at each option and retaining the best.
+    The walk proceeds in two passes from the current option index: first backward (toward smaller budgets), then forward (toward larger budgets).
+    A pass halts when it reaches the grid boundary or when a patience budget---a total count of consecutive non-improving steps that is not reset upon an improvement---is exhausted.
+    The backward-first ordering serves as a resource-aware tie-break: when two budgets yield equal SP, the smaller one is preferred, conserving computation.
+    The patience budget is selected by mode, reflecting that a re-optimization interval (starting from a fresh seed) permits a longer search than an incremental one.
+
+    Each trial budget is evaluated through the incremental priority solver, which re-scores the carried priority assignment together with a single-task priority re-search at the trial budget; because only the walked task's budget differs from the champion, the evaluation is a cache reuse hit.
+    Continuing the anytime-algorithm example of Section~\ref{def_task_config}, a motion-planning task with grid $\{100, 200, 300, 500\}$ (in milliseconds) starting from a budget of $300$ tries $200$, then $100$ (the backward pass), then $400$-equivalent options and $500$ (the forward pass), adopting the budget that maximizes the SP metric.
+
+    \subsection{Environment-Task Incremental Priority Move}
+    \label{section_env_pa_move}
+
+    For a Type-E task, the dispatch calls the incremental priority solver of Section~\ref{section_increment_pa} directly---no QoS walk is performed, since the task has no time-limit grid.
+    The solver re-searches the task's priority position over one half of the priority range, with the half selected by the four-scenario rule of Section~\ref{section_increment_pa} from the carried change direction, and adopts the best strictly-improving position.
+    This is the unification pursued above: both QoS flex and environment change flow through one serialized loop, differing only in the per-task handler, and both reduce to a single-task change that the RTA cache serves incrementally.
+
+    \subsection{Complexity and the Single-Change Property}
+    \label{section_complexity_single_change}
+
+    Each pass over the serialized queue evaluates, per Type-L task, every option it reaches on its grid (bounded by patience) and, per Type-E task, the positions in one half of the priority range; with $N$ tasks in the queue and at most $M$ options per task, the per-pass complexity is $O(M \cdot N)$, a reduction from the $O(M^N)$ exhaustive search over the joint QoS space.
+    The full run-time analysis, including the response-time analysis cost folded into each evaluation, is deferred to Section~\ref{section_complexity_analysis}.
+
+    The single-change property is structural: each iteration of the serialized loop adjusts exactly one task's execution-time distribution (via a budget change or an environment change) or priority position, and every accepted adjustment is committed as the new champion before the next iteration begins.
+    Consequently every evaluation differs from the champion by at most one task, satisfying the $|\mathrm{diff}| \leq 1$ invariant asserted by the cache's single-change check (Section~\ref{section_rta_cache}); the cache's reuse lemmas therefore apply to every step of the collaborative walk.
