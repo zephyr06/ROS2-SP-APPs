@@ -31,18 +31,18 @@
     \label{section_task_serialization}
 
     The queue is built from two disjoint task sets.
-    \textit{Type-E} tasks are the environment-dependent tasks ($\tau^E_i$) whose execution-time distributions differ from the previous interval ($\extDist{i}$ changed under $\textbf{E}_k$); the change direction (increase or decrease) is carried with each entry so the handler avoids recomputing it.
-    \textit{Type-Q} tasks are the QoS-configurable tasks ($\tau^Q_i$), each carrying an anytime algorithm with a discrete time-limit grid $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which the task's QoS budget $q_i$ is selected.
-    The two sets are disjoint by construction: a QoS-configurable task's execution time is governed by its budget rather than by the environment, so it cannot also be a Type-E task.
-    Both sets are merged and sorted by SP weight $w_i$ in descending order, with a stable sort so that equal-weight Type-E and Type-Q tasks retain their insertion order.
+    The first set comprises the environment-dependent tasks ($\tau^E_i$) whose execution-time distributions differ from the previous interval ($\extDist{i}$ changed under $\textbf{E}_k$); the change direction (increase or decrease) is carried with each entry so the handler avoids recomputing it.
+    The second set comprises the QoS-configurable tasks ($\tau^Q_i$), each carrying an anytime algorithm with a discrete time-limit grid $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which the task's QoS budget $q_i$ is selected.
+    The two sets are disjoint by construction: a $\tau^Q_i$ task's execution time is governed by its budget rather than by the environment, so it cannot also be a $\tau^E_i$ task whose distribution changed.
+    Both sets are merged and sorted by SP weight $w_i$ in descending order, with a stable sort so that equal-weight $\tau^E_i$ and $\tau^Q_i$ tasks retain their insertion order.
     Ordering by weight ensures the task with the largest contribution to the SP metric is optimized first.
 
-    The initial QoS budget $\boldsymbol{Q}^{(0)}$ for each Type-Q task is set to the grid option closest to the task's pre-optimization execution time, anchoring the walk to the carried configuration.
+    The initial QoS budget $\boldsymbol{Q}^{(0)}$ for each $\tau^Q_i$ task is set to the grid option closest to the task's pre-optimization execution time, anchoring the walk to the carried configuration.
 
     \subsection{QoS-Budget Trial-and-Error Walk}
     \label{section_qos_walk}
 
-    For a Type-Q task, the optimizer walks its time-limit grid outward from the current budget, evaluating the SP metric at each option and retaining the best.
+    For a $\tau^Q_i$ task, the optimizer walks its time-limit grid outward from the current budget, evaluating the SP metric at each option and retaining the best.
     The walk proceeds in two passes from the current option index: first backward (toward smaller budgets), then forward (toward larger budgets).
     A pass halts when it reaches the grid boundary or when a patience budget---a total count of consecutive non-improving steps that is not reset upon an improvement---is exhausted.
     The backward-first ordering serves as a resource-aware tie-break: when two budgets yield equal SP, the smaller one is preferred, conserving computation.
@@ -54,14 +54,14 @@
     \subsection{Environment-Task Incremental Priority Move}
     \label{section_env_pa_move}
 
-    For a Type-E task, the dispatch calls the incremental priority solver of Section~\ref{section_increment_pa} directly---no QoS walk is performed, since the task has no time-limit grid.
+    For a $\tau^E_i$ task whose distribution changed, the dispatch calls the incremental priority solver of Section~\ref{section_increment_pa} directly---no QoS walk is performed, since the task has no time-limit grid.
     The solver re-searches the task's priority position over one half of the priority range, with the half selected by the four-scenario rule of Section~\ref{section_increment_pa} from the carried change direction, and adopts the best strictly-improving position.
     This is the unification pursued above: both QoS flex and environment change flow through one serialized loop, differing only in the per-task handler, and both reduce to a single-task change that the RTA cache serves incrementally.
 
     \subsection{Complexity and the Single-Change Property}
     \label{section_complexity_single_change}
 
-    Each pass over the serialized queue evaluates, per Type-Q task, every option it reaches on its grid (bounded by patience) and, per Type-E task, the positions in one half of the priority range; with $N$ tasks in the queue and at most $M$ options per task, the per-pass complexity is $O(M \cdot N)$, a reduction from the $O(M^N)$ exhaustive search over the joint QoS space.
+    Each pass over the serialized queue evaluates, per $\tau^Q_i$ task, every option it reaches on its grid (bounded by patience) and, per $\tau^E_i$ task, the positions in one half of the priority range; with $N$ tasks in the queue and at most $M$ options per task, the per-pass complexity is $O(M \cdot N)$, a reduction from the $O(M^N)$ exhaustive search over the joint QoS space.
     The full run-time analysis, including the response-time analysis cost folded into each evaluation, is deferred to Section~\ref{section_complexity_analysis}.
 
     The single-change property is structural: each iteration of the serialized loop adjusts exactly one task's execution-time distribution (via a budget change or an environment change) or priority position, and every accepted adjustment is committed as the new champion before the next iteration begins.
