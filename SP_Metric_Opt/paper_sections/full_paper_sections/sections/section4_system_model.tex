@@ -68,9 +68,6 @@ Probability Distribution & $\mathcal{D}$ \\
 		Deadline $D_i$ refers to the maximum amount of time that a job must be completed to avoid causing potential damage to the system.
 	\end{definition}
 	
-	
-
-	% The deadline definition above is the same as the \textit{relative deadline} used in the real-time system community. 
     In most cases, the deadline $D_i$ is no larger than the period $T_i$~\cite{Buttazzo2011HardRC, Wang2023RTAS}. 
 	In experiments, we use the implicit deadline configurations for simplicity: $D_i = T_i$.
 	However, the propsoed system also works well for systems with other deadlien configurations.
@@ -88,25 +85,26 @@ Probability Distribution & $\mathcal{D}$ \\
 	
 	For example, motion planning may adopt a searching-based anytime algorithm, which takes the running-time limit as its QoS budget: a larger budget lets the search find a higher-quality plan (and runs longer).
 	
-	Depending on whether tasks' execution time distribution is controlled by external environments, or the internal scheduling algorithms, we can categorize tasks into:
-	\begin{itemize}
-	\item environment-dependent tasks
-	\item QoS-configurable tasks
-	\end{itemize}
-	\begin{definition}[QoS budget, $q_i$]
-		\label{def_task_config}
-		A task $\tau_i$'s Quality-of-Service (QoS) budget $q_i$ is the parameter that influences the task's execution time distribution and output quality.
-		For anytime algorithms, the QoS budget is the maximum execution-time limit allocated to the algorithm: a larger budget yields a higher-quality output (and a longer execution time).
-	\end{definition}
-	Only anytime algorithms have a QoS budgets. Tasks where each invocation terminates on its own independent of computation budgets do not have a QoS budget and therefore do not involve QoS optimization.
-	
-	In this paper, we focus on the running-time limit as the QoS budget because it governs both the performance and safety of a task.
-	Other parameters can be incorporated into our framework in a similar way.
+	Depending on whether a task's execution-time distribution is governed by the external environment or by an internal computation budget, we distinguish two task types.
 
-	Building on these notions, we introduce symbols for two task types referenced throughout the paper.
-	An \emph{environment-dependent task}, denoted $\tau^E_i$, is a task whose execution-time distribution $\extDist{i}$ varies with the environment vector $\textbf{E}$ (Section~\ref{section_et_model}); a \emph{QoS-configurable task}, denoted $\tau^Q_i$, is a task that carries a QoS budget $q_i$ (Definition~\ref{def_task_config}).
-	Tasks that are neither are referred to as \emph{normal tasks}.
-	Section~\ref{section: simulation} details how task sets of these types are generated for our experiments.
+	\begin{definition}[Environment-dependent task, $\tau^E_i$]
+		\label{def_env_task}
+		An \emph{environment-dependent task}, denoted $\tau^E_i$, is a task whose execution-time distribution $\extDist{i}$ is a function of the environment vector $\textbf{E}$,
+		i.e., $\extDist{i} = \mathcal{F}_i(\textbf{E})$ (Section~\ref{section_et_model}).
+		Tasks whose execution-time distribution does not vary with $\textbf{E}$ are a special (degenerate) case of environment-dependent tasks,
+		corresponding to a constant prediction function $\mathcal{F}_i$.
+	\end{definition}
+
+	\begin{definition}[QoS-configurable task, $\tau^Q_i$]
+		\label{def_task_config}
+		A \emph{QoS-configurable task}, denoted $\tau^Q_i$,
+		is a task whose execution-time distribution and output quality are governed by an internal \emph{Quality-of-Service (QoS) budget} $q_i$ rather than by the external environment.
+		For anytime algorithms, the QoS budget is the maximum execution-time limit allocated to the algorithm: a larger budget yields a higher-quality output (and a longer execution time).
+		A QoS-configurable task carries a QoS budget list $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which its QoS budget $q_i$ is selected.
+	\end{definition}
+	For simplicity, we assume a QoS task's execution time is always the specified QoS budget and do not vary dynamically. 
+	Only anytime algorithms admit a QoS budget. 
+	Tasks where each invocation terminates on its own, independent of any computation budget, are not QoS-configurable and therefore do not involve QoS optimization.
 	
 	
 \begin{figure*}[htbp]
