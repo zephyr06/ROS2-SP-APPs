@@ -102,6 +102,7 @@ Probability Distribution & $\mathcal{D}$ \\
 		For anytime algorithms, the QoS budget is the maximum execution-time limit allocated to the algorithm: a larger budget yields a higher-quality output (and a longer execution time).
 		A QoS-configurable task carries a QoS budget list $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which its QoS budget $q_i$ is selected.
 	\end{definition}
+
 	For simplicity, we assume a QoS task's execution time is always the specified QoS budget and do not vary dynamically. 
 	Only anytime algorithms admit a QoS budget. 
 	Tasks where each invocation terminates on its own, independent of any computation budget, are not QoS-configurable and therefore do not involve QoS optimization.
@@ -121,38 +122,34 @@ Probability Distribution & $\mathcal{D}$ \\
     This paper uses a widely-adopted computation platform configurations~\cite{Ash23RAL, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO}.
 	The computation platform is modelled as a multi-core system where each task is assigned to a known core using partitioned scheduling~\cite{Buttazzo2011HardRC}.
 	The system disables task migration to reduce scheduling overheads and provides more predictable response time~\cite{Brandenburg2016GlobalSN}.
-    Each task is assigned a unique priority $P_i$, which could change from time to time based on scheduling algorithms.
-    Under preemptive scheduling, higher-priority tasks could preempt lower-priority tasks when high-priority tasks become ready, which are paused and resumed later.
-    In this paper, we focus on soft real-time systems, where tasks that miss deadlines by small margins can still contribute to system functionality.
+    The system is a soft real-time system, where tasks that miss deadlines by small margins can still contribute to system functionality. 
+	This is a more general system modelling approach than the traditional hard real-time systems
+	because practioners can flexibly specify the penalty of missing deadline to convert the proposed system into a hard real-time system.
+	However, the penalty of missing deadline can be flexibly specified such that the system model can also incorporate the traditional hard real-time systems.
 	
+    Each task in the system is assigned a unique priority $P_i$, which could dynamically change from time to time based on scheduling algorithms.
+    Under preemptive scheduling, higher-priority tasks could preempt lower-priority tasks when high-priority tasks become ready.
 	We use priority assignments to describe the relative importance of tasks:
 	\begin{definition}[Priority Assignments, $\boldsymbol{P}$]
 		A priority assignment vector $\boldsymbol{P}$ for a task set $\boldsymbol{\tau}$ is a complete ordered sequence of tasks $\boldsymbol{\tau}$, where higher-priority tasks appear earlier.
 	\end{definition}
-    
-    In most operating systems such as Linux, the priority assignment needs to be converted into priority values to be useful, see more in Section~\ref{section_pa_values}.
 	
 	\subsection{Schedulability Analysis}
 	\label{sectino_schedulability_analysis}
 
     \textit{Schedulability} determines whether all tasks can meet their deadline requirements under a given scheduling algorithm.
-    There are two types of schedulability: \textit{Hard} Schedulability, where all tasks must always finish before their deadlines;
-    \textit{Soft} Schedulability, where the probability of any task missing its deadline is below a given threshold (some papers may use a slightly different definition).
-    
-	This paper focuses on soft schedulability because it is not only more general than hard schedulability, but also more practical for robotic systems and balances resource constraints with system performance.
-    
-	
 	Response time analysis (RTA) is one of the most well-studied methods to analyze schedulability:
 	\begin{definition}[Response time $r_i$]
 		A task $\tau_i$'s response time $r_i$ includes its execution time $c_i$ and the time that it waits to obtain the required computation resources (\eg being preempted).
 	\end{definition}
 	Considering the random nature of execution, using a probability distribution rather than a single worst-case value to quantify the response time is more accurate and less pessimistic:
 	\begin{definition}[Response time distribution $\rtDist{i}$]
-		A task $\tau_i$'s response time distribution $\rtDist{i} = \{r_i^{(k)}: p_i^{(k)}\}$ is a discrete probability distribution of $k$ items, where each item describes that the probability of having response time as $r_i^{(k)}$ is $p_i^{(k)}$.
+		A task $\tau_i$'s response time distribution $\rtDist{i} = \{r_i^{(k)}: p_i^{(k)}\}$ is a discrete probability distribution of $k$ items, 
+		where each item describes that the probability of having response time as $r_i^{(k)}$ is $p_i^{(k)}$.
 	\end{definition}
     
 	Response time distribution can be obtained either experimentally or analytically. 
-	The analytical methods are much faster and simpler than the experimental methods but are also more pessimistic. 
+	The analytical methods are much faster and simpler than the experimental methods but are also more pessimistic for safety. 
 	Check Section~\ref{section_rta} for more details.
 	
 	
