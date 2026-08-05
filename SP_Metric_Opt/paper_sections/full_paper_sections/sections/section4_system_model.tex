@@ -88,12 +88,11 @@ Probability Distribution & $\mathcal{D}$ \\
 	
 	For example, motion planning may adopt a searching-based anytime algorithm, which takes the running-time limit as its QoS budget: a larger budget lets the search find a higher-quality plan (and runs longer).
 	
-	Depending on whether tasks' execution time distribution is controlled by external environments, or the internal scheduling algorithms, we can categorize tasks into environment-dependent tasks or QoS-configurable tasks:
-	\begin{definition}[environment-dependent tasks]
-	
-	\end{definition}
-	tasks whose ET distribution does not change is considered a special type of environemnt-dependent tasks.
-
+	Depending on whether tasks' execution time distribution is controlled by external environments, or the internal scheduling algorithms, we can categorize tasks into:
+	\begin{itemize}
+	\item environment-dependent tasks
+	\item QoS-configurable tasks
+	\end{itemize}
 	\begin{definition}[QoS budget, $q_i$]
 		\label{def_task_config}
 		A task $\tau_i$'s Quality-of-Service (QoS) budget $q_i$ is the parameter that influences the task's execution time distribution and output quality.
