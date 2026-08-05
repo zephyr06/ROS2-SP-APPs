@@ -6,14 +6,20 @@
 
     \agent{notice that our simulation expriments use the precise RTA estimation, rather than the pessimistic RTA estimation from analytical derivation.}
 
-    In simulation, we assume the robot is operated in a two-dimensional environment where we can use the \textit{x} and \textit{y} coordinates to describe a robot's location. 
-    For simplicity, the 2D environment is limited to a square of width $\hat{W}$ and height $\hat{H}$.
+    In simulation, we assume the robot is operated in a two-dimensional environment where we can use the \textit{x} and \textit{y} coordinates to describe a robot's location.
+    For simplicity, the 2D environment is limited to a square of width $W^E$ and height $H^E$; in our experiments $W^E = H^E = 200$ m and the robot moves at $1.0$ m/s.
     During operation, the robot needs to run several computational tasks to ensure both safety and functionality. These tasks in our simulation experiments are generated randomly to cover different scenarios. The task set generation follows the typical real-time systems' experiments design~\cite{Wang2023RTAS, Zhao2020AnOF} based on Uunifast~\cite{Davis2008EfficientES}.
-    Specifically, each random task set has 10 tasks scheduled to be executed by 2 CPU cores independently, the tasks' periods are randomly selected from a limited set based on the real-world systems~\cite{Percept21_RTSS, Kramer15benchmark}: [20, 33, 50, 100, 200, 500, 1000] ms. Then the Uunifast algorithm is used to generate the \textit{average} execution time for each task. 
-    In each task set, 2 random tasks' execution times are assumed to be dependent on the environments and vary spatially. The SP deadline thresholds of all the tasks are randomly generated from 50\% to 100\% relative to the tasks' periods. The SP thresholds of each task are randomly selected from a limited set: $[0.2, 0.4, 0.6, 0.8, 1.0]$ to simulate a real-world setting with both safety-critical tasks and soft tasks that do not have a major influence to the overall system's safety and functionality. The soft tasks can be discarded when the system is under high computation load to make sure the safety-critical tasks can finish before deadline. 
+    Each task set comprises $N$ tasks scheduled on multiple ($2$ in experiments) CPU cores under partitioned scheduling, where $N \in \{4, 6, 8, 10, 12, 14, 16\}$ to cover a range of system scales; for each $N$ we generate $10$ independent task sets, and all reported results are aggregated over these sets.
+    The tasks' periods are drawn from a limited set based on real-world systems~\cite{Percept21_RTSS, Kramer15benchmark}: $\{20, 33, 50, 100, 200, 500, 1000\}$ ms.
+    The per-core CPU utilization is sampled uniformly from $[0.5, 1.0]$ and the Uunifast algorithm distributes this total across the $N$ tasks to set each task's \textit{average} execution time $\mu^E_{c,i}$.
+    All tasks use implicit deadlines, $D_i = T_i$.
 
-    
-    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location $(x, y)$ and each task's execution time distribution $\extDist{i}$ follows a joint 3D Gaussian distribution, the probability density function $f^{E}()$ is assumed to be
+    To capture the heterogeneity of real robotic workloads, each task is categorized as one of three mutually exclusive types (Section~\ref{section: system_model_tasks}): \emph{environment-dependent} tasks $\tau^E_i$, \emph{QoS-configurable} tasks $\tau^Q_i$, and \emph{normal} tasks.
+    \textbf{Environment-dependent tasks} ($\tau^E_i$) model computations whose cost varies with the robot's physical location, such as perception algorithms whose running time grows in cluttered scenes. Their count is $N_{\text{env}} = \lceil \rho_{\text{env}} \cdot N \rceil$, where $\rho_{\text{env}} \sim U[0.1, 0.3]$ is sampled per task set and the count is clamped to at least one; these $N_{\text{env}}$ tasks are drawn from the task set with probability proportional to their utilization (so heavier tasks are more likely to carry spatial variation), and each is subject to a per-task utilization cap of $0.27$ that leaves headroom for the spatial variation. Their execution times use the full GMM model with nonzero spatial correlations, described below.
+    \textbf{QoS-configurable tasks} ($\tau^Q_i$) model anytime algorithms whose result quality trades off against running time. Each task that is not environment-dependent becomes a QoS-configurable task independently with probability $0.5$. They have near-deterministic execution times ($\sigma_{c,i} = 0.001\,\mu^E_{c,i}$) and expose a discrete QoS-budget grid of $10$ options spanning $[0.05, 0.9] \times T_i$, from which the scheduler selects a running-time limit.
+    \textbf{Normal tasks} are the remaining tasks; their execution times follow the GMM with zero spatial correlation ($\rho_{x,c,i} = \rho_{y,c,i} = 0$), so they do not depend on the robot's location.
+
+    We used Gaussian Mixture Model (GMM) to simulate the execution time distribution's dependency on the environment. Specifically, we assume that the robot's physical location $(x, y)$ and each task's execution time distribution $\extDist{i}$ follows a joint 3D Gaussian distribution; the per-task distribution is a mixture of $K{=}4$ such components with mixture weights (each floored at $0.1$). Each component's probability density function $f^{E}()$ is
     \begin{equation}
         f^{E}(x, y, \extDist{i}) =\mathcal{N}(\boldsymbol{\mu}^E, \boldsymbol{\Sigma}^E)
         \label{eq: pdf_gmm}
@@ -23,7 +29,7 @@
             \mu^E_x & \mu^E_y & \mu^E_{c,i}
         \end{bmatrix}
     \end{equation}
-    
+
 \begin{equation}
     \boldsymbol{\Sigma}^E =
     \begin{bmatrix}
@@ -33,7 +39,7 @@
     \end{bmatrix}
 \end{equation}
 
-    The values of the mean vector $\boldsymbol{\mu}^E$ and the covariance matrix $ \boldsymbol{\Sigma}^E$ in the probability density function~\eqref{eq: pdf_gmm} are decided as follows. 
+    The values of the mean vector $\boldsymbol{\mu}^E$ and the covariance matrix $ \boldsymbol{\Sigma}^E$ in the probability density function~\eqref{eq: pdf_gmm} are decided as follows.
     Firstly, notice that the robot is assumed to be operated in a 2D square of width $W^E$ and height $H^E$. Therefore, by placing the coordinate origin at the center of the square, and assuming the probability density function covers 95\% confidence interval, and that gives us:
     \begin{equation}
         \mu^E_x = 0, \sigma_x = W^E/4
@@ -41,13 +47,23 @@
     \begin{equation}
         \mu^E_y = 0, \sigma_y = H^E/4
     \end{equation}
-    As for the execution time $\extDist{i}$ of the task $\tau_i$, its average execution time $\mu^E_{c,i}$ is assumed to be generated from the Uunifast algorithm, its standard variance $\sigma_{c,i}$ is assumed to be a random portion of its average execution time: $\sigma_{c,i}=k\mu^E_{c,i}$. Based on our experiment measurements, the ratio $k$ is generated randomly from $50\%$ to $60\%$.
-    In the covariance matrix $\boldsymbol{\Sigma}^E$, the covariance ratios $\rho_{x,c,i}, \rho_{y,c,i}$ are randomly generated in the range $[-1,1]$. These two parameters capture the execution time distribution $\extDist{i}$'s dependency on the physical environment.
+    As for the execution time $\extDist{i}$ of the task $\tau_i$, its average execution time $\mu^E_{c,i}$ is generated from the Uunifast algorithm, and its standard deviation $\sigma_{c,i}$ is a random portion of its average execution time: $\sigma_{c,i}=k\,\mu^E_{c,i}$ with $k \sim U[0.3, 0.4]$. For QoS-configurable tasks the ratio is instead fixed at $k = 0.001$, giving near-deterministic execution times.
+    In the covariance matrix $\boldsymbol{\Sigma}^E$, the covariance ratios $\rho_{x,c,i}, \rho_{y,c,i}$ capture the execution time distribution $\extDist{i}$'s dependency on the physical environment: they are nonzero only for environment-dependent tasks, where $\rho_{x,c,i} \sim U[-0.9, -0.7]$ and $\rho_{y,c,i} \sim U[-0.1, 0.1]$ are sampled per GMM component; for normal and QoS-configurable tasks both correlations are zero.
+    The marginal execution-time bounds of a normal or environment-dependent task are set to $\mu^E_{c,i} \pm 2\sigma_{c,i}$, while a QoS-configurable task's bounds span its QoS-budget grid.
 
-    \agent{Simulation task set generation distinguishes three task types. (1)~\textbf{Environment-dependent tasks} ($N_{\text{env}}$ tasks whose execution times vary with the robot's physical location): they use the full GMM model with spatial correlations $\rho_{x,c,i}, \rho_{y,c,i}$ and a randomly generated $\sigma_{c,i}=k\mu^E_{c,i}$ with $k\sim[0.5,0.6]$. (2)~\textbf{Normal tasks} (all remaining non-performance tasks): their execution times also follow a Gaussian distribution with the same random $\sigma_{c,i}$ ratio, but with zero spatial correlation ($\rho_{x,c,i}=\rho_{y,c,i}=0$) so execution time does not depend on location; their minimum and maximum execution time bounds are set to $\mu^E_{c,i}\pm 2\sigma_{c,i}$. (3)~\textbf{Performance tasks}: selected from normal tasks with period $\ge 100$~ms via a $50\%$ probability; they have deterministic execution times (tiny $\sigma_{c,i}$) and their ``time-limit'' options span the full configurable range $[0.05,0.9]$ times their period. Performance tasks are mutually exclusive with environment-dependent tasks. Each task set has 6 tasks (2 long-period + 4 short-period), mean CPU utilization of $1.2$ on 2 cores, threshold set $[0.2, 0.4, 0.6, 0.8, 1.0]$, 4 GMM components per task, and seed $40$.}
+    Each task $\tau_i$ also carries two SP-specific parameters sampled per task: its importance weight $w_i \sim U[0.1, 1.0]$ (subsequently normalized so that $\sum_i w_i = 1$), and its deadline-miss probability threshold $\Theta_i \sim U[0.001, 0.9]$, which is the probability of missing its deadline above which the task no longer contributes its full safety value.
+    The important-task subset $\boldsymbol{\tau}^{safe}$ is then taken as the top $50\%$ of tasks by weight, $\lceil 0.5 N \rceil$ tasks, modeling safety-critical tasks that must be shielded from overload, while the remaining soft tasks may be shed when the system is under high computation load.
+    Tasks are assigned to cores by a worst-fit (longest-utilization-first) heuristic to balance load across the two cores.
+
+    \subsection{Compared Methods and Runtime Configuration}
+    \label{section: sim_compared_methods}
+    Each simulation runs for $600$~s with the scheduler re-optimized every $10$~s (the re-optimization interval), and each scheduler activation is bounded by a $1$~s optimization budget; the base random seed is $1000$ and is advanced per task set.
+    We compare the following scheduling methods. The proposed method is \textbf{INCR}, the incremental optimizer with periodic re-optimization (the \textbf{INCR\_Reopt\_10} arm re-optimizes from scratch every $10$ intervals and otherwise optimizes incrementally).
+    Against it we evaluate four baselines: \textbf{BF}, the brute-force priority-and-QoS optimizer used as the offline optimality reference; \textbf{DM\_FAST} and \textbf{DM\_SLOW}, deadline-monotonic priority assignments paired with, respectively, the smallest and largest QoS budget on each task's grid; and \textbf{CFS}, the Linux completely-fair scheduler baseline that uses no priority or QoS optimization.
+    We further run ablation arms that isolate individual mechanisms of the proposed optimizer: \textbf{INCR\_NO\_TL} disables QoS-budget optimization; \textbf{INCR\_WCET} replaces the execution-time distribution with its pessimistic worst-case value; \textbf{INCR\_NO\_REOPT} disables periodic re-optimization (pure incremental); and \textbf{INCR\_Reopt\_1/30/60} vary the re-optimization period to study its effect.
 
     \subsection{Results}
-    The following results are aggregated based on 100 randomly generated task sets. 
+    \agent{The figures and aggregation counts below are stale (they reflect a prior 100-taskset / 5-scheduler run: CFS, RM\_Fast, RM\_Slow, Brute-Force, Incremental). They must be regenerated from a prod run of the current configuration (10 tasksets per $N$, $N\in\{4,6,8,10,12,14,16\}$, schedulers INCR\_Reopt\_10 / BF / DM\_FAST / DM\_SLOW / CFS + ablations) before submission; the caption text and per-scheduler labels will change accordingly.}
 	% \begin{figure*}[ht!]
 	% 	\begin{subfigure}[c]{0.32\textwidth}
 	% 		\centering

@@ -1,8 +1,10 @@
 	\section{Priority Assignments Optimization}
     \label{section_priority_opt}
 
-    This section addresses the \emph{priority-assignment subproblem}: given a task set $\boldsymbol{\tau}$ operating under environment $\textbf{E}_k$ with the QoS budgets $\boldsymbol{\mathcal{Q}}$ held \emph{fixed}, find the priority assignment $\boldsymbol{P}$ that maximizes $\textbf{SP}(\boldsymbol{P}, \boldsymbol{\mathcal{Q}}; \textbf{E}_k)$ subject to the important-task constraint~\eqref{eq_important_task_constraint}.
-    That is, throughout this section we solve only for the priority assignment $\boldsymbol{P}$ in~\eqref{eq_overall_obj}; Section~\ref{section_config_opt} lifts the QoS-fixed restriction and optimizes the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{\mathcal{Q}}$ jointly.
+    This section addresses the \emph{priority-assignment subproblem}: 
+    given a task set $\boldsymbol{\tau}$ operating under environment $\textbf{E}_k$ with the QoS budgets $\boldsymbol{Q}$ held \emph{fixed}, 
+    find the priority assignment $\boldsymbol{P}$ that maximizes $\textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E}_k)$ subject to the important-task constraint~\eqref{eq_important_task_constraint}.
+    That is, throughout this section we solve only for the priority assignment $\boldsymbol{P}$ in~\eqref{eq_overall_obj}; Section~\ref{section_config_opt} lifts the QoS-fixed restriction and optimizes the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{Q}$ jointly.
 
     Priority assignment is a fundamental and influential scheduling technique, particularly in real-time systems, where effective scheduling ensures strong performance guarantees.
     Such guarantees are crucial in robotics applications, including autonomous driving and aerospace systems.
@@ -52,7 +54,7 @@
 \begin{itemize}
     \item For each recorded partial priority assignment vector $p$ (the set $\partialpa$ in Algorithm~\ref{alg:modified_audsley}), evaluate the accumulated SP-value loss incurred by the tasks already placed in $p$.
     \item For each $p$, for each task $\tau_i$ still in $p$'s pool, form a copy of $p$, assign $\tau_i$ the \ith{k} lowest priority, and compute the SP metric loss associated with $\tau_i$.
-    \item Retain the top-$m$ ($m>0$ is the beam width) partial priority assignment vectors with the \emph{lowest} accumulated SP loss.
+    \item Retain the top-$b$ ($b>0$ is the beam width) partial priority assignment vectors with the \emph{lowest} accumulated SP loss.
     These candidates are passed to the next iteration.
 \end{itemize}
 
@@ -61,7 +63,7 @@ The pseudocode for the modified Audsley's algorithm is shown below:
 
 	\begin{algorithm}[htbp]
 		\caption{Modified Audsley's Algorithm} \label{alg:modified_audsley}
-		\KwIn{Task set $\boldsymbol{\tau}$, beam width $m$}
+		\KwIn{Task set $\boldsymbol{\tau}$, beam width $b$}
 		\KwOut{Selected priority assignment}
 		$\partialpa = \{$ a single empty partial path $p$ with $p.\textsc{Pool} \leftarrow \boldsymbol{\tau}$ $\}$ \tcp{lowest-priority task appended first}
 		\For{$k$ in $0,...,N-1$}
@@ -74,7 +76,7 @@ The pseudocode for the modified Audsley's algorithm is shown below:
 					$\partialpacur.\textbf{Push}(p')$\\
 				}
 			}
-			$\partialpa = \textbf{SelectTop}(\partialpacur, m)$ \tcp{keep the $m$ paths of \emph{lowest} accumulated SP loss}
+			$\partialpa = \textbf{SelectTop}(\partialpacur, b)$ \tcp{keep the $b$ paths of \emph{lowest} accumulated SP loss}
 		}
 		\KwRet $\textbf{SelectTop}(\partialpa, 1)$
 	\end{algorithm}
@@ -155,7 +157,7 @@ Potential issues in terms of optimal solution drift caused by the incremental op
     The RTA cache makes incremental optimization practical by reusing prior computation whenever a candidate differs only slightly from one already scored.
 
     \textbf{Champion and the single-change condition.}
-    The cache holds a \emph{champion}: the current best solution $(\boldsymbol{P}^{(s)*},\boldsymbol{\mathcal{Q}}^{(s)*})$ together with the full per-task response-time distributions $\rtDist{i}$ it induces, against which the $s$-th challenger $(\boldsymbol{P}^{(s)},\boldsymbol{\mathcal{Q}}^{(s)})$ is evaluated.
+    The cache holds a \emph{champion}: the current best solution $(\boldsymbol{P}^{(s)*},\boldsymbol{Q}^{(s)*})$ together with the full per-task response-time distributions $\rtDist{i}$ it induces, against which the $s$-th challenger $(\boldsymbol{P}^{(s)},\boldsymbol{Q}^{(s)})$ is evaluated.
     A candidate is served from the cache only if it differs from the champion by \emph{at most one task}---the single-change invariant, $|\mathrm{diff}| \leq 1$.
     Relative to the champion, a candidate may change the execution-time distribution $\extDist{m}$ of at most one task $\tau_m$, the priority position of at most one task $\tau_m$ on its core, or both; when both change they must concern the \emph{same} task on the \emph{same} core (a combined execution-time and priority change counts as one).
     Any broader change---two tasks' execution times, a task migrating to another core, two independent priority moves, or an execution-time change on one task paired with a priority move of another---violates the invariant ($|\mathrm{diff}| > 1$) and is rejected by a single-change check.
@@ -165,7 +167,7 @@ Potential issues in terms of optimal solution drift caused by the incremental op
     We now state precisely which $\rtDist{i}$ the cache reuses.
     Let $\boldsymbol{\tau}$ be the champion task set with per-task response-time distributions $\rtDist{i}$, and let $\boldsymbol{\tau}^{m}$ denote the candidate obtained by changing a single task $\tau_m$ on core $c$ (its execution-time distribution and/or its priority position); $\rtDistCand{i}$ denotes $\tau_i$'s response-time distribution under $\boldsymbol{\tau}^{m}$.
     Number priority positions on each core from highest ($0$) to lowest, and let $\tau_m$ move from $\mathit{old\_pos}$ to $\mathit{new\_pos}$ on core $c$ (equal for an execution-time-only change), with $p_{\min}=\min(\mathit{old\_pos},\mathit{new\_pos})$ and $p_{\max}=\max(\mathit{old\_pos},\mathit{new\_pos})$.
-    Throughout, $\text{hp}(i)$ abbreviates $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{\mathcal{Q}})$ (Section~\ref{section_rta}) evaluated at the solution under consideration---the champion $(\boldsymbol{P}^{(s)*},\boldsymbol{\mathcal{Q}}^{(s)*})$ or the challenger $(\boldsymbol{P}^{(s)},\boldsymbol{\mathcal{Q}}^{(s)})$---and is the set of tasks with strictly higher priority than $\tau_i$ on the \emph{same} core. We rely on the fixed-priority scheduling property that $\rtDist{i}$ depends only on $\tau_i$'s own execution-time distribution $\extDist{i}$ and on the execution-time distributions, periods, and membership of $\text{hp}(i)$---never on lower-priority tasks or on the order within $\text{hp}(i)$.
+    Throughout, $\text{hp}(i)$ abbreviates $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q})$ (Section~\ref{section_rta}) evaluated at the solution under consideration---the champion $(\boldsymbol{P}^{(s)*},\boldsymbol{Q}^{(s)*})$ or the challenger $(\boldsymbol{P}^{(s)},\boldsymbol{Q}^{(s)})$---and is the set of tasks with strictly higher priority than $\tau_i$ on the \emph{same} core. We rely on the fixed-priority scheduling property that $\rtDist{i}$ depends only on $\tau_i$'s own execution-time distribution $\extDist{i}$ and on the execution-time distributions, periods, and membership of $\text{hp}(i)$---never on lower-priority tasks or on the order within $\text{hp}(i)$.
 
     \begin{observation}[Cross-core reuse]
     \label{obs:rta_cross_core}
