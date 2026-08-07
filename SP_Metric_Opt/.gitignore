@@ -63,3 +63,12 @@ sources/.parameters.yaml.*.bak
 agents/gemini.md
 agents/kimi.md
 agents/dev_log.md
+
+SP_Metric_Opt/paper_sections/full_paper_sections/main.aux
+SP_Metric_Opt/paper_sections/full_paper_sections/main.bbl
+SP_Metric_Opt/paper_sections/full_paper_sections/main.blg
+SP_Metric_Opt/paper_sections/full_paper_sections/main.fdb_latexmk
+SP_Metric_Opt/paper_sections/full_paper_sections/main.fts
+SP_Metric_Opt/paper_sections/full_paper_sections/main.log
+SP_Metric_Opt/paper_sections/full_paper_sections/main.out
+SP_Metric_Opt/paper_sections/full_paper_sections/main.synctex.gz
