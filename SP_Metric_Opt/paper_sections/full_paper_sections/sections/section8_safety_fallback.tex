@@ -3,13 +3,13 @@
 	\label{section_safety_fallback}
 
     The hard constraint in \eqref{eq_important_task_constraint} requires every important task $\tau_i \in \boldsymbol{\tau}^{safe}$ to satisfy $Pr(r_i > D_i) \leq \Theta_i$ under the deployed configuration $\{\boldsymbol{P}, \boldsymbol{Q}\}$.
-    Because the optimizer of Sections~\ref{section_priority_opt}--\ref{section_config_opt} searches online over candidate priority assignments and QoS budgets, it must never \emph{ship} a configuration that violates this constraint---not even transiently, while a re-optimization is in progress or immediately after the environment $\textbf{E}_k$ has changed.
+    Because the optimizer of Sections~\ref{section_priority_opt}--\ref{section_config_opt} searches online over candidate priority assignments and QoS budgets, it must never \emph{ship} a configuration that violates this constraint---not even transiently, while a re-optimization is in progress or immediately after the environment $\textbf{E}$ has changed.
     The certified safe-fallback mechanism described below makes this important-task safety guarantee a built-in property of the framework rather than a conditional assumption on a user-supplied execution-time upper bound.
 
     \textbf{Certified fallback.}
     At every interval the scheduler runs a \emph{certified safe fallback}: the most recently deployed configuration $(\boldsymbol{P}^{\star},\boldsymbol{Q}^{\star})$ that has been verified, through the probabilistic response-time analysis of \eqref{eq_prob_rta_in_opt}, to satisfy $Pr(r_i > D_i) \leq \Theta_i$ for every important task $\tau_i \in \boldsymbol{\tau}^{safe}$.
     Before the robot enters an unknown environment, an initial fallback is obtained by solving the feasibility problem posed by \eqref{eq_important_task_constraint} from a Deadline-Monotonic seed---the same important-first group lock used to seed the incremental search of Section~\ref{section_increment_pa}.
-    If no feasible configuration exists for the current $\textbf{E}_k$, the system flags the environment as unschedulable and retains the previous fallback rather than deploying an unsafe one.
+    If no feasible configuration exists for the current $\textbf{E}$, the system flags the environment as unschedulable and retains the previous fallback rather than deploying an unsafe one.
 
     \textbf{Adopt-or-retain.}
     Each candidate $\{\boldsymbol{P}^{(s)},\boldsymbol{Q}^{(s)}\}$ produced by the incremental priority and QoS search (Sections~\ref{section_increment_pa} and~\ref{section_config_opt}) is scored against the current champion held in the RTA cache (Section~\ref{section_rta_cache}).

@@ -1,51 +1,40 @@
 	\section{Priority Assignments Optimization}
     \label{section_priority_opt}
 
-    This section addresses the \emph{priority-assignment subproblem}: 
-    given a task set $\boldsymbol{\tau}$ operating under environment $\textbf{E}_k$ with the QoS budgets $\boldsymbol{Q}$ held \emph{fixed}, 
-    find the priority assignment $\boldsymbol{P}$ that maximizes $\textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E}_k)$ subject to the important-task constraint~\eqref{eq_important_task_constraint}.
-    That is, throughout this section we solve only for the priority assignment $\boldsymbol{P}$ in~\eqref{eq_overall_obj}; Section~\ref{section_config_opt} lifts the QoS-fixed restriction and optimizes the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{Q}$ jointly.
+    This section first addresses a simplified version of the SP optimization problem, the \emph{priority-assignment subproblem} with the QoS budgets $\boldsymbol{Q}$ held \emph{fixed}:
+    \begin{equation}
+        \max_{\boldsymbol{P}} \textbf{SP}(\boldsymbol{P};\boldsymbol{Q}, \textbf{E})
+        \label{eq_pa_subproblem}
+    \end{equation}
+	\begin{equation}
+		Pr(r_i > D_i) \leq \Theta_i, \quad \forall \tau_i \in \boldsymbol{\tau}^{safe}
+		\label{eq_important_task_constraint2}
+	\end{equation}
+    Section~\ref{section_config_opt} lifts the QoS-fixed restriction and optimizes the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{Q}$ jointly.
 
-    Priority assignment is a fundamental and influential scheduling technique, particularly in real-time systems, where effective scheduling ensures strong performance guarantees.
-    Such guarantees are crucial in robotics applications, including autonomous driving and aerospace systems.
-    However, designing an efficient online optimization algorithm is hard due to stringent run-time complexity requirements: even a single evaluation of the SP metric requires going through all tasks and therefore has at least linear complexity, not to mention performing further optimization.
-    We therefore design an efficient incremental optimization algorithm that trades off optimality for better run-time efficiency.
-
-    To simplify the presentation, we first describe a brute-force algorithm for priority assignments.
-    We then propose improvements inspired by the classical Audsley’s algorithm~\cite{Audsley91optimalpriority} and introduce incremental optimization techniques to balance computational speed and performance.
+    Priority assignment is a fundamental scheduling technique whose effectiveness directly governs the safety and performance of real-time robotic systems such as autonomous vehicles and aerospace platforms.
+    The remainder of this section develops an efficient online optimizer: we start from a brute-force baseline, refine it with a modified Audsley's algorithm~\cite{Audsley91optimalpriority} and beam search, and then introduce incremental optimization techniques that trade a bounded amount of optimality for the run-time efficiency required online.
 
 
 	\subsection{Brute-Force Priority Assignments}
 	\label{section_bf_pa}
     Given a task set of $n$ tasks, the brute-force algorithm enumerates and evaluates all $n!$ possible priority assignment vectors to identify the optimal solution.
-    The brute-force algorithm is optimal by construction, and we use it as an offline optimality reference in our experiments (Section~\ref{section: simulation}).
-    While straightforward, this approach has significant computational limitations.
-    As the number of tasks increases, the factorial growth of possible assignments leads to prohibitive computation costs.
-    This makes brute-force methods impractical for online use, particularly in embedded systems where resource constraints and real-time demands are prevalent.
+    The brute-force algorithm is optimal by construction.
+    While straightforward, this approach has an exponential computational complexity and is not practical in reality.
+    We use it as an offline optimality reference in our experiments (Section~\ref{section: simulation}).
 
-
-	\subsection{Optimize Safety Based on Audsley's Algorithm and Beam Search}
+	\subsection{Priority Assignments Based on Audsley's Algorithm and Beam Search}
 	\label{section_audsley_pa}
-    Maximizing the SP metric is closely related to maximizing the overall system's schedulability.
-    When the QoS budgets are fixed, the performance function in the SP metric~\eqref{eq_sp_def} becomes a constant coefficient.
-    This motivates us to leverage optimal priority assignment algorithms to optimize the SP metric.
-    Among various options, Audsley's algorithm~\cite{Audsley91optimalpriority} stands out due to its $O(n^2)$ runtime complexity, where $n$ is the number of tasks in the task set.
+    Since the QoS budgets are fixed, the system-level SP metric is highly correlated with the system's schedulability.
+    This motivates us to leverage the classical Audsley's algorithm~\cite{Audsley91optimalpriority} to optimize SP metrics due to optimal schedulability under certain conditions~\cite{Audsley91optimalpriority}, and its $O(n^2)$ runtime complexity, where $n$ is the number of tasks in the task set.
 
     The core idea of Audsley's algorithm is straightforward: in each iteration, the algorithm identifies tasks from a candidate pool (\ie, tasks that have not been assigned priorities yet) that can tolerate the lowest priority while still meeting their deadlines.
     If such a task is found, its priority is assigned; otherwise, the algorithm concludes that the task set is not schedulable.
-    Under certain conditions~\cite{Audsley91optimalpriority}, this approach is optimal for maximizing schedulability (note: optimal for schedulability, not for the SP metric).
 
+    However, Audsley's algorithm cannot be applied directly: it optimizes schedulability rather than the SP metric, so its assignments need not maximize SP, 
+    and it assumes hard real-time constraints, whereas our soft real-time setting may still extract value from assignments it deems ``unacceptable.''
+    To address these limitations, we modify Audsley's algorithm with a beam search that retains multiple partial priority assignments scored by accumulated SP-value loss rather than by schedulability alone, preserving its $O(n^2)$ iterative structure.
 
-    	However, several issues prevent direct application of Audsley's algorithm in our case:
-    \begin{itemize}
-        \item Schedulability Only: Audsley's algorithm is designed to maximize system schedulability but does not explicitly optimize the SP metric.
-        Priority assignments found by the algorithm may not yield the best SP metric.
-        \item Soft real-time considerations: The original algorithm assumes hard real-time constraints.
-        In contrast, we target soft real-time systems, where priority assignments considered ``unacceptable'' by Audsley's algorithm may still be valuable.
-    \end{itemize}
-
-    To address these limitations, we propose to modify Audsley's algorithm based on beam search to optimize the SP metric.
-    The modified algorithm retains Audsley's iterative structure but incorporates additional mechanisms to evaluate and prioritize assignments based on SP metric performance.
 
     The modified algorithm works iteratively.
     Each partial priority assignment $p$ carries its own pool of not-yet-assigned tasks; assigning a task to $p$ appends it at the current priority level and removes it from that pool.
@@ -116,24 +105,21 @@ The pseudocode for the modified Audsley's algorithm is shown below:
 
 	\subsection{Incremental Priority Assignment Optimization}
 	\label{section_increment_pa}
-
-    Incremental optimization can further accelerate the priority assignment process by leveraging the observation that, between consecutive re-optimization intervals, typically only a small number of tasks' execution time distributions change significantly.
-    Additionally, not all tasks' execution time distributions vary significantly across environments or over time.
-
-    The incremental search is seeded from a Deadline-Monotonic priority assignment in which every important task is locked above every non-important task (the important-first group lock of Section~\ref{eq_safety}).
-    Starting from this seed, when performing priority assignments, we identify tasks with significant changes in execution time distribution and re-search each such task's priority position over one half of the priority range, adopting the best position found.
-    For all other tasks, we retain their \textit{relative} priority assignments, as their execution time distributions remain unchanged, and thus their optimal relative priorities are likely to remain the same.
-    If multiple tasks experience significant changes, this adjustment is applied individually to each task.
-
-
-Let $\tau_i$ represent a task whose execution time distribution changes significantly.
-The direction of $\tau_i$'s priority re-search is categorized based on two factors: whether $\tau_i$ holds the uniquely highest SP weight $w_i$ in the task set~\eqref{eq_sp_def}, and whether $\tau_i$'s execution time increases or decreases.
+    Since the environment changes continuously and the scheduler is triggered frequently with short time intervals, it's reasonable to expect tasks' configurations and their optimal priority assignments do not change dramatically. 
+    Therefore, we can leverage the last solution found to perform efficient incremental optimization by focusing only on the tasks whose execution time distribution change.
+    
+    The incremental optimization always starts from an initial feasible solution (such as one found by the modified Audsley's algorithm).
+    Starting from this initial solution, assume there are $n$ tasks whose execution time become different since the last time the scheduler is called, and we sort them based on their importance (SP weights). 
+    The incremental optimization iterates through these $n$ tasks one by one: for each task $\tau_i$, we try to adjust its priority value while keeping all other tasks' relative priority order unchanged. 
+    Assume the task set has $N$ tasks in total, there will be $N$ options for $\tau_i$'s new priority level. So we follow a simple heuristic based on: 
+    whether $\tau_i$ holds the uniquely highest SP weight $w_i$ in the task set~\eqref{eq_sp_def}, and whether $\tau_i$'s execution time increases or decreases.
 The four possible scenarios are:
 \begin{enumerate}
-    \item If $\tau_i$ has the uniquely highest weight and its execution time increases, the re-search direction is \emph{upward}: scan positions of higher priority than $\tau_i$'s current one.
+    \item If $\tau_i$ does not have the uniquely highest weight and its execution time increases, the re-search direction is \emph{downward} for improving overall schedulability.
+    \item If $\tau_i$ does not have the uniquely highest weight and its execution time decreases, the re-search direction is \emph{upward} for improving overall schedulability.
+    \item If $\tau_i$ has the uniquely highest weight and its execution time increases, we do not want to starve this task as it has high importance, the re-search direction is \emph{upward}: scan positions of higher priority than $\tau_i$'s current one. Beucase 
+    % todo: THIS DOESN'T make sense
     \item If $\tau_i$ has the uniquely highest weight and its execution time decreases, the re-search direction is \emph{downward}: scan positions of lower priority.
-    \item If $\tau_i$ does not have the uniquely highest weight and its execution time increases, the re-search direction is \emph{downward}.
-    \item If $\tau_i$ does not have the uniquely highest weight and its execution time decreases, the re-search direction is \emph{upward}.
 \end{enumerate}
 In every scenario $\tau_i$ is removed from the current priority vector and re-inserted at each position within the chosen half; the position yielding the highest SP metric is adopted if it strictly improves on the current assignment, otherwise the current position is retained.
 

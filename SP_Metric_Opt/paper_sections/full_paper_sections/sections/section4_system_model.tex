@@ -1,5 +1,5 @@
 \section{System Models}
-	This paper considers a robotic computation system consisting of a set of computation tasks and limited computation resources such as CPU cores. 
+	This paper considers a robotic computation system consisting of a set of computation tasks and limited computation resources such as CPU cores.
     The primary objective is to allocate resources effectively to optimize system performance in dynamic environments.
     This section introduces the system models, following notations from the real-time systems community~\cite{Buttazzo2011HardRC}.
     Frequently used notations are summarized in Table~\ref{notation_table}, while others are defined in context.
@@ -28,7 +28,7 @@ Important task subset                                                  & $\bolds
 Environment-dependent task (env-dependent $\extDist{i}$)                & $\tau^E_i$      \\
 QoS-configurable task (carries a QoS budget list $\boldsymbol{q-i}$)            & $\tau^Q_i$      \\
 Higher-priority task set of $\tau_i$ (given $\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q}$) & $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q})$ \\  \midrule
-\begin{tabular}[c]{@{}l@{}}Environment vector at the\\ $k$-th interval ($k$: interval index)\end{tabular}         & $\textbf{E}_k$           \\
+\begin{tabular}[c]{@{}l@{}}Environment vector\end{tabular}         & $\textbf{E}$           \\
 $\tau_i$'s execution time distribution prediction function & $\mathcal{F}_i(\textbf{E}) \rightarrow \extDist{i} $ \\
 Safety-Performance metric                                                             & $\textbf{SP}$   \\
 $s$-th challenger solution during search                              & $\boldsymbol{P}^{(s)},\boldsymbol{Q}^{(s)}$ \\
@@ -41,51 +41,93 @@ Probability Distribution & $\mathcal{D}$ \\
 \end{tabular}
 \label{notation_table}
 \end{table}
-	
-	
+
+
 	\subsection{Computation Tasks}
     \label{section: system_model_tasks}
     A computation task represents an independent high-level application, such as motion planning or obstacle detection.
     For simplicity of presentation, we assume each task uses one CPU core each time.
     How to optimize other types of tasks models is discussed in Section~\ref{section: gang}.
 
-	
-	Most robotic tasks are modeled as periodic tasks\footnote{Tasks with non-constant periods, called sporadic tasks, have a minimum arrival interval between successive executions. These sporadic tasks are often treated as periodic tasks during schedulability analysis to simplify the modeling process} $\tau$. 
+
+	Most robotic tasks are modeled as periodic tasks\footnote{Tasks with non-constant periods, called sporadic tasks, have a minimum arrival interval between successive executions. These sporadic tasks are often treated as periodic tasks during schedulability analysis to simplify the modeling process} $\tau$.
     We use $\boldsymbol{\tau}$ to denote the task set under consideration, $\tau_i$ to denote the \ith{i} task.
     Each task $\tau_i$ is characterized by five parameters: probability distribution of execution time $\extDist{i}$, period $T_i$, deadline $D_i$, and its Quality-of-Service (QoS) budget $q_i$:
 	\begin{equation}
 		\tau_i: [\extDist{i}, T_i, D_i, q_i]
 		\label{eq_notation_task}
 	\end{equation}
-	
+
 
 	\begin{definition}[Period, $T_i$]
 		A task $\tau_i$ releases one job\footnote{According to Buttazzo~\cite{Buttazzo2011HardRC}, ``Periodic tasks consist of an infinite sequence of identical activities, called instances or \textit{jobs}, that are regularly activated at a constant rate.''} $J$ for execution every $T_i$ time units.
 	\end{definition}
     In other words, the periodic task $\tau_i$ needs to be run for one time every $T_i$ time units.
-	
+
 	\begin{definition}[Deadline, $D_i$]
 		Deadline $D_i$ refers to the maximum amount of time that a job must be completed to avoid causing potential damage to the system.
 	\end{definition}
-	
-    In most cases, the deadline $D_i$ is no larger than the period $T_i$~\cite{Buttazzo2011HardRC, Wang2023RTAS}. 
+
+    In most cases, the deadline $D_i$ is no larger than the period $T_i$~\cite{Buttazzo2011HardRC, Wang2023RTAS}.
 	In experiments, we use the implicit deadline configurations for simplicity: $D_i = T_i$.
 	However, the propsoed system also works well for systems with other deadlien configurations.
 
 
 	\begin{definition}[Execution time, $\extDist{i}$]
-		A task's execution time is a probability distribution of the time needed by one standard processor\footnote{Different processors may have different speed. 
+		A task's execution time is a probability distribution of the time needed by one standard processor\footnote{Different processors may have different speed.
 		A standard processor in this context means that the execution time is measured on a processor whose speed is normalized.} to finish its execution without interruption.
 	\end{definition}
 
     The task's execution time is modeled as a probability distribution~\cite{Maxim2013ResponseTA}, reflecting variability due to factors like input data, operating system (OS) behavior, and hardware performance.
     This approach captures uncertainty while avoiding pessimistic worst-case assumptions.
-    In experiments, due to the stringent need to maintain low scheduling overhead, we assume the execution time follows Gaussian distribution to reduce the optimization cost. 
+    % TODO: move the below description to implementation details
+	In experiments, due to the stringent need to maintain low scheduling overhead, we assume the execution time follows Gaussian distribution to reduce the optimization cost.
 	This assumption is a safe assumption as long as the gaussian distribution is a safe upper-bound of the true underlying execution time distribution.
-	
-	For example, motion planning may adopt a searching-based anytime algorithm, which takes the running-time limit as its QoS budget: a larger budget lets the search find a higher-quality plan (and runs longer).
-	
-	Depending on whether a task's execution-time distribution is governed by the external environment or by an internal computation budget, we distinguish two task types.
+
+
+\begin{figure*}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{pictures/RTS_concepts.pdf}
+\caption{Concepts adopted from the Real-Time Systems Area. The figure above shows two tasks' scheduling, where task 2 has higher priority than task 1 and both are scheduled to run on the same CPU core. When task 2 releases a job to execute, it preempts task 1's job. The job 1 of task 1 continues execution after task 2's job 1 finishes execution.
+}
+\label{fig_rts_concepts}
+\end{figure*}
+
+
+	\subsection{Modelling Execution Time Distribution}
+    \label{section_et_model}
+
+    The execution time distribution of a robotic task is not static: it varies as the robot encounters different environments and inputs, likely both spatially (across operating environments) and temporally (across the re-optimization intervals at which the scheduler re-evaluates the system).
+    For instance, a visual-SLAM algorithm may follow different execution paths or even switch between algorithms when operating in different environments, such as a crowded city, a farmland, or an empty indoor space, and its execution time distribution at one interval may differ from that at the next as the scene changes.
+    Capturing and predicting these variations is crucial for making optimal decisions about scheduling and resource allocation.
+
+    Therefore, this paper models the dependency of a task's execution time distribution on the operating environment.
+
+\begin{definition}[Environment vector, $\textbf{E}$]
+    An environment vector $\textbf{E} \in \mathbb{R}^m$ is an abstraction that quantitatively describes environmental factors influencing the execution time or performance of robotic system tasks.
+\end{definition}
+
+When the robot operates under the environment $\textbf{E}$, the execution time distribution $\extDist{i}$ of a task $\tau_i$ is predicted from a prediction function $\mathcal{F}_i$:
+\begin{equation}
+    \mathcal{F}_i(\textbf{E}) \rightarrow \extDist{i}
+    \label{eq: et_predict}
+\end{equation}
+
+A core premise of this paper is that the execution time distribution is continuous and \emph{environment-dependent}: as $\textbf{E}$ changes across environments, $\extDist{i}$ should be predicted online as the robot operates.
+Many regression models could in principle realize $\mathcal{F}_i$, such as Gaussian process regression (GPR)~\cite{Rasmussen2005GaussianPF}.
+Predicting a probability distribution accurately and fast online is challenging, and not the core contribution of this paper. 
+Actually, under the continuous environment assumption, simple heuristics such as a sliding window may be sufficient. Check Section~\ref{section: predict_ET_exp} for more details.
+
+% TODO: consdier whether to keep the example here, i feel it's not needed
+% \begin{Example}
+% A simple realization of $\mathcal{F}_i$ estimates the mean of $\extDist{i}$ as a rolling average over the most recent $N$ measured execution times of $\tau_i$; as the environment changes and newer measurements arrive, the window slides and the predicted $\extDist{i}$ tracks the change.
+% \end{Example}
+
+
+	\subsection{Task Classification}
+	\label{section_task_classification}
+
+    Depending on whether a task's execution-time distribution is governed by the external environment or by an internal computation budget, we distinguish two task types.
 
 	\begin{definition}[Environment-dependent task, $\tau^E_i$]
 		\label{def_env_task}
@@ -95,6 +137,8 @@ Probability Distribution & $\mathcal{D}$ \\
 		corresponding to a constant prediction function $\mathcal{F}_i$.
 	\end{definition}
 
+	For example, motion planning may adopt a searching-based anytime algorithm, which takes the running-time limit as its QoS budget: a larger budget lets the search find a higher-quality plan (and runs longer).
+
 	\begin{definition}[QoS-configurable task, $\tau^Q_i$]
 		\label{def_task_config}
 		A \emph{QoS-configurable task}, denoted $\tau^Q_i$,
@@ -103,38 +147,29 @@ Probability Distribution & $\mathcal{D}$ \\
 		A QoS-configurable task carries a QoS budget list $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which its QoS budget $q_i$ is selected.
 	\end{definition}
 
-	For simplicity, we assume a QoS task's execution time is always the specified QoS budget and do not vary dynamically. 
-	Only anytime algorithms admit a QoS budget. 
+	For simplicity, we assume a QoS task's execution time is always the specified QoS budget and do not vary dynamically.
+	Only anytime algorithms admit a QoS budget.
 	Tasks where each invocation terminates on its own, independent of any computation budget, are not QoS-configurable and therefore do not involve QoS optimization.
-	
-	
-\begin{figure*}[htbp]
-\centering
-\includegraphics[width=0.8\textwidth]{pictures/RTS_concepts.pdf}
-\caption{Concepts adopted from the Real-Time Systems Area. The figure above shows two tasks' scheduling, where task 2 has higher priority than task 1 and both are scheduled to run on the same CPU core. When task 2 releases a job to execute, it preempts task 1's job. The job 1 of task 1 continues execution after task 2's job 1 finishes execution.
-}
-\label{fig_rts_concepts}
-\end{figure*}
-    
-	
+
+
 	\subsection{Computation Platform}
 	\label{section_rta_distribution}
     This paper uses a widely-adopted computation platform configurations~\cite{Ash23RAL, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO}.
 	The computation platform is modelled as a multi-core system where each task is assigned to a known core using partitioned scheduling~\cite{Buttazzo2011HardRC}.
 	The system disables task migration to reduce scheduling overheads and provides more predictable response time~\cite{Brandenburg2016GlobalSN}.
-    The system is a soft real-time system, where tasks that miss deadlines by small margins can still contribute to system functionality. 
-	This is a more general system modelling approach than the traditional hard real-time systems
-	because practioners can flexibly specify the penalty of missing deadline to convert the proposed system into a hard real-time system.
+    The system is a soft real-time system, where tasks that miss deadlines by small margins can still contribute to system functionality.
+    This is a more general system modelling approach than the traditional hard real-time systems
+    because practioners can flexibly specify the penalty of missing deadline to convert the proposed system into a hard real-time system.
 	However, the penalty of missing deadline can be flexibly specified such that the system model can also incorporate the traditional hard real-time systems.
-	
+
     Each task in the system is assigned a unique priority $P_i$, which could dynamically change from time to time based on scheduling algorithms.
     Under preemptive scheduling, higher-priority tasks could preempt lower-priority tasks when high-priority tasks become ready.
 	We use priority assignments to describe the relative importance of tasks:
 	\begin{definition}[Priority Assignments, $\boldsymbol{P}$]
 		A priority assignment vector $\boldsymbol{P}$ for a task set $\boldsymbol{\tau}$ is a complete ordered sequence of tasks $\boldsymbol{\tau}$, where higher-priority tasks appear earlier.
 	\end{definition}
-	
-	\subsection{Schedulability Analysis}
+
+	\subsection{Schedulability and Response Time Analysis}
 	\label{sectino_schedulability_analysis}
 
     \textit{Schedulability} determines whether all tasks can meet their deadline requirements under a given scheduling algorithm.
@@ -142,14 +177,51 @@ Probability Distribution & $\mathcal{D}$ \\
 	\begin{definition}[Response time $r_i$]
 		A task $\tau_i$'s response time $r_i$ includes its execution time $c_i$ and the time that it waits to obtain the required computation resources (\eg being preempted).
 	\end{definition}
-	Considering the random nature of execution, using a probability distribution rather than a single worst-case value to quantify the response time is more accurate and less pessimistic:
+
+	Considering the random nature of task execution, using a probability distribution rather than a single worst-case value to quantify the response time is more accurate and less pessimistic:
 	\begin{definition}[Response time distribution $\rtDist{i}$]
-		A task $\tau_i$'s response time distribution $\rtDist{i} = \{r_i^{(k)}: p_i^{(k)}\}$ is a discrete probability distribution of $k$ items, 
+		A task $\tau_i$'s response time distribution $\rtDist{i} = \{r_i^{(k)}: p_i^{(k)}\}$ is a discrete probability distribution of $k$ items,
 		where each item describes that the probability of having response time as $r_i^{(k)}$ is $p_i^{(k)}$.
 	\end{definition}
-    
-	Response time distribution can be obtained either experimentally or analytically. 
-	The analytical methods are much faster and simpler than the experimental methods but are also more pessimistic for safety. 
-	Check Section~\ref{section_rta} for more details.
-	
-	
+
+    Response time distribution can be obtained either experimentally or analytically:
+
+\subsubsection{Experimental method}
+% TODO: the description can be simplified. i think we don't need to explain the detailed process after telling readers we can obtain a list of RT samples from a window by assuming the RT distribution within a short window doesn't change
+    The experimental method estimates $\rtDist{i}$ by measuring actual response times over a finite window---finite because the distributions $\extDist{i}$ change dynamically, so an indefinite measurement would be uninformative.
+    Given $N$ recorded response times of the executed tasks $\boldsymbol{\tau}$ over an interval, the samples are sorted ascending and divided into $K$ contiguous subsets of $\approx N/K$ points; from each subset of $n_k$ points, the maximum response time is taken as the value with probability $n_k / N$.
+    This yields a probability mass function (PMF) that conservatively bounds the response time distribution, never underestimating it.
+
+\subsubsection{Analytical method Review}
+    \label{section_rta}
+    The analytical method analyzes the response time distributions from the execution-time distributions with convolution, which makes it suitable for online use.
+
+    If a task’s execution time is modeled as a worst-case scalar value $c_i$, its response time is computed by fixed-point iteration~\cite{Joseph1986FindingRT}:
+	\begin{equation}
+		r_i = c_i +\sum_{j \in \text{hp}(i)} \ceil{\frac{r_i}{T_j}}{c_j}
+        \label{eq: rta_scalar}
+	\end{equation}
+    where $\text{hp}(i)$ denotes the set of tasks with higher priority than $\tau_i$.
+
+	In case of probabilistic execution time distribution $\extDist{i}$, response time distribution $\rtDist{i}$ can be obtained via convolution~\cite{Maxim2013ResponseTA, Maxim2022ProbabilisticA}.
+
+    Specifically, $\rtDist{i}$ is first initialized from $\tau_i$'s own execution-time distribution and the interference of its higher-priority tasks:
+	\begin{equation}
+		\rtDistIter{i}{0} = \extDist{i} \otimes \bigotimes_{j \in \text{hp}(i)} \extDist{j}
+	\end{equation}
+	where $\otimes$ denotes convolution.
+    Then, $\rtDist{i}$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline).
+    Let $\rtDistIter{i}{k}$ denote the \ith{k} iteration:
+	\begin{equation}
+		\rtDistIter{i}{k} = \rtDistIterHead{i}{k-1} \oplus (\rtDistIterTail{i}{k-1} \otimes \extDist{j})
+		\label{eq_prob_rta}
+	\end{equation}
+	where $\tau_j$ is the high-priority task that preempts $\tau_i$ in the \ith{k} iteration, and $\rtDistIterHead{i}{k-1}$ and $\rtDistIterTail{i}{k-1}$ split the current distribution into the part unaffected by $\tau_j$ and the part to be re-convolved, which $\oplus$ merges back into one distribution.
+    This yields a safe, worst-case-bounded estimate of the response time distribution.
+
+\subsubsection{Comparison and our choice}
+    The two methods are complementary. 
+	The experimental method captures realized response times and is therefore accurate, but it can only observe schedules already in execution and lags behind a dynamically changing environment. 
+	The analytical method evaluates arbitrary candidate schedules from execution-time distributions alone, at the cost of conservative (worst-case-bounded) estimates. 
+	Because online optimization must compare candidate $\{\boldsymbol{P},\boldsymbol{Q}\}$ \emph{before} deployment, our system adopts the analytical method for online decision-making, using the experimental method for offline validation of realized behavior.
+

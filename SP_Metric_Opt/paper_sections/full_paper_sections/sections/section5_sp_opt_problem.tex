@@ -1,175 +1,70 @@
 \section{Safety-Performance Optimization Problem}
 	A robotic system is considered ``good'' if it produces high-quality outputs while maintaining safety with high probabilities.
-	This section defines a general metric function to evaluate the performance of robotic computation systems, building on Sifat~\etal~\cite{Ash23RAL}, and formulates an online optimization problem to enhance safety and performance.
-
-
-    \subsection{Modelling Execution Time Distribution}
-
-    \label{section_et_model}
-
-    The execution time distribution of a robotic task is not static: it varies as the robot encounters different environments and inputs, likely both spatially (across operating environments) and temporally (across the re-optimization intervals at which the scheduler re-evaluates the system).
-    For instance, a visual-SLAM algorithm may follow different execution paths or even switch between algorithms when operating in different environments, such as a crowded city, a farmland, or an empty indoor space, and its execution time distribution at one interval may differ from that at the next as the scene changes.
-    Capturing and predicting these variations is crucial for making optimal decisions about scheduling and resource allocation.
-
-    Therefore, this paper models the dependency of a task's execution time distribution on the operating environment.
-
-\begin{definition}[Environment vector, $\textbf{E}$]
-    An environment vector $\textbf{E} \in \mathbb{R}^m$ is an abstraction that quantitatively describes environmental factors influencing the execution time or performance of robotic system tasks.
-\end{definition}
-
-Since a robot's computation requirements may vary temporally, the operating time $t$ can also be incorporated into the environment vector $\textbf{E}$.
-When the robot operates under the environment $\textbf{E}$, the execution time distribution $\extDist{i}$ of a task $\tau_i$ is predicted from a prediction function $\mathcal{F}_i$:
-\begin{equation}
-    \mathcal{F}_i(\textbf{E}) \rightarrow \extDist{i}
-    \label{eq: et_predict}
-\end{equation}
-
-A core premise of this paper is that the execution time distribution is \emph{environment-dependent}: because $\textbf{E}$ changes at different environment, $\extDist{i}$ must be predicted online as the robot operates.
-Many regression models could in principle realize $\mathcal{F}_i$, provided a parameterized distribution model and sufficient training data are available; for example, when the environment varies smoothly with the robot's position, Gaussian process regression (GPR)~\cite{Rasmussen2005GaussianPF} is one applicable option.
-Predicting a probability distribution rather than a scalar, however, is challenging, and the prediction must also have low run-time complexity to run online alongside the functional tasks.
-Since the precise choice of predictor is not the core contribution of this paper, we defer the concrete, low-complexity prediction method we adopt---a sliding-window sample fit detailed in Section~\ref{section: predict_ET_exp}---to the implementation section, and only illustrate the idea here.
-
-\begin{Example}
-A simple realization of $\mathcal{F}_i$ predicts $\extDist{i}$ for the current environment from the recent measured execution times of $\tau_i$.
-For instance, a rolling average over the most recent $N$ measured execution times can be used to estimate the mean of $\extDist{i}$, which is then characterized as a distribution around that mean; as the environment changes and newer measurements arrive, the window slides and the predicted $\extDist{i}$ tracks the change.
-\end{Example}
-
-
-	\subsection{Response Time Distribution Analysis}
-	\label{section_rta}
-
-
-    This section discusses two methods for analyzing response time distributions: experimental and analytical.
-    Both approaches aim to evaluate task schedulability and improve system safety, but they differ in accuracy, computational complexity, and applicability.
-    Both these two methods are used in our system design and implementation to exploit their advantages.
-
-\subsubsection{Experimental method}
-    The experimental method involves measuring response times over a finite time interval.
-    Since task execution time distributions $\extDist{i}$ can change dynamically, it is practical to measure response times only within a specific time window rather than over an indefinite period.
-
-    To estimate the response time distribution $\rtDist{i}$ for a given interval, the following steps are performed:
-    \begin{itemize}
-        \item Data Collection: Measure and record the response times $r_i$ of all executed tasks $\boldsymbol{\tau}$ over the chosen interval.
-        \item Data Segmentation: Sort all the obtained $N$ response time samples in ascending order and divide them into $K$ contiguous subsets, each containing approximately $N/K$ data points.
-        \item Probability Assignment: Extract a response time and probability pair from each subset containing $n_k$ data points: the response time value is the maximum response time of the subset, the probability is $n_k / N$.
-    \end{itemize}
-    This process generates a probability mass function (PMF) that provides a conservative estimate of the response time distribution, ensuring better safety.
-    The PMF is designed to never underestimate the actual response time distribution.
-
-
-	\subsubsection{Analytical method}
-    The analytical method derives response time distributions using mathematical models, offering faster and more flexible analysis compared to the experimental method.
-    We start the review with the basic worst-case response analysis, and then move to the probabilistic analysis.
-
-
-	When a task’s execution time is modeled as a single worst-case value $c_i$, its response time can be computed using fixed-point iteration~\cite{Joseph1986FindingRT}:
-	\begin{equation}
-		r_i = c_i +\sum_{j \in \text{hp}(i)} \ceil{\frac{r_i}{T_j}}{c_j}
-        \label{eq: rta_scalar}
-	\end{equation}
-    where $\text{hp}(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$ (a task is not in its own $\text{hp}$ set).
-
-    When task execution times are described by probability distributions ($\extDist{i}$) instead of single values ($c_i$), a probabilistic approach is employed~\cite{Maxim2013ResponseTA, Maxim2022ProbabilisticA}.
-    This section provides a rough high-level review of how to obtain it.
-    Interested readers should refer to Maxim~\etal~\cite{Maxim2022ProbabilisticA} for more accurate definitions and examples.
-    Our released code provides efficient code implementation.
-
-    The response time distribution $\rtDist{i}$ is initialized from $\tau_i$'s own execution time distribution and the interference of the strictly higher-priority tasks:
-	\begin{equation}
-		\rtDistIter{i}{0} = \extDist{i} \otimes \bigotimes_{j \in \text{hp}(i)} \extDist{j}
-	\end{equation}
-	where $\otimes$ denotes convolution and $\text{hp}(i)$ denotes the set of tasks with strictly higher priority than $\tau_i$.
-    After initialization, $\rtDist{i}$ is iteratively refined until convergence (\ie no new high-priority jobs preempt $\tau_i$, or $\tau_i$ misses its deadline).
-    Let $\rtDistIter{i}{k}$ denote the \ith{k} iteration when calculating $\rtDist{i}$:
-	\begin{equation}
-		\rtDistIter{i}{k} = \rtDistIterHead{i}{k-1} \oplus (\rtDistIterTail{i}{k-1} \otimes \extDist{j})
-		\label{eq_prob_rta}
-	\end{equation}
-	where $\extDist{j}$ denotes the execution time distribution of a high-priority task $\tau_j$ that preempts $\tau_i$ in the \ith{k} iteration.
-    $\rtDistIterHead{i}{k-1}$ is the part of the response time distribution not affected by $\tau_j$ in the \ith{k} iteration, $\rtDistIterTail{i}{k-1}$ denotes the remaining part, $\oplus$ merges the two parts of a probability distribution into one distribution.
-
-    While this approach provides a safe estimation under worst-case conditions, the actual response time distribution is often better in practice.
-
-    \subsubsection{Comparison}
-    Both methods have their strengths and limitations.
-    Experimental approaches are more precise but impractical or infeasible for dynamic, real-time environments, while analytical methods provide valuable insights for online optimization despite their conservatism.
+	This paper derived new safety-performance metrics based on Sifat~\etal~\cite{Ash23RAL} to achieve more strict system-level performance measurements and better interpretability, then formulates an online optimization problem to enhance safety and performance.
 
 	\subsection{Safety metric}
-    Unlike traditional physical safety concerns (e.g., collision avoidance), this paper focuses on computation safety, which ensures that safety-critical tasks meet their deadlines.
+    Unlike traditional physical safety concerns (e.g., collision avoidance), this paper focuses on computation safety, which ensures that safety-critical tasks finish their execution before designated deadlines.
+    Since this paper mainly focuses on the task scheduling part, we assume all the tasks are designed and implemented correctly.
 
-    Physical safety, if desired, can be incorporated into the performance metric discussed in the next subsection.
 	\begin{definition}[Safety, \cite{Ash23RAL}]
 		A robot system is safe (or schedulable) from the computation perspective if:
 		\begin{equation}
 			\forall \tau_i, Pr(r_i > D_i) \leq \Theta_i
 			\label{eq_safety}
 		\end{equation}
-		where $\Theta_i \geq 0$ denotes the probability that the system can tolerate the task $\tau_i$ to miss deadline.
+		where the threshold $\Theta_i \geq 0$ denotes the probability that the system can tolerate the task $\tau_i$ to miss deadline.
 	\end{definition}
 
 	\begin{definition}[Safety Metric]
-		A task $\tau_i$'s safety function quantifies the penalty (or the reward) when the probability for $\tau_i$ to miss its deadline $D_i$ becomes higher (or lower) than $\Theta_i$:
+		A task $\tau_i$'s safety function $\mathcal{S}(\cdot)$ quantifies the penalty (or reward) when the probability of $\tau_i$ missing its deadline $D_i$ rises above (or falls below) $\Theta_i$:
 		\begin{equation}
-			\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{Q}) - \Theta_i)
+			\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{Q}, \textbf{E}) - \Theta_i)
 			\label{eq_safety_function}
 		\end{equation}
 	\end{definition}
-	where $\mathcal{S}(\cdot)$ is a function that quantifies the consequence of missing deadlines.
-    For example, in our experiments, we adopt the normalized penalty function in \cite{Ash23RAL}:
+    Our experiments adopt the penalty function $\hat{\mathcal{S}}$ of~\cite{Ash23RAL}, but normalize the values into $[0,1]$ (better value interpretability, and enhanced safety-performance combination guarantee, check Section~\ref{section: sp_metric_def}). 
+	$\hat{\mathcal{S}}$ has a reward branch when the miss probability is at or below $\Theta_i$ and a steep penalty branch when it exceeds $\Theta_i$, :
 	\begin{equation}
-		\mathcal{S}(x)  = \text{Normalize}(\hat{\mathcal{S}}(x))
-	\end{equation}
-	\begin{equation}
+		\begin{gathered}
+		\mathcal{S}(x) = \frac{\hat{\mathcal{S}}(x) - \hat{\mathcal{S}}(1 - \Theta_i)}{\hat{\mathcal{S}}(0-\Theta_i) - \hat{\mathcal{S}}(1 - \Theta_i)},\\
 		\hat{\mathcal{S}}(x) = \begin{cases}
-			log(|x|+1) & x \leq 0 \\
-			-0.01 e^{10|x|}  & x > 0
+			\log(|x|+1) & x \leq 0 \\
+			-0.01\, e^{10|x|}  & x > 0
 		\end{cases}
-	\end{equation}
-	where $\text{Normalize}(\cdot)$ maps $\hat{\mathcal{S}}$ onto $[0,1]$ by linear interpolation between the worst and best attainable values, which are $\hat{\mathcal{S}}(\Theta_i - 1) = -0.01\,e^{10(1-\Theta_i)}$ (the penalty when $Pr(r_i > D_i) = 1$, mapped to $0$) and $\hat{\mathcal{S}}(\Theta_i) = \log(\Theta_i + 1)$ (the reward when $Pr(r_i > D_i) = 0$, mapped to $1$):
-	\begin{equation}
-		\text{Normalize}(\hat{\mathcal{S}}(x)) = \mathrm{clip}_{[0,1]}\!\left( \frac{\hat{\mathcal{S}}(x) - \hat{\mathcal{S}}(\Theta_i - 1)}{\hat{\mathcal{S}}(\Theta_i) - \hat{\mathcal{S}}(\Theta_i - 1)} \right)
+		\end{gathered}
 		\label{eq_normalize}
 	\end{equation}
-    This yields a standardized, interpretable safety value: $0$ when the task is certain to miss its deadline, $1$ when it is certain to meet it, and a smooth value in between.
-
-    As noted in the introduction, a robotic system is unsafe if its computation tasks fail to meet their deadlines.
-    Equation~\eqref{eq_safety} quantifies the acceptable tolerance for deadline misses, with $\Theta_i$ providing flexibility in design based on application requirements.
+	The interpretation formula above guarantees that $\mathcal{S}(x) \in [0,1]$.
+    The threshold $\Theta_i$ in \eqref{eq_safety} lets designers tune the tolerable deadline-miss probability per application.
 
 	\subsection{Performance metric}
-	The performance metric reflects the quality of a task’s output.
-    For example, in SLAM, it may correspond to localization error, while in path planning, it could reflect the travel distance of the generated path.
-    In real-world scenarios, task performance depends on \textit{QoS budgets} (Parameters like the running-time limit of anytime algorithms, which can affect both execution time and output quality) and \textit{Environment} (External factors, \eg sensor noise in rainy conditions, that influence the accuracy of task outputs, such as object detection).
+	A task's performance metric mainly depends on its \emph{QoS budget} (such as an anytime algorithm's running-time limit, which trades execution time for output quality). 
 
 	\begin{definition}[Performance Metric]
     \label{def_perf_metric}
-		A computation task $\tau_i$'s performance function $\mathcal{P}(\tau_i, \textbf{E}_k) \rightarrow [0,1]$ is a normalized function that estimates a task's output quality under an environment described by $\textbf{E}_k$.
+		A computation task $\tau_i$'s performance function $\mathcal{P}(\tau_i, \textbf{E}) \rightarrow [0,1]$ is a normalized function that estimates a task's output quality under an environment described by $\textbf{E}$.
 	\end{definition}
 
-	Note that the task's QoS budget is implicitly incorporated into $\tau_i$ based on the notation~\eqref{eq_notation_task}.
+	If a task does not have a QoS budget list, then we assume the task's performance metric is always 1.0.
 
-    The performance metric can be determined through offline profiling and regression, with its exact format depending on the application.
-    For example, in motion planning, the metric could be the total path length, normalized to a range of 0 (worst) to 1 (best).
-    In SLAM, the metric could be the localization error.
-    A typical process involves identifying the minimum and maximum values of the target metric, then mapping these values into a [0,1] range for interpretability.
-    Please check Section~\ref{section_generate_tsp_perf} for more details.
+    The performance metric can be measured through offline profiling,
+    see Section~\ref{section_generate_tsp_perf} for a concrete example.
 
 	\subsection{SP-Metric}
+	\label{section: sp_metric_def}
 	The Safety-Performance (SP) metric combines the safety and performance metrics to evaluate the overall performance of a robotic computation system:
 	\begin{equation}
-		\textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E}_k) \triangleq \sum_{\tau_i \in \boldsymbol{\tau}} \
-		\frac{w_i}{\sum_j w_j} \cdot \mathcal{P}(\tau_i; \textbf{E}_k) \cdot
-		\mathcal{S}(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{Q}) - \Theta_i)
+		\begin{aligned}
+		\textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E}) \triangleq \sum_{\tau_i \in \boldsymbol{\tau}} & \frac{w_i}{\sum_j w_j} \cdot \mathcal{P}(\tau_i; \textbf{E}) \\
+		& \cdot \mathcal{S}\!\left(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{Q}, \textbf{E}) - \Theta_i\right)
+		\end{aligned}
 		\label{eq_sp_def}
 	\end{equation}
 	where $w_i > 0$ represents the importance of task $\tau_i$, with the task weights being normalized.
     Both the safety function $\mathcal{S}$ and the performance function $\mathcal{P}$ produce normalized outputs in the range $[0,1]$.
 
-    % \item $\mathcal{P}(\tau_i) \in [0, 1]$ describes the normalized performance of task $\tau_i$, influenced by algorithm implementation and allocated computation resources.
-    %     \item $Pr(r_i \leq D_i; \boldsymbol{P}) \in [0, 1]$ represents the probability of task $\tau_i$'s response time $r_i$ meeting its deadline $D_i$ within a time interval $H$.
-    % 	Section~\ref{section_rta} introduces how to calculate the response time distribution $\rtDist{i}$.
-
-
     \begin{Example}
+	% TODO, use more meaningful thresholds, such as 0.01 for one task, and 0.6 for another task
         Consider a task set containing two tasks, $\tau_0$ and $\tau_1$, assume the 2 tasks have the following parameters:
     \begin{itemize}
         \item Deadline miss thresholds: $\Theta_0 = 0.5$, $\Theta_1 = 0.5$.
@@ -178,12 +73,12 @@ For instance, a rolling average over the most recent $N$ measured execution time
         \item Task weights: $w_0 = w_1 = 1$.
     \end{itemize}
 
-    Using \eqref{eq_sp_def}, the SP-metric is calculated as:
+    Using \eqref{eq_sp_def} with $\Theta_i = 0.5$, the SP-metric is:
     \begin{align}
         & \frac{1}{1+1} \cdot 0.5\cdot \text{Normalize}(\log(1.2)) \ + \nonumber \\
         & \frac{1}{1+1} \cdot 1.0 \cdot \text{Normalize}(-0.01 e^{10 \cdot 0.3})
     \end{align}
-    where $\text{Normalize}(\cdot)$ is the safety-function normalization defined in \eqref{eq_normalize} (here with $\Theta_i = 0.5$): for $\tau_0$, $Pr(r_0 > D_0) - \Theta_0 = 0.3 - 0.5 = -0.2 \leq 0$, so $\hat{\mathcal{S}}$ takes the reward branch $\log(1.2)$; for $\tau_1$, $0.8 - 0.5 = 0.3 > 0$, so $\hat{\mathcal{S}}$ takes the penalty branch $-0.01 e^{10 \cdot 0.3}$.
+    where $\text{Normalize}(\cdot)$ is defined in \eqref{eq_normalize}: for $\tau_0$, $Pr(r_0 > D_0) - \Theta_0 = -0.2 \leq 0$, so $\hat{\mathcal{S}}$ takes the reward branch $\log(1.2)$; for $\tau_1$, $0.3 > 0$, so it takes the penalty branch $-0.01 e^{10 \cdot 0.3}$.
 
 
 \begin{figure}[htbp]
@@ -195,51 +90,35 @@ For instance, a rolling average over the most recent $N$ measured execution time
 \end{figure}
     \end{Example}
 
-    \subsection{Benefits of the new SP metric}
-    % Compared with the previous work~\cite{Ash23RAL}, the major differences are:
-    % \begin{itemize}
-    %     \item Safety and performance metrics are combined via multiplication rather than addition
-    %     \item The safety, performance, and overall SP metrics are all normalized into the range [0, 1] rather than varying within an unbounded range.
-    % \end{itemize}
-
-    % The new SP metric formulation~\eqref{eq_sp_def} offers the following benefits:
-
-    The new SP-metric formulation in \eqref{eq_sp_def} offers several advantages compared to Sifat~\etal~\cite{Ash23RAL}:
-
+    \subsection{Comoparison against the existing SP metric}
     \textbf{Improved Guarantee for Both Safety and Performance.}
     The approach~\cite{Ash23RAL} used an additive combination of safety and performance metrics, which could lead to misleading interpretations.
-    For example, high performance values might compensate for low safety values, falsely indicating adequate system behavior.
-    Another potential pitfall is that trivial algorithms with minimal execution time could easily meet safety requirements but fail to guarantee useful output (For example, a SLAM algorithm which always outputs the same GPS location runs extremely fast but the results are wrong).
+    High performance values might compensate for low safety values, falsely indicating adequate system behavior; conversely, a trivial algorithm with minimal execution time could easily meet safety requirements yet produce useless output (\eg a SLAM algorithm that always returns the same GPS location runs extremely fast but is wrong).
     The new SP metric addresses these issues by using multiplication to combine the safety and performance metrics.
     Because the per-task term is a product $\mathcal{P} \cdot \mathcal{S}$, a high value on one factor cannot compensate for a low value on the other: for a single task, a per-task term of at least $0.9$ requires both $\mathcal{P}$ and $\mathcal{S}$ to be at least $0.9$ individually, ensuring a balanced trade-off and strong penalization when either value is low.
     We note, however, that this holds per product term; the system-level SP is a \emph{weighted sum} of such terms, so a system-level SP of $0.9$ does not by itself imply that every task's term reaches $0.9$, as a strong task can mask a weak one.
 
 
-    \textbf{Enhanced interpretability}.
+    \textbf{Enhanced interpretability.}
     The previous SP metric~\cite{Ash23RAL} had unbounded values (\eg from $-2000$ to $2$), making it difficult to intuitively interpret the meanings of SP values (such as when the system always meets/misses deadlines) without reference points.
     The new metric normalizes values to $[0,1]$, inherently encoding worst- and best-case scenarios.
     This standardization simplifies threshold setting for robotic engineers.
     The safety term can also be interpreted as a discount to the performance term in the objective function~\eqref{eq_overall_obj}: a higher deadline missing rate would reduce the system's overall performance.
 
-
-
-    % \textbf{Flexibility in Task-Level Configuration.} The new SP-metric allows individualized constraints. For example, critical tasks can be assigned minimum SP values (e.g., $0.9$), ensuring high reliability while permitting flexibility for less critical tasks.
-
-
-
 	\subsection{SP Metric Optimization Problem}
     This paper addresses the problem of optimizing the scheduling algorithms of a robotic computation system operating under unknown and dynamic environments.
     Task computation requirements often vary across different environments, necessitating dynamic adjustments to scheduling algorithms to improve the overall safety and performance of the system.
-
-
     The optimization problem is defined as follows:
 
 	\begin{equation}
-		\max_{\boldsymbol{P}, \boldsymbol{Q}}  \textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E}_k)
+		\begin{aligned}
+		\max_{\boldsymbol{P}, \boldsymbol{Q}} \sum_{\tau_i \in \boldsymbol{\tau}} & \frac{w_i}{\sum_j w_j} \cdot \mathcal{P}(\tau_i; \textbf{E}) \\
+		& \cdot \mathcal{S}\!\left(Pr(r_i > D_i ; \boldsymbol{P}, \boldsymbol{Q}, \textbf{E}) - \Theta_i\right)
+		\end{aligned}
 		\label{eq_overall_obj}
 	\end{equation}
 	\begin{equation}
-		\rtDist{i} = \mathcal{R}\!\left(\extDist{i}(\textbf{E}_k;q_i),\; \text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q})\right)
+		\rtDist{i} = \mathcal{R}\!\left(\extDist{i}(\textbf{E};q_i),\; \text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q})\right)
 		\label{eq_prob_rta_in_opt}
 	\end{equation}
 	\begin{equation}
@@ -247,25 +126,20 @@ For instance, a rolling average over the most recent $N$ measured execution time
 		\label{eq_important_task_constraint}
 	\end{equation}
 
-        The objective function is defined in \eqref{eq_sp_def}.
-        $\boldsymbol{P}$ denotes the priority assignment vector.
-        In this paper, we adopt fixed-task priority scheduling, so the optimization variable $\boldsymbol{P}$ is the priority assignment for each task.
-        $\textbf{E}_k$ denotes the environment vector estimated online at the $k$-th re-optimization interval.
-
-        Equation~\eqref{eq_prob_rta_in_opt} calculates the probability distribution of the response time $r_i$.
-        $\extDist{i}$ denotes task $\tau_i$'s execution time distribution, and $\boldsymbol{Q}$ represents the tasks' QoS budgets.
-        This paper focuses on the running-time limit as the QoS budget for anytime algorithms.
-        $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q})$ denotes the set of tasks with strictly higher priority than $\tau_i$; its membership is determined by the task set $\boldsymbol{\tau}$ and the priority assignment $\boldsymbol{P}$, while $\boldsymbol{Q}$ is carried as context because computing $\rtDist{i}$ requires the higher-priority tasks' execution-time distributions, which depend on their QoS budgets.
+        The objective \eqref{eq_overall_obj} maximizes the SP metric \eqref{eq_sp_def} over the priority assignment $\boldsymbol{P}$ (under fixed-task priority scheduling) and the QoS budgets $\boldsymbol{Q}$ (here, the running-time limits of anytime algorithms), given the environment vector $\textbf{E}$.
+		Equation~\eqref{eq_prob_rta_in_opt} computes the response-time distribution $\rtDist{i}$ from $\tau_i$'s execution-time distribution $\extDist{i}(\textbf{E};q_i)$ and its higher-priority task set.
+        $\text{hp}(i;\boldsymbol{\tau},\boldsymbol{P},\boldsymbol{Q})$ denotes the higher-priority set $\text{hp}(i)$ of \eqref{eq: rta_scalar} in the task set $\boldsymbol{\tau}$.
 
         Not all tasks are equally safety-critical.
         We therefore designate a subset $\boldsymbol{\tau}^{safe} \subseteq \boldsymbol{\tau}$ of \emph{important tasks}: the tasks whose safety thresholds must be honored as hard constraints.
-        Concretely, $\boldsymbol{\tau}^{safe}$ is taken as the tasks carrying the highest safety weights (the top-$50\%$ by SP weight $w_i$), reflecting that the tasks the designer cares most about should not have their deadlines violated.
-        Equation~\eqref{eq_important_task_constraint} imposes this as an explicit constraint of the optimization: for every important task $\tau_i \in \boldsymbol{\tau}^{safe}$, the deadline-miss probability under the chosen $\{\boldsymbol{P}, \boldsymbol{Q}\}$ must not exceed its safety threshold $\Theta_i$ (the same $\Theta_i$ defined in the safety metric of Section~\ref{eq_safety}).
-        The remaining tasks contribute to the objective \eqref{eq_overall_obj} but are not individually constrained, so the optimizer may trade their safety against overall performance when necessary.
+        Concretely, $\boldsymbol{\tau}^{safe}$ is taken as the tasks carrying the highest safety weights, reflecting that the tasks the designer cares most about should not have their deadlines violated.
+        Equation~\eqref{eq_important_task_constraint} imposes this as an explicit constraint of the optimization: for every important task $\tau_i \in \boldsymbol{\tau}^{safe}$, the deadline-miss probability under the chosen $\{\boldsymbol{P}, \boldsymbol{Q}\}$ must not exceed its safety threshold $\Theta_i$ (the same $\Theta_i$ defined in \eqref{eq_safety}).
+        The non-safety-critical tasks contribute to the system performance objective \eqref{eq_overall_obj} but are not individually constrained, so the scheduler may trade their performance against overall safety-performance when necessary.
 
-        The optimization in \eqref{eq_overall_obj} is solved online by a lightweight incremental algorithm that interleaves priority assignment and QoS-budget optimization; its design is presented in Sections~\ref{section_priority_opt} and~\ref{section_config_opt}.
-        The constraint in \eqref{eq_important_task_constraint} is \emph{not} left to the objective to satisfy softly: the search is constrained to maintain a certified safe fallback so that, at every shipped interval, each important task satisfies $Pr(r_i > D_i) \leq \Theta_i$.
-        This important-task safety guarantee is a built-in property of the framework---not a conditional assumption on a user-supplied execution-time upper bound---and is detailed in Section~\ref{section_safety_fallback}.
+		% This overview is not ncessary in problem definition
+        % The optimization in \eqref{eq_overall_obj} is solved online by a lightweight incremental algorithm that interleaves priority assignment and QoS-budget optimization; its design is presented in Sections~\ref{section_priority_opt} and~\ref{section_config_opt}.
+        % The constraint in \eqref{eq_important_task_constraint} is \emph{not} left to the objective to satisfy softly: the search is constrained to maintain a certified safe fallback so that, at every shipped interval, each important task satisfies $Pr(r_i > D_i) \leq \Theta_i$.
+        % This important-task safety guarantee is a built-in property of the framework---not a conditional assumption on a user-supplied execution-time upper bound---and is detailed in Section~\ref{section_safety_fallback}.
 
 
 
@@ -277,28 +151,16 @@ For instance, a rolling average over the most recent $N$ measured execution time
 \begin{itemize}
     \item \textbf{Mixed combinatorial and continuous variables:} The problem involves both continuous variables (QoS budgets $\boldsymbol{Q}$) and combinatorial variables (the priority assignment $\boldsymbol{P}$).
     \item \textbf{Complicated objective function:} The SP metric's formulation \eqref{eq_sp_def} includes probabilistic components and lacks properties like convexity or continuity, complicating the optimization process.
-    \item \textbf{Limited computation resources:} The optimization problem~\eqref{eq_overall_obj} has to be solved online to be useful as the robot is expected to work under unknown environments.
-    However, most mobile robots are powered by batteries and are equipped with very limited computation resources, most of which are dedicated to major functional tasks such as motion planning and SLAM.
-    Therefore, the optimization algorithm to solve problem~\eqref{eq_overall_obj} must be lightweight, preferably, with only linear run-time complexity.
+    \item \textbf{Limited computation resources:} \eqref{eq_overall_obj} must be solved online under unknown environments, yet mobile robots carry limited computation resources largely consumed by functional tasks such as motion planning and SLAM, so the solver must be lightweight---ideally linear in run-time complexity.
 \end{itemize}
-    These challenging properties together prevent straightforward usage of available optimization frameworks such as convex optimization or linear integer programming.
-    Furthermore, a large body of literatures~\cite{zhao2018unified, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO} that performs offline optimization for similar problems, but with exponential complexities, also cannot be considered.
-    Therefore, a customized optimization algorithm must be developed to efficiently solve the optimization problem in an online environment with good solution quality.
+    These properties rule out general-purpose frameworks such as convex optimization or integer linear programming, as well as the exponential-complexity offline methods of~\cite{zhao2018unified, Wang2023OptimizingLET, Verucchi2020LatencyAwareGO}.
+    A customized online algorithm is therefore required.
 
-	\subsection{Motivation for solution algorithms}
-    Due to the challenges mentioned above, directly leveraging existing optimization frameworks (e.g., integer linear programming) is infeasible.
-    Instead, we analyze the SP metric for exploitable properties to guide algorithm design:
-	\begin{itemize}
-		\item The performance metric only depends on the QoS budget $\boldsymbol{Q}$ and is independent of the priority assignment $\boldsymbol{P}$.
-		\item The safety metric depends on both $\boldsymbol{Q}$ and $\boldsymbol{P}$.
-        However, since not all tasks expose a running-time limit as a tunable QoS budget, the safety metric is primarily influenced by priority assignments.
-        When $\boldsymbol{Q}$ is fixed, the SP metric reduces to a problem similar to classical response time optimization~\cite{Zhao2020AnOF, Wang2023RTAS}.
-		\item Although not always true, typically only a small number of tasks' execution time distributions change between consecutive re-optimization intervals as the robot moves through similar environments.
-        Thus, the optimal priority assignment and QoS budget usually differ from the previous solution by only a small perturbation, motivating an incremental search that warm-starts from the previous solution.
-	\end{itemize}
-    Based on these observations, we propose a divide-and-conquer approach to solve \eqref{eq_overall_obj}.
-    The QoS budgets $\boldsymbol{Q}$ and priority assignment $\boldsymbol{P}$ are optimized separately and then combined.
-    While brute-force methods guarantee optimal solutions, their high computational cost makes them unsuitable for online platforms.
-    Instead, we trade off optimality for computational efficiency by employing heuristics derived from problem analysis and related literature.
-
-    In the following sections, we present new algorithms for online priority assignment optimization based on detailed problem analysis and incorporate execution time optimization into the overall framework.
+	
+	\subsection{Solution Framework Overview}
+    \label{section_solution_overview}
+    The online problem~\eqref{eq_overall_obj} is addressed by a lightweight framework built on two ideas.
+    First, since $\textbf{E}$ changes continuously and re-optimization intervals are short, only a few tasks' distributions change slowly between invocations, so we can each warm-starts an incremental search from the last deployed configuration, and perform incremental optimization to focus on what's changed between scheduelr invocation.
+    Second, the hard constraint~\eqref{eq_important_task_constraint} is enforced by a certified safe fallback---a configuration verified offline via worst-case response-time analysis to satisfy $Pr(r_i > D_i) \leq \Theta_i$ for every $\tau_i \in \boldsymbol{\tau}^{safe}$ and retained across invocations;
+	a candidate is adopted only if it strictly improves the objective \emph{and} satisfies the constraint, otherwise the fallback is shipped.
+    Sections~\ref{section_priority_opt}--\ref{section_safety_fallback} develop the priority, QoS, and fallback components.

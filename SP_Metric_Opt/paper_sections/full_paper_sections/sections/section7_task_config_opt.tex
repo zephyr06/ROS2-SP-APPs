@@ -4,13 +4,13 @@
     Section~\ref{section_priority_opt} optimized the priority assignment $\boldsymbol{P}$ with the QoS budgets $\boldsymbol{Q}$ held fixed.
     This section lifts that restriction and solves the joint problem
     \begin{equation}
-        \max_{\boldsymbol{P},\, \boldsymbol{Q}} \textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E}_k)
+        \max_{\boldsymbol{P},\, \boldsymbol{Q}} \textbf{SP}(\boldsymbol{P}, \boldsymbol{Q}; \textbf{E})
         \label{eq:joint_pa_qos}
     \end{equation}
     subject to the important-task constraint~\eqref{eq_important_task_constraint}, optimizing the priority assignment $\boldsymbol{P}$ and the QoS budgets $\boldsymbol{Q}$ together.
 
     The organizing idea is that a QoS-configurable task ($\tau^Q_i$) is a special kind of environment-dependent task ($\tau^E_i$).
-    Recall from Section~\ref{section_et_model} that an environment-dependent task's execution-time distribution $\extDist{i}$ varies with $\textbf{E}_k$ between re-optimization intervals; flexing a QoS-configurable task's budget $q_i$ likewise changes its $\extDist{i}$ (a larger budget yields a longer, higher-quality execution per Definition~\ref{def_task_config}).
+    Recall from Section~\ref{section_et_model} that an environment-dependent task's execution-time distribution $\extDist{i}$ varies with $\textbf{E}$ between re-optimization intervals; flexing a QoS-configurable task's budget $q_i$ likewise changes its $\extDist{i}$ (a larger budget yields a longer, higher-quality execution per Definition~\ref{def_task_config}).
     Both effects are therefore realized as a change to one task's $\extDist{i}$, so a single incremental optimization framework handles QoS flex and genuine environment change alike.
     The framework is structured so that each step changes exactly one task, which makes every safety-performance evaluation a cache reuse hit under the single-change invariant of Section~\ref{section_rta_cache}; this is what makes collaborative priority and QoS optimization feasible online.
 
@@ -31,7 +31,7 @@
     \label{section_task_serialization}
 
     The queue is built from two disjoint task sets.
-    The first set comprises the environment-dependent tasks ($\tau^E_i$) whose execution-time distributions differ from the previous interval ($\extDist{i}$ changed under $\textbf{E}_k$); the change direction (increase or decrease) is carried with each entry so the handler avoids recomputing it.
+    The first set comprises the environment-dependent tasks ($\tau^E_i$) whose execution-time distributions differ from the previous interval ($\extDist{i}$ changed under $\textbf{E}$); the change direction (increase or decrease) is carried with each entry so the handler avoids recomputing it.
     The second set comprises the QoS-configurable tasks ($\tau^Q_i$), each carrying an anytime algorithm with a discrete time-limit grid $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which the task's QoS budget $q_i$ is selected.
     The two sets are disjoint by construction: a $\tau^Q_i$ task's execution time is governed by its budget rather than by the environment, so it cannot also be a $\tau^E_i$ task whose distribution changed.
     Both sets are merged and sorted by SP weight $w_i$ in descending order, with a stable sort so that equal-weight $\tau^E_i$ and $\tau^Q_i$ tasks retain their insertion order.
