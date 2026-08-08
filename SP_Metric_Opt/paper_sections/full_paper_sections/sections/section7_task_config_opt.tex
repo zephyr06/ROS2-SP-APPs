@@ -66,3 +66,46 @@
 
     The single-change property is structural: each iteration of the serialized loop adjusts exactly one task's execution-time distribution (via a budget change or an environment change) or priority position, and every accepted adjustment is committed as the new champion before the next iteration begins.
     Consequently every evaluation differs from the champion by at most one task, satisfying the $|\mathrm{diff}| \leq 1$ invariant asserted by the cache's single-change check (Section~\ref{section_rta_cache}); the cache's reuse lemmas therefore apply to every step of the collaborative walk.
+
+
+	\subsection{RTA Cache: Reusing Response-Time Computation}
+	\label{section_rta_cache}
+
+    The incremental optimization needs to repeated analyze the response time distribution of the whole task set, even though the task set is very similar among candidate solutions during the searching process.
+    Therefore, following the design that the optimization algorithm iterates through each task one by one, we can design an efficient response time analysis (RTA) cache to significantly speed up RTA.
+
+    In this paper, the rta cache is designed for scenarios where only one task in a task set changes its priority and / or execution time distribution. 
+    This is the most frequent scenario during the incremenatl optimization process.
+    % This single-change restriction is less severe than it appears, because such candidates are precisely the common case in our framework.
+    % The cache holds a \emph{champion}---the current best solution together with the per-task response-time distributions $\rtDist{i}$ it induces---and serves a candidate only when it differs from the champion in at most one task, the \emph{single-change invariant} $|\mathrm{diff}|\le 1$: at most one task $\tau_j$ may change its execution-time distribution $\extDist{j}$, its priority position, or both (a combined change of the same task counts as one); broader changes are rejected and trigger a full recompute.
+    % The trigger is frequently satisfied because the incremental optimizer pivots the previous solution one task at a time (Section~\ref{section_increment_pa}), and the PA+QoS loop of Section~\ref{section_config_opt} is structured so that every step changes exactly one task.
+    % Consequently the cache applies to nearly every evaluation issued online, converting each $O(N)$-task RTA into a recomputation of only the affected tasks.
+% A key property of fixed-priority scheduling is that $\rtDist{k}$ depends only on $\extDist{k}$ and on the execution-time distributions, periods, and \emph{membership} of $\text{hp}(k)$---never on lower-priority tasks or on the order within $\text{hp}(k)$---
+% since the RTA~\eqref{eq_prob_rta} builds $\rtDist{k}$ by convolving $\extDist{k}$ with $\{\extDist{\ell}:\tau_\ell\in\text{hp}(k)\}$ and convolution is commutative.
+  
+    Formally, consider a task set of $n$ tasks, ordered by priority: $\tau_0,\dots,\tau_i,\dots,\tau_j,\dots,\tau_{n-1}$ with $\tau_0$ highest, and let $\text{hp}(k)=\{\tau_0,\dots,\tau_{k-1}\}$.
+    Denote the response time of each task $\tau_k$ as $\rtDist{k}$.
+    A single-change candidate moves $\tau_j$ up to position $i<j$ (moving $\tau_j$ to a lower priority can be analyzed in a similar way), 
+    giving $\tau_0,\dots,\tau_j,\tau_i,\dots,\tau_{n-1}$, and possibly changes $\extDist{j}$.
+    Denote the response time distribution of each task after the change as $\rtDisthat{k}$.
+
+    \begin{lemma}[Higher-priority tasks]
+    \label{lem:rta_hp}
+    For every $k<i$, $\rtDisthat{k}=\rtDist{k}$, regardless of whether $\extDist{j}$ changes.
+    \end{lemma}
+    \noindent\textit{Proof.}
+    In both orderings $\tau_j$ lies below $\tau_k$ (at position $j>k$ before the move, and at position $i>k$ after), so $\tau_j\notin\text{hp}(k)$ in either case and $\text{hp}(k)$ is unchanged. \hfill$\square$
+
+    \begin{lemma}[Lower-priority tasks under a pure priority move]
+    \label{lem:rta_lp_pure_move}
+    If $\extDist{j}$ is unchanged, then for every $k>j$, $\rtDisthat{k}=\rtDist{k}$.
+    \end{lemma}
+    \noindent\textit{Proof.}
+    $\tau_j\in\text{hp}(k)$ in both orderings and the set $\text{hp}(k)$ is identical; only the order within it is permuted. Since the RTA~\eqref{eq_prob_rta} builds $\rtDist{k}$ by convolving the execution-time distributions in $\text{hp}(k)$, and convolution is commutative, $\rtDisthat{k}=\rtDist{k}$. \hfill$\square$
+
+    \begin{lemma}[Cross-core tasks]
+    \label{lem:rta_cross_core}
+    For any task $\tau_k$ on a core other than $\tau_j$'s, $\rtDisthat{k}=\rtDist{k}$.
+    \end{lemma}
+    \noindent\textit{Proof.}
+    Under partitioned scheduling, $\tau_j$ never enters $\text{hp}(k)$, so neither its priority move nor its execution-time change affects $\rtDist{k}$. \hfill$\square$
