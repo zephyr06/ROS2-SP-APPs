@@ -6,6 +6,106 @@
 
 ---
 
+## 2026-08-08
+
+- **P1.29 — in-search important-task gate on the INCR reopt from-scratch beam COMPLETE
+  (NOT committed; `git add`-only; 17/17 ctest).** Completes the INCR side P1.27
+  (`cbdde63b`) left BF-only. The reopt beam ran DISARMED (`ResetIncumbentBaseline(true)`
+  → `rta_cache_active_=false` before the beam → `UpdateRecords` no-op else-branch →
+  SP-max leaf committed unchecked → backstop binary-swaps to RM-Fast). FIX (3 phases):
+  (1) records; (2) behavior-preserving API refactor — `OptimizeFromScratch`/
+  `OptimizeIncre`/`OptimizeIncre_SingleTask` return a new `PriorityOptResult` struct
+  (`{priority_vec, sp_opt, schedulable}`, mirrors `ResourceOptResult`); callers unpack
+  `.priority_vec`; bit-identical; (3) hard-prune at push time —
+  `PriorityPartialPath::UpdateSP` (which ALREADY computes each decided task's FINAL
+  RTA — HP set = the still-unassigned same-processor tasks = its true future HP
+  interferers) returns `false` when `is_important && GetDDL_MissProbability(rta,ddl) >
+  thresholds_node[id]`; `OptimizeFromScratch` skips the `pq.push` on false (plain
+  greedy top-K otherwise). **Reuses the `UpdateSP` RTA (NOT the 4-arg
+  `ImportantTasksMeetThresholds` recompute — user-directed: avoid double RTA cost +
+  order-dependence).** Contract (user-settled 2026-08-08: "this priority optimization
+  doesn't need to consider fallback, if unschedulable, return unschedulable with an
+  empty priority assignment vector"): schedulable → `{priority_vec=<plan>, sp_opt,
+  true}`; unschedulable → `{priority_vec={}, INT_MIN, false}`. The priority optimizer
+  does NOT itself fall back — the explicit `CallOptimizerGivenTimeLimits`→
+  `SeedBaselineAndArmCache`→`ReOptimizePeriodic` wiring was DECLINED; the reopt layer's
+  existing backstop `AdoptFallbackIfUnschedulable`@`:784` handles the unschedulable
+  result (an emptied beam leaves `res_opt_` = pre-reopt incumbent; `UpdateRecords`
+  won't commit `INT_MIN`; verified the empty-beam flow is safe end-to-end).
+  `OptimizeSP_TL_Incre.cpp` UNTOUCHED. Bit-identical w/o `is_important` (prune vacuous).
+  TDD: `tests/testOptimizeIncrePA.cpp` — `InSearchGate_AdoptsSchedulableLeafOverUnschedulableSpMax`
+  (SP-max 0.8 leaf unsched for the important task → prune adopts the 0.2 sched leaf;
+  `EXPECT_NEAR(sp_opt,0.2)`+`schedulable=true`) + `InSearchGate_EmptyBeamReportsUnschedulable`
+  (both tasks important, point-mass RTA 15 > both ddls → beam empties →
+  `EXPECT_FALSE(schedulable)`+`EXPECT_TRUE(priority_vec.empty())`). Does NOT fix P1.28's
+  21/22 incremental collapses (by design — those are ET-drift-at-incremental-intervals,
+  reopt plan schedulable at reopt time). Detail: `agents/active_tasks/P1_29_reopt_in_search_important_gate/`.
+
+- **P1.29 follow-up refinements (NOT committed; `git add`-only; 17/17 ctest).**
+  (1) `UpdateSP` budget-timeout: `if (BFSharedBudgetCancelled())` returned `true`
+  (don't prune) → changed to `return false`. On timeout the RTA + important-task
+  gate below it never run, so a half-evaluated candidate would be pushed ungated
+  (the P1.29 defect resurfacing) with under-counted `sp_lost`. Returning false
+  skips the push; an emptied beam returns the unschedulable contract → backstop.
+  LIVE on the reopt path (the from-scratch beam runs inside the `BFDLSharedBudget`
+  scope @ `Optimize_w_TL_ScratchOrIncre:766`). TDD:
+  `InSearchGate_BudgetTimeoutEmptiesBeam` (`BFDLSharedBudget` + `TIME_LIMIT=0` →
+  `schedulable==false` + `priority_vec.empty()`; non-vacuous — fails under the old
+  `return true`). (2) `OptimizeFromScratch`: `partial_paths.reserve(K)` →
+  `reserve(K * N)` (N = task count). (3) Minimized the P1.29-tagged comment blocks
+  in `OptimizeSP_Incre.{h,cpp}` + `testOptimizeIncrePA.cpp` (≤3 lines, tags
+  dropped). **BF follow-up (SEPARATE commit, NOT P1.29):** apply the same 3
+  updates to the BF path (`OptimizeSP_TL_BF.cpp`/`OptimizeSP_BF.cpp`, the P1.27 BF
+  analogue) — timeout-prune, minimize P1.27 comments, `reserve(K*N)`.
+
+- **P1.28 — root-caused INCR_Reopt_10 interval-SP collapse to 0.527888 (RM-Fast fallback
+  swap-down); fix not yet implemented.** `taskset_2` `INCR_Reopt_10` collapses to 0.527888
+  at intervals 16/21/38/41/44/52 (aggregate 0.855923) while `INCR_WCET` stays 0.885–0.954
+  (0.920009) on the identical taskset. The 0.527888 is the RM-Fast fallback, adopted by the
+  P0.7 trigger **(b-ii) post-walk backstop** `AdoptFallbackIfUnschedulable`
+  (`OptimizeSP_TL_Incre.cpp:1106`) — confirmed 1:1 against `interval_fallback_log.txt`
+  (culprit always task 0, `important`, threshold 0.371116, miss_chance 0.43–0.70 > thr).
+  This is the **INCR analogue of P1.27**: the reopt from-scratch beam runs DISARMED
+  (`ResetIncumbentBaseline(true)` clears the cache before the `from_scratch=true` beam;
+  re-armed only after), so the during-walk gate (b-i, `UpdateRecords:238-258`) is skipped
+  → the SP-max plan is committed with NO schedulability check → the post-hoc backstop
+  binary-swaps it DOWN to RM-Fast instead of re-searching for the schedulable ≥0.93 plan
+  that INCR_WCET reaches. The P1.27 fix `cbdde63b` was **BF-only** and never touched INCR.
+  INCR_WCET is immune only because `use_wcet_execution_time=true` yields a stricter
+  (scheduling-friendlier) ET surface — not a better search. Fix direction: mirror P1.27
+  (in-search gate on the INCR reopt beam; keep the backstop as safety net; bit-identical
+  for legacy no-`is_important` tasksets). Detail: `agents/active_tasks/P1_28_incr_reopt_fallback_swap_down/`.
+
+## 2026-08-05
+
+- **PW.2.1 — moved ET modeling & RTA out of Section V into Section IV (System Models).**
+  Structural re-org (user-directed; one concrete move pulled forward from PW.2's plan-only
+  scope). §V-A "Modelling Execution Time Distribution" → new IV-B subsection right after
+  Computation Tasks; §V-B "Response Time Distribution Analysis" → merged into IV-D
+  Schedulability Analysis (replacing the thin "Check Section~\ref{section_rta}" self-pointer
+  with the full experimental/analytical/comparison content). Section V now opens with the
+  Safety metric and contains only the SP-metric + optimization problem. All moved labels
+  (`section_et_model`, `section_rta`, `eq: et_predict`, `eq: rta_scalar`, `eq_prob_rta`) are
+  global, so every `\ref`/`\eqref` in §6/§7/§9/§10/§V-G still resolves (now back-pointing to
+  §IV). IDE diagnostics clean (only pre-existing cosmetic over/underfull hbox warnings).
+  Task folder: `agents/active_tasks/paper_writing_tasks/PW_2_1_sec5_move_et_rta_to_sysmodel/`.
+  NOTE: section4 one-sentence-per-line reflow deferred to a separate commit per user preference.
+- **PW.2.1 (cont.) — split merged Computation-Tasks+ET block into three Section IV
+  subsections** (folded into PW.2.1; user-directed). After the ET/RTA move, the merged
+  IV-A "Computation Tasks" (task model + ET modeling + task-type defs) was too long, so it
+  was split into: **IV-A Computation Tasks** (task abstraction, period/deadline/ET-distribution
+  defs, Gaussian assumption, + `fig_rts_concepts`) → **IV-B Modelling Execution Time
+  Distribution** (`section_et_model`, `eq: et_predict`) → **IV-C Task Classification** (NEW
+  `\label{section_task_classification}`; reordered so the two task-type defs flow as:
+  distinction sentence → `def_env_task` → motion-planning anytime example → `def_task_config`
+  → QoS simplification note). Resulting §IV order: IV-A → IV-B → IV-C → IV-D Computation
+  Platform → IV-E Schedulability & RTA. The split makes `def_env_task`'s
+  `(Section~\ref{section_et_model})` a back-ref (IV-C→IV-B) instead of a forward ref. All
+  labels still defined exactly once in the build; every live referrer (§4 L134, §7 L13/L52,
+  §14 L21) resolves. IDE diagnostics clean (only pre-existing cosmetic warnings). User's
+  in-progress edit (the "In case of probabilistic execution time distribution… via
+  convolution" sentence in IV-E) preserved. NOT committed.
+
 ## 2026-08-02
 
 - **PW.1.4 revision_plan.md — methodology slice §6–8 DONE** (T-ASE revision). Row-per-subsection
@@ -104,6 +204,22 @@
 - **P2.13/P2.14/P2.15.** P2.13 miss-rate-vs-SP filed (analytic RTA vs empirical miss
   count). P2.14 `SP_THRESHOLD_RANGE: [0.001,0.9]` (scrub `1.0`); P2.15
   `SP_WEIGHT_RANGE: [0.1,1.0]`. 372/372 py green.
+
+## 2026-08-07
+
+- **P1.27 BF < INCR_Reopt_10 — FIX LANDED (uncommitted; cross-link P0.2).** Anomaly:
+  compare_against_bf N=4 run had BF Mean_SP 0.9086 < INCR_Reopt_10 0.9220, violating
+  `INCR ≤ BF`. Gap was ENTIRELY taskset_2: BF run.log showed search FOUND
+  `Optimal SP 0.793→0.963` (≥ INCR 0.954) but reported `0.527888` (RM-Fast fallback).
+  Root cause: P0.10's important-task gate ran POST-enumeration only, so BF adopted
+  the SP-max plan even when it FAILED the gate, then `AdoptRmFastFallbackIfUnschedulable`
+  swapped it DOWN to RM-Fast — even though a schedulable 0.954072 plan existed (which
+  INCR finds via its DURING-WALK gate). Fix: gate each leaf IN-SEARCH in
+  `OptimizePA_with_TimeLimitsStatus::Optimize` recursion (`OptimizeSP_TL_BF.cpp`) —
+  `if (sp_opt > res_opt.sp_opt && ImportantTasksMeetThresholds(dag, sp, pa, tl))`.
+  Post-hoc gate KEPT as safety net. TDD RED→GREEN (`testBF_w_TL.cpp::BF_NotWorseThan_INCR_Reopt`,
+  fixture `test_p127_bf_incr_taskset2_i0.yaml` = taskset_2 interval 0). 17/17 ctest;
+  legacy bit-identical (gate vacuous w/o `is_important`). DEFERRED: end-to-end re-run.
 
 ---
 

@@ -77,7 +77,7 @@ TEST_F(TaskSetForTest_robotics_v6, Compare_PriorityPartialPath) {
 TEST_F(TaskSetForTest_robotics_v6, GetPriorityAssignments) {
     GlobalVariables::Granularity = 10;
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
-    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
+    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2).priority_vec;
     EXPECT_EQ(4, pa_vec1.size());
     EXPECT_EQ("MPC", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("RRT", dag_tasks.tasks[pa_vec1[1]].name);
@@ -102,7 +102,7 @@ class TaskSetForTest_robotics_v7 : public ::testing::Test {
 };
 TEST_F(TaskSetForTest_robotics_v7, GetPriorityAssignments) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
-    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
+    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2).priority_vec;
     EXPECT_EQ(4, pa_vec1.size());
     EXPECT_EQ("MPC", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("RRT", dag_tasks.tasks[pa_vec1[1]].name);
@@ -142,7 +142,7 @@ class TaskSetForTest_robotics_v27 : public ::testing::Test {
 
 TEST_F(TaskSetForTest_robotics_v8, FindTaskWithDifferentEt) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
-    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
+    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2).priority_vec;
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
 }
@@ -359,13 +359,13 @@ TEST_F(TaskSetForTest_robotics_v8, AssignAndUpdateSP) {
 
 TEST_F(TaskSetForTest_robotics_v27, GetPriorityAssignments_IncrementalOpt) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
-    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2);
+    PriorityVec pa_vec1 = opt.OptimizeFromScratch(2).priority_vec;
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[1]].name);
 
     DAG_Model dag_tasks_update = ReadDAG_Tasks(
         GlobalVariables::PROJECT_PATH + "TaskData/test_robotics_v8.yaml", 5);
-    pa_vec1 = opt.OptimizeIncre(dag_tasks_update);
+    pa_vec1 = opt.OptimizeIncre(dag_tasks_update).priority_vec;
     EXPECT_EQ("SLAM", dag_tasks.tasks[pa_vec1[0]].name);
     EXPECT_EQ("TSP", dag_tasks.tasks[pa_vec1[1]].name);
 }
@@ -404,14 +404,15 @@ TEST(OptimizeIncre_SingleTask, Differential_BitIdenticalOnSingleEtChange) {
 
     // Path A: the full OptimizeIncre (baseline seed + one SingleTask call +
     // dag_tasks_ advance).
-    PriorityVec pa_full = optA.OptimizeIncre(dag_update);
+    PriorityVec pa_full = optA.OptimizeIncre(dag_update).priority_vec;
 
     // Path B: the primitive alone, with the SAME baseline seed OptimizeIncre
     // would have computed (the carried PA's SP under the new env). This is the
     // contract: OptimizeIncre_SingleTask TRUSTS opt_sp_ (caller-set).
     optB.opt_sp_ = EvaluateSPWithPriorityVec(dag_update, sp, optB.opt_pa_);
     PriorityVec pa_primitive =
-        optB.OptimizeIncre_SingleTask(dag_update, task_id, et_increased);
+        optB.OptimizeIncre_SingleTask(dag_update, task_id, et_increased)
+            .priority_vec;
 
     // The primitive must reproduce the full method's adopted PA and SP exactly.
     AssertEqualVectorExact<int>(pa_full, pa_primitive, 1e-3, __LINE__);
@@ -553,12 +554,13 @@ TEST(OptimizeIncre_Cache, Differential_BitIdenticalToOracle_OnSingleEtChange) {
 
     // Oracle arm: std::nullopt → legacy EvaluateSPWithPriorityVec per
     // candidate.
-    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update);
+    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update).priority_vec;
 
     // Cache arm: engaged RTACache → Initialize at baseline + Evaluate patch +
     // ObtainSP_Full_From_NodeRTAs scoring + AdoptChampion per adoption.
     RTACache cache;
-    PriorityVec pa_cache = optCache.OptimizeIncre(dag_update, INT_MIN, cache);
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, INT_MIN, cache).priority_vec;
 
     // The cache path must reproduce the oracle's adopted PA and SP exactly.
     AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, __LINE__);
@@ -612,10 +614,11 @@ void ExpectCacheMatchesOracleOnMutation(const DAG_Model& dag_base,
                                 line);
     EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_);
 
-    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update);
+    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update).priority_vec;
 
     RTACache cache;
-    PriorityVec pa_cache = optCache.OptimizeIncre(dag_update, INT_MIN, cache);
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, INT_MIN, cache).priority_vec;
 
     AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, line);
     EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
@@ -699,7 +702,7 @@ TEST(OptimizeIncre_Cache, Differential_LargeEtIncrease_TriggersAdoption) {
             ShiftedFiniteDist(new_mu, 5.0, new_mu - 10.0, new_mu + 10.0);
         OptimizePA_Incre optProbe(dag_base, sp);
         optProbe.OptimizeFromScratch(2);
-        PriorityVec pa_probe = optProbe.OptimizeIncre(cand);
+        PriorityVec pa_probe = optProbe.OptimizeIncre(cand).priority_vec;
         if (pa_probe != pa_carried) {
             adopt_mu = new_mu;
             dag_update = cand;
@@ -740,8 +743,8 @@ TEST(OptimizeIncre_Cache,
     // Oracle arm: two nullopt OptimizeIncre calls on one optimizer.
     OptimizePA_Incre optOracle(dag_base, sp);
     optOracle.OptimizeFromScratch(2);
-    PriorityVec pa_oracle_i1 = optOracle.OptimizeIncre(dag_i1);
-    PriorityVec pa_oracle_i2 = optOracle.OptimizeIncre(dag_i2);
+    PriorityVec pa_oracle_i1 = optOracle.OptimizeIncre(dag_i1).priority_vec;
+    PriorityVec pa_oracle_i2 = optOracle.OptimizeIncre(dag_i2).priority_vec;
 
     // Cache arm: the SAME two calls share ONE RTACache — the second call's
     // Initialize must overwrite the champion state the first call's
@@ -749,8 +752,10 @@ TEST(OptimizeIncre_Cache,
     OptimizePA_Incre optCache(dag_base, sp);
     optCache.OptimizeFromScratch(2);
     RTACache cache;
-    PriorityVec pa_cache_i1 = optCache.OptimizeIncre(dag_i1, INT_MIN, cache);
-    PriorityVec pa_cache_i2 = optCache.OptimizeIncre(dag_i2, INT_MIN, cache);
+    PriorityVec pa_cache_i1 =
+        optCache.OptimizeIncre(dag_i1, INT_MIN, cache).priority_vec;
+    PriorityVec pa_cache_i2 =
+        optCache.OptimizeIncre(dag_i2, INT_MIN, cache).priority_vec;
 
     AssertEqualVectorExact<int>(pa_oracle_i1, pa_cache_i1, 1e-3, __LINE__);
     AssertEqualVectorExact<int>(pa_oracle_i2, pa_cache_i2, 1e-3, __LINE__);
@@ -792,11 +797,12 @@ TEST(OptimizeIncre_Cache, Differential_BaselineSpProvided_ElseBranch) {
         EvaluateSPWithPriorityVec(dag_update, sp, optOracle.opt_pa_);
 
     // Oracle arm: baseline_sp provided, nullopt cache (no Initialize).
-    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update, baseline_sp);
+    PriorityVec pa_oracle =
+        optOracle.OptimizeIncre(dag_update, baseline_sp).priority_vec;
     // Cache arm: baseline_sp provided + engaged RTACache (Initialize-only).
     RTACache cache;
     PriorityVec pa_cache =
-        optCache.OptimizeIncre(dag_update, baseline_sp, cache);
+        optCache.OptimizeIncre(dag_update, baseline_sp, cache).priority_vec;
 
     AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, __LINE__);
     EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
@@ -837,13 +843,90 @@ TEST(OptimizeIncre_Cache,
                                 __LINE__);
     EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_);
 
-    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update);
+    PriorityVec pa_oracle = optOracle.OptimizeIncre(dag_update).priority_vec;
     RTACache cache;
-    PriorityVec pa_cache = optCache.OptimizeIncre(dag_update, INT_MIN, cache);
+    PriorityVec pa_cache =
+        optCache.OptimizeIncre(dag_update, INT_MIN, cache).priority_vec;
 
     AssertEqualVectorExact<int>(pa_oracle, pa_cache, 1e-3, __LINE__);
     EXPECT_DOUBLE_EQ(optOracle.opt_sp_, optCache.opt_sp_)
         << "cache-path SP diverged from oracle-path SP (2-task diff)";
+}
+
+// In-search hard-prune on the from-scratch beam. Two point-mass tasks on one
+// core: RTA is a point mass -> ddl_miss is exactly 0/1 -> SP exact. The SP-max
+// leaf (task 0 low-pri, SP 0.8) leaves the IMPORTANT task 0 unschedulable; the
+// other leaf (task 0 high-pri, SP 0.2) keeps it schedulable. The prune drops the
+// 0.8 leaf, so the beam adopts the 0.2 schedulable leaf (schedulable=true).
+class TaskSetForTest_p129_unschedulable_important : public ::testing::Test {
+   public:
+    void SetUp() override {
+        GlobalVariables::Granularity = 10;
+        FiniteDist et0 = FiniteDist({Value_Proba(5.0, 1.0)});   // point mass
+        FiniteDist et1 = FiniteDist({Value_Proba(10.0, 1.0)});  // point mass
+        tasks.push_back(Task(0, et0, 100, 6, 0));   // IMPORTANT, ddl 6
+        tasks.push_back(Task(1, et1, 100, 12, 1));  // not important, ddl 12
+        tasks[0].processorId = 0;
+        tasks[1].processorId = 0;
+        tasks[0].is_important = true;
+        dag_tasks = DAG_Model(tasks, {}, {1e9});
+        sp_parameters = SP_Parameters(tasks);
+        sp_parameters.weights_node[0] = 0.2;
+        sp_parameters.weights_node[1] = 0.8;
+        sp_parameters.thresholds_node[0] = 0.1;
+        sp_parameters.thresholds_node[1] = 0.1;
+    }
+    TaskSet tasks;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetForTest_p129_unschedulable_important,
+       InSearchGate_AdoptsSchedulableLeafOverUnschedulableSpMax) {
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityOptResult res = opt.OptimizeFromScratch(2);
+
+    // The hard-prune drops the SP-max 0.8 leaf (task 0 low-pri -> important task
+    // 0 unschedulable), so the beam adopts the 0.2 schedulable leaf.
+    EXPECT_NEAR(res.sp_opt, 0.2, 1e-6)
+        << "prune should adopt the 0.2 schedulable leaf; got " << res.sp_opt;
+    EXPECT_TRUE(res.schedulable)
+        << "the surviving leaf keeps the important task schedulable";
+}
+
+// Emptied beam: with BOTH tasks important, every priority order leaves one
+// important task unschedulable, so the prune drops every candidate -> the beam
+// empties -> schedulable=false.
+TEST_F(TaskSetForTest_p129_unschedulable_important,
+       InSearchGate_EmptyBeamReportsUnschedulable) {
+    dag_tasks.tasks[1].is_important = true;  // now both tasks important
+    OptimizePA_Incre opt(dag_tasks, sp_parameters);
+    PriorityOptResult res = opt.OptimizeFromScratch(2);
+
+    EXPECT_FALSE(res.schedulable)
+        << "both orders fail the gate -> emptied beam -> unschedulable";
+    EXPECT_TRUE(res.priority_vec.empty())
+        << "unschedulable result returns an empty priority assignment vector";
+}
+
+// Budget timeout mid-beam: a cancelled budget makes every UpdateSP return false
+// (no half-evaluated path is pushed), so the beam empties and the result is
+// reported unschedulable rather than committing an ungated partial leaf.
+TEST_F(TaskSetForTest_p129_unschedulable_important,
+       InSearchGate_BudgetTimeoutEmptiesBeam) {
+    int saved_time_limit = GlobalVariables::TIME_LIMIT;
+    GlobalVariables::TIME_LIMIT = 0;
+    {
+        BFDLSharedBudget budget(std::chrono::high_resolution_clock::now());
+        OptimizePA_Incre opt(dag_tasks, sp_parameters);
+        PriorityOptResult res = opt.OptimizeFromScratch(2);
+
+        EXPECT_FALSE(res.schedulable)
+            << "a timed-out beam must not commit a half-evaluated leaf";
+        EXPECT_TRUE(res.priority_vec.empty())
+            << "timed-out beam returns an empty priority assignment vector";
+    }
+    GlobalVariables::TIME_LIMIT = saved_time_limit;
 }
 
 int main(int argc, char** argv) {

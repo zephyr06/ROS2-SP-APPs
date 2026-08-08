@@ -273,7 +273,7 @@ TEST(SP_Calculation_Bug, OptimizeFromScratch_SP_Consistency) {
     DAG_Model dag_cur = UpdateExtDistBasedOnTimeLimit(dag, time_limits);
 
     OptimizePA_Incre optimizer(dag_cur, sp_params);
-    PriorityVec pa = optimizer.OptimizeFromScratch(2);
+    PriorityVec pa = optimizer.OptimizeFromScratch(2).priority_vec;
     double opt_sp = optimizer.opt_sp_;
 
     double sum_w = 0;

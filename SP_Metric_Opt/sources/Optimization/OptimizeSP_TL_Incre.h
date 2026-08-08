@@ -483,7 +483,7 @@ class OptimizePA_Incre_with_TimeLimits : public OptimizePA_Incre {
     std::vector<IntervalWalkStats> interval_walk_stats_log_;
 };
 
-inline PriorityVec PerformOptimizePA_Incre_w_TimeLimits(
+inline PriorityOptResult PerformOptimizePA_Incre_w_TimeLimits(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters) {
     OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
     return opt.OptimizeFromScratch(

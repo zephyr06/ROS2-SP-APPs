@@ -20,14 +20,30 @@ class RTACache;
 // cannot. Access: `if (rta_cache) rta_cache->get().Evaluate(...)`.
 using RTACacheOpt = std::optional<std::reference_wrapper<RTACache>>;
 
+// Result of a priority-optimization pass. `schedulable` is the failure-
+// propagation signal (no exception/sentinel). OptimizeFromScratch sets it from
+// the beam: a non-empty leaf is schedulable; an emptied beam (every candidate
+// pruned, or budget timed out) -> false + empty priority_vec. Mirrors
+// ResourceOptResult.
+struct PriorityOptResult {
+    PriorityVec priority_vec;
+    double sp_opt = INT_MIN;
+    bool schedulable = true;
+};
+
 struct PriorityPartialPath {
     PriorityPartialPath() {}
     PriorityPartialPath(const DAG_Model& dag_tasks,
                         const SP_Parameters& sp_parameters);
 
-    void AssignAndUpdateSP(int task_id);
+    // Returns false iff the just-decided task is important AND unschedulable,
+    // or the shared budget timed out.
+    bool AssignAndUpdateSP(int task_id);
 
-    void UpdateSP(int task_id);
+    // Updates sp_lost for the decided task. Returns false iff that task is
+    // important and misses its ddl threshold (its RTA is final: HP set =
+    // unassigned same-proc tasks), or the shared budget timed out.
+    bool UpdateSP(int task_id);
     inline void AssertValidIndex(size_t i) const {
         if (i >= pa_vec_lower_pri.size())
             CoutError("Empty path in GetTaskWeight");
@@ -116,8 +132,9 @@ class OptimizePA_Incre : public OptimimizePA_Base {
 
     // TODO: consider end-to-end latency (e.g. via sp_parameters).
     // Audsley's algorithm with beam search: iteratively assigns the lowest
-    // priority, keeping K partial paths. Updates opt_pa_/opt_sp_, returns opt_pa_.
-    PriorityVec OptimizeFromScratch(int K);
+    // priority, keeping K partial paths. Updates opt_pa_/opt_sp_, returns the
+    // result struct (carries `schedulable` for the reopt fall-back).
+    PriorityOptResult OptimizeFromScratch(int K);
 
     // Incremental re-search over every task whose ET changed since the last
     // dag_tasks_. Seeds opt_sp_ to the carried PA's SP under the new env, then
@@ -134,7 +151,7 @@ class OptimizePA_Incre : public OptimimizePA_Base {
     // oracle. dag_tasks_update arrives ALREADY TL-baked, so the cache is fed the
     // baked DAG + an all-(-1) tl (bakes nothing; sees the final ETs the oracle
     // did → bit-identity).
-    PriorityVec OptimizeIncre(const DAG_Model& dag_tasks_update,
+    PriorityOptResult OptimizeIncre(const DAG_Model& dag_tasks_update,
                               double baseline_sp = INT_MIN,
                               RTACacheOpt rta_cache = std::nullopt);
 
@@ -152,14 +169,14 @@ class OptimizePA_Incre : public OptimimizePA_Base {
     // drifts to |diff|>1 and ComputeTaskSetDifference throws. OptimizeIncre
     // always binds a cache before reaching here, so the legacy oracle arm (nullopt)
     // is only for direct callers/tests.
-    PriorityVec OptimizeIncre_SingleTask(const DAG_Model& dag_tasks_update,
+    PriorityOptResult OptimizeIncre_SingleTask(const DAG_Model& dag_tasks_update,
                                          int task_id, bool et_increased,
                                          RTACacheOpt rta_cache = std::nullopt);
 
     bool IfInitialized() const { return !opt_pa_.empty(); }
 };
 
-inline PriorityVec PerformOptimizePA_Incre(const DAG_Model& dag_tasks,
+inline PriorityOptResult PerformOptimizePA_Incre(const DAG_Model& dag_tasks,
                                            const SP_Parameters& sp_parameters) {
     OptimizePA_Incre opt(dag_tasks, sp_parameters);
     return opt.OptimizeFromScratch(

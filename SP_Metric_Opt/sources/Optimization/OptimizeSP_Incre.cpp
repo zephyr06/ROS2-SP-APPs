@@ -54,22 +54,13 @@ bool CompPriorityPath::operator()(const PriorityPartialPath& lhs,
     }
 }
 
-void PriorityPartialPath::UpdateSP(int task_id) {
-    // The INCR beam search (OptimizeFromScratch) calls UpdateSP once per
-    // partial-path node, and each call runs a GetRTA_OneTask that does
-    // NOT flow through the guarded EvaluateSPWithPriorityVec. Without a poll
-    // here, a from-scratch descent (interval 0 / reopt) can spend the whole
-    // budget inside the beam search before the first EvaluateSPWithPriorityVec
-    // entry-check ever fires — so a zero TIME_LIMIT would still run the full
-    // N-level beam. Poll the shared budget at the top of each node: bailing
-    // early leaves sp_lost under-counted for the abandoned partial path, which
-    // only makes that path LOSE the beam's priority_queue comparison (it ranks
-    // as if it lost less SP than it really did — but a cancelled search is
-    // discarding the whole descent anyway, so the ranking is moot). Inert
-    // (returns false) outside a BFDLSharedBudget scope, i.e. for every non-INCR
-    // caller of OptimizeFromScratch and for in-budget INCR runs.
+bool PriorityPartialPath::UpdateSP(int task_id) {
+    // Poll the shared budget at each node so a from-scratch beam (interval 0 /
+    // reopt) can't overrun TIME_LIMIT. On timeout return false: a half-evaluated
+    // path whose important-task gate never ran must not be pushed (it would
+    // commit an ungated leaf). Inert outside a BFDLSharedBudget scope.
     if (BFSharedBudgetCancelled())
-        return;
+        return false;
     TaskSet hp_tasks;
     hp_tasks.reserve(tasks_to_assign.size());
     for (int task_hp_id : tasks_to_assign) {
@@ -85,26 +76,34 @@ void PriorityPartialPath::UpdateSP(int task_id) {
         ObtainSP({rta_curr}, {dag_tasks.tasks[task_id].deadline},
                  {sp_parameters.thresholds_node[task_id]}, {effective_weight});
     sp_lost += effective_weight - sp_cur;
+    // Decided task's RTA is final (HP set = unassigned same-proc tasks). An
+    // important task missing its ddl threshold -> this path is unschedulable.
+    if (dag_tasks.tasks[task_id].is_important &&
+        GetDDL_MissProbability(rta_curr, dag_tasks.tasks[task_id].deadline) >
+            sp_parameters.thresholds_node[task_id])
+        return false;
+    return true;
 }
 
-void PriorityPartialPath::AssignAndUpdateSP(int task_id) {
+bool PriorityPartialPath::AssignAndUpdateSP(int task_id) {
     if (tasks_to_assign.count(task_id)) {
         tasks_to_assign.erase(task_id);
-        UpdateSP(task_id);
-
+        bool schedulable = UpdateSP(task_id);
         pa_vec_lower_pri.push_back(task_id);
-    } else
-        CoutError("Task" + std::to_string(task_id) + " already assigned");
+        return schedulable;
+    }
+    CoutError("Task" + std::to_string(task_id) + " already assigned");
+    return true;
 }
 
-PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
+PriorityOptResult OptimizePA_Incre::OptimizeFromScratch(int K) {
     PriorityVec priority_assignments = {};
     int lowest_priority = 0;
     int highest_priority = lowest_priority + N - 1;
 
     std::vector<PriorityPartialPath> partial_paths(
         1, PriorityPartialPath(dag_tasks_, sp_parameters_));
-    partial_paths.reserve(K);
+    partial_paths.reserve(K * N);
 
     for (int curr_priority = lowest_priority; curr_priority <= highest_priority;
          curr_priority++) {
@@ -116,16 +115,18 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
             PriorityPartialPath& path = partial_paths[path_index];
             for (int task_id : path.tasks_to_assign) {
                 PriorityPartialPath new_path = path;
-                new_path.AssignAndUpdateSP(task_id);
-                pq.push(new_path);
-                if (GlobalVariables::debugMode) {
-                    std::cout << "Priority " << curr_priority << ":\n";
-                    std::cout << "SP lost: " << new_path.sp_lost << " ";
-                    std::cout << "partial paths:\n";
-                    for (int j = 0; j < new_path.pa_vec_lower_pri.size(); j++) {
-                        std::cout << new_path.pa_vec_lower_pri[j] << " ";
+                if (new_path.AssignAndUpdateSP(task_id)) {
+                    pq.push(new_path);
+                    if (GlobalVariables::debugMode) {
+                        std::cout << "Priority " << curr_priority << ":\n";
+                        std::cout << "SP lost: " << new_path.sp_lost << " ";
+                        std::cout << "partial paths:\n";
+                        for (int j = 0; j < new_path.pa_vec_lower_pri.size();
+                             j++) {
+                            std::cout << new_path.pa_vec_lower_pri[j] << " ";
+                        }
+                        std::cout << "\n";
                     }
-                    std::cout << "\n";
                 }
             }
         }
@@ -134,6 +135,8 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
             partial_paths.push_back(pq.top());
             pq.pop();
         }
+        if (partial_paths.empty())
+            break;  // every candidate pruned -> beam emptied
 
         if (GlobalVariables::debugMode) {
             std::cout << "Priority " << curr_priority << ":\n";
@@ -148,6 +151,12 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
             }
         }
     }
+    if (partial_paths.empty()) {
+        // Every leaf pruned (or budget timed out) -> no schedulable plan.
+        opt_pa_.clear();
+        opt_sp_ = INT_MIN;
+        return {PriorityVec{}, opt_sp_, /*schedulable=*/false};
+    }
     PriorityVec res = partial_paths[0].pa_vec_lower_pri;
     std::reverse(res.begin(), res.end());
     opt_pa_ = res;
@@ -160,7 +169,7 @@ PriorityVec OptimizePA_Incre::OptimizeFromScratch(int K) {
     // But that method doesn't exactly generate the same result as directly
     // calling evaluting SP
     opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_, sp_parameters_, opt_pa_);
-    return res;
+    return {res, opt_sp_, /*schedulable=*/true};
 }
 
 std::vector<int> FindTasksWithFlexibleTimeLimits(const DAG_Model& dag_tasks) {
@@ -301,7 +310,7 @@ PriorityChangeStatus AnalyzePriorityChangeStatus(
     }
 }
 
-PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
+PriorityOptResult OptimizePA_Incre::OptimizeIncre_SingleTask(
     const DAG_Model& dag_tasks_update, int task_id, bool et_increased,
     RTACacheOpt rta_cache) {
     // Assumes EXACTLY ONE task's ET changed (task_id). Trusts opt_sp_ as the
@@ -356,10 +365,10 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
             }
         }
     }
-    return opt_pa_;
+    return {opt_pa_, opt_sp_, /*schedulable=*/true};
 }
 
-PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
+PriorityOptResult OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
                                             double baseline_sp,
                                             RTACacheOpt rta_cache) {
     if (opt_pa_.size() == 0) {
@@ -453,6 +462,9 @@ PriorityVec OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_update,
     // against the OLD dag_tasks_, so this only matters for subsequent diffs
     // inside this call.
     dag_tasks_ = dag_tasks_update;
-    return opt_pa_;
+    // schedulable=true: the incremental walk's schedulability is gated by the
+    // during-walk gate (UpdateRecords) + backstop, not by this field.
+    return {opt_pa_, opt_sp_, /*schedulable=*/true};
 }
+
 }  // namespace SP_OPT_PA
