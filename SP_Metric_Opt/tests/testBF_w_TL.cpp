@@ -154,6 +154,36 @@ TEST_F(TaskSetForTest_robotics_v19, EnumeratePA_with_TimeLimits_2) {
               << std::endl;
 }
 
+// P1.27 — BF must never score below INCR on the same taskset (P0.2 invariant:
+// INCR <= BF). Taskset_2 interval 0 of the compare_against_bf run: BF adopted
+// the SP-max plan, the post-hoc important-task gate rejected it, and BF fell
+// back to RM-Fast (SP 0.527888) while INCR's during-walk gate found the
+// schedulable SP-max plan (0.954072). Fixture = that interval's taskset.
+class TaskSetForTest_p127_taskset2_i0 : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string file_name = "test_p127_bf_incr_taskset2_i0";
+        std::string path =
+            GlobalVariables::PROJECT_PATH + "TaskData/" + file_name + ".yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetForTest_p127_taskset2_i0, BF_NotWorseThan_INCR_Reopt) {
+    ResourceOptResult res_bf =
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+
+    OptimizePA_Incre_with_TimeLimits opt_incr(dag_tasks, sp_parameters);
+    opt_incr.ReOptimizePeriodic(dag_tasks, 2);
+    ResourceOptResult res_incr = opt_incr.CollectResults();
+
+    EXPECT_GE(res_bf.sp_opt, res_incr.sp_opt)
+        << "BF " << res_bf.sp_opt << " < INCR " << res_incr.sp_opt;
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

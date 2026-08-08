@@ -49,7 +49,12 @@ void OptimizePA_with_TimeLimitsStatus::Optimize(
         ResourceOptResult res_cur =
             OptimizePA_BruteForce(dag_tasks_cur, sp_parameters);
         res_cur.SaveTimeLimits(dag_tasks.tasks, time_limit_for_task);
-        if (res_cur.sp_opt > res_opt.sp_opt) {
+        // P1.27 — gate each leaf in-search; else BF adopts the SP-max plan, the
+        // post-hoc gate swaps it to RM-Fast, and BF < INCR. Vacuous w/o important.
+        if (res_cur.sp_opt > res_opt.sp_opt &&
+            ImportantTasksMeetThresholds(dag_tasks, sp_parameters,
+                                         res_cur.priority_vec,
+                                         time_limit_for_task)) {
             res_opt = res_cur;
         }
         return;
