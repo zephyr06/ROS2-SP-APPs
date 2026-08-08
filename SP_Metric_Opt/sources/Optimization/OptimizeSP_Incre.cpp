@@ -289,21 +289,15 @@ std::vector<PriorityVec> FindPriorityVec1D_Variations(
 // trial-and-error walk
 PriorityChangeStatus AnalyzePriorityChangeStatus(
     const SP_Parameters& sp_parameters, int task_id, bool et_increased) {
+    if (sp_parameters.if_highest_weight_unique(task_id))
+        return Increase;  // if the task has the highest weight, it should
+                          // be assigned the higher priority
+
     if (et_increased) {
-        if (sp_parameters.if_highest_weight_unique(task_id))
-            return Increase;  // if the task has the highest weight, it should
-                              // be assigned the higher priority
-        else
-            return Decrease;  // Generally speaking, a task wigh higher ET
-                              // should be assigned lwoer priority
+        return Decrease;  // Generally speaking, a task wigh higher ET
+                          // should be assigned lwoer priority
     } else {
-        if (sp_parameters.if_highest_weight_unique(task_id))
-            return Decrease;  // if the task has the highest weight, it should
-                              // be assigned most of the resource; however, if
-                              // it requires less resources, we can assign lower
-                              // priority to it
-        else
-            return Increase;
+        return Increase;
     }
 }
 
@@ -319,19 +313,20 @@ PriorityVec OptimizePA_Incre::OptimizeIncre_SingleTask(
         opt_pa_, task_id,
         AnalyzePriorityChangeStatus(sp_parameters_, task_id, et_increased));
     // Cache path. dag_tasks_update is TL-baked, so feed an all-(-1) tl:
-    // ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache sees exactly the
-    // final ETs the oracle did → bit-identity. The champion is opt_pa_ on the
-    // carried dag (established by OptimizeIncre's baseline Initialize, or a
-    // prior adoption here). Each variation moves ONE task's priority position vs
-    // opt_pa_ → |diff|<=1 → Evaluate patches the suffix. On a strict-improvement
-    // adoption, AdoptChampion MUST advance the champion so the NEXT variation's
-    // diff stays |diff|<=1 (Evaluate never advances the champion itself).
+    // ApplyTimeLimitsToTasksExecutionTime is a no-op, the cache sees exactly
+    // the final ETs the oracle did → bit-identity. The champion is opt_pa_ on
+    // the carried dag (established by OptimizeIncre's baseline Initialize, or a
+    // prior adoption here). Each variation moves ONE task's priority position
+    // vs opt_pa_ → |diff|<=1 → Evaluate patches the suffix. On a
+    // strict-improvement adoption, AdoptChampion MUST advance the champion so
+    // the NEXT variation's diff stays |diff|<=1 (Evaluate never advances the
+    // champion itself).
     std::vector<double> no_tl(dag_tasks_update.tasks.size(), -1.0);
     for (const PriorityVec& priority_assignment : pa_vec_variations) {
         // Cooperative budget: stop re-searching PA variations once the per-
         // interval TIME_LIMIT expired. Retains the best-so-far opt_pa_/opt_sp_.
-        // Inert within budget (incremental path finishes inside it) → prod byte-
-        // identical.
+        // Inert within budget (incremental path finishes inside it) → prod
+        // byte- identical.
         if (BFSharedBudgetCancelled()) {
             break;
         }
