@@ -6,6 +6,45 @@
 
 ---
 
+## 2026-08-09
+
+- **P1.28 — R1–R5 follow-up COMPLETE (git add-only, pending user commit; 17/17 ctest;
+  release RunSpeedTest PASS).** Builds on the committed fix `393aab0a` (fallback-seed
+  on unschedulable incumbent in `SeedBaselineAndArmCache`). User follow-up requirements:
+  (1) audit the initial solution's schedulability whenever `enable_fallback_use_`,
+  independent of `HasSafeFallback()`; (2) stop re-computing RTAs for that audit.
+  - **R1–R3 (`TasksSP` refactor):** new `struct TasksSP { double sp_value = INT_MIN;
+    bool important_tasks_schedulable = true; }` in `SP_Metric.h`; the flag folds into
+    the EXISTING per-task SP loop in `ObtainSP_TaskSet` (`is_important &&
+    ddl_miss_chance > threshold`), so it rides the SP eval — ZERO extra RTA eval.
+    Plumbed through `ObtainSP_DAG` (both overloads; node-level flag, chains add
+    `.sp_value` only) and `EvaluateSPWithPriorityVec` (P1.14 cancel →
+    `{INT_MIN, true}`). `sp_value` arithmetic order unchanged (bit-identical).
+  - **R4 (`SeedBaselineAndArmCache`):** reads
+    `baseline_eval.important_tasks_schedulable`; guard restructured to
+    `enable_fallback_use_ && !important_tasks_schedulable && HasSafeFallback()`
+    (audit runs every fall-back-enabled interval — no `HasSafeFallback()` short-circuit,
+    requirement 1; the separate 3-arg `ImportantTasksMeetThresholds` fresh-RTA call is
+    GONE — requirement 2). Truth-table identical to HEAD (flag ≡ gate verdict,
+    bit-identical by construction).
+  - **R5 (verify):** `cmake --build build_test --target check.SP_OPT -j5` → 17/17 PASS
+    after each stage; `cmake --build release -j5 && ./tests/RunSpeedTest` → OVERALL
+    PASS (INCR_Reopt_1 0.026 s/int, INCR_Reopt_10 0.015 s/int; threshold 0.1) —
+    `TasksSP` adds no measurable overhead.
+  - New TDD: `ObtainSP_TaskSet_ReportsImportantTaskSchedulability`,
+    `ObtainSP_DAG_ReportsImportantTaskSchedulability`,
+    `SeedBaselineAndArmCache_KeepsCarriedIncumbentWhenUnschedulableWithoutFallback`
+    (the prior P1.28 test stays GREEN via the flag path).
+  - Records synced: `memory/p128-...md` (CORRECTION 3 + committed + R1–R4),
+    `MEMORY.md` one-liner, `overall_tasks.md` P1.28 row, task `goal.md`/`dev_log.md`.
+  - NOTE for committer: R3 and R4 both touch `OptimizeSP_TL_Incre.cpp` +
+    `tests/testIncreOpt_w_TL.cpp`, so those two files combine `.sp_value` call sites
+    (R3) and the guard restructure (R4); to split, `git restore --staged` then
+    `git add -p`.
+  - DEFERRED: e2e comparison re-run of `taskset_2` INCR_Reopt_10 (confirm the
+    16/21/38/41/44/52 collapses now reach ≈0.90–0.93) — to run with the deferred
+    P1.27/P1.29 sweep re-runs.
+
 ## 2026-08-08
 
 - **P1.29 — in-search important-task gate on the INCR reopt from-scratch beam COMPLETE
@@ -259,7 +298,65 @@
   fixture `test_p127_bf_incr_taskset2_i0.yaml` = taskset_2 interval 0). 17/17 ctest;
   legacy bit-identical (gate vacuous w/o `is_important`). DEFERRED: end-to-end re-run.
 
+## 2026-08-08
+
+- **P1.28 INCR_Reopt_10 0.527888 collapse — FIX DIRECTION DECIDED (user).** Root cause
+  (verified, CORRECTION 3): at incremental intervals, ET drift pushes last interval's
+  carried plan over an important task's threshold (task 0, thr 0.371116, miss 0.435 >
+  thr). The incremental walk's `WouldBeatIncumbent` (`OptimizeSP_TL_Incre.cpp:195`) is
+  STRICT-SP-greater, so the schedulable (SP-lowering) plan is rejected as "not
+  improving" → 0 improving challengers → the b-i during-walk gate (`UpdateRecords:238`,
+  runs only on SP-improving challengers) never engages → walk ends on the unschedulable
+  SP-max incumbent → post-hoc backstop `AdoptFallbackIfUnschedulable:1106` binary-swaps
+  to RM-Fast (0.527888) instead of searching for the best schedulable plan. (Reopt
+  intervals 0/10/20/30/40/50 are all high-SP `kept_walk`; the collapses are incremental,
+  one step after a schedulable reopt. P1.29's reopt in-search gate does NOT fix this.)
+  **DECIDED fix (user principle: "the schedulers have to start with a solution that is
+  schedulable"):** in `SeedBaselineAndArmCache`'s Incremental branch (`:520-537`), after
+  re-scoring the carried plan under the new interval's ET (`:534-535`) and before
+  `CommitIncumbent` (`:536`), run `ImportantTasksMeetThresholds(dag_baseline, sp, opt_pa_)`
+  (3-arg TL-pre-baked overload); on false (unschedulable), seed the walk from the
+  guaranteed-schedulable safe fallback (`safe_fallback_`, P0.6 static solution = DM +
+  important-first group lock, certified on the cross-interval worst-case DAG) instead of
+  the unschedulable incumbent. **Why it works:** the incremental path arms the cache
+  (`rta_cache_active_=true` `:525`), so the existing b-i gate is ACTIVE — climbing from a
+  schedulable base, every adopted SP-improving challenger must pass the schedulability
+  gate → converges to the best schedulable plan (≈0.90–0.93; BF reaches it exhaustively),
+  never worse than the 0.527888 seed. `WouldBeatIncumbent`/`UpdateRecords`/reopt
+  beam/backstop all UNCHANGED. Legacy bit-identical (no `is_important` → check vacuous).
+  Distinct from Option A (re-search) and Option C (constraint-aware compare-and-keep);
+  both NOT chosen. Fix NOT yet implemented (TDD RED→GREEN→verify pending).
+
+- **P1.28 fix IMPLEMENTED** (git add-only, NOT committed; 17/17 ctest green). One
+  guarded branch in `SeedBaselineAndArmCache`'s Incremental branch
+  (`OptimizeSP_TL_Incre.cpp:536-549`): on `enable_fallback_use_ && HasSafeFallback()
+  && !ImportantTasksMeetThresholds(dag_baseline, sp, opt_pa_)` for the re-scored
+  carried incumbent, `AdoptSafeFallbackAsIncumbent()` + refresh
+  `starting_time_limits`/`current_config_sp` from the fallback; else the old
+  `CommitIncumbent(opt_pa_, …)` unchanged. Cache-safe (freshly-cleared cache →
+  `Initialize`, no `|diff|>1` throw) and `opt_sp_` fresh (fallback re-scored under
+  the absorbed dag). Legacy bit-identical. TDD
+  `SeedBaselineAndArmCache_SeedsFromFallbackWhenCarriedIncumbentUnschedulable`
+  (`testIncreOpt_w_TL.cpp`): staged schedulable fallback (TL 400) vs unschedulable
+  carried incumbent (TL 1000) → asserts seed swaps to the fallback TL, walk TL
+  vector tracks, seeded incumbent passes the gate. DEFERRED: e2e comparison re-run
+  (confirm the 16/21/38/41/44/52 collapses now reach ≈0.90–0.93).
+
 ---
 
 > Pre-2026-07-25 milestones (pipeline foundation, multi-core/period, incumbent
 > redesign, RTA cache evolution) are in the archived log linked above.
+
+- **P1.28 safe-default follow-up** (git add-only; 17/17 ctest green). User flagged
+  that `TasksSP::important_tasks_schedulable` defaulted `true` in 3 spots, so a
+  mid-eval `BFSharedBudgetCancelled()` early return (ObtainSP_TaskSet, ObtainSP_DAG,
+  EvaluateSPWithPriorityVec's two cancel sentinels) would report a false "all clear"
+  on an INCOMPLETE per-task eval. Pattern C fix (mirrors P1.29 budget-timeout-returns-
+  false): struct default → `false` (SP_Metric.h); `ObtainSP_TaskSet` rewritten to track
+  an `any_important_miss` accumulator and set `= !any_important_miss` ONLY on full-loop
+  completion — the cancel bail keeps the `false` default, the no-miss completion path
+  stays vacuous-true (bit-identical on consuming seed-audit paths where BF budget is
+  inactive). Both `EvaluateSPWithPriorityVec` sentinels → `{INT_MIN, false}`.
+  TDD `ObtainSP_TaskSet_BudgetCancelIsUnschedulable` (tests/testSP.cpp; RED→GREEN).
+  Release RunSpeedTest PASS (INCR_Reopt_1 0.030423 s/int, INCR_Reopt_10 0.021301 s/int;
+  no regression). Staged: SP_Metric.h, SP_Metric.cpp, OptimizeSP_Base.cpp, testSP.cpp.

@@ -1,0 +1,67 @@
+{
+    "_comment": "Focused A/B config for the incremental PA re-search direction heuristic (explore-incremental-pa-heuristic-direction.md). Runs ONLY INCR_Reopt_10 (the prod arm) so the comparison isolates AnalyzePriorityChangeStatus. The flag itself lives in sources/parameters.yaml (pa_research_heuristic_variant: 0=baseline / 1=remove ET-down+highest rule / 2=OpenToAll); this config does NOT touch it. A/B procedure: (1) flag=0 + RERUN_MODE=clear_all -> baseline; (2) flip flag in parameters.yaml + RERUN_MODE=clear_results -> variant on identical tasksets. Compare Mean_SP_Metric in comparison_summary.csv.",
+
+    "test_mode": {
+        "num_tasks_for_cross_task_comparison": [8, 10],
+        "num_tasks_for_single_task_figures": 8,
+        "num_tasksets_to_generate": 5,
+        "simulation_duration_seconds": 300,
+        "scheduler_trigger_interval_seconds": 10,
+        "time_limit_seconds": 1,
+        "main_scheduler_list": ["INCR_Reopt_10"],
+        "ablation_scheduler_list": ["INCR_Reopt_10"],
+        "interval_sweep_seconds_list": [10],
+        "parallel_worker_processes": 4,
+        "enable_execution_time_profiling": false,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1,
+        "eval_quality_task_counts": [8],
+        "eval_overhead_task_count": 8,
+        "eval_period_arms": ["INCR_Reopt_10"]
+    },
+    "prod_mode": {
+        "num_tasks_for_cross_task_comparison": [8, 10],
+        "num_tasks_for_single_task_figures": 10,
+        "num_tasksets_to_generate": 5,
+        "simulation_duration_seconds": 300,
+        "scheduler_trigger_interval_seconds": 10,
+        "time_limit_seconds": 1,
+        "main_scheduler_list": ["INCR_Reopt_10"],
+        "ablation_scheduler_list": ["INCR_Reopt_10"],
+        "interval_sweep_seconds_list": [10],
+        "parallel_worker_processes": 4,
+        "enable_execution_time_profiling": false,
+        "export_detail_level": 1,
+        "base_random_seed": 1000,
+        "number_of_gmm_trace_instances_per_path": 1,
+        "eval_quality_task_counts": [8, 10],
+        "eval_overhead_task_count": 10,
+        "eval_period_arms": ["INCR_Reopt_10"]
+    },
+    "plotting": {
+        "font_base_size_points": 14,
+        "font_axis_label_size_points": 16,
+        "font_title_size_points": 18,
+        "output_resolution_dpi": 300,
+        "color_palette_name": "colorblind",
+        "grid_line_alpha": 0.5,
+        "figure_width_inches_single": 8,
+        "figure_height_inches_single": 6,
+        "figure_width_inches_grouped": 12,
+        "figure_height_inches_grouped": 6,
+        "enable_statistical_annotation": false,
+        "output_format_list": ["png"],
+        "run_name_prefix": "pa_heuristic_ab"
+    },
+    "analysis": {
+        "important_task_top_percentage": 0.10,
+        "minimum_important_tasks_count": 1,
+        "discard_early_intervals_for_sp_computation": 0,
+        "enable_resume_from_existing_results": true,
+        "skip_generation_if_exists": true,
+        "on_taskset_config_change": "regenerate",
+        "normalize_sp": true,
+        "sp_normalization_method": "upper_bound"
+    }
+}
