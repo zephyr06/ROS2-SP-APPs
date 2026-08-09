@@ -21,14 +21,34 @@
     \subsection{Task Serialization}
     \label{section_task_serialization}
 
-    The queue is built from two disjoint task sets.
-    The first set comprises the environment-dependent tasks ($\tau^E_i$) whose execution-time distributions differ from the previous interval ($\extDist{i}$ changed under $\textbf{E}$); the change direction (increase or decrease) is carried with each entry so the handler avoids recomputing it.
-    The second set comprises the QoS-configurable tasks ($\tau^Q_i$), each carrying an anytime algorithm with a discrete time-limit grid $\boldsymbol{q-i} = \{q_i^{(0)}, q_i^{(1)}, \dots\}$, from which the task's QoS budget $q_i$ is selected.
-    The two sets are disjoint by construction: a $\tau^Q_i$ task's execution time is governed by its budget rather than by the environment, so it cannot also be a $\tau^E_i$ task whose distribution changed.
-    Both sets are merged and sorted by SP weight $w_i$ in descending order, with a stable sort so that equal-weight $\tau^E_i$ and $\tau^Q_i$ tasks retain their insertion order.
-    Ordering by weight ensures the task with the largest contribution to the SP metric is optimized first.
+    As introduced in Section~\ref{section: system_model_tasks}, the system has 2 types of tasks: environment-dependent tasks ($\tau^E_i$) whose execution-time distributions are decided by external environment, 
+    and QoS-configurable tasks ($\tau^Q_i$) whose execution-time distributions are decided by the internal schedulers.
+    To utilize the incremental priority optimization algorithms proposed before, we first sort all the tasks based on their importance and perform optimization to them one by one.
 
-    The initial QoS budget $\boldsymbol{Q}^{(0)}$ for each $\tau^Q_i$ task is set to the grid option closest to the task's pre-optimization execution time, anchoring the walk to the carried configuration.
+    \subsection{Finding the Initial Solution Before Searching}
+    \label{section_initial_solution}
+
+    The compare-and-keep structure of the walk---and the single-change invariant $|\mathrm{diff}|\le 1$ that the RTA cache relies on (Section~\ref{section_rta_cache})---requires a \emph{champion} to exist before the first step: a deployed configuration $\{\boldsymbol{P},\boldsymbol{Q}\}$ together with its SP score and the per-task response-time distributions $\rtDist{i}$ it induces.
+    Finding this initial solution is therefore a prerequisite of the search, not a part of it, and it is handled in two regimes that mirror the two descent modes of Section~\ref{section_increment_pa}.
+
+    \textbf{Cold-start seed (interval~0).}
+    When the optimizer has no prior incumbent---at the first interval, or whenever a from-scratch re-optimization is triggered with no carried state---it constructs a feasible seed directly rather than searching for one.
+    The priority assignment is set by Deadline Monotonic (DM) ordering, $\boldsymbol{P}_{\mathrm{DM}}$, which sorts tasks by deadline ascending; this is preferred over Rate Monotonic because the task set uses constrained deadlines, $D_i = T_i \cdot U(0.5,1.0)$, so the deadline---not the period---is the correct priority key.
+    Each QoS-configurable task $\tau^Q_i$ is placed at the smallest budget on its grid, $\boldsymbol{Q}_{\min}$, the option that induces the least interference and is therefore the most likely to be schedulable.
+    The pair $\{\boldsymbol{P}_{\mathrm{DM}},\boldsymbol{Q}_{\min}\}$ is scored once under the current execution-time distributions and committed as the champion; the search then proceeds outward from this point.
+
+    \textbf{Warm-started re-score (subsequent intervals).}
+    At every later interval the optimizer carries the previous interval's adopted champion forward.
+    Because the serialized loop of Section~\ref{section_config_opt} must honor the weight-sorted dispatch order, the carried $\{\boldsymbol{P},\boldsymbol{Q}\}$ is \emph{re-scored} under the interval's drifted execution-time distributions but \emph{not} re-optimized: this is a $|\mathrm{diff}|=0$ full-reuse hit in the RTA cache, so it costs no extra response-time analysis.
+    The re-scored value seeds the strict-improvement guard that the walk compares against.
+
+    \textbf{Schedulable seed via the certified fallback.}
+    A subtlety of strict-SP compare-and-keep is that it never accepts an SP-lowering move, even one that restores schedulability; a walk that begins from an unschedulable incumbent can therefore terminate on an unschedulable SP-maximal configuration even when schedulable plans of slightly lower SP exist.
+    To prevent this, the seed is audited for important-task schedulability at the moment it is scored---again at zero additional RTA cost, since the response-time distributions needed for the constraint $Pr(r_i > D_i) \leq \Theta_i$ of \eqref{eq_important_task_constraint} are exactly those already computed for the SP evaluation.
+    If the carried incumbent violates the constraint and a certified safe fallback is available, the fallback's $\{\boldsymbol{P},\boldsymbol{Q}\}$---certified offline against a cross-interval worst-case execution-time distribution that stochastically dominates every interval---is adopted as the seed in its place.
+    The walk thus always climbs the SP metric from a schedulable base; the offline construction and adoption contract of this fallback are the subject of Section~\ref{section_safety_fallback}.
+
+    In all regimes the cache is armed \emph{after} the seed is committed: the seed is a $|\mathrm{diff}|=0$ champion, so adopting it is a full-reuse hit, and every subsequent single-task step of the walk satisfies $|\mathrm{diff}|\le 1$ against it.
 
     \subsection{QoS-Budget Trial-and-Error Walk}
     \label{section_qos_walk}
