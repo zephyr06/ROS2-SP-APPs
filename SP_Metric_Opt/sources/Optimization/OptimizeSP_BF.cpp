@@ -23,7 +23,8 @@ void OptimizePA_BF::IterateAllPAs(
 
         // double sp_eval = ObtainSP_DAG(dag_tasks_eval, sp_parameters_);
         double sp_eval = EvaluateSPWithPriorityVec(dag_tasks_, sp_parameters_,
-                                                   priority_assignment);
+                                                   priority_assignment)
+                             .sp_value;
         PrintPA_IfDebugMode(priority_assignment, sp_eval);
         // P1.29 BF analogue — gate each candidate in-search: adopt only if it
         // both beats the incumbent SP AND keeps every important task
@@ -55,7 +56,7 @@ void OptimizePA_BF::IterateAllPAs(
 PriorityVec OptimizePA_BF::Optimize() {
     if(GlobalVariables::debugMode==1)
         BeginTimer("OptimizeBF_All");
-    double initial_sp = ObtainSP_DAG(dag_tasks_, sp_parameters_);
+    double initial_sp = ObtainSP_DAG(dag_tasks_, sp_parameters_).sp_value;
     PriorityVec pa = {};
     std::unordered_set<int> tasks_assigned_priority;
     opt_sp_ = initial_sp;

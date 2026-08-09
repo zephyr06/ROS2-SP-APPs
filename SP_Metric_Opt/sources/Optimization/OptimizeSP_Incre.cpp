@@ -168,7 +168,8 @@ PriorityOptResult OptimizePA_Incre::OptimizeFromScratch(int K) {
     // old method is opt_sp_ = sum_sp_weights - partial_paths[0].sp_lost;
     // But that method doesn't exactly generate the same result as directly
     // calling evaluting SP
-    opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_, sp_parameters_, opt_pa_);
+    opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_, sp_parameters_, opt_pa_)
+                  .sp_value;
     return {res, opt_sp_, /*schedulable=*/true};
 }
 
@@ -352,7 +353,8 @@ PriorityOptResult OptimizePA_Incre::OptimizeIncre_SingleTask(
                 rtas_holder.rtas);
         } else {
             sp_eval = EvaluateSPWithPriorityVec(
-                dag_tasks_update, sp_parameters_, priority_assignment);
+                          dag_tasks_update, sp_parameters_, priority_assignment)
+                          .sp_value;
         }
         PrintPA_IfDebugMode(priority_assignment, sp_eval);
         if (sp_eval > opt_sp_) {
@@ -409,7 +411,8 @@ PriorityOptResult OptimizePA_Incre::OptimizeIncre(const DAG_Model& dag_tasks_upd
                                             opt_pa_, no_tl, baseline_rtas);
         } else {
             opt_sp_ = EvaluateSPWithPriorityVec(dag_tasks_update,
-                                                sp_parameters_, opt_pa_);
+                                                sp_parameters_, opt_pa_)
+                          .sp_value;
         }
     } else {
         opt_sp_ = baseline_sp;

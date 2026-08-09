@@ -41,7 +41,7 @@ inline double interpolate_sp_for_test(double x) {
 }
 TEST_F(TaskSetForTest_2tasks, SP_Calculation) {
     GlobalVariables::Granularity = 10;
-    double sp_actual = ObtainSP_TaskSet(tasks, sp_parameters);
+    double sp_actual = ObtainSP_TaskSet(tasks, sp_parameters).sp_value;
     // double sp_expected = log(1 + 0.5) + log(1 + 0.5 - 0.0012);
     double sp_norm =
         1 + (log(1 + 0.5 - 0.0012) - (-0.01 * exp(10 * abs(0.5)))) /
@@ -49,12 +49,48 @@ TEST_F(TaskSetForTest_2tasks, SP_Calculation) {
     EXPECT_NEAR(sp_norm, sp_actual, 1e-6);
 }
 
+TEST_F(TaskSetForTest_2tasks,
+       ObtainSP_TaskSet_ReportsImportantTaskSchedulability) {
+    GlobalVariables::Granularity = 10;
+    TasksSP baseline = ObtainSP_TaskSet(tasks, sp_parameters);
+    EXPECT_TRUE(baseline.important_tasks_schedulable);
+
+    // task 1's ddl miss chance is ~0.0012 (see SP_Calculation) — below the
+    // default threshold 0.5, so importance alone must not flip the flag.
+    tasks[1].is_important = true;
+    TasksSP schedulable = ObtainSP_TaskSet(tasks, sp_parameters);
+    EXPECT_TRUE(schedulable.important_tasks_schedulable);
+    EXPECT_DOUBLE_EQ(baseline.sp_value, schedulable.sp_value);
+
+    sp_parameters.thresholds_node[1] = 0.001;
+    TasksSP unschedulable = ObtainSP_TaskSet(tasks, sp_parameters);
+    EXPECT_FALSE(unschedulable.important_tasks_schedulable);
+}
+
+TEST_F(TaskSetForTest_2tasks, ObtainSP_TaskSet_BudgetCancelIsUnschedulable) {
+    GlobalVariables::Granularity = 10;
+    // task 1 important but BELOW threshold: a completed eval reports
+    // schedulable (true). A mid-eval BF budget cancel must NOT report "all
+    // clear" — the per-task check is incomplete, so the safe default
+    // (unschedulable) must stand.
+    tasks[1].is_important = true;
+    double saved_time_limit = GlobalVariables::TIME_LIMIT;
+    GlobalVariables::TIME_LIMIT = 0;
+    {
+        BFDLSharedBudget guard(CurrentTimeInProfiler);
+        TasksSP cancelled = ObtainSP_TaskSet(tasks, sp_parameters);
+        EXPECT_FALSE(cancelled.important_tasks_schedulable);
+    }
+    GlobalVariables::TIME_LIMIT = saved_time_limit;
+}
+
 TEST_F(TaskSetForTest_2tasks, ObtainSP_TaskSet_And_TimeLimits_NoLimits) {
     GlobalVariables::Granularity = 10;
     std::vector<double> time_limits = {-1, -1};
     double sp_no_limits =
-        ObtainSP_TaskSet_And_TimeLimits(tasks, sp_parameters, time_limits);
-    double sp_ref = ObtainSP_TaskSet(tasks, sp_parameters);
+        ObtainSP_TaskSet_And_TimeLimits(tasks, sp_parameters, time_limits)
+            .sp_value;
+    double sp_ref = ObtainSP_TaskSet(tasks, sp_parameters).sp_value;
     EXPECT_NEAR(sp_ref, sp_no_limits, 1e-9);
 }
 
@@ -64,12 +100,13 @@ TEST_F(TaskSetForTest_2tasks, ObtainSP_TaskSet_And_TimeLimits_WithLimit) {
     // with a unit distribution at value 2.
     std::vector<double> time_limits = {2, -1};
     double sp_limited =
-        ObtainSP_TaskSet_And_TimeLimits(tasks, sp_parameters, time_limits);
+        ObtainSP_TaskSet_And_TimeLimits(tasks, sp_parameters, time_limits)
+            .sp_value;
 
     // Manually build the expected task set with the same replacement
     TaskSet tasks_expected = tasks;
     tasks_expected[0].execution_time_dist = GetUnitExecutionTimeDist(2);
-    double sp_expected = ObtainSP_TaskSet(tasks_expected, sp_parameters);
+    double sp_expected = ObtainSP_TaskSet(tasks_expected, sp_parameters).sp_value;
     EXPECT_NEAR(sp_expected, sp_limited, 1e-9);
 }
 
@@ -116,7 +153,7 @@ TEST_F(TaskSetForTest_2tasks1chain, GetRTDA_Dist_AllChains) {
 }
 
 TEST_F(TaskSetForTest_2tasks1chain, SP_Calculation_dag) {
-    double sp_actual_dag = ObtainSP_DAG(dag_tasks, sp_parameters);
+    double sp_actual_dag = ObtainSP_DAG(dag_tasks, sp_parameters).sp_value;
     double penalty =
         0.18 + 0.21 + 0.09 + 0.07 + 0.03 - 0.5;  // for end-to-end latency
     double sp_expected_dag =
@@ -126,10 +163,27 @@ TEST_F(TaskSetForTest_2tasks1chain, SP_Calculation_dag) {
     EXPECT_NEAR(sp_expected_dag, sp_actual_dag, 1e-3);
 }
 
+TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_ReportsImportantTaskSchedulability) {
+    TasksSP baseline = ObtainSP_DAG(dag_tasks, sp_parameters);
+    EXPECT_TRUE(baseline.important_tasks_schedulable);
+
+    // task 1's ddl miss chance is ~0.003 (see SP_Calculation_dag) — below the
+    // default threshold 0.5, so importance alone must not flip the flag.
+    dag_tasks.tasks[1].is_important = true;
+    TasksSP schedulable = ObtainSP_DAG(dag_tasks, sp_parameters);
+    EXPECT_TRUE(schedulable.important_tasks_schedulable);
+    EXPECT_DOUBLE_EQ(baseline.sp_value, schedulable.sp_value);
+
+    sp_parameters.thresholds_node[1] = 0.001;
+    TasksSP unschedulable = ObtainSP_DAG(dag_tasks, sp_parameters);
+    EXPECT_FALSE(unschedulable.important_tasks_schedulable);
+}
+
 TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_And_TimeLimits_NoLimits) {
     std::vector<double> time_limits = {-1, -1};
-    double sp_no_limits = ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
-    double sp_ref = ObtainSP_DAG(dag_tasks, sp_parameters);
+    double sp_no_limits =
+        ObtainSP_DAG(dag_tasks, sp_parameters, time_limits).sp_value;
+    double sp_ref = ObtainSP_DAG(dag_tasks, sp_parameters).sp_value;
     EXPECT_NEAR(sp_ref, sp_no_limits, 1e-9);
 }
 
@@ -137,11 +191,12 @@ TEST_F(TaskSetForTest_2tasks1chain, ObtainSP_DAG_And_TimeLimits_WithLimit) {
     // Apply a time limit of 2 to task 0, replacing its distribution with a
     // unit distribution at value 2.
     std::vector<double> time_limits = {2, -1};
-    double sp_limited = ObtainSP_DAG(dag_tasks, sp_parameters, time_limits);
+    double sp_limited =
+        ObtainSP_DAG(dag_tasks, sp_parameters, time_limits).sp_value;
 
     DAG_Model dag_expected = dag_tasks;
     dag_expected.tasks[0].execution_time_dist = GetUnitExecutionTimeDist(2);
-    double sp_expected = ObtainSP_DAG(dag_expected, sp_parameters);
+    double sp_expected = ObtainSP_DAG(dag_expected, sp_parameters).sp_value;
     EXPECT_NEAR(sp_expected, sp_limited, 1e-9);
 }
 
@@ -463,13 +518,13 @@ TEST_F(TaskSetForTest_PerfFactor, SP_Calculation_WithPerfCoefficients) {
     // Floor behavior: task0 coeff = 0.5, task1 coeff = 1.5.
     GlobalVariables::Granularity = 10;
 
-    double sp_with_perf = ObtainSP_TaskSet(tasks, sp_parameters);
+    double sp_with_perf = ObtainSP_TaskSet(tasks, sp_parameters).sp_value;
 
     // Compute baseline manually by clearing perf pairs
     TaskSet tasks_no_perf = tasks;
     tasks_no_perf[0].timePerformancePairs.clear();
     tasks_no_perf[1].timePerformancePairs.clear();
-    double sp_baseline = ObtainSP_TaskSet(tasks_no_perf, sp_parameters);
+    double sp_baseline = ObtainSP_TaskSet(tasks_no_perf, sp_parameters).sp_value;
 
     EXPECT_NE(sp_baseline, sp_with_perf)
         << "Expected SP to differ when performance coefficients are applied;"
@@ -483,7 +538,7 @@ TEST_F(TaskSetForTest_PerfFactor, SP_Calculation_CorrectWeightedValue) {
     // Verify the exact SP value equals the manually-weighted sum.
     GlobalVariables::Granularity = 10;
 
-    double sp_actual = ObtainSP_TaskSet(tasks, sp_parameters);
+    double sp_actual = ObtainSP_TaskSet(tasks, sp_parameters).sp_value;
 
     std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
     double sp_expected = 0.0;
@@ -551,10 +606,14 @@ TEST(SP_Calculation_Bug, Robotics_V19_Same_SP_For_Core_Equivalent_Priorities) {
         PriorityVec pa3 = {0, 2, 1, 3};
         PriorityVec pa4 = {2, 1, 0, 3};
 
-        double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
-        double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
-        double sp3 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa3);
-        double sp4 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa4);
+        double sp1 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1).sp_value;
+        double sp2 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2).sp_value;
+        double sp3 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa3).sp_value;
+        double sp4 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa4).sp_value;
 
         std::cout << "Variant 1 SP (Raw, TL 400): sp1 (3102) = " << std::fixed
                   << std::setprecision(17) << sp1 << std::endl;
@@ -580,10 +639,14 @@ TEST(SP_Calculation_Bug, Robotics_V19_Same_SP_For_Core_Equivalent_Priorities) {
         PriorityVec pa3 = {0, 2, 1, 3};
         PriorityVec pa4 = {2, 1, 0, 3};
 
-        double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
-        double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
-        double sp3 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa3);
-        double sp4 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa4);
+        double sp1 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1).sp_value;
+        double sp2 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2).sp_value;
+        double sp3 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa3).sp_value;
+        double sp4 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa4).sp_value;
 
         std::cout << "Variant 1.5 SP (Raw, TL 1000): sp1 (3102) = "
                   << std::fixed << std::setprecision(17) << sp1 << std::endl;
@@ -610,8 +673,10 @@ TEST(SP_Calculation_Bug, Robotics_V19_Same_SP_For_Core_Equivalent_Priorities) {
         PriorityVec pa1 = {3, 1, 0, 2};
         PriorityVec pa2 = {3, 1, 2, 0};
 
-        double sp1 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1);
-        double sp2 = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2);
+        double sp1 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa1).sp_value;
+        double sp2 =
+            EvaluateSPWithPriorityVec(dag_cur, sp_params, pa2).sp_value;
 
         std::cout << "Variant 2 SP (Tightened): sp1 (3102) = " << std::fixed
                   << std::setprecision(17) << sp1 << ", sp2 (3120) = " << sp2

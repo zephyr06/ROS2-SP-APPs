@@ -531,13 +531,16 @@ double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
         // — safe to route through the cache via CommitIncumbent.
         DAG_Model dag_baseline =
             UpdateExtDistBasedOnTimeLimit(dag_tasks_, starting_time_limits);
-        double current_config_sp =
+        TasksSP baseline_eval =
             EvaluateSPWithPriorityVec(dag_baseline, sp_parameters_, opt_pa_);
+        double current_config_sp = baseline_eval.sp_value;
         // P1.28: the carried incumbent can become unschedulable under this
         // interval's drifted ET; seeding from it ends in the RM-Fast backstop
-        // swap-down. Re-seed from the guaranteed-schedulable safe fallback instead.
-        if (enable_fallback_use_ && HasSafeFallback() &&
-            !ImportantTasksMeetThresholds(dag_baseline, sp_parameters_, opt_pa_)) {
+        // swap-down. The schedulability audit rides the SP eval above (RTAs
+        // already computed there), so it runs on every fall-back-enabled
+        // interval, whether or not a fallback exists to swap to.
+        if (enable_fallback_use_ &&
+            !baseline_eval.important_tasks_schedulable && HasSafeFallback()) {
             AdoptSafeFallbackAsIncumbent();
             starting_time_limits = ReconstructTimeLimitVecFromResOpt();
             current_config_sp = opt_sp_;
@@ -1000,7 +1003,8 @@ void OptimizePA_Incre_with_TimeLimits::SeedIncumbentFromDMFast() {
     DAG_Model dag_with_tl_min =
         UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_min);
     double sp_dm = EvaluateSPWithPriorityVec(dag_with_tl_min, sp_parameters_,
-                                             pa_dm);
+                                             pa_dm)
+                       .sp_value;
     SeedStateFromIncumbent(dag_with_tl_min, pa_dm, sp_dm, tl_min);
 }
 
@@ -1042,7 +1046,8 @@ ResourceOptResult OptimizePA_Incre_with_TimeLimits::ComputeSafeFallback(
     DAG_Model dag_with_tl =
         UpdateExtDistBasedOnTimeLimit(fallback_solver.dag_tasks_, tl_seed);
     double sp_seed =
-        EvaluateSPWithPriorityVec(dag_with_tl, fallback_solver.sp_parameters_, pa_dm);
+        EvaluateSPWithPriorityVec(dag_with_tl, fallback_solver.sp_parameters_, pa_dm)
+            .sp_value;
     fallback_solver.SeedStateFromIncumbent(dag_with_tl, pa_dm, sp_seed, tl_seed);
 
     // Gate-governed incremental walk; PA descent runs normally under the gate.
@@ -1109,7 +1114,8 @@ void OptimizePA_Incre_with_TimeLimits::AdoptSafeFallbackAsIncumbent() {
     }
     DAG_Model dag_with_tl = UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_pos);
     double sp = EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters_,
-                                          fallback.priority_vec);
+                                          fallback.priority_vec)
+                    .sp_value;
     CommitIncumbent(fallback.priority_vec, sp, tl_pos);
 }
 
@@ -1220,7 +1226,9 @@ void OptimizePA_Incre_with_TimeLimits::ResetIncumbentBaseline(
             DAG_Model dag_new_with_tl_prev =
                 UpdateExtDistBasedOnTimeLimit(dag_tasks_, tl_prev);
             double sp_prev_new = EvaluateSPWithPriorityVec(
-                dag_new_with_tl_prev, sp_parameters_, pa_prev);
+                                     dag_new_with_tl_prev, sp_parameters_,
+                                     pa_prev)
+                                     .sp_value;
             SeedStateFromIncumbent(dag_new_with_tl_prev, pa_prev, sp_prev_new,
                                    tl_prev);
         } else {

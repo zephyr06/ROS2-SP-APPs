@@ -1,4 +1,6 @@
 #pragma once
+#include <climits>
+
 #include "sources/Safety_Performance_Metric/ParametersSP.h"
 #include "sources/Safety_Performance_Metric/Probability.h"
 #include "sources/Safety_Performance_Metric/RTA.h"
@@ -20,6 +22,17 @@ inline double interpolate(double x, double x1, double y1, double x2,
 
 double ObtainSP(const FiniteDist& dist, double deadline,
                 double ddl_miss_threshold, double weight);
+
+// One task-set/DAG SP evaluation: the aggregated SP value plus the important-task
+// schedulability verdict folded out of the SAME per-task RTAs (no extra RTA eval).
+// Safe default: unschedulable until the full per-task eval proves otherwise, so a
+// bailed/incomplete eval (e.g. a BFSharedBudgetCancelled() early return) cannot
+// report a false "all clear". The verdict is vacuous-true when no task is important
+// (ObtainSP_TaskSet sets it true on a completed eval with no important miss).
+struct TasksSP {
+    double sp_value = INT_MIN;
+    bool important_tasks_schedulable = false;
+};
 
 inline double PenaltyFunc(double violate_probability, double threshold) {
     return -0.01 * exp(10 * abs(threshold - violate_probability));
@@ -51,8 +64,8 @@ double GetTaskPerfTerm(
 double GetAvgTaskPerfTerm(std::string& ext_file_path,
                           std::vector<TimePerfPair> timePerformancePairs);
 
-double ObtainSP_TaskSet(const TaskSet& tasks,
-                        const SP_Parameters& sp_parameters);
+TasksSP ObtainSP_TaskSet(const TaskSet& tasks,
+                         const SP_Parameters& sp_parameters);
 
 // Apply time limits to task execution_time_dist: for each i with
 // time_limits[i] != -1, replace execution_time_dist with a unit distribution
@@ -65,18 +78,18 @@ TaskSet ApplyTimeLimitsToTasksExecutionTime(
 
 // Apply time limits to task execution_time_dist (unit distribution at time limit),
 // then compute SP. time_limit[i] == -1 means no limit for that task.
-double ObtainSP_TaskSet_And_TimeLimits(
+TasksSP ObtainSP_TaskSet_And_TimeLimits(
     const TaskSet& tasks, const SP_Parameters& sp_parameters,
     const std::vector<double>& time_limits);
 
-double ObtainSP_DAG(const DAG_Model& dag_tasks,
-                    const SP_Parameters& sp_parameters);
+TasksSP ObtainSP_DAG(const DAG_Model& dag_tasks,
+                     const SP_Parameters& sp_parameters);
 
 // Apply time limits to task execution_time_dist (unit distribution at time limit),
 // then compute DAG-level SP. time_limit[i] == -1 means no limit for that task.
-double ObtainSP_DAG(const DAG_Model& dag_tasks,
-                    const SP_Parameters& sp_parameters,
-                    const std::vector<double>& time_limits);
+TasksSP ObtainSP_DAG(const DAG_Model& dag_tasks,
+                     const SP_Parameters& sp_parameters,
+                     const std::vector<double>& time_limits);
 
 // assume the order of all the vectors are matched!!!
 // P1.13 (Hazard B): the node loop now multiplies `perf_coefficient`

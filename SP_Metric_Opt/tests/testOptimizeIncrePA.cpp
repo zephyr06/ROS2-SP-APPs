@@ -338,7 +338,7 @@ TEST_F(TaskSetForTest_robotics_v25, AnalyzePriorityChangeStatus) {
 TEST_F(TaskSetForTest_robotics_v8, AssignAndUpdateSP) {
     dag_tasks.tasks[0].priority = 2;
     dag_tasks.tasks[1].priority = 1;  // SLAM has high priority
-    double sp_ref = ObtainSP_DAG(dag_tasks, sp_parameters);
+    double sp_ref = ObtainSP_DAG(dag_tasks, sp_parameters).sp_value;
 
     PriorityPartialPath priority_path(dag_tasks, sp_parameters);
     priority_path.AssignAndUpdateSP(0);
@@ -409,7 +409,8 @@ TEST(OptimizeIncre_SingleTask, Differential_BitIdenticalOnSingleEtChange) {
     // Path B: the primitive alone, with the SAME baseline seed OptimizeIncre
     // would have computed (the carried PA's SP under the new env). This is the
     // contract: OptimizeIncre_SingleTask TRUSTS opt_sp_ (caller-set).
-    optB.opt_sp_ = EvaluateSPWithPriorityVec(dag_update, sp, optB.opt_pa_);
+    optB.opt_sp_ =
+        EvaluateSPWithPriorityVec(dag_update, sp, optB.opt_pa_).sp_value;
     PriorityVec pa_primitive =
         optB.OptimizeIncre_SingleTask(dag_update, task_id, et_increased)
             .priority_vec;
@@ -794,7 +795,7 @@ TEST(OptimizeIncre_Cache, Differential_BaselineSpProvided_ElseBranch) {
     // The header contract (OptimizeSP_Incre.h:154) requires this EXACT value —
     // both arms must treat it as authoritative and skip their own re-score.
     double baseline_sp =
-        EvaluateSPWithPriorityVec(dag_update, sp, optOracle.opt_pa_);
+        EvaluateSPWithPriorityVec(dag_update, sp, optOracle.opt_pa_).sp_value;
 
     // Oracle arm: baseline_sp provided, nullopt cache (no Initialize).
     PriorityVec pa_oracle =

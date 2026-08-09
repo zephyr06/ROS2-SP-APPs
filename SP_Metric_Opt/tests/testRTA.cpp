@@ -643,7 +643,8 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     // core0 (t0,t1) FullReuse and shifted to priority-positions 1,2 (were 0,1) —
     // the shape that trips the seeding scramble when candidate PA != champion PA.
     PriorityVec pa_cand = {2, 0, 1, 3};
-    double sp_oracle = EvaluateSPWithPriorityVec(dag_chainfree, sp, pa_cand);
+    double sp_oracle =
+        EvaluateSPWithPriorityVec(dag_chainfree, sp, pa_cand).sp_value;
     const std::vector<FiniteDist>& rtas_eval =
         cache.Evaluate(dag_chainfree, pa_cand, time_limits);
     double sp_cache = ObtainSP_Full_From_NodeRTAs(
@@ -698,7 +699,8 @@ static double OracleSP(const DAG_Model& dag_tasks,
     DAG_Model dag_with_tl =
         UpdateExtDistBasedOnTimeLimit(dag_tasks, time_limits);
     return EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters,
-                                     priority_assignment);
+                                     priority_assignment)
+        .sp_value;
 }
 
 // Type-L: the candidate differs from the champion by ONE task's TL. Task 2 has

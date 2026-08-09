@@ -132,9 +132,9 @@ class OptimimizePA_Base {
     TimerType start_time_;
 };
 
-double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
-                                 const SP_Parameters& sp_parameters,
-                                 const PriorityVec& priority_assignment);
+TasksSP EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
+                                  const SP_Parameters& sp_parameters,
+                                  const PriorityVec& priority_assignment);
 
 void PrintPA_IfDebugMode(const PriorityVec& pa, double sp_eval);
 

@@ -286,7 +286,8 @@ TEST(SP_Calculation_Bug, OptimizeFromScratch_SP_Consistency) {
     }
     std::cout << "Computed sum_sp_weights: " << sum_w << std::endl;
 
-    double expected_sp = EvaluateSPWithPriorityVec(dag_cur, sp_params, pa);
+    double expected_sp =
+        EvaluateSPWithPriorityVec(dag_cur, sp_params, pa).sp_value;
     std::cout << "OptimizeFromScratch Consistency: opt_sp = " << std::fixed
               << std::setprecision(17) << opt_sp
               << ", expected_sp = " << expected_sp << std::endl;

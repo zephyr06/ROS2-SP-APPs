@@ -606,7 +606,8 @@ void FixedTaskPrioritySchedulingOrchestrator::SimulateInterval(int interval_idx,
         }
     }
     interval_sp_metrics_.push_back(ObtainSP_TaskSet_And_TimeLimits(
-        dag_tasks.tasks, sp_parameters, time_limits));
+                                       dag_tasks.tasks, sp_parameters, time_limits)
+                                       .sp_value);
 }
 
 CFSSimulationOrchestrator::CFSSimulationOrchestrator(
@@ -864,7 +865,8 @@ void CFSSimulationOrchestrator::SimulateInterval(int interval_idx,
     // CFS does not use time limits; pass all -1
     std::vector<double> time_limits(dag_tasks.tasks.size(), -1);
     interval_sp_metrics_.push_back(ObtainSP_TaskSet_And_TimeLimits(
-        dag_tasks.tasks, sp_parameters, time_limits));
+                                       dag_tasks.tasks, sp_parameters, time_limits)
+                                       .sp_value);
 }
 
 }  // namespace SP_OPT_PA

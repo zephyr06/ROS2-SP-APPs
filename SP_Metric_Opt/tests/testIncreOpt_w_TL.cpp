@@ -1299,6 +1299,38 @@ TEST_F(CompareAndKeepSynthetic,
         << "the seeded incumbent must be schedulable";
 }
 
+// P1.28 requirement (1) — fall-back use enabled but NO safe fallback artifact: the
+// seed still audits the carried incumbent's schedulability (the verdict rides the
+// SP eval, so the audit cannot be skipped), but with nothing to swap to it keeps
+// the carried incumbent as-is. Finding an adoptable plan is left to the walk; the
+// post-walk backstop surfaces the missing artifact loud (directive 3 above).
+TEST_F(CompareAndKeepSynthetic,
+       SeedBaselineAndArmCache_KeepsCarriedIncumbentWhenUnschedulableWithoutFallback) {
+    dag_tasks.tasks[0].is_important = false;
+    dag_tasks.tasks[1].is_important = true;
+    dag_tasks.tasks[1].deadline = 700.0;
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+    ASSERT_FALSE(opt.HasSafeFallback());
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_carried = {1000.0, -1.0};
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_carried));
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_carried),
+                        tl_carried);
+
+    std::vector<double> starting_time_limits = tl_carried;
+    opt.SeedBaselineAndArmCache(2, starting_time_limits,
+                                IntervalDescentMode::Incremental);
+
+    EXPECT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id])
+        << "no fallback to adopt -> the carried incumbent is kept as-is";
+    EXPECT_DOUBLE_EQ(1000.0, starting_time_limits[0]);
+}
+
 // P0.7 step 4 — interval_fallback_log.txt. The optimizer records one outcome per
 // dispatch call (= per interval) and exposes it via GetIntervalFallbackLog; the
 // orchestrator writes the file. These tests cover the RECORDING contract (file I/O
@@ -2055,7 +2087,7 @@ TEST_F(CompareAndKeepSynthetic, SeedIncumbentBaseline_Interval0UsesDMAndMinTL) {
     std::vector<double> tl_min = opt.SmallestTimeLimitVec();
     DAG_Model dag_min = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_min);
     double expected_sp =
-        EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_dm);
+        EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_dm).sp_value;
 
     opt.ResetIncumbentBaseline(true);
 
@@ -2079,7 +2111,7 @@ TEST_F(CompareAndKeepSynthetic,
     DAG_Model dag_with_tl =
         UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_incumbent);
     double sp_incumbent =
-        EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters, pa);
+        EvaluateSPWithPriorityVec(dag_with_tl, sp_parameters, pa).sp_value;
     opt.SeedStateFromIncumbent(dag_with_tl, pa, sp_incumbent, tl_incumbent);
     ASSERT_TRUE(opt.IfInitialized());
 
@@ -2094,7 +2126,8 @@ TEST_F(CompareAndKeepSynthetic,
     DAG_Model dag_new_with_tl =
         UpdateExtDistBasedOnTimeLimit(opt.dag_tasks_, tl_incumbent);
     double expected_sp =
-        EvaluateSPWithPriorityVec(dag_new_with_tl, sp_parameters, pa);
+        EvaluateSPWithPriorityVec(dag_new_with_tl, sp_parameters, pa)
+            .sp_value;
     ASSERT_NE(sp_incumbent, expected_sp);  // sanity: the DAG really did change
 
     opt.ResetIncumbentBaseline(true);
@@ -2135,7 +2168,8 @@ TEST_F(CompareAndKeepSynthetic, OptimizePureIncremental_Interval0IsSeedOnly) {
     PriorityVec pa_dm = opt.DeadlineMonotonicPriorityVec();
     std::vector<double> tl_min = opt.SmallestTimeLimitVec();
     DAG_Model dag_min = UpdateExtDistBasedOnTimeLimit(dag_tasks, tl_min);
-    double expected_sp = EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_dm);
+    double expected_sp =
+        EvaluateSPWithPriorityVec(dag_min, sp_parameters, pa_dm).sp_value;
 
     opt.OptimizePureIncremental(dag_tasks, 2);
 

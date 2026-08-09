@@ -178,9 +178,9 @@ void WritePriorityAssignments(std::string path, const TaskSet& tasks,
     }
 }
 
-double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
-                                 const SP_Parameters& sp_parameters,
-                                 const PriorityVec& priority_assignment) {
+TasksSP EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
+                                  const SP_Parameters& sp_parameters,
+                                  const PriorityVec& priority_assignment) {
 
     // P1.14 — cooperative cancel: if the active BF shared budget is already
     // exhausted when we ENTER this eval, skip the expensive ObtainSP_DAG and
@@ -190,7 +190,7 @@ double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
     // full N! leaf). ObtainSP_DAG/ObtainSP_TaskSet poll BFSharedBudgetCancelled()
     // between sub-computations so even a single runaway eval is interruptible.
     if (BFSharedBudgetCancelled()) {
-        return INT_MIN;
+        return {INT_MIN, false};
     }
 
     auto start_time = CurrentTimeInProfiler;
@@ -198,13 +198,15 @@ double EvaluateSPWithPriorityVec(const DAG_Model& dag_tasks,
         UpdateTaskSetPriorities(dag_tasks.tasks, priority_assignment);
     DAG_Model dag_tasks_eval = dag_tasks;
     dag_tasks_eval.tasks = tasks_eval;
-    auto res = ObtainSP_DAG(dag_tasks_eval, sp_parameters);
+    TasksSP res = ObtainSP_DAG(dag_tasks_eval, sp_parameters);
 
     // P1.14 — if ObtainSP_DAG was interrupted mid-eval (a sub-computation saw
     // the budget exhausted), its return value is partial/garbage; discard it
     // by returning the sentinel so this permutation loses to the incumbent.
+    // important_tasks_schedulable=false: an incomplete eval must not report a
+    // false "all clear" (mirrors ObtainSP_TaskSet's safe default).
     if (BFSharedBudgetCancelled()) {
-        return INT_MIN;
+        return {INT_MIN, false};
     }
 
     auto finish_time = CurrentTimeInProfiler;

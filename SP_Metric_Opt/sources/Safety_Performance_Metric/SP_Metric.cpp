@@ -51,26 +51,33 @@ double GetPerfTerm(const std::vector<TimePerfPair>& timePerformancePairs,
 //     return sp_overall;
 // }
 
-double ObtainSP_TaskSet(const TaskSet& tasks,
-                        const SP_Parameters& sp_parameters) {
+TasksSP ObtainSP_TaskSet(const TaskSet& tasks,
+                         const SP_Parameters& sp_parameters) {
     std::vector<FiniteDist> rtas = ProbabilisticRTA_TaskSet(tasks);
-    double sp_overall = 0;
+    // Safe default: unschedulable until the full per-task eval proves
+    // otherwise — a mid-loop BFSharedBudgetCancelled() bail returns this
+    // incomplete result rather than falsely reporting "all clear".
+    TasksSP result{0.0, false};
+    bool any_important_miss = false;
     for (int i = 0; i < tasks.size(); i++) {
         // P1.14 — cooperative cancel: the per-task RTA above can be expensive
         // (wide ET distributions -> large convolution support); poll the BF
         // shared budget between tasks so a runaway eval is interruptible.
         // No-op outside a BF search (BFSharedBudgetCancelled() is false).
-        if (BFSharedBudgetCancelled()) return sp_overall;
+        if (BFSharedBudgetCancelled()) return result;
         int task_id = tasks[i].id;
+        double threshold = sp_parameters.thresholds_node.at(task_id);
         double ddl_miss_chance =
             GetDDL_MissProbability(rtas[i], tasks[i].deadline);
+        if (tasks[i].is_important && ddl_miss_chance > threshold)
+            any_important_miss = true;
         double perf_coefficient = tasks[i].GetPerfCoefficient();
-        sp_overall += SP_Func(ddl_miss_chance,
-                              sp_parameters.thresholds_node.at(task_id)) *
-                      sp_parameters.weights_node.at(task_id) *
-                      perf_coefficient;
+        result.sp_value += SP_Func(ddl_miss_chance, threshold) *
+                           sp_parameters.weights_node.at(task_id) *
+                           perf_coefficient;
     }
-    return sp_overall;
+    result.important_tasks_schedulable = !any_important_miss;
+    return result;
 }
 
 TaskSet ApplyTimeLimitsToTasksExecutionTime(
@@ -85,19 +92,19 @@ TaskSet ApplyTimeLimitsToTasksExecutionTime(
     return tasks_upd;
 }
 
-double ObtainSP_TaskSet_And_TimeLimits(const TaskSet& tasks,
-                                       const SP_Parameters& sp_parameters,
-                                       const std::vector<double>& time_limits) {
+TasksSP ObtainSP_TaskSet_And_TimeLimits(const TaskSet& tasks,
+                                        const SP_Parameters& sp_parameters,
+                                        const std::vector<double>& time_limits) {
     return ObtainSP_TaskSet(
         ApplyTimeLimitsToTasksExecutionTime(tasks, time_limits), sp_parameters);
 }
 
-double ObtainSP_DAG(const DAG_Model& dag_tasks,
-                    const SP_Parameters& sp_parameters) {
+TasksSP ObtainSP_DAG(const DAG_Model& dag_tasks,
+                     const SP_Parameters& sp_parameters) {
     if (GlobalVariables::debugMode == 1) {
         BeginTimer("ObtainSP_DAG");
     }
-    double sp_overall = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
+    TasksSP result = ObtainSP_TaskSet(dag_tasks.tasks, sp_parameters);
 
     // P1.14 — cooperative cancel: if the per-task RTA above (or the budget
     // check inside ObtainSP_TaskSet) already saw the BF budget exhausted,
@@ -107,7 +114,7 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
     if (BFSharedBudgetCancelled()) {
         if (GlobalVariables::debugMode == 1)
             EndTimer("ObtainSP_DAG");
-        return sp_overall;
+        return result;
     }
 
     std::vector<FiniteDist> reaction_time_dists =
@@ -123,19 +130,19 @@ double ObtainSP_DAG(const DAG_Model& dag_tasks,
         int chain_id = i;
         double ddl_miss_chance =
             GetDDL_MissProbability(reaction_time_dists[i], chains_ddl[i]);
-        sp_overall += SP_Func(ddl_miss_chance,
-                              sp_parameters.thresholds_path.at(chain_id)) *
-                      sp_parameters.weights_path.at(chain_id);
+        result.sp_value += SP_Func(ddl_miss_chance,
+                                   sp_parameters.thresholds_path.at(chain_id)) *
+                           sp_parameters.weights_path.at(chain_id);
     }
 
     if (GlobalVariables::debugMode == 1)
         EndTimer("ObtainSP_DAG");
-    return sp_overall;
+    return result;
 }
 
-double ObtainSP_DAG(const DAG_Model& dag_tasks,
-                    const SP_Parameters& sp_parameters,
-                    const std::vector<double>& time_limits) {
+TasksSP ObtainSP_DAG(const DAG_Model& dag_tasks,
+                     const SP_Parameters& sp_parameters,
+                     const std::vector<double>& time_limits) {
     DAG_Model dag_tasks_upd = dag_tasks;
     // for (int i = 0; i < static_cast<int>(dag_tasks.tasks.size()); i++) {
     //     if (time_limits[i] != -1) {
