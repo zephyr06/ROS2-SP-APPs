@@ -1,7 +1,10 @@
 # P1.29 — Add the important-tasks schedulability gate to the re-opt from-scratch beam (in-search)
 
 **Priority:** P1 (correctness / latent defect — the INCR reopt beam runs UNGATED)
-**Status:** COMPLETE 2026-08-08 (git add-only, NOT committed; 17/17 ctest green).
+**Status:** CLOSED 2026-08-08 (git add-only, NOT committed; 17/17 ctest green;
+speed PASS). Code work COMPLETE — moved to "Resolved / shipped" in MEMORY.md.
+DEFERRED: full comparison sweep re-run. Does NOT fix P1.28 (separate; fix pending
+user decision A vs C).
 Prior flag-based impl (sticky `has_unschedulable_important` + top-K prefer-unflagged/
 fall-back-to-flagged) REJECTED by user as wrong-by-design ("there should not be a
 class-level flag"). REFRAMED as an INCR optimizer API refactor:

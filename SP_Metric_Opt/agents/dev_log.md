@@ -86,6 +86,16 @@
   Speed test: INCR_Reopt_1 0.037s/interval, INCR_Reopt_10 0.018s/interval (both
   PASS, < 0.1s target).
 
+- **P1.29 — CLOSED 2026-08-08.** All code work complete and staged (`git add`-only,
+  NOT committed): INCR in-search gate (hard-prune at push time + `PriorityOptResult`
+  contract), BF analogue (per-candidate gate in `IterateAllPAs`), follow-up
+  refinements (budget-timeout returns false; `reserve(K*N)`), and the overload
+  refactor (`ImportantTasksBelowThresholds` core). 17/17 ctest; bit-identical w/o
+  `is_important`; speed PASS. Moved to "Resolved / shipped" in MEMORY.md.
+  **DEFERRED:** full comparison sweep re-run. **Does NOT fix P1.28** (incremental-
+  interval collapses; fix pending user decision: A re-search-on-backstop-fail vs
+  C constraint-aware compare-and-keep).
+
 - **P1.28 — root-caused INCR_Reopt_10 interval-SP collapse to 0.527888 (RM-Fast fallback
   swap-down); fix not yet implemented.** `taskset_2` `INCR_Reopt_10` collapses to 0.527888
   at intervals 16/21/38/41/44/52 (aggregate 0.855923) while `INCR_WCET` stays 0.885–0.954
