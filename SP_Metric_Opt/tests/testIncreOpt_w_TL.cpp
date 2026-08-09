@@ -1249,6 +1249,56 @@ TEST_F(CompareAndKeepSynthetic,
     EXPECT_THROW(opt.AdoptFallbackIfUnschedulable(), std::runtime_error);
 }
 
+// P1.28 — fallback-seed on an unschedulable carried incumbent. At an incremental
+// interval SeedBaselineAndArmCache(Incremental) re-scores last interval's carried
+// {pa, tl} under the NEW interval's drifted ET. If that re-scored incumbent FAILS
+// the important-task gate, the walk must START from the guaranteed-schedulable safe
+// fallback — else it climbs from an unschedulable SP-max base (0 SP-improving moves
+// -> during-walk gate never fires -> backstop binary-swaps to RM-Fast). Seeding
+// from the fallback lets the armed during-walk gate keep the climb schedulable.
+TEST_F(CompareAndKeepSynthetic,
+       SeedBaselineAndArmCache_SeedsFromFallbackWhenCarriedIncumbentUnschedulable) {
+    dag_tasks.tasks[0].is_important = false;   // T_perf: higher priority, adds interference
+    dag_tasks.tasks[1].is_important = true;    // T_noise: the gated task
+    dag_tasks.tasks[1].deadline = 700.0;       // TL=1000 misses, TL=400 feasible
+    sp_parameters.weights_node[dag_tasks.tasks[1].id] = 0.01;
+
+    OptimizePA_Incre_with_TimeLimits opt(dag_tasks, sp_parameters);
+    opt.enable_fallback_use_ = true;
+
+    std::vector<int> pa = {dag_tasks.tasks[0].id, dag_tasks.tasks[1].id};
+    std::vector<double> tl_carried = {1000.0, -1.0};  // unschedulable under this ET
+    std::vector<double> tl_safe = {400.0, -1.0};      // fallback: schedulable
+    ASSERT_FALSE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_carried));
+    ASSERT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, pa, tl_safe));
+
+    // Stage the schedulable safe fallback artifact (as ComputeSafeFallback would).
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_safe),
+                        tl_safe);
+    opt.SetSafeFallbackForTest(opt.res_opt_);
+    // Stage the carried (unschedulable) incumbent — what last interval committed.
+    opt.CommitIncumbent(pa, OracleSPForCandidate(dag_tasks, sp_parameters, pa, tl_carried),
+                        tl_carried);
+    ASSERT_DOUBLE_EQ(1000.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id]);
+
+    std::vector<double> starting_time_limits = tl_carried;
+    opt.SeedBaselineAndArmCache(2, starting_time_limits,
+                                IntervalDescentMode::Incremental);
+
+    // The seed swapped to the schedulable fallback: TL reverted to 400, the walk's
+    // starting TL vector tracks it, and the seeded incumbent passes the gate.
+    EXPECT_DOUBLE_EQ(400.0, opt.res_opt_.id2time_limit[dag_tasks.tasks[0].id])
+        << "carried unschedulable incumbent must be replaced by the fallback at seed";
+    EXPECT_DOUBLE_EQ(400.0, starting_time_limits[0])
+        << "the walk's starting TL vector must track the seeded fallback";
+    std::vector<double> seeded_tl = opt.ReconstructTimeLimitVecFromResOpt();
+    EXPECT_TRUE(ImportantTasksMeetThresholds(
+        dag_tasks, sp_parameters, opt.res_opt_.priority_vec, seeded_tl))
+        << "the seeded incumbent must be schedulable";
+}
+
 // P0.7 step 4 — interval_fallback_log.txt. The optimizer records one outcome per
 // dispatch call (= per interval) and exposes it via GetIntervalFallbackLog; the
 // orchestrator writes the file. These tests cover the RECORDING contract (file I/O

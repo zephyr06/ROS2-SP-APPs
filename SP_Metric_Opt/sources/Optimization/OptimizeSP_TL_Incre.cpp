@@ -533,7 +533,17 @@ double OptimizePA_Incre_with_TimeLimits::SeedBaselineAndArmCache(
             UpdateExtDistBasedOnTimeLimit(dag_tasks_, starting_time_limits);
         double current_config_sp =
             EvaluateSPWithPriorityVec(dag_baseline, sp_parameters_, opt_pa_);
-        CommitIncumbent(opt_pa_, current_config_sp, starting_time_limits);
+        // P1.28: the carried incumbent can become unschedulable under this
+        // interval's drifted ET; seeding from it ends in the RM-Fast backstop
+        // swap-down. Re-seed from the guaranteed-schedulable safe fallback instead.
+        if (enable_fallback_use_ && HasSafeFallback() &&
+            !ImportantTasksMeetThresholds(dag_baseline, sp_parameters_, opt_pa_)) {
+            AdoptSafeFallbackAsIncumbent();
+            starting_time_limits = ReconstructTimeLimitVecFromResOpt();
+            current_config_sp = opt_sp_;
+        } else {
+            CommitIncumbent(opt_pa_, current_config_sp, starting_time_limits);
+        }
         return current_config_sp;
     }
 
