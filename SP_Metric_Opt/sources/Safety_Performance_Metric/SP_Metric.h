@@ -166,8 +166,8 @@ bool ImportantTasksMeetThresholds(
     const std::vector<FiniteDist>& node_rtas);
 
 // Convenience overload: derives the node RTAs itself via `ProbabilisticRTA_TaskSet`
-// (bake TL → apply PA → RTA), then delegates to the contract overload above. For
-// callers that have NOT already materialized the RTAs when scoring SP — e.g. the
+// (bake TL → apply PA → RTA), then runs the shared core check. For callers that
+// have NOT already materialized the RTAs when scoring SP — e.g. the
 // ComputeSafeFallback loud-fail re-gate, which re-checks the FINAL stored result
 // post-walk (no shared cache live then). Costs one fresh RTA eval per call, so the
 // contract overload remains the zero-extra-eval path for the in-walk gate.
@@ -175,6 +175,15 @@ bool ImportantTasksMeetThresholds(
     const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
     const std::vector<int>& priority_assignment,
     const std::vector<double>& tl);
+
+// Overload for a dag whose TLs are ALREADY baked into the ET dists (as
+// `EvaluateSPWithPriorityVec` assumes) — e.g. the BF PA enumeration, which
+// receives `dag_tasks_cur` from `UpdateExtDistBasedOnTimeLimit` and has no `tl`
+// vec in scope. Applies the PA to the already-baked tasks and derives RTAs fresh
+// (one fresh RTA eval per call).
+bool ImportantTasksMeetThresholds(
+    const DAG_Model& dag_tasks, const SP_Parameters& sp_parameters,
+    const std::vector<int>& priority_assignment);
 
 // Diagnostic companion to `ImportantTasksMeetThresholds`: returns the WORST
 // important-task violator's id + ddl_miss_chance + threshold under the given

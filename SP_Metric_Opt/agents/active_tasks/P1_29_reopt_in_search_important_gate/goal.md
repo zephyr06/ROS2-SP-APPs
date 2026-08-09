@@ -201,10 +201,48 @@ actually occurs in the current tasksets is TBD during implementation.
 - Fixing the P1.28 incremental-interval collapses (separate task; this gate does not
   address them — see "Relationship to P1.28").
 - Re-running the full comparison sweep.
-- **BF optimization follow-up (separate commit):** apply the same three updates
-  to the BF path (`OptimizeSP_TL_BF.cpp` / `OptimizeSP_BF.cpp`) — the BF analogue
-  of this INCR gate (P1.27, `cbdde63b`): (1) budget-timeout in the BF in-search
-  gate should prune (return the unschedulable signal) instead of pushing an
-  ungated half-evaluated leaf; (2) minimize the P1.27-tagged comment blocks; (3)
-  any `reserve` on the BF beam should use `K * N`. Tracked here so it is not
-  lost; distinct commit, NOT part of P1.29.
+
+## BF optimization follow-up — DONE 2026-08-08 (git add-only, separate commit)
+
+The prior note here (apply the INCR follow-up's 3 items to BF) was **wrong about
+BF's structure**. Investigation found items (1) and (3) are N/A for BF and (2) is
+marginal; the REAL BF analogue is an in-search per-candidate gate in the PA
+enumeration. User reframed the follow-up accordingly (2026-08-08): "during BF
+searching, it essentially tries each possible solution, you can add a
+schedulability check when a candidate solution outperforms the current best
+found solution; for BF, don't have to worry about implementation efficiency."
+
+- **What was done:** in `OptimizePA_BF::IterateAllPAs` (`OptimizeSP_BF.cpp`), the
+  adoption `if (sp_eval > opt_sp_)` became `if (sp_eval > opt_sp_ &&
+  ImportantTasksMeetThresholds(dag_tasks_, sp_parameters_, priority_assignment))`.
+  So within each TL combination BF now keeps the best SCHEDULABLE PA rather than
+  the SP-max PA (which may be unschedulable) and relying on the TL-level
+  P1.27 gate / post-hoc backstop to reject/swap it. New 3-arg
+  `ImportantTasksMeetThresholds(dag, sp, pa)` overload (`SP_Metric.{h,cpp}`) for a
+  dag whose TLs are ALREADY baked (mirrors `EvaluateSPWithPriorityVec`).
+  **Refactored 2026-08-08** (see dev_log): originally delegated to the 4-arg via a
+  `tl=-1` no-op trick; now prioritizes the already-baked `dag_tasks.tasks` + fresh
+  RTA + a shared anonymous-namespace core `ImportantTasksBelowThresholds` (no `tl`
+  sentinel). Bit-identical when no task is `is_important` (overload vacuously true
+  → `sp_eval > opt_sp_` unchanged).
+  `OptimizeSP_TL_BF.cpp` UNTOUCHED — the P1.27 TL-level leaf gate is kept (still
+  needed: when a TL combo has NO schedulable PA, `IterateAllPAs` returns the
+  unschedulable seed and the TL-level gate rejects it → backstop).
+- **TDD:** `TaskSetForTest_p129_bf_unschedulable_important` /
+  `InSearchGate_AdoptsSchedulablePAOverUnschedulableSpMax` in
+  `tests/testOptimizePA.cpp` (same point-mass fixture as the INCR P1.29 test).
+  RED before gate: BF returns `{1,0}` sp 0.8 (important task 0 unsched). GREEN
+  after: returns `{0,1}` sp 0.2 + `ImportantTasksMeetThresholds`=true. 17/17 ctest.
+- **Why the 3 INCR follow-up items do NOT mirror to BF:**
+  (1) **budget-timeout prune — N/A.** BF has no INCR-style partial-path defect:
+  `EvaluateSPWithPriorityVec` returns `INT_MIN` on ANY budget interruption (both
+  on entry and post-`ObtainSP_DAG`, `OptimizeSP_Base.cpp:181-215`), so an
+  interrupted/half-evaluated permutation loses to the incumbent and is never
+  adopted. BF only ever commits COMPLETE PAs, and the P1.27 gate runs on every
+  `res_cur`. The `return;` at recursion entries already prunes subtrees.
+  (3) **`reserve(K*N)` — N/A.** BF has no beam (no `K`); `IterateAllPAs` recurses
+  over permutations. The only `reserve` is `time_limit_option_for_each_task.reserve(N)`
+  (`OptimizeSP_TL_BF.cpp:22`), already correct.
+  (2) **minimize P1.27 comments — marginal/skipped.** The P1.27 comment is already
+  ≤2 lines; the longer blocks in `OptimizeSP_TL_BF.cpp` are P1.14/P0.10-tagged
+  (different tasks), not P1.27.

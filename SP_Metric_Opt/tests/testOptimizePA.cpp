@@ -295,6 +295,47 @@ TEST(SP_Calculation_Bug, OptimizeFromScratch_SP_Consistency) {
     std::cout << std::endl;
     EXPECT_DOUBLE_EQ(expected_sp, opt_sp);
 }
+
+// P1.29 BF analogue: the BF PA enumeration must gate each candidate on
+// important-task schedulability, adopting the best SCHEDULABLE PA instead of
+// the SP-max PA when the SP-max PA leaves an important task unschedulable.
+class TaskSetForTest_p129_bf_unschedulable_important : public ::testing::Test {
+   public:
+    void SetUp() override {
+        GlobalVariables::Granularity = 10;
+        FiniteDist et0 = FiniteDist({Value_Proba(5.0, 1.0)});   // point mass
+        FiniteDist et1 = FiniteDist({Value_Proba(10.0, 1.0)});  // point mass
+        tasks.push_back(Task(0, et0, 100, 6, 0));   // IMPORTANT, ddl 6
+        tasks.push_back(Task(1, et1, 100, 12, 1));  // not important, ddl 12
+        tasks[0].processorId = 0;
+        tasks[1].processorId = 0;
+        tasks[0].is_important = true;
+        dag_tasks = DAG_Model(tasks, {}, {1e9});
+        sp_parameters = SP_Parameters(tasks);
+        sp_parameters.weights_node[0] = 0.2;
+        sp_parameters.weights_node[1] = 0.8;
+        sp_parameters.thresholds_node[0] = 0.1;
+        sp_parameters.thresholds_node[1] = 0.1;
+    }
+    TaskSet tasks;
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetForTest_p129_bf_unschedulable_important,
+       InSearchGate_AdoptsSchedulablePAOverUnschedulableSpMax) {
+    ResourceOptResult res = OptimizePA_BruteForce(dag_tasks, sp_parameters);
+
+    // SP-max PA {1,0} (sp 0.8) makes important task 0 unschedulable (RTA 15 >
+    // ddl 6); the gate rejects it, so BF keeps the schedulable {0,1} (sp 0.2).
+    EXPECT_NEAR(res.sp_opt, 0.2, 1e-6)
+        << "gate should reject the 0.8 unschedulable SP-max PA; got "
+        << res.sp_opt;
+    EXPECT_TRUE(ImportantTasksMeetThresholds(dag_tasks, sp_parameters,
+                                             res.priority_vec))
+        << "BF must not adopt a PA that leaves an important task unschedulable";
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);

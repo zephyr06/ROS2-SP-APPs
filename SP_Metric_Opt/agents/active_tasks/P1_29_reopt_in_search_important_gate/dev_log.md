@@ -252,8 +252,88 @@
   gate, push site, empty-break, emptied-beam block, test fixtures) to <=3-line
   comments, dropped the "P1.29"/"Phase 3" tags. Behavior unchanged.
 - 17/17 ctest PASS (incl. the new timeout test). NOT committed (`git add` only).
-- FOLLOW-UP (separate commit, NOT this task): apply the same three updates to
-  the BF optimization path — `OptimizeSP_TL_BF.cpp` / `OptimizeSP_BF.cpp`. The
-  BF in-search gate (P1.27, `cbdde63b`) is the BF analogue of this INCR gate;
-  its budget-cancel handling, comments, and any reserve should receive the same
-  treatment. Tracked here so it is not lost; will be a distinct commit.
+
+## 2026-08-08 — BF optimization follow-up (separate commit; git add-only; 17/17 ctest)
+
+The earlier "apply the same three updates to BF" follow-up note was **wrong
+about BF's structure**. Investigation before editing:
+
+- **Item (1) budget-timeout prune — N/A.** BF has no INCR-style partial-path
+  defect. `EvaluateSPWithPriorityVec` (`OptimizeSP_Base.cpp:181-215`) returns
+  `INT_MIN` on ANY budget interruption — both on entry (skip the expensive
+  `ObtainSP_DAG`) and post-call (discard `ObtainSP_DAG`'s partial result). So an
+  interrupted/half-evaluated permutation loses to the incumbent
+  (`INT_MIN > opt_sp_` is false) and is never adopted. BF only ever commits
+  COMPLETE PAs (one per leaf of `IterateAllPAs`), and the P1.27 in-search gate
+  runs `ImportantTasksMeetThresholds` on every adopted `res_cur`. The `return;`
+  at the recursion entries (`IterateAllPAs` + `Optimize()`) already prunes
+  subtrees on cancel. No ungated half-evaluated leaf can be committed.
+- **Item (3) `reserve(K*N)` — N/A.** BF has no beam (no `K`); `IterateAllPAs`
+  recurses over the N! permutations. The only `reserve` is
+  `time_limit_option_for_each_task.reserve(N)` (`OptimizeSP_TL_BF.cpp:22`),
+  already correct.
+- **Item (2) minimize P1.27 comments — marginal, skipped.** The P1.27 comment
+  is already <=2 lines; the longer comment blocks in `OptimizeSP_TL_BF.cpp` are
+  P1.14/P0.10-tagged (different tasks), not P1.27.
+
+**The REAL BF analogue** (user reframed the follow-up 2026-08-08: "during BF
+searching it tries each possible solution; add a schedulability check when a
+candidate outperforms the current best; for BF don't worry about implementation
+efficiency") = an **in-search per-candidate gate in the PA enumeration**:
+`OptimizePA_BF::IterateAllPAs` (`OptimizeSP_BF.cpp`) currently adopts a PA on
+`if (sp_eval > opt_sp_)` alone — SP-max, no sched check. The P1.27 TL-level leaf
+gate (`OptimizeSP_TL_BF.cpp:52-59`) only gates the ONE SP-max PA per TL combo
+(`res_cur`), so a TL combo whose SP-max PA is unschedulable contributes NOTHING
+even if it contains a lower-SP schedulable PA. Pushing the gate DOWN into
+`IterateAllPAs` makes each TL combo surface its best SCHEDULABLE PA.
+
+- `OptimizeSP_BF.cpp` `IterateAllPAs`: `if (sp_eval > opt_sp_)` ->
+  `if (sp_eval > opt_sp_ && ImportantTasksMeetThresholds(dag_tasks_,
+  sp_parameters_, priority_assignment))`. `dag_tasks_` already has TLs baked
+  (`UpdateExtDistBasedOnTimeLimit` at the TL-recursion leaf), so the no-tl
+  overload is correct. Bit-identical when no task `is_important` (overload
+  vacuously true -> `sp_eval > opt_sp_` unchanged). Seed floor preserved
+  (`opt_sp_=initial_sp`, `opt_pa_=GetPriorityAssignments`): when a TL combo has
+  NO schedulable PA, `IterateAllPAs` returns the (possibly unschedulable) seed;
+  the P1.27 TL-level gate then rejects it -> backstop. So `OptimizeSP_TL_BF.cpp`
+  is UNTOUCHED (P1.27 TL-level gate KEPT — still needed for that fall-through).
+- New 3-arg `ImportantTasksMeetThresholds(dag, sp, pa)` overload
+  (`SP_Metric.{h,cpp}`) for a dag whose TLs are ALREADY baked into the ET dists
+  (mirrors `EvaluateSPWithPriorityVec`, which also takes a baked dag + PA, no
+  `tl`). Delegates to the 4-arg overload via `tl=-1`:
+  `ApplyTimeLimitsToTasksExecutionTime` is a no-op when every `tl[i]==-1`
+  (it only re-bakes where `tl!=-1`), so the baked dists are preserved. The -1
+  trick is localized + documented in the overload. No `OptimizePA_BF` ctor /
+  `OptimizePA_BruteForce` signature changes (it has standalone no-TL test
+  callers), no test-caller breakage.
+- TDD: `TaskSetForTest_p129_bf_unschedulable_important` /
+  `InSearchGate_AdoptsSchedulablePAOverUnschedulableSpMax` in
+  `tests/testOptimizePA.cpp` — same point-mass fixture as the INCR P1.29 test
+  (task 0 IMPORTANT ET=5 ddl=6 w=0.2; task 1 ET=10 ddl=12 w=0.8; both proc 0).
+  PA `{1,0}` = SP 0.8 but important task 0 RTA 15 > ddl 6 -> unsched; PA `{0,1}`
+  = SP 0.2 sched. RED before gate: BF returns `{1,0}` sp 0.8 (Initial SP 0.2 ->
+  Optimal SP 0.8, `ImportantTasksMeetThresholds`=false). GREEN after: returns
+  `{0,1}` sp 0.2 + `ImportantTasksMeetThresholds`=true. 17/17 ctest PASS.
+- NOT committed (`git add` only). Distinct commit from the INCR P1.29 work.
+
+## 2026-08-08 (refactor — remove the `tl=-1` trick from the gate overloads)
+
+- User review flagged the 3-arg `ImportantTasksMeetThresholds(dag, sp, pa)`
+  overload as wrong-by-design: it delegated to the 4-arg overload via a synthetic
+  `tl_noop = [-1,...]` vector so the 4-arg's `ApplyTimeLimitsToTasksExecutionTime`
+  became a no-op. Unintuitive — the `tl=-1` sentinel is an implementation trick
+  leaking into the call graph, not a real TL.
+- Refactor (`SP_Metric.{h,cpp}`): extracted the gate's per-task check into a
+  single anonymous-namespace core `ImportantTasksBelowThresholds(tasks_prioritized,
+  sp, node_rtas)` — takes ALREADY-prioritized tasks + index-aligned RTAs (no `tl`,
+  no baking). All three public overloads now reduce to it:
+  - 5-arg contract: bake + prioritize + core (caller's precomputed RTAs).
+  - 4-arg: bake + prioritize + fresh RTA + core.
+  - 3-arg (already-baked dag): prioritize + fresh RTA + core — **no `tl=-1`**;
+    directly prioritizes `dag_tasks.tasks` (TLs already baked).
+- Behavior-identical: the 3-arg previously baked with `tl=-1` (a no-op →
+  `tasks_baked == dag_tasks.tasks`) then prioritized + fresh RTA + check; the new
+  3-arg does prioritize + fresh RTA + check on `dag_tasks.tasks` — same ops, same
+  result. 17/17 ctest PASS (incl. the BF P1.29 test that exercises the 3-arg
+  overload). Header comment on the 3-arg updated (dropped the `tl=-1` rationale).
+- NOT committed (`git add` only). Same commit as the BF follow-up (same file).

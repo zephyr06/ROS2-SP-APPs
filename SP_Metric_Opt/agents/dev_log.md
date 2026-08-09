@@ -54,9 +54,37 @@
   `return true`). (2) `OptimizeFromScratch`: `partial_paths.reserve(K)` →
   `reserve(K * N)` (N = task count). (3) Minimized the P1.29-tagged comment blocks
   in `OptimizeSP_Incre.{h,cpp}` + `testOptimizeIncrePA.cpp` (≤3 lines, tags
-  dropped). **BF follow-up (SEPARATE commit, NOT P1.29):** apply the same 3
-  updates to the BF path (`OptimizeSP_TL_BF.cpp`/`OptimizeSP_BF.cpp`, the P1.27 BF
-  analogue) — timeout-prune, minimize P1.27 comments, `reserve(K*N)`.
+  dropped). **BF follow-up DONE 2026-08-08 (SEPARATE commit, NOT P1.29; git
+  add-only; 17/17 ctest):** the "same 3 updates" framing was wrong about BF's
+  structure — items 1 (timeout-prune) & 3 (`reserve(K*N)`) are N/A (BF has no
+  beam/partial-path; `EvaluateSPWithPriorityVec` returns `INT_MIN` on any budget
+  interruption @ `OptimizeSP_Base.cpp:181-215` so interrupted PAs lose to the
+  incumbent → BF only commits COMPLETE PAs; only `reserve` is `reserve(N)` already
+  correct), 2 (comment-min) marginal. REAL BF analogue (user reframed: "add a
+  sched check when a candidate outperforms the current best; for BF don't worry
+  about efficiency") = in-search per-candidate gate in
+  `OptimizePA_BF::IterateAllPAs` (`OptimizeSP_BF.cpp`): `if (sp_eval>opt_sp_)` →
+  `if (sp_eval>opt_sp_ && ImportantTasksMeetThresholds(dag_tasks_,sp_,pa))`; new
+  3-arg `ImportantTasksMeetThresholds(dag,sp,pa)` overload (`SP_Metric.{h,cpp}`)
+  for a TL-pre-baked dag (mirrors `EvaluateSPWithPriorityVec`). Each TL combo now
+  surfaces its best SCHEDULABLE PA, not just SP-max. Bit-identical w/o
+  `is_important`. `OptimizeSP_TL_BF.cpp` UNTOUCHED (P1.27 TL-level gate kept —
+  rejects the unsched seed when a TL combo has no schedulable PA → backstop). TDD
+  `InSearchGate_AdoptsSchedulablePAOverUnschedulableSpMax` in `testOptimizePA.cpp`
+  (same point-mass fixture as INCR P1.29; RED 0.8 unsched → GREEN 0.2 sched).
+- **P1.29 refactor — removed the `tl=-1` trick from the gate overloads (NOT
+  committed; `git add`-only; 17/17 ctest; speed test PASS).** User flagged the
+  3-arg `ImportantTasksMeetThresholds(dag,sp,pa)` overload as wrong-by-design: it
+  delegated to the 4-arg via a synthetic `tl_noop=[-1,...]` vector so the 4-arg's
+  `ApplyTimeLimitsToTasksExecutionTime` became a no-op (unintuitive sentinel
+  leaking into the call graph). Extracted the gate's per-task check into a shared
+  anonymous-namespace core `ImportantTasksBelowThresholds(tasks_prioritized, sp,
+  node_rtas)` (no `tl`, no baking); all three public overloads (5-arg contract /
+  4-arg / 3-arg) reduce to it. 3-arg now prioritizes the already-baked
+  `dag_tasks.tasks` + fresh RTA + core — no `tl` sentinel. Behavior-identical
+  (the old `tl=-1` bake was a no-op → `tasks_baked==dag_tasks.tasks` → same ops).
+  Speed test: INCR_Reopt_1 0.037s/interval, INCR_Reopt_10 0.018s/interval (both
+  PASS, < 0.1s target).
 
 - **P1.28 — root-caused INCR_Reopt_10 interval-SP collapse to 0.527888 (RM-Fast fallback
   swap-down); fix not yet implemented.** `taskset_2` `INCR_Reopt_10` collapses to 0.527888

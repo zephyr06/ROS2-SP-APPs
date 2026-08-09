@@ -25,7 +25,16 @@ void OptimizePA_BF::IterateAllPAs(
         double sp_eval = EvaluateSPWithPriorityVec(dag_tasks_, sp_parameters_,
                                                    priority_assignment);
         PrintPA_IfDebugMode(priority_assignment, sp_eval);
-        if (sp_eval > opt_sp_) {
+        // P1.29 BF analogue — gate each candidate in-search: adopt only if it
+        // both beats the incumbent SP AND keeps every important task
+        // schedulable. Without this, BF commits the SP-max PA even when it
+        // leaves an important task unschedulable, then the post-hoc backstop
+        // swaps the whole plan to RM-Fast. dag_tasks_ already has TLs baked
+        // (UpdateExtDistBasedOnTimeLimit), so the no-tl overload is correct.
+        // Vacuous (never rejects) when no task is_important -> legacy identical.
+        if (sp_eval > opt_sp_ &&
+            ImportantTasksMeetThresholds(dag_tasks_, sp_parameters_,
+                                         priority_assignment)) {
             opt_sp_ = sp_eval;
             opt_pa_ = priority_assignment;
         }
