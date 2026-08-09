@@ -25,52 +25,43 @@
     and QoS-configurable tasks ($\tau^Q_i$) whose execution-time distributions are decided by the internal schedulers.
     To utilize the incremental priority optimization algorithms proposed before, we first sort all the tasks based on their importance and perform optimization to them one by one.
 
-    \subsection{Finding the Initial Solution Before Searching}
-    \label{section_initial_solution}
-
-    The compare-and-keep structure of the walk---and the single-change invariant $|\mathrm{diff}|\le 1$ that the RTA cache relies on (Section~\ref{section_rta_cache})---requires a \emph{champion} to exist before the first step: a deployed configuration $\{\boldsymbol{P},\boldsymbol{Q}\}$ together with its SP score and the per-task response-time distributions $\rtDist{i}$ it induces.
-    Finding this initial solution is therefore a prerequisite of the search, not a part of it, and it is handled in two regimes that mirror the two descent modes of Section~\ref{section_increment_pa}.
-
-    \textbf{Cold-start seed (interval~0).}
-    When the optimizer has no prior incumbent---at the first interval, or whenever a from-scratch re-optimization is triggered with no carried state---it constructs a feasible seed directly rather than searching for one.
-    The priority assignment is set by Deadline Monotonic (DM) ordering, $\boldsymbol{P}_{\mathrm{DM}}$, which sorts tasks by deadline ascending; this is preferred over Rate Monotonic because the task set uses constrained deadlines, $D_i = T_i \cdot U(0.5,1.0)$, so the deadline---not the period---is the correct priority key.
-    Each QoS-configurable task $\tau^Q_i$ is placed at the smallest budget on its grid, $\boldsymbol{Q}_{\min}$, the option that induces the least interference and is therefore the most likely to be schedulable.
-    The pair $\{\boldsymbol{P}_{\mathrm{DM}},\boldsymbol{Q}_{\min}\}$ is scored once under the current execution-time distributions and committed as the champion; the search then proceeds outward from this point.
-
-    \textbf{Warm-started re-score (subsequent intervals).}
-    At every later interval the optimizer carries the previous interval's adopted champion forward.
-    Because the serialized loop of Section~\ref{section_config_opt} must honor the weight-sorted dispatch order, the carried $\{\boldsymbol{P},\boldsymbol{Q}\}$ is \emph{re-scored} under the interval's drifted execution-time distributions but \emph{not} re-optimized: this is a $|\mathrm{diff}|=0$ full-reuse hit in the RTA cache, so it costs no extra response-time analysis.
-    The re-scored value seeds the strict-improvement guard that the walk compares against.
-
-    \textbf{Schedulable seed via the certified fallback.}
-    A subtlety of strict-SP compare-and-keep is that it never accepts an SP-lowering move, even one that restores schedulability; a walk that begins from an unschedulable incumbent can therefore terminate on an unschedulable SP-maximal configuration even when schedulable plans of slightly lower SP exist.
-    To prevent this, the seed is audited for important-task schedulability at the moment it is scored---again at zero additional RTA cost, since the response-time distributions needed for the constraint $Pr(r_i > D_i) \leq \Theta_i$ of \eqref{eq_important_task_constraint} are exactly those already computed for the SP evaluation.
-    If the carried incumbent violates the constraint and a certified safe fallback is available, the fallback's $\{\boldsymbol{P},\boldsymbol{Q}\}$---certified offline against a cross-interval worst-case execution-time distribution that stochastically dominates every interval---is adopted as the seed in its place.
-    The walk thus always climbs the SP metric from a schedulable base; the offline construction and adoption contract of this fallback are the subject of Section~\ref{section_safety_fallback}.
-
-    In all regimes the cache is armed \emph{after} the seed is committed: the seed is a $|\mathrm{diff}|=0$ champion, so adopting it is a full-reuse hit, and every subsequent single-task step of the walk satisfies $|\mathrm{diff}|\le 1$ against it.
-
+    
     \subsection{QoS-Budget Trial-and-Error Walk}
     \label{section_qos_walk}
+    For a QoS-configurable task $\tau^Q_i$ whose budget is drawn from the grid $\{q_i^{(0)}, q_i^{(1)}, \dots, q_i^{(B)}\}$, the optimizer searches for the budget that maximizes the system-level SP metric by trial and error.
+    The procedure is the discrete analogue of the gradient-based trust-region search of Wang~\etal~\cite{Wang2023RTAS}: whereas that method follows a continuous gradient within a trust region, we enumerate the neighboring grid points directly.
+    A dense grid could instead be treated as a continuous variable and optimized by that gradient-based framework, but our setting assumes a coarse grid with few options per task, which motivates the direct walk.
 
-    For a $\tau^Q_i$ task, the optimizer walks its time-limit grid outward from the current budget, evaluating the SP metric at each option and retaining the best.
-    The walk proceeds in two passes from the current option index: first backward (toward smaller budgets), then forward (toward larger budgets).
-    A pass halts when it reaches the grid boundary or when a patience budget---a total count of consecutive non-improving steps that is not reset upon an improvement---is exhausted.
-    The backward-first ordering serves as a resource-aware tie-break: when two budgets yield equal SP, the smaller one is preferred, conserving computation.
-    The patience budget is selected by mode, reflecting that a re-optimization interval (starting from a fresh seed) permits a longer search than an incremental one.
+    Starting from the current budget $q_i^{(k)}$, the walk proceeds in two passes: first backward toward smaller budgets, then forward toward larger budgets, moving one grid step at a time.
+    A step is deemed successful if it strictly improves the system-level SP metric, with ties broken toward the smaller budget so that equal-SP options resolve to the cheaper one.
+    A pass halts when it reaches the grid boundary or when a patience budget is exhausted, where the patience budget counts consecutive non-improving steps and is not reset upon an improvement.
+    The task then adopts the budget that achieved the highest SP.
+    The patience budget bounds the computation spent on non-improving directions, concentrating online effort where it yields SP gains, and its value is selected by optimization mode: a re-optimization interval started from a fresh seed permits a longer search than an incremental one.
 
-    Each trial budget is evaluated through the incremental priority solver, which re-scores the carried priority assignment together with a single-task priority re-search at the trial budget; because only the walked task's budget differs from the champion, the evaluation is a cache reuse hit.
-    Continuing the anytime-algorithm example of Section~\ref{def_task_config}, a motion-planning task with grid $\{100, 200, 300, 500\}$ (in milliseconds) starting from a budget of $300$ tries $200$, then $100$ (the backward pass), then $400$-equivalent options and $500$ (the forward pass), adopting the budget that maximizes the SP metric.
+    \begin{Example}
+        Consider a QoS-configurable motion-planning task $\tau_0$ with budget grid $\{100, 200, 300, 500\}$ ms, current budget $q_0^{(k)} = 300$ ms, and patience budget $2$.
+        Holding the priority assignment and all other tasks' budgets fixed, assume the system-level SP metric \eqref{eq_sp_def} at each candidate budget is:
+    \begin{itemize}
+        \item $q_0 = 100$ ms: $\textbf{SP} = 0.55$.
+        \item $q_0 = 200$ ms: $\textbf{SP} = 0.72$.
+        \item $q_0 = 300$ ms: $\textbf{SP} = 0.70$ (current).
+        \item $q_0 = 500$ ms: $\textbf{SP} = 0.68$.
+    \end{itemize}
+
+        The backward pass tries $200$ ms, giving $\textbf{SP} = 0.72 > 0.70$, an improvement that is adopted; it then tries $100$ ms, giving $0.55 < 0.72$, a failure that spends one unit of patience before the pass ends at the grid boundary.
+        The forward pass resumes from $300$ ms carrying the best value $0.72$: it tries $500$ ms, giving $0.68 < 0.72$, a failure that spends a second unit of patience before the pass ends at the boundary.
+        The walk therefore adopts $q_0 = 200$ ms, the budget with the highest observed SP.
+        Had the patience budget been smaller, each pass would have halted at its first non-improving step rather than reaching the boundary.
+    \end{Example}
 
     \subsection{Environment-Task Incremental Priority Move}
     \label{section_env_pa_move}
 
-    For a $\tau^E_i$ task whose distribution changed, the dispatch calls the incremental priority solver of Section~\ref{section_increment_pa} directly---no QoS walk is performed, since the task has no time-limit grid.
-    The solver re-searches the task's priority position over one half of the priority range, with the half selected by the four-scenario rule of Section~\ref{section_increment_pa} from the carried change direction, and adopts the best strictly-improving position.
-    This is the unification pursued above: both QoS flex and environment change flow through one serialized loop, differing only in the per-task handler, and both reduce to a single-task change that the RTA cache serves incrementally.
+    This part is the same as Section~\ref{section_increment_pa}.
 
     \subsection{Complexity and the Single-Change Property}
     \label{section_complexity_single_change}
+    % TODO: consider how to better highlight this design
 
     Each pass over the serialized queue evaluates, per $\tau^Q_i$ task, every option it reaches on its grid (bounded by patience) and, per $\tau^E_i$ task, the positions in one half of the priority range; with $N$ tasks in the queue and at most $M$ options per task, the per-pass complexity is $O(M \cdot N)$, a reduction from the $O(M^N)$ exhaustive search over the joint QoS space.
     The full run-time analysis, including the response-time analysis cost folded into each evaluation, is deferred to Section~\ref{section_complexity_analysis}.
@@ -78,6 +69,22 @@
     The single-change property is structural: each iteration of the serialized loop adjusts exactly one task's execution-time distribution (via a budget change or an environment change) or priority position, and every accepted adjustment is committed as the new champion before the next iteration begins.
     Consequently every evaluation differs from the champion by at most one task, satisfying the $|\mathrm{diff}| \leq 1$ invariant asserted by the cache's single-change check (Section~\ref{section_rta_cache}); the cache's reuse lemmas therefore apply to every step of the collaborative walk.
 
+    \subsection{Finding the Initial Solution Before Searching}
+    \label{section_initial_solution}
+
+    The search requires a feasible initial solution where all important tasks are schedulable to get started.
+    For the very first scheduler invocation, this seed is a Deadline-Monotonic priority assignment paired with the smallest QoS budget on each task's grid (the DM\_FAST configuration).
+    This configuration gives the scheduler more space to perform optimization.
+    Under the relative-deadline model $D_i \le T_i$, Deadline-Monotonic ordering maximizes schedulability among fixed-priority assignments, so this choice provides the most schedulable starting point for the search.
+
+    At every subsequent invocation, the initial solution is inherited from the configuration found at the previous invocation.
+    This reflects the incremental nature of the optimization: the environment is assumed to evolve continuously and the scheduler is invoked frequently, 
+    so the execution-time distributions, and with them the near-optimal configuration, drift only marginally between consecutive invocations, making the previous solution a high-quality warm start.
+
+    The inherited solution may nonetheless become invalid in the new environment.
+    When it is no longer schedulable under the updated distributions, or when one or more tasks exhibit an execution-time change exceeding a threshold that indicates the predicted distribution may be inaccurate and the inherited configuration unreliable, the optimizer discards it and adopts the certified safe fallback as the initial solution instead.
+    The fallback is constructed offline and is guaranteed schedulable; its construction and adoption are detailed in Section~\ref{section_safety_fallback}.
+    
 
 	\subsection{RTA Cache: Reusing Response-Time Computation}
 	\label{section_rta_cache}
