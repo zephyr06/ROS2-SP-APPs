@@ -101,7 +101,7 @@ int main(int argc, char** argv) {
 
     std::vector<BenchmarkResult> results;
     bool all_passed = true;
-    LLint duration_ms = 100000; // 100s simulation duration (10 intervals)
+    LLint duration_ms = 10000; // 10s/interval (10x fewer ticks than 100000); max task period 1000ms -> >=10 releases
 
     for (const auto& [mode, threshold] : schedulers) {
         MaybeOverrideReoptPeriod(mode);
