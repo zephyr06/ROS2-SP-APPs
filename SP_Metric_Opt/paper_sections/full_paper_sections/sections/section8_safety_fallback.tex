@@ -2,6 +2,8 @@
 	\section{Certified Safe Fallback}
 	\label{section_safety_fallback}
 
+    % todo: initial solution of any optimization interval must be schedulable; offline analysis guarantees that the task will be schedulable online; if initial solution is not schedulable, we adopt fall-back. FALLBACK solution is found offline and is guaranteed to be schedulable;
+
     The hard constraint in \eqref{eq_important_task_constraint} requires every important task $\tau_i \in \boldsymbol{\tau}^{safe}$ to satisfy $Pr(r_i > D_i) \leq \Theta_i$ under the deployed configuration $\{\boldsymbol{P}, \boldsymbol{Q}\}$.
     Because the optimizer of Sections~\ref{section_priority_opt}--\ref{section_config_opt} searches online over candidate priority assignments and QoS budgets, it must never \emph{ship} a configuration that violates this constraint---not even transiently, while a re-optimization is in progress or immediately after the environment $\textbf{E}$ has changed.
     The certified safe-fallback mechanism described below makes this important-task safety guarantee a built-in property of the framework rather than a conditional assumption on a user-supplied execution-time upper bound.

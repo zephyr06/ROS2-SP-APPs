@@ -25,6 +25,7 @@
 
 	\subsection{Priority Assignments Based on Audsley's Algorithm and Beam Search}
 	\label{section_audsley_pa}
+    % TODO: rename this as constrained beam searching
     Since the QoS budgets are fixed, the system-level SP metric is highly correlated with the system's schedulability.
     This motivates us to leverage the classical Audsley's algorithm~\cite{Audsley91optimalpriority} to optimize SP metrics due to optimal schedulability under certain conditions~\cite{Audsley91optimalpriority}, and its $O(n^2)$ runtime complexity, where $n$ is the number of tasks in the task set.
 
@@ -111,27 +112,15 @@ The pseudocode for the modified Audsley's algorithm is shown below:
     The incremental optimization always starts from an initial feasible solution (such as one found by the modified Audsley's algorithm).
     Starting from this initial solution, assume there are $n$ tasks whose execution time become different since the last time the scheduler is called, and we sort them based on their importance (SP weights). 
     The incremental optimization iterates through these $n$ tasks one by one: for each task $\tau_i$, we try to adjust its priority value while keeping all other tasks' relative priority order unchanged. 
-    Assume the task set has $N$ tasks in total, there will be $N$ options for $\tau_i$'s new priority level. So we follow a simple heuristic based on: 
-    whether $\tau_i$ holds the uniquely highest SP weight $w_i$ in the task set~\eqref{eq_sp_def}, and whether $\tau_i$'s execution time increases or decreases.
-The four possible scenarios are:
+    Assume the task set has $N$ tasks in total, there will be $N$ options for $\tau_i$'s new priority level. So we follow a simple heuristic based on improving task set schedulability:
+The possible scenarios are:
 \begin{enumerate}
-    \item If $\tau_i$ does not have the uniquely highest weight and its execution time increases, the re-search direction is \emph{downward} for improving overall schedulability.
-    \item If $\tau_i$ does not have the uniquely highest weight and its execution time decreases, the re-search direction is \emph{upward} for improving overall schedulability.
-    \item If $\tau_i$ has the uniquely highest weight and its execution time increases, we do not want to starve this task as it has high importance, the re-search direction is \emph{upward}: scan positions of higher priority than $\tau_i$'s current one. Beucase 
-    % todo: THIS DOESN'T make sense
-    \item If $\tau_i$ has the uniquely highest weight and its execution time decreases, the re-search direction is \emph{downward}: scan positions of lower priority.
+    \item If $\tau_i$ execution time increases, the re-search direction is \emph{downward} for improving overall schedulability.
+    \item If $\tau_i$ execution time decreases, the re-search direction is \emph{upward} for explorin improving performance.
+    \item If $\tau_i$ has the uniquely highest weight, we do not want to starve this task, the re-search direction is \emph{upward}.
 \end{enumerate}
 In every scenario $\tau_i$ is removed from the current priority vector and re-inserted at each position within the chosen half; the position yielding the highest SP metric is adopted if it strictly improves on the current assignment, otherwise the current position is retained.
 
-Concretely, let $\mathcal{C}(\tau_i) \subseteq \{1,\dots,N\}$ denote the ordered set of candidate priority positions scanned for $\tau_i$ within the chosen half of the priority range.
-The \emph{local search radius}
-\begin{equation}
-    \delta = |\mathcal{C}(\tau_i)|
-    \label{eq:incremental_configuration}
-\end{equation}
-caps the number of positions evaluated per re-search, bounding the per-task optimization cost to $O(\delta)$ response-time evaluations.
-A smaller $\delta$ reduces overhead at the cost of a coarser search, while a larger $\delta$ explores more of the priority range but increases computation; the choice of $\delta$ is discussed together with the other hyperparameters in Section~\ref{section_implementation}.
-
-Potential issues in terms of optimal solution drift caused by the incremental optimization is discussed in Section~\ref{sec: drift}.
+Potential issues in terms of optimal solution drift caused by the incremental optimization is mainly solved by periodically triggering the modified Audsley's algorithm, see Section~\ref{sec: drift}.
 
 
