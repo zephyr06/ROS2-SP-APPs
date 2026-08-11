@@ -19,7 +19,9 @@
 	\subsection{Brute-Force Priority Assignments}
 	\label{section_bf_pa}
     Given a task set of $n$ tasks, the brute-force algorithm enumerates and evaluates all $n!$ possible priority assignment vectors to identify the optimal solution.
-    The brute-force algorithm is optimal by construction.
+    Each enumerated assignment is checked against \eqref{eq_important_task_constraint2}, and any that violates an important task's threshold is discarded before scoring, 
+    so the optimum is taken over feasible assignments only. 
+    It guarantees to find the global optimal solution if execution time prediction is accurate.
     While straightforward, this approach has an exponential computational complexity and is not practical in reality.
     We use it as an offline optimality reference in our experiments (Section~\ref{section: simulation}).
 
@@ -27,27 +29,28 @@
 	\label{section_audsley_pa}
     % TODO: rename this as constrained beam searching
     Since the QoS budgets are fixed, the system-level SP metric is highly correlated with the system's schedulability.
-    This motivates us to leverage the classical Audsley's algorithm~\cite{Audsley91optimalpriority} to optimize SP metrics due to optimal schedulability under certain conditions~\cite{Audsley91optimalpriority}, and its $O(n^2)$ runtime complexity, where $n$ is the number of tasks in the task set.
-
-    The core idea of Audsley's algorithm is straightforward: in each iteration, the algorithm identifies tasks from a candidate pool (\ie, tasks that have not been assigned priorities yet) that can tolerate the lowest priority while still meeting their deadlines.
-    If such a task is found, its priority is assigned; otherwise, the algorithm concludes that the task set is not schedulable.
-
-    However, Audsley's algorithm cannot be applied directly: it optimizes schedulability rather than the SP metric, so its assignments need not maximize SP, 
-    and it assumes hard real-time constraints, whereas our soft real-time setting may still extract value from assignments it deems ``unacceptable.''
-    To address these limitations, we modify Audsley's algorithm with a beam search that retains multiple partial priority assignments scored by accumulated SP-value loss rather than by schedulability alone, preserving its $O(n^2)$ iterative structure.
-
-
-    The modified algorithm works iteratively.
-    Each partial priority assignment $p$ carries its own pool of not-yet-assigned tasks; assigning a task to $p$ appends it at the current priority level and removes it from that pool.
-    In the \ith{k} iteration, the algorithm identifies the task to assign the \ith{k} lowest priority.
-    The key steps within each iteration are:
-\begin{itemize}
-    \item For each recorded partial priority assignment vector $p$ (the set $\partialpa$ in Algorithm~\ref{alg:modified_audsley}), evaluate the accumulated SP-value loss incurred by the tasks already placed in $p$.
-    \item For each $p$, for each task $\tau_i$ still in $p$'s pool, form a copy of $p$, assign $\tau_i$ the \ith{k} lowest priority, and compute the SP metric loss associated with $\tau_i$.
-    \item Retain the top-$b$ ($b>0$ is the beam width) partial priority assignment vectors with the \emph{lowest} accumulated SP loss.
-    These candidates are passed to the next iteration.
-\end{itemize}
-
+    This motivates us to leverage the classical Audsley's algorithm~\cite{Audsley91optimalpriority} to optimize SP metrics due to optimal schedulability under certain conditions~\cite{Audsley91optimalpriority}, 
+    and its $O(n^2)$ runtime complexity, where $n$ is the number of tasks in the task set. The challenges with directly applying Audsley's algorithm are that: it optimizes schedulability rather than the SP metric, so its assignments need not maximize SP, 
+    and it assumes hard real-time constraints.
+    
+    To address these limitations, we modify Audsley's algorithm with a beam search that retains multiple partial priority assignments scored by accumulated SP-value loss rather than by schedulability alone, 
+    preserving its $O(n^2)$ iterative structure.
+    The modified algorithm works iteratively from the first iteration to the \ith{N} iteration where \ith{N} is the number of tasks in the task set $\boldsymbol{\tau}$.
+    In the \ith{k} iteration, we try to find the task $\tau_i$ that can be assigned with the \ith{k} lowest priority based on the following rules:
+    \begin{itemize}
+        \item $\tau_i$ is not assigned a priority value yet. Each task will only be assigned priority once and will not be changed while other tasks are assigned priorities;
+        \item If $\tau_i$ is a safety-critical task, assigning $\tau_i$ the \ith{k} lowest priority will not violate its deadline-miss threshold;
+        \item Among all the tasks $\boldsymbol{\tau}^{U}$ whose priorities are not decided yet, $\tau_i$ is the task with minimum regret (SP value loss):
+    \end{itemize}
+    \begin{equation}
+    \begin{split}
+        \tau_i = \argmin_{\tau_i \in \boldsymbol{\tau}^{U}} \big( 1.0 & - \mathcal{P}(\tau_i; \textbf{E}) \\
+        & \cdot \mathcal{S}\!\left(Pr(r_i > D_i ; \boldsymbol{P}(\boldsymbol{\tau}^{U}), \boldsymbol{Q}, \textbf{E}) - \Theta_i\right) \big)
+    \end{split}
+    \label{eq: beam_search_goal}
+    \end{equation}
+    where $\boldsymbol{P}(\boldsymbol{\tau}^{U})$ denotes the priority assignments of tasks in $\boldsymbol{\tau}^{U}$.
+    
 This heuristic-based modification allows the algorithm to balance schedulability with SP metric optimization.
 The pseudocode for the modified Audsley's algorithm is shown below:
 
@@ -62,8 +65,9 @@ The pseudocode for the modified Audsley's algorithm is shown below:
 			\For{$p$ in $\partialpa$}{
 				\For{$\tau_i$ in $p.\textsc{Pool}$}{
 					$p' \leftarrow \textbf{copy}(p)$ \tcp{copy before extending}
-					$p'.\textsc{Assign}(\tau_i)$ \tcp{append $\tau_i$ at priority $k$; remove $\tau_i$ from $p'.\textsc{Pool}$; accumulate SP loss}
-					$\partialpacur.\textbf{Push}(p')$\\
+					\If{$p'.\textsc{Assign}(\tau_i)$}{
+					$\partialpacur.\textbf{Push}(p')$ \tcp{append $\tau_i$ at priority $k$, accumulate SP loss; reject (return false) if $\tau_i \in \boldsymbol{\tau}^{safe}$ and $Pr(r_i > D_i) > \Theta_i$}
+					}
 				}
 			}
 			$\partialpa = \textbf{SelectTop}(\partialpacur, b)$ \tcp{keep the $b$ paths of \emph{lowest} accumulated SP loss}
@@ -119,7 +123,10 @@ The possible scenarios are:
     \item If $\tau_i$ execution time decreases, the re-search direction is \emph{upward} for explorin improving performance.
     \item If $\tau_i$ has the uniquely highest weight, we do not want to starve this task, the re-search direction is \emph{upward}.
 \end{enumerate}
-In every scenario $\tau_i$ is removed from the current priority vector and re-inserted at each position within the chosen half; the position yielding the highest SP metric is adopted if it strictly improves on the current assignment, otherwise the current position is retained.
+In every scenario $\tau_i$ is removed from the current priority vector and re-inserted at each position within the chosen half; 
+among the positions that preserve \eqref{eq_important_task_constraint2}, the one yielding the highest SP metric is adopted if it strictly improves on the current assignment, 
+otherwise the current position is retained.
+Positions that would drive an important task over its threshold are skipped, so the incremental search, like the beam search, never moves to an infeasible assignment.
 
 Potential issues in terms of optimal solution drift caused by the incremental optimization is mainly solved by periodically triggering the modified Audsley's algorithm, see Section~\ref{sec: drift}.
 
