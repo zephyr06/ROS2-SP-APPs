@@ -1,10 +1,9 @@
 	\section{QoS Budget and Priority Collaborative Optimization}
 	\label{section_config_opt}
 
-    This section extends the priority optimization algorithm in Section~\ref{section_priority_opt} to solve the joint problem of optimizing priority assignments and QoS options.
-
+    This section extends the priority optimization algorithm in Section~\ref{section_priority_opt} to solve the \emph{joint} problem of optimizing priority assignments and QoS budgets.
     The key observation is that a QoS-configurable task ($\tau^Q_i$) can be treated as a special type of environment-dependent task ($\tau^E_i$): the scheduler is the ``environment'' that decides Qos-configurable tasks' execution time distribution.
-    Therefore, we can decompose the joint optimization problem into QoS and priority optimization sub-problems. 
+    Therefore, we can decompose the joint optimization problem into QoS and priority optimization sub-problems.
     During the searching of QoS configurations, the incremental optimization can be utilized to co-optimize priority assignments of QoS tasks efficiently. Figure~\ref{fig:overall_workflow} illustrates the overall collaborative optimization algorithm.
     
     \begin{figure*}[htbp]
@@ -33,10 +32,37 @@
     A dense grid could instead be treated as a continuous variable and optimized by that gradient-based framework, but our setting assumes a coarse grid with few options per task, which motivates the direct walk.
 
     Starting from the current budget $q_i^{(k)}$, the walk proceeds in two passes: first backward toward smaller budgets, then forward toward larger budgets, moving one grid step at a time.
-    A step is deemed successful if it strictly improves the system-level SP metric, with ties broken toward the smaller budget so that equal-SP options resolve to the cheaper one.
+    A step is deemed successful only if it keeps every important task feasible under \eqref{eq_important_task_constraint} \emph{and} strictly improves the system-level SP metric, 
+    with ties broken toward the smaller budget so that equal-SP options resolve to the cheaper one.
+    A step that improves the SP metric but leaves some important task over its deadline-miss threshold is rejected: 
+    it spends one unit of patience like any non-improving step.
     A pass halts when it reaches the grid boundary or when a patience budget is exhausted, where the patience budget counts consecutive non-improving steps and is not reset upon an improvement.
     The task then adopts the budget that achieved the highest SP.
-    The patience budget bounds the computation spent on non-improving directions, concentrating online effort where it yields SP gains, and its value is selected by optimization mode: a re-optimization interval started from a fresh seed permits a longer search than an incremental one.
+    The patience budget bounds the computation spent on non-improving directions, concentrating online effort where it yields SP gains, and its value is selected by optimization mode:
+    a re-optimization interval started from a fresh seed permits a longer search than an incremental one.
+    Algorithm~\ref{alg:qos_walk} summarizes the walk and makes the in-search feasibility gate explicit as a step \emph{inside} the iteration: 
+    \begin{algorithm}[htbp]
+        \caption{QoS-Budget Trial-and-Error Walk for one $\tau^Q_i$} \label{alg:qos_walk}
+        \KwIn{task $\tau^Q_i$, budget grid $\{q_i^{(0)},\dots,q_i^{(B)}\}$, current $q_i^{(k)}$, patience budget, champion $(\boldsymbol{P},\boldsymbol{Q})$ in the RTA cache}
+        \KwOut{best budget $q_i^\star$}
+        $q_i^\star \leftarrow q_i^{(k)}$;\ \ $\text{best\_SP} \leftarrow \textbf{SP}(\boldsymbol{P},\boldsymbol{Q})$ \tcp{champion served from RTA cache}
+        \For{\textbf{each pass} (backward, then forward)}{
+            \While{grid boundary not reached \textbf{and} patience not exhausted}{
+                $q' \leftarrow$ next grid point in the pass direction \tcp{one step}
+                \tcp{in-search feasibility gate: test \eqref{eq_important_task_constraint} on this candidate}
+                \If{$\exists \tau_j \in \boldsymbol{\tau}^{safe}:\ Pr(r_j > D_j;\, q') > \Theta_j$}{
+                    spend one patience unit \tcp{infeasible: rejected, never adopted}
+                    \textbf{continue}\;
+                }
+                \eIf{$\textbf{SP}(\boldsymbol{P},\boldsymbol{Q}\!\mid_{q_i=q'}) > \text{best\_SP}$}{
+                    $q_i^\star \leftarrow q'$;\ \ $\text{best\_SP} \leftarrow \textbf{SP}(\boldsymbol{P},\boldsymbol{Q}\!\mid_{q_i=q'})$ \tcp{strict improvement: adopt}
+                }{
+                    spend one patience unit \tcp{non-improving step}
+                }
+            }
+        }
+        \KwRet $q_i^\star$
+    \end{algorithm}
 
     \begin{Example}
         Consider a QoS-configurable motion-planning task $\tau_0$ with budget grid $\{100, 200, 300, 500\}$ ms, current budget $q_0^{(k)} = 300$ ms, and patience budget $2$.
@@ -53,6 +79,8 @@
         The walk therefore adopts $q_0 = 200$ ms, the budget with the highest observed SP.
         Had the patience budget been smaller, each pass would have halted at its first non-improving step rather than reaching the boundary.
     \end{Example}
+    
+    % TODO: highlight that the process of trying different budgets for one task is same as moving through different environment for an enviornment-dpendent task
 
     \subsection{Environment-Task Incremental Priority Move}
     \label{section_env_pa_move}
@@ -82,8 +110,7 @@
     so the execution-time distributions, and with them the near-optimal configuration, drift only marginally between consecutive invocations, making the previous solution a high-quality warm start.
 
     The inherited solution may nonetheless become invalid in the new environment.
-    When it is no longer schedulable under the updated distributions, or when one or more tasks exhibit an execution-time change exceeding a threshold that indicates the predicted distribution may be inaccurate and the inherited configuration unreliable, the optimizer discards it and adopts the certified safe fallback as the initial solution instead.
-    The fallback is constructed offline and is guaranteed schedulable; its construction and adoption are detailed in Section~\ref{section_safety_fallback}.
+    When it is no longer schedulable under the updated distributions, or when one or more tasks exhibit an execution-time change exceeding a threshold that indicates the predicted distribution may be inaccurate and the inherited configuration unreliable, the optimizer discards it and adopts the certified safe fallback (Section~\ref{section_safety_fallback}) as the initial solution instead.
     
 
 	\subsection{RTA Cache: Reusing Response-Time Computation}
@@ -127,3 +154,4 @@
     \end{lemma}
     \noindent\textit{Proof.}
     Under partitioned scheduling, $\tau_j$ never enters $\text{hp}(k)$, so neither its priority move nor its execution-time change affects $\rtDist{k}$. \hfill$\square$
+
