@@ -160,7 +160,7 @@
 	\subsection{Solution Framework Overview}
     \label{section_solution_overview}
     The online problem~\eqref{eq_overall_obj} is addressed by a lightweight framework built on two ideas.
-    First, since $\textbf{E}$ changes continuously and re-optimization intervals are short, only a few tasks' distributions change slowly between invocations, so we can each warm-starts an incremental search from the last deployed configuration, and perform incremental optimization to focus on what's changed between scheduelr invocation.
-    Second, the hard constraint~\eqref{eq_important_task_constraint} is enforced by a certified safe fallback---a configuration verified offline via worst-case response-time analysis to satisfy $Pr(r_i > D_i) \leq \Theta_i$ for every $\tau_i \in \boldsymbol{\tau}^{safe}$ and retained across invocations;
-	a candidate is adopted only if it strictly improves the objective \emph{and} satisfies the constraint, otherwise the fallback is shipped.
-    Sections~\ref{section_priority_opt}--\ref{section_safety_fallback} develop the priority, QoS, and fallback components.
+    First, since $\textbf{E}$ changes continuously and re-optimization intervals are short, only a few tasks' distributions change slowly between invocations, 
+	so we can each warm-starts an incremental search from the last deployed configuration, and perform incremental optimization to focus on what's changed between scheduelr invocation.
+    Second, the hard constraint~\eqref{eq_important_task_constraint} is enforced \emph{in-search}: the priority and QoS optimizers prune any candidate that violates an important task's deadline-miss threshold the moment it is formed, so the search never adopts an infeasible configuration.
+	Next sections will explain with more details.
