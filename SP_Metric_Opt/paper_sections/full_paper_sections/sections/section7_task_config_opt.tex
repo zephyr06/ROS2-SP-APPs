@@ -4,18 +4,7 @@
     This section extends the priority optimization algorithm in Section~\ref{section_priority_opt} to solve the \emph{joint} problem of optimizing priority assignments and QoS budgets.
     The key observation is that a QoS-configurable task ($\tau^Q_i$) can be treated as a special type of environment-dependent task ($\tau^E_i$): the scheduler is the ``environment'' that decides Qos-configurable tasks' execution time distribution.
     Therefore, we can decompose the joint optimization problem into QoS and priority optimization sub-problems.
-    During the searching of QoS configurations, the incremental optimization can be utilized to co-optimize priority assignments of QoS tasks efficiently. Figure~\ref{fig:overall_workflow} illustrates the overall collaborative optimization algorithm.
-    
-    \begin{figure*}[htbp]
-        \centering
-        \includegraphics[width=\textwidth]{pictures/overall_workflow.pdf}
-        \caption{Overall workflow of the QoS-budget and priority collaborative optimization. 
-        The serialized queue sorts environment-dependent ($\tau^E_i$) and QoS-configurable ($\tau^Q_i$) tasks by SP weight $w_i$ descending; 
-        each task is dispatched separately to the QoS-budget walk or the incremental priority move, 
-        and every accepted single-task adjustment is committed as the champion before the next step, 
-        so each evaluation differs from the champion by at most one task and is served from the RTA cache.}
-        \label{fig:overall_workflow}
-    \end{figure*}
+    During the searching of QoS configurations, the incremental optimization can be utilized to co-optimize priority assignments of QoS tasks efficiently.
 
     \subsection{Task Serialization}
     \label{section_task_serialization}
