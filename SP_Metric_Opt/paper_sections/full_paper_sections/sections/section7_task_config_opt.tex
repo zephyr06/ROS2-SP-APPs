@@ -127,20 +127,23 @@
     \label{lem:rta_hp}
     For every $k<i$, $\rtDisthat{k}=\rtDist{k}$, regardless of whether $\extDist{j}$ changes.
     \end{lemma}
-    \noindent\textit{Proof.}
-    In both orderings $\tau_j$ lies below $\tau_k$ (at position $j>k$ before the move, and at position $i>k$ after), so $\tau_j\notin\text{hp}(k)$ in either case and $\text{hp}(k)$ is unchanged. \hfill$\square$
+    \begin{proof}
+    In both orderings $\tau_j$ lies below $\tau_k$ (at position $j>k$ before the move, and at position $i>k$ after), so $\tau_j\notin\text{hp}(k)$ in either case and $\text{hp}(k)$ is unchanged.
+    \end{proof}
 
     \begin{lemma}[Lower-priority tasks under a pure priority move]
     \label{lem:rta_lp_pure_move}
     If $\extDist{j}$ is unchanged, then for every $k>j$, $\rtDisthat{k}=\rtDist{k}$.
     \end{lemma}
-    \noindent\textit{Proof.}
-    $\tau_j\in\text{hp}(k)$ in both orderings and the set $\text{hp}(k)$ is identical; only the order within it is permuted. Since the RTA~\eqref{eq_prob_rta} builds $\rtDist{k}$ by convolving the execution-time distributions in $\text{hp}(k)$, and convolution is commutative, $\rtDisthat{k}=\rtDist{k}$. \hfill$\square$
+    \begin{proof}
+    $\tau_j\in\text{hp}(k)$ in both orderings and the set $\text{hp}(k)$ is identical; only the order within it is permuted. Since the RTA~\eqref{eq_prob_rta} builds $\rtDist{k}$ by convolving the execution-time distributions in $\text{hp}(k)$, and convolution is commutative, $\rtDisthat{k}=\rtDist{k}$.
+    \end{proof}
 
     \begin{lemma}[Cross-core tasks]
     \label{lem:rta_cross_core}
     For any task $\tau_k$ on a core other than $\tau_j$'s, $\rtDisthat{k}=\rtDist{k}$.
     \end{lemma}
-    \noindent\textit{Proof.}
-    Under partitioned scheduling, $\tau_j$ never enters $\text{hp}(k)$, so neither its priority move nor its execution-time change affects $\rtDist{k}$. \hfill$\square$
+    \begin{proof}
+    Under partitioned scheduling, $\tau_j$ never enters $\text{hp}(k)$, so neither its priority move nor its execution-time change affects $\rtDist{k}$.
+    \end{proof}
 
