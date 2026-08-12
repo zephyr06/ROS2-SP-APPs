@@ -1,0 +1,124 @@
+\section{Safety Guarantee and Certified Fallback}
+\label{section_safety_fallback}
+
+    Although the constrained searching methods in Sections~\ref{section_priority_opt}--\ref{section_config_opt}
+    can typically keep important tasks schedulable, Two gaps remain.
+    First, the execution-time (ET) prediction the gate is certified against may be inaccurate:
+    a gate-passing configuration could still miss deadlines if the environment changes abruptly.
+    Second, the search is heuristic and cannot guarantee to find a feasible configuration
+    in every environment.
+
+    To close these gaps, this section introduces a \emph{certified safe fallback}---
+    a configuration whose schedulability is established offline based on the worst-case scenario analysis to ensure the system can operate safely online if execution time prediction is accurate.
+
+    \subsection{When the Safety Fallback is Deployed}
+    \label{section_fallback_triggers}
+    At every interval the scheduler holds a certified safe fallback
+    $(\boldsymbol{P}^{\star},\boldsymbol{Q}^{\star})$ and an incumbent champion scored against it.
+    A surviving candidate is \emph{adopted}---promoted to the deployed configuration---
+    only if it strictly improves \eqref{eq_overall_obj};
+    the feasibility check is already enforced in-search,
+    so adoption never sacrifices the important-task constraint.
+    When no strictly-improving feasible candidate is found, the fallback is shipped
+    (the deployed configuration is left unchanged).
+    The fallback is deployed whenever:
+    \begin{itemize}
+        \item \textbf{No improving feasible configuration is found} this interval;
+        \item \textbf{The inherited incumbent is no longer schedulable} under the updated
+        distributions---then the fallback also seeds the search
+        (Section~\ref{section_initial_solution});
+        \item \textbf{An execution-time change exceeds the drift threshold},
+        invalidating the inherited config (Section~\ref{section_initial_solution}).
+    \end{itemize}
+    Optimization and safety thereby decouple:
+    aggressive candidates are explored freely,
+    since infeasible or non-improving ones fall back to the certified config.
+
+    \subsection{Constructing the Certified Fallback Offline}
+    \label{section_fallback_construction}
+    The fallback is constructed offline against a worst-case execution-time (WCET) model,
+    so its schedulability is certified independently of the online predictions.
+    We assume the task set is schedulable under worst-case execution times;
+    otherwise no online algorithm can give a schedulability guarantee.
+    Under this assumption the fallback is the \emph{DM-Fast} configuration---
+    the most schedulable configuration, and the correct seed for both the fallback
+    and the online search.
+
+    \begin{definition}[DM-Fast configuration]
+    \label{def_dm_fast}
+    The \emph{DM-Fast} configuration assigns each task the smallest QoS budget on its grid
+    (the fastest, i.e.\ shortest, execution time)
+    and orders tasks by Deadline-Monotonic (DM) priorities---shorter relative deadlines first.
+    \end{definition}
+
+    \begin{theorem}[DM-Fast schedulability dominance]
+    \label{thm:dm_fast_dominance}
+    Under preemptive partitioned scheduling with constrained deadlines $D_i \le T_i$,
+    if DM-Fast is unschedulable for some task $\tau_i$,
+    then no configuration $(\boldsymbol{P},\boldsymbol{Q})$ is schedulable for $\tau_i$.
+    \end{theorem}
+    \noindent\textit{Proof.}
+    Schedulability of $\tau_i$ depends only on its higher-priority set $\text{hp}(i)$
+    and the execution times therein;
+    lower-priority and cross-core tasks do not affect $\rtDist{i}$
+    (Lemmas~\ref{lem:rta_cross_core}--\ref{lem:rta_lp_pure_move}),
+    so the argument is per-core.
+    \emph{Priority.} For constrained-deadline tasks, DM is optimal among fixed-priority
+    assignments~\cite{Leung1982DeadlineMonotonic}:
+    for fixed $\boldsymbol{Q}$, DM minimizes every response time.
+    Hence DM-unschedulable under $\boldsymbol{Q}$ implies unschedulable
+    under any $\boldsymbol{P}$ with that $\boldsymbol{Q}$.
+    \emph{QoS budget.} A larger budget yields a longer execution time
+    (Section~\ref{section_rta_distribution}),
+    and interference is monotonic in execution time,
+    so it can only \emph{increase} response times.
+    Hence for fixed $\boldsymbol{P}$, the smallest budget minimizes every response time;
+    unschedulable under the smallest budget implies unschedulable under any larger budget.
+    Combining both, DM-Fast minimizes every response time along both axes.
+    If DM-Fast leaves $\tau_i$ unschedulable,
+    no $(\boldsymbol{P},\boldsymbol{Q})$ can schedule it. \hfill$\square$
+
+    By Theorem~\ref{thm:dm_fast_dominance}, the WCET-schedulability assumption is equivalent
+    to DM-Fast being schedulable under WCET.
+    We therefore take DM-Fast-under-WCET as the certified fallback,
+    verified via \eqref{eq_prob_rta_in_opt} to satisfy
+    $Pr(r_i > D_i) \leq \Theta_i$ for every $\tau_i \in \boldsymbol{\tau}^{safe}$.
+    The same configuration seeds the online search
+    (Section~\ref{section_initial_solution});
+    since the seed is schedulable, the search only moves between schedulable configurations.
+    If even DM-Fast under the predicted distributions is unschedulable for an important task,
+    the environment is flagged unschedulable and the previous fallback is retained.
+
+    \subsection{Schedulability Guarantee}
+    \label{section_schedulability_guarantee}
+    In-search gating plus the certified fallback yield the following guarantee
+    on the shipped configuration.
+
+    \begin{theorem}[Important-task schedulability]
+    \label{obs:safety_fallback}
+    If the execution-time prediction is accurate---predicted distribution equals true---
+    then at every shipped interval the deployed configuration
+    $(\boldsymbol{P}^{\star},\boldsymbol{Q}^{\star})$ satisfies
+    \[
+        Pr(r_i > D_i) \leq \Theta_i, \quad \forall \tau_i \in \boldsymbol{\tau}^{safe},
+    \]
+    regardless of whether the ongoing search has converged.
+    \end{theorem}
+    \noindent\textit{Proof.}
+    The deployed configuration is either (i) a candidate promoted by the adopt-or-retain rule
+    (Section~\ref{section_fallback_triggers}),
+    or (ii) the certified fallback retained when none is found.
+    Case (i): the in-search gates (Algorithms~\ref{alg:modified_audsley}, \ref{alg:qos_walk})
+    reject any infeasible candidate before adoption,
+    so a promoted candidate satisfies \eqref{eq_important_task_constraint}
+    under the predicted distribution;
+    with accurate prediction it holds under the true distribution.
+    Case (ii): the fallback is WCET-verified to satisfy the bound,
+    and true execution time is no worse than WCET.
+    In both cases the shipped config satisfies the bound;
+    an incomplete optimization may degrade performance but never safety. \hfill$\square$
+
+    This guarantee needs no conservative WCET upper bound for the online search:
+    the in-search check is certified against the probabilistic RTA,
+    so the online guarantee is tight rather than pessimistic,
+    with offline WCET reserved for the fallback alone.
