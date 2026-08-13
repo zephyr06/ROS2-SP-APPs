@@ -245,7 +245,7 @@ The proposed optimization-based scheduler, by contrast, demonstrates both improv
 	\subsection{Scalability Analysis}
 
     Fig.~\ref{fig_et_all} and \ref{figs_exp_results_all_cps} show that the incremental scheduler runs 10x faster than the brute-force scheduler while maintaining similar or better performance, except when running for the first time.
-    In practice, due to the very low running frequency, the overhead brought by running the modified Audsley's algorithm could be negligible.
+    In practice, due to the very low running frequency, the overhead brought by running the Constrained Audsley Beam Search could be negligible.
     The results successfully validated the good performance of the proposed incremental scheduler.
     % Section~\ref{section_complexity_analysis} shows that the incremental optimization algorithm has linear runtime complexity relative to the number of tasks, comparable to standard scheduling algorithms like RM and CFS. This ensures excellent scalability.
 

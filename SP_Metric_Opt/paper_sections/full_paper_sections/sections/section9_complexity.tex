@@ -3,7 +3,7 @@
 	\label{section_complexity_analysis}
 
 
-This section analyzes the time complexity of the proposed algorithms. Let $N$ denote the number of tasks to schedule. The brute-force algorithm, while serving as a baseline, has exponential complexity due to the enumeration of all possible priority assignments. As such, we omit the detailed analysis of its complexity and focus on analyzing the modified Audsley's algorithm and the incremental optimization algorithm.
+This section analyzes the time complexity of the proposed algorithms. Let $N$ denote the number of tasks to schedule. The brute-force algorithm, while serving as a baseline, has exponential complexity due to the enumeration of all possible priority assignments. As such, we omit the detailed analysis of its complexity and focus on analyzing the Constrained Audsley Beam Search and the incremental optimization algorithm.
 
 
 The following complexity analysis counts the number of response-time analyses (RTA), since over 90\% of the computation is spent on RTA.
@@ -18,13 +18,13 @@ We denote the cost of performing a single probabilistic RTA for one task as $\or
     Therefore, the average cost of probabilistic RTA $\orta{}$ is much better than its worst-case complexity and is typically affordable in resource-constrained embedded systems.
 
 \subsection{Number of Probabilistic Response-Time Analyses during Priority Optimization}
-Denote the number of partial priority assignment paths retained in each iteration as $m$. The modified Audsley's algorithm's total number of RTA calls is $O(m \times N^2)$ because it tries to assign each remaining task the \ith{k} lowest priority during the \ith{k} iteration.
+Denote the number of partial priority assignment paths retained in each iteration as $m$. The total number of RTA calls made by the Constrained Audsley Beam Search is $O(m \times N^2)$ because it tries to assign each remaining task the \ith{k} lowest priority during the \ith{k} iteration.
 
 The incremental optimization algorithm's run-time complexity is $O(N \times \orta{})$ because each step adjusts only one task---the task whose execution-time distribution changed in the new environment---and scans at most $N$ candidate positions.
 
 \subsection{QoS and Priority co-optimization}
 Let $N^Q$ denote the number of QoS-configurable tasks, $B$ the average number of QoS budgets per task, and $N^E$ the number of environment-dependent tasks.
-The worst-case complexity of the modified Audsley's algorithm with QoS optimization in consideration is
+The worst-case complexity of the Constrained Audsley Beam Search with QoS optimization in consideration is
 \begin{equation}
     O\!\left(N^Q \times B \times m \times N^2 \times \orta{}\right)
 \end{equation}
