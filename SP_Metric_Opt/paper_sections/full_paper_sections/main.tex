@@ -35,6 +35,8 @@
 \newtheorem{Example}{Example}
 \newtheorem{definition}{Definition}[section]
 
+\newenvironment{proof}[1][Proof]{\par\noindent\textit{#1.}\hspace*{1em}\ignorespaces}{\hfill$\square$\par\medskip}
+
 \newcommand {\haibo}[1]{{\color{red}\textbf{Haibo: }#1}\normalfont}
 \newcommand {\Sen}[1]{{\color{green}\textbf{Sen: }#1}\normalfont}
 \newcommand {\rkw}[1]{{\color{blue}\textbf{Ryan: }#1}\normalfont}
@@ -96,10 +98,10 @@
     \input{sections/section6_pa_opt}
     \input{sections/section7_task_config_opt}
     \input{sections/section8_safety_guarantee}
-    \input{sections/section9_software_impl}
-    \input{sections/section10_complexity}
-    \input{sections/section11_limitations}
-    \input{sections/section12_real_exp}
+    \input{sections/section9_complexity}
+    \input{sections/section10_limitations}
+    \input{sections/section11_real_exp}
+    \input{sections/section12_algo_impl}
     \input{sections/section13_simu_exp}
     \input{sections/section14_conclusion}
     

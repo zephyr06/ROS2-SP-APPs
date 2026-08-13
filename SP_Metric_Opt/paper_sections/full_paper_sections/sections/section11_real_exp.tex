@@ -1,5 +1,39 @@
 
-    \section{Real-World Experiments}
+    \section{Real-World System Implementation and Experiments}
+
+    \subsection{System Overview}
+    We designed a prototype system based on Linux, incorporating two types of periodic tasks: robotic application tasks and a scheduler task.
+    The scheduler task is assigned the highest priority and, in each call, (i) collects recently recorded execution-time data from each robotic task, (ii) predicts execution-time distributions for the next period, (iii) performs incremental optimization of priority assignments and task configurations, and (iv) updates the tasks' priority assignments and configurations using user-space APIs.
+    To simplify implementation, all computations are performed in user space rather than kernel space.
+    Although user-space implementation introduces higher overhead, it remains lightweight and practical because of our lightweight optimization algorithm design.
+    To enhance the system's predictability, input data is pre-loaded into memory whenever it is possible and does not violate the experiments' authenticity, reducing potential I/O contention and variations in execution-time distribution.
+
+    \subsection{Computation tasks}
+    \label{section_computation_tasks}
+    All tasks are modeled as periodic tasks.
+    A new job of a task $\tau_i$ is released for execution if the previous released job instance has completed execution and the new job's release time has passed.
+    Jobs that miss their deadlines are not discarded, as even slightly delayed jobs remain valuable in soft real-time systems.
+    Following the approach in Sifat~\etal~\cite{Ash23RAL}, our system includes the following robotic tasks:
+
+    \textit{Simultaneous Localization and Mapping (SLAM):}
+    We based our implementation on ORB-SLAM2~\cite{murORB2}, a well-known real-time visual SLAM system.
+    The original ORB-SLAM2 implementation uses multiple threads for sub-tasks (\eg tracking, loop closure, and visualization), some of which involve infinite loops.
+    To align with our real-time systems model, we modified the SLAM implementation without influencing its functionality: we replaced infinite loops with periodic tasks, merged multiple threads into a single main thread, and disabled real-time map visualization to improve execution-time predictability.
+    These modifications preserve core functionality while enabling easier theoretical performance analysis and guarantees.
+    If multi-threaded implementation is required, techniques such as gang task scheduling and response time analysis models~\cite{Sun2024StrictPF} can be used to analyze response time distributions.
+
+    \textit{Traveling Salesperson Problem (TSP):}
+    We adopted the anytime algorithm implementation from Huang~\etal~\cite{Huang23ICRA_TSP}.
+    The running time limit for TSP is treated as a configurable optimization variable in our system, where longer time limits yield shorter output paths.
+
+    \textit{Path Planning:}
+    Our implementation of the rapidly-exploring random tree (RRT) algorithm~\cite{LaValle1998RapidlyexploringRT} is based on~\cite{rrt_github}.
+    The RRT's execution time varies from 1 to 3 seconds, depending on input map configurations and the algorithm's inherent randomness.
+
+    \textit{Model Predictive Controller (MPC):}
+    We implemented a constrained linear-quadratic MPC using the OSQP solver~\cite{stellato18OSQP}.
+    MPC exhibits relatively stable execution times, ranging from 5 ms to 9 ms.
+
 	\subsection{Experiment configurations}
         
     We implemented the proposed scheduler on Ubuntu 18 and tested it on an embedded system, the NVIDIA Jetson AGX Xavier. While the system features an eight-core high-performance CPU, we restricted our experiments to only two CPU cores for executing all computation tasks to simulate a more realistic resource-constrained platform. This setting also artificially simulates a system with more computation loads that do not have much flexibility in scheduling, such as computer vision tasks that require delicate collaboration between CPU and GPU.
@@ -233,3 +267,12 @@ This makes the incremental algorithm highly suitable for complex scheduling scen
     While existing scheduling methods like Completely Fair Scheduling (CFS) or Rate Monotonic (RM) can also provide guarantees within this framework, the proposed optimization framework achieves significantly higher SP metric values. This improvement underscores one of the key contributions of this work: a new, and stronger safety-performance guarantee that surpasses traditional methods in both safety and performance dimensions.
 
     Furthermore, the framework offers flexibility by allowing additional constraints to be incorporated for individual tasks. This enables the creation of fine-grained guarantees tailored to specific safety or performance requirements, making the approach adaptable to diverse real-time system needs.
+
+
+
+\subsection{Reducing optimization overhead by changing its running frequency}
+In practice, the computation overhead posed by the proposed algorithm is decided by both the one-time overhead, and its running frequency.
+Although the one-time optimization overhead may be high sometimes, the overall overhead can be reduced by lowering the scheduler's running frequency when necessary.
+
+In practice, the optimization algorithm only needs to run when the environment changes, which may not happen frequently, depending on the robot's moving speed and the environment's changing speed. 
+
