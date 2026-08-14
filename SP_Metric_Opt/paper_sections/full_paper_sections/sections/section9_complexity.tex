@@ -29,11 +29,11 @@ The worst-case complexity of the Constrained Audsley Beam Search with QoS optimi
     O\!\left(N^Q \times B \times m \times N^2 \times \orta{}\right)
 \end{equation}
 
-The overall complexity of incremental optimization with QoS optimization in consideration is
+The worst-case complexity of incremental optimization with QoS optimization in consideration is
 \begin{equation}
     O\!\left((N^Q \times B + N^E) \times \orta{}\right)
 \end{equation}
-
+Notice that this is linear complexity in the number of tasks.
 In practice, since the patience parameter bounding the QoS walk is typically set low (e.g., $1$), the average number of budgets evaluated per task is close to $1$.
 
 	
