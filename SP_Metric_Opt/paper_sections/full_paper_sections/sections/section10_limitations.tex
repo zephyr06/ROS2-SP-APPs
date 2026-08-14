@@ -1,33 +1,27 @@
 
-% TODO: discuss the dependency of online safety based on ET prediction accuracy. 
-% so if ET chagnes very fast, then online ET prediction will not be accurate. So by 
-\section{Potential Limitations and Assumption Relaxation}
+% TODO: discuss the dependency of online safety based on ET prediction accuracy.
+% so if ET chagnes very fast, then online ET prediction will not be accurate. So by
 
-    \rkw{we can place this section in an appendix.}
-    \Sen{I'm okay either way. But I want to mention that many other sections referred to the subsections many times, so it may be a little bit weird. But I don't have much writing experience, so it's up to you.}
-    
-    \subsection{Multi-core Tasks Scheduling}
-    \label{section: gang}
-    In Section~\ref{section: system_model_tasks}, we assumed that each computation task only occupies one single CPU core during its execution. 
-    Such kind of task model includes both single-thread tasks and some multi-thread tasks that do not need to run more than one threads in parallel.
-    These tasks are very similar to single-thread tasks from the scheduling purposes.
-    
-    Other types of multi-thread tasks may include those that need to run more than one threads in parallel. These tasks can be modelled as gang tasks~\cite{Goossens2010GangFS}. 
-    The proposed optimization framework in this paper can work with gang tasks if their response time distribution analysis is available. However, such analysis could be complicated and computationally expensive. 
+% The "Potential Limitations and Assumption Relaxation" section has been dissolved into
+% the main text; this file is retained only as a comment archive.
+%   - smooth-environment assumption: removed (described GPR, which the implementation no longer uses)
+%   - non-Gaussian ET distribution: covered by the safe-upper-bound framing in the System Model section
+%   - incremental optimization drift: moved to the QoS co-optimization section (section_config_opt, label sec: drift)
+%   - multi-core (gang) task scheduling: kept below as comments for future reference
 
-    Therefore, to incorporate the gang tasks into our system, it is easier to treat the gang tasks as single-thread tasks from the scheduling perspective. This can be done by ``merging'' the multiple computation cores required by the gang tasks into one computation core during scheduling. 
-    These ``merged'' cores will not be allocated to more than one task each time, and therefore behave similarly to a single core.
-    This method works well for GPU tasks that run on embedded systems, one of the major applications of gang tasks. This is because that GPU tasks typically cannot run in parallel due to the high context switch overhead in low-end GPUs~\cite{Olmedo2020DissectingTC} in embedded systems.
+% \rkw{we can place this section in an appendix.}
+% \Sen{I'm okay either way. But I want to mention that many other sections referred to the subsections many times, so it may be a little bit weird. But I don't have much writing experience, so it's up to you.}
 
-    
-\subsection{Addressing Incremental Optimization Drift}  
-\label{sec: drift}
-One potential drawback of incremental optimization is that it cannot guarantee an optimal solution after adjustments, potentially causing a ``drift'' from the optimal configuration over time. To address this, a hybrid approach that combines incremental optimization and the Constrained Audsley Beam Search can be considered:
-\begin{itemize}
-    \item Use the Constrained Audsley Beam Search when the scheduler runs for the first time or after passing a long period.
-    \item Employ incremental optimization for subsequent scheduler runs.
-\end{itemize}
-This strategy leverages the strengths of both methods, ensuring efficient runtime performance while maintaining overall system stability.
-
-In our experiments, we used the Constrained Audsley Beam Search when the scheduler runs for the first time, and then used the incremental optimization algorithm for the following runs.
-    
+% --- multi-core (gang) task scheduling: retained as comments for future reference ---
+% \subsection{Multi-core Tasks Scheduling}
+% \label{section: gang}
+% In Section~\ref{section: system_model_tasks}, we assumed that each computation task only occupies one single CPU core during its execution.
+% Such kind of task model includes both single-thread tasks and some multi-thread tasks that do not need to run more than one threads in parallel.
+% These tasks are very similar to single-thread tasks from the scheduling purposes.
+%
+% Other types of multi-thread tasks may include those that need to run more than one threads in parallel. These tasks can be modelled as gang tasks~\cite{Goossens2010GangFS}.
+% The proposed optimization framework in this paper can work with gang tasks if their response time distribution analysis is available. However, such analysis could be complicated and computationally expensive.
+%
+% Therefore, to incorporate the gang tasks into our system, it is easier to treat the gang tasks as single-thread tasks from the scheduling perspective. This can be done by ``merging'' the multiple computation cores required by the gang tasks into one computation core during scheduling.
+% These ``merged'' cores will not be allocated to more than one task each time, and therefore behave similarly to a single core.
+% This method works well for GPU tasks that run on embedded systems, one of the major applications of gang tasks. This is because that GPU tasks typically cannot run in parallel due to the high context switch overhead in low-end GPUs~\cite{Olmedo2020DissectingTC} in embedded systems.

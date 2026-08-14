@@ -147,3 +147,9 @@
     Under partitioned scheduling, $\tau_j$ never enters $\text{hp}(k)$, so neither its priority move nor its execution-time change affects $\rtDist{k}$.
     \end{proof}
 
+    \subsection{Addressing Incremental Optimization Drift}
+    \label{sec: drift}
+    One drawback of incremental optimization is that it cannot guarantee optimality after each adjustment, so the accumulated solution may drift from the optimal configuration over time.
+    To reduce this drift, the scheduler periodically re-runs the Constrained Audsley Beam Search from scratch and then resumes incremental optimization for subsequent runs.
+    This hybrid strategy retains the runtime efficiency of incremental optimization while periodically realigning the solution with the global optimum.
+

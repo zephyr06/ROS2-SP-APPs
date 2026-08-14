@@ -46,8 +46,8 @@ Probability Distribution & $\mathcal{D}$ \\
 	\subsection{Computation Tasks}
     \label{section: system_model_tasks}
     A computation task represents an independent high-level application, such as motion planning or obstacle detection.
-    For simplicity of presentation, we assume each task uses one CPU core each time.
-    How to optimize other types of tasks models is discussed in Section~\ref{section: gang}.
+    For simplicity of presentation, we assume each task uses one CPU core each time. 
+	More complicated tasks can be easily extended if response time analysis is available.
 
 
 	Most robotic tasks are modeled as periodic tasks\footnote{Tasks with non-constant periods, called sporadic tasks, have a minimum arrival interval between successive executions. These sporadic tasks are often treated as periodic tasks during schedulability analysis to simplify the modeling process} $\tau$.
