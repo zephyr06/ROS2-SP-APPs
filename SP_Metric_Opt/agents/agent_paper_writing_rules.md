@@ -13,3 +13,5 @@ Write one sentence per source line (soft-wrap at ~90--100 chars max).
 Long lines that fill the whole editor width are hard for a human to read and hard to diff.
 Break a sentence across lines at natural clause boundaries if it would exceed the limit.
 This makes edits and reviews separable line-by-line.
+
+## 3. Save textbf for what matters the most, rather than as a simple bullet point
