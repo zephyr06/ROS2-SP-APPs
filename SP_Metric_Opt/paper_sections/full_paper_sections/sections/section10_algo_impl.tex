@@ -1,72 +1,38 @@
 \section{Algorithm-Level Implementation Details}
 \label{section_implementation}
 
-    This section details the algorithm-level implementation choices that keep the online optimization lightweight: execution-time prediction, priority-value mapping, performance-metric construction, and hyperparameters.
+    This section details the algorithm-level implementation choices that keep the online optimization lightweight: execution-time prediction and hyperparameters.
 
     \subsection{Predicting Execution-Time Distributions}
     \label{section: predict_ET_exp}
-    Due to the highly limited computation resources available for online optimization, we use a simple heuristic that assumes the robot's working environment will not change significantly within each short time interval.
-    Let $T^W$ denote the length of such an interval where the environment vector $\textbf{E}$ changes by at most $\Theta^W$:
-    \begin{equation}
-        \|\textbf{E}_{t_0+T^W} - \textbf{E}_{t_0} \| \leq \Theta^W.
-    \end{equation}
-    Under a smoothly changing environment, $\Theta^W \approx 0$ for a sufficiently small $T^W$, so the execution-time distribution of a task $\tau_i$ over $[t_0 + T^W/2, t_0 + T^W]$ can be predicted from measurements over $[t_0, t_0 + T^W/2]$.
-    In our experiments, we take $\Theta^W \approx 0$ when $T^W$ equals $\tau_i$'s release period $T_i$, yielding multiple measurements per window from which a distribution is established.
-    To further reduce computation, we assume each task's execution time follows a normal distribution characterized only by its mean, variance, minimum, and maximum, reducing the overall cost to linear complexity.
-    We set $T^W$ equal to the scheduler's running period for simplicity.
-    These assumptions may not hold when the environment changes abruptly, leading to inaccurate predictions; 
-    however, using Gaussian distribution is safe if the Gaussian distribution is no lower than the actual execution time dstribution, 
-    and this is the necessary cost of low online computation, and the prediction self-corrects as the environment stabilizes.
+    We assume the robot's working environment changes smoothly, so over a short prediction interval a task's execution-time distribution does not change much.
+    We therefore predict each task's execution-time distribution for the upcoming interval directly from its execution times measured at the start of that interval.
+    This simple heuristic trades prediction accuracy for low online computation cost, which suits our resource-constrained setting.
+    More sophisticated prediction models are possible and left for future work.
 
 
-    \subsection{Mapping Priority Assignments to Priority Values}
-    \label{section_pa_values}
-    While the priority assignment algorithm determines the relative priority order of tasks, Linux requires specific \textit{priority values} (real-time processes range from 0 to 99, larger is higher) to implement these assignments.
-    Theoretically, any mapping that adheres to the priority assignment order is valid.
-    However, changing priority values involves numerous low-level OS operations, and this overhead grows for multi-threaded tasks whose threads must update simultaneously, so we minimize the number of value changes.
-    We select the task with the largest number of threads as the \textit{reference task} and assign it a fixed priority value; all other tasks' values are computed relative to it, following the priority assignment order.
-    This minimizes changes to the reference task's priority value; if another task's thread count surpasses the reference task's at runtime, that task is dynamically designated as the new reference.
-    The strategy generalizes to multi-core systems under partitioned scheduling, where a fixed priority value can be locked for one task per core.
-
-    \begin{Example}
-    Suppose the scheduler determines the priority order MPC $>$ RRT $>$ TSP $>$ SLAM, and SLAM has the highest number of threads.
-    Assigning SLAM a fixed priority value of 5, an acceptable mapping for the other tasks is MPC=8, RRT=7, TSP=6, SLAM=5.
-    \end{Example}
-
-    \subsection{Performance Metric Function}
-    \label{section_generate_tsp_perf}
-    Some tasks' output quality is either unaffected by hyper-parameters or has a good offline configuration, making online adjustment unnecessary; their performance metric function outputs a constant $1.0$.
-    For other tasks, whose optimal configuration depends on the environment and available computation, online optimization is beneficial and requires a properly defined performance function.
-    We use the TSP as an example.
-    The TSP is an anytime algorithm, so longer running time limits yield shorter output paths.
-    We profiled running time limits starting at 50 ms and increasing by 50 ms until further increases no longer shortened the path, testing each configuration 10 times and averaging.
-    Where small increases did not improve the path length, the best result was carried forward, so the time limits in Table~\ref{table_tsp_perf} do not increase strictly in 50 ms steps.
-    Path lengths were normalized to $[0, 1.0]$: the longest path scored 0.1 (still a usable solution; 0.0 is reserved for no valid output) and the shortest scored 1.0, with linear interpolation for intermediate values.
-
-    \begin{table*}[]
-    \centering
-    \caption{TSP's performance metric function with different running time limits.}
-    \begin{tabular}{@{}llllllllllllll@{}}
-        \toprule
-        Running Time Limit(ms)       & 150   & 250   & 300   & 450   & 850   & 900   & 950   & 1000  & 1050  & 1100  & 1200  & 1500   \\ \midrule
-        Physical Distance  & 61551 & 52027 & 50969 & 50097 & 49759 & 49397 & 48915 & 48794 & 48527 & 48366 & 48244 & 48093 \\
-        Performance Function & 0.1   & 0.73  & 0.80 & 0.86  & 0.88  & 0.91  & 0.94  & 0.95  & 0.97  & 0.98  & 0.99  & 1        \\ \bottomrule
-    \end{tabular}
-    \label{table_tsp_perf}
-    \end{table*}
-
-    Compared with the performance metric definition in Definition~\ref{def_perf_metric}, the TSP metric omits the ``environment'' factor for simplicity; environmental influences can be incorporated without affecting the optimization framework.
+    % --- Mapping Priority Assignments to Priority Values: commented out of main text, retained for future reference ---
+    % \subsection{Mapping Priority Assignments to Priority Values}
+    % \label{section_pa_values}
+    % While the priority assignment algorithm determines the relative priority order of tasks, Linux requires specific \textit{priority values} (real-time processes range from 0 to 99, larger is higher) to implement these assignments.
+    % Theoretically, any mapping that adheres to the priority assignment order is valid.
+    % However, changing priority values involves numerous low-level OS operations, and this overhead grows for multi-threaded tasks whose threads must update simultaneously, so we minimize the number of value changes.
+    % We select the task with the largest number of threads as the \textit{reference task} and assign it a fixed priority value; all other tasks' values are computed relative to it, following the priority assignment order.
+    % This minimizes changes to the reference task's priority value; if another task's thread count surpasses the reference task's at runtime, that task is dynamically designated as the new reference.
+    % The strategy generalizes to multi-core systems under partitioned scheduling, where a fixed priority value can be locked for one task per core.
+    %
+    % \begin{Example}
+    % Suppose the scheduler determines the priority order MPC $>$ RRT $>$ TSP $>$ SLAM, and SLAM has the highest number of threads.
+    % Assigning SLAM a fixed priority value of 5, an acceptable mapping for the other tasks is MPC=8, RRT=7, TSP=6, SLAM=5.
+    % \end{Example}
 
     \subsection{Hyperparameter Configuration}
+    Only a few hyperparameters require configuration.
 
-    Only a few hyperparameters require configuration:
-    \begin{itemize}
-        \item The number of value-probability pairs describing a probability mass function during the fixed-point iteration in~\eqref{eq_prob_rta}.
-        \item The number of partial priority assignments kept during priority assignment optimization ($m$ in Algorithm~\ref{alg:cabs}, Section~\ref{section_cabs}).
-        \item The local search radius $\delta$ of the incremental priority move (Section~\ref{section_increment_pa}).
-        \item The scheduler's period $T$ (Section~\ref{section_implementation}).
-    \end{itemize}
-    The first trades off computation cost against modeling accuracy; we use 10, beyond which no observable improvement justifies the extra cost.
-    The second trades off computation cost against optimization quality; to keep overall overhead below 1\%, we set it to 2.
-    For the third, we set $\delta$ so that only 3 candidates are considered each time.
-    For the fourth, we use the lowest value keeping scheduler overhead below 1\%, namely 15~s in our real-world experiments.
+    Distribution resolution is the number of value-probability pairs describing each distribution during the fixed-point iteration in~\eqref{eq_prob_rta}. We use 10, beyond which no observable improvement justifies the extra cost.
+
+    Beam width is the number of partial priority assignments kept during priority assignment optimization ($m$ in Algorithm~\ref{alg:cabs}, Section~\ref{section_cabs}). We set it to 2 to keep overall overhead below 1\%.
+
+    Time-limit search patience bounds the QoS-budget walk (Section~\ref{section_qos_walk}): it counts consecutive non-improving steps before a pass halts, so a larger value permits a wider search at higher online cost. We use 0 for incremental intervals and 1 for re-optimization intervals started from a fresh seed, which need a slightly wider search to recover.
+
+    Scheduler period $T$ is the interval between scheduler invocations. We recommend 10~s, the lowest value keeping scheduler overhead below 1\%.

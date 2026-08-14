@@ -45,10 +45,29 @@
 		A computation task $\tau_i$'s performance function $\mathcal{P}(\tau_i, \textbf{E}) \rightarrow [0,1]$ is a normalized function that estimates a task's output quality under an environment described by $\textbf{E}$.
 	\end{definition}
 
-	If a task does not have a QoS budget list, then we assume the task's performance metric is always 1.0.
-
     The performance metric can be measured through offline profiling,
     see Section~\ref{section_generate_tsp_perf} for a concrete example.
+
+	\subsection{Performance Metric Function}
+	\label{section_generate_tsp_perf}
+	Tasks without a QoS budget have a constant performance function output of $1.0$, since their output quality does not depend on a configurable budget.
+	For tasks with a QoS budget, the performance function maps the budget to a normalized quality score; we illustrate this with the TSP, an anytime algorithm whose output path shortens with a longer time limit.
+
+	\begin{Example}
+	For the TSP, we profiled running time limits from 50 ms upward and measured the resulting path length, averaging 10 runs per limit. The path lengths were normalized to $[0, 1.0]$, with the longest path scored $0.1$ and the shortest scored $1.0$; Table~\ref{table_tsp_perf} records the resulting performance function.
+	\end{Example}
+
+	\begin{table*}[]
+	\centering
+	\caption{TSP's performance metric function with different running time limits.}
+	\begin{tabular}{@{}llllllllllllll@{}}
+		\toprule
+		Running Time Limit(ms)       & 150   & 250   & 300   & 450   & 850   & 900   & 950   & 1000  & 1050  & 1100  & 1200  & 1500   \\ \midrule
+		Physical Distance  & 61551 & 52027 & 50969 & 50097 & 49759 & 49397 & 48915 & 48794 & 48527 & 48366 & 48244 & 48093 \\
+		Performance Function & 0.1   & 0.73  & 0.80 & 0.86  & 0.88  & 0.91  & 0.94  & 0.95  & 0.97  & 0.98  & 0.99  & 1        \\ \bottomrule
+	\end{tabular}
+	\label{table_tsp_perf}
+	\end{table*}
 
 	\subsection{SP-Metric}
 	\label{section: sp_metric_def}
