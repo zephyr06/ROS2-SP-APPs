@@ -6,21 +6,6 @@
     \rkw{we can place this section in an appendix.}
     \Sen{I'm okay either way. But I want to mention that many other sections referred to the subsections many times, so it may be a little bit weird. But I don't have much writing experience, so it's up to you.}
     
-    \subsection{How to handle the smooth environment assumption}
-    \label{section: relax_smooth_assumption}
-    
-    This project uses Gaussian Process Regression (GPR) to predict tasks' execution time distribution when the robot is operated under different environments. 
-    Typically, GPR assumes that the environment changes smoothly when the robot is moving. Although such an assumption may not always hold, it is necessary to make the computation of an online optimization algorithm tractable. 
-
-    If the environment does not change smoothly, it is expected that the GPR may make wrong predictions. However, unless the environment keeps having ``discrete'' changes, GPR is expected to quickly adapt and make more accurate predictions because the environment may still be smooth in small local regions.
-
-    Another way to improve the accuracy of execution time distribution prediction is by utilizing offline profiling. This is possible if the robots' working environments can be partially predicted or known before deployment. However, this method may raise further concerns about how to detect and match the new environment with the offline recorded data.
-	\subsection{Non-Gaussian Execution Time Distribution}
-    In experiments, we assumed the execution time follows a Gaussian distribution to simplify the computation. However, in practice, the execution time may not follow a Gaussian distribution well. In this case, the prediction accuracy for the execution time distribution may become lower.
-    However, predicting the execution time distribution accurately in unknown and potentially non-smooth environments is very difficult and computationally expensive. 
-	
-    If high prediction accuracy is required, one potential solution is applying data transformation (such as logarithm) or performing ``piece-wise'' prediction. These may be helpful when the execution time follows a long-tail distribution.
-
     \subsection{Multi-core Tasks Scheduling}
     \label{section: gang}
     In Section~\ref{section: system_model_tasks}, we assumed that each computation task only occupies one single CPU core during its execution. 

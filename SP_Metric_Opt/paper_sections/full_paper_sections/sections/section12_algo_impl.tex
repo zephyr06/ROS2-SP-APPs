@@ -14,7 +14,9 @@
     In our experiments, we take $\Theta^W \approx 0$ when $T^W$ equals $\tau_i$'s release period $T_i$, yielding multiple measurements per window from which a distribution is established.
     To further reduce computation, we assume each task's execution time follows a normal distribution characterized only by its mean, variance, minimum, and maximum, reducing the overall cost to linear complexity.
     We set $T^W$ equal to the scheduler's running period for simplicity.
-    These assumptions may not hold when the environment changes abruptly, leading to inaccurate predictions; however, as discussed in Section~\ref{section: relax_smooth_assumption}, such error is the necessary cost of low computation and is automatically corrected as long as the environment does not remain persistently unsmooth.
+    These assumptions may not hold when the environment changes abruptly, leading to inaccurate predictions; 
+    however, using Gaussian distribution is safe if the Gaussian distribution is no lower than the actual execution time dstribution, 
+    and this is the necessary cost of low online computation, and the prediction self-corrects as the environment stabilizes.
 
 
     \subsection{Mapping Priority Assignments to Priority Values}
