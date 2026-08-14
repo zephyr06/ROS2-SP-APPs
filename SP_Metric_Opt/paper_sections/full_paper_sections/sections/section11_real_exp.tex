@@ -21,6 +21,19 @@
     To align with our real-time systems model, we modified the SLAM implementation without influencing its functionality: we replaced infinite loops with periodic tasks, merged multiple threads into a single main thread, and disabled real-time map visualization to improve execution-time predictability.
     These modifications preserve core functionality while enabling easier theoretical performance analysis and guarantees.
     If multi-threaded implementation is required, techniques such as gang task scheduling and response time analysis models~\cite{Sun2024StrictPF} can be used to analyze response time distributions.
+    % --- multi-core (gang) task scheduling: retained as comments for future reference ---
+    % \subsection{Multi-core Tasks Scheduling}
+    % \label{section: gang}
+    % In Section~\ref{section: system_model_tasks}, we assumed that each computation task only occupies one single CPU core during its execution.
+    % Such kind of task model includes both single-thread tasks and some multi-thread tasks that do not need to run more than one threads in parallel.
+    % These tasks are very similar to single-thread tasks from the scheduling purposes.
+    %
+    % Other types of multi-thread tasks may include those that need to run more than one threads in parallel. These tasks can be modelled as gang tasks~\cite{Goossens2010GangFS}.
+    % The proposed optimization framework in this paper can work with gang tasks if their response time distribution analysis is available. However, such analysis could be complicated and computationally expensive.
+    %
+    % Therefore, to incorporate the gang tasks into our system, it is easier to treat the gang tasks as single-thread tasks from the scheduling perspective. This can be done by ``merging'' the multiple computation cores required by the gang tasks into one computation core during scheduling.
+    % These ``merged'' cores will not be allocated to more than one task each time, and therefore behave similarly to a single core.
+    % This method works well for GPU tasks that run on embedded systems, one of the major applications of gang tasks. This is because that GPU tasks typically cannot run in parallel due to the high context switch overhead in low-end GPUs~\cite{Olmedo2020DissectingTC} in embedded systems.
 
     \textit{Traveling Salesperson Problem (TSP):}
     We adopted the anytime algorithm implementation from Huang~\etal~\cite{Huang23ICRA_TSP}.
@@ -256,7 +269,8 @@ This makes the incremental algorithm highly suitable for complex scheduling scen
 
 
     \subsection{Can we provide a safety-performance guarantee?}
-
+    % TODO: discuss the dependency of online safety based on ET prediction accuracy.
+    % so if ET chagnes very fast, then online ET prediction will not be accurate. So by
 
     In real-time systems, providing guarantees typically involves ensuring that a target metric—such as schedulability—is met under worst-case scenarios. These guarantees rely on offline analysis of worst-case conditions, as they serve as the foundation for establishing system performance bounds. Without such assumptions, guarantees become infeasible.
 
