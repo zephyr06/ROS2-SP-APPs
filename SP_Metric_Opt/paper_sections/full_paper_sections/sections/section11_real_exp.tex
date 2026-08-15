@@ -1,25 +1,29 @@
 
     \section{Real-World System Implementation and Experiments}
+    We built a prototype real-world robotic system on Linux to evaluate the proposed scheduler.
+    The system runs two types of periodic tasks: robotic application tasks and a scheduler task.
 
-    \subsection{System Overview}
-    We designed a prototype system based on Linux, incorporating two types of periodic tasks: robotic application tasks and a scheduler task.
-    The scheduler task is assigned the highest priority and, in each call, (i) collects recently recorded execution-time data from each robotic task, (ii) predicts execution-time distributions for the next period, (iii) performs incremental optimization of priority assignments and task configurations, and (iv) updates the tasks' priority assignments and configurations using user-space APIs.
-    To simplify implementation, all computations are performed in user space rather than kernel space.
-    Although user-space implementation introduces higher overhead, it remains lightweight and practical because of our lightweight optimization algorithm design.
-    To enhance the system's predictability, input data is pre-loaded into memory whenever it is possible and does not violate the experiments' authenticity, reducing potential I/O contention and variations in execution-time distribution.
+    \subsection{Scheduler Implementation Design}
+    In each call, the scheduler task (i) collects recently recorded execution-time data from each robotic task, 
+	(ii) predicts execution-time distributions for the next period, 
+	(iii) optimizes priority assignments and QoS budgets, and (iv) updates the tasks' priority assignments and configurations.
+    All computations are performed in user space rather than kernel space to simplify implementation; although this introduces higher overhead, it remains lightweight and practical because of our lightweight optimization algorithm design.
+    
 
     \subsection{Computation tasks}
     \label{section_computation_tasks}
     All tasks are modeled as periodic tasks.
     A new job of a task $\tau_i$ is released for execution if the previous released job instance has completed execution and the new job's release time has passed.
-    Jobs that miss their deadlines are not discarded, as even slightly delayed jobs remain valuable in soft real-time systems.
+    Jobs that miss their deadlines are not discarded.
     Following the approach in Sifat~\etal~\cite{Ash23RAL}, our system includes the following robotic tasks:
 
     \textit{Simultaneous Localization and Mapping (SLAM):}
     We based our implementation on ORB-SLAM2~\cite{murORB2}, a well-known real-time visual SLAM system.
-    The original ORB-SLAM2 implementation uses multiple threads for sub-tasks (\eg tracking, loop closure, and visualization), some of which involve infinite loops.
-    To align with our real-time systems model, we modified the SLAM implementation without influencing its functionality: we replaced infinite loops with periodic tasks, merged multiple threads into a single main thread, and disabled real-time map visualization to improve execution-time predictability.
-    These modifications preserve core functionality while enabling easier theoretical performance analysis and guarantees.
+    % The original ORB-SLAM2 implementation uses multiple threads for sub-tasks (\eg tracking, loop closure, and visualization), some of which involve infinite loops.
+    To align with our real-time systems model, we modified the SLAM implementation without influencing its functionality: 
+	we replaced infinite loops with periodic tasks, changed the original multi-thread implementation into a single main thread as embedded systems typically have limited resources, 
+	and disabled real-time map visualization.
+    These modifications preserve core functionality while improve execution-time predictability.
     If multi-threaded implementation is required, techniques such as gang task scheduling and response time analysis models~\cite{Sun2024StrictPF} can be used to analyze response time distributions.
     % --- multi-core (gang) task scheduling: retained as comments for future reference ---
     % \subsection{Multi-core Tasks Scheduling}
@@ -41,32 +45,33 @@
 
     \textit{Path Planning:}
     Our implementation of the rapidly-exploring random tree (RRT) algorithm~\cite{LaValle1998RapidlyexploringRT} is based on~\cite{rrt_github}.
-    The RRT's execution time varies from 1 to 3 seconds, depending on input map configurations and the algorithm's inherent randomness.
+    The RRT's execution time varies based on input map configurations and the algorithm's inherent randomness.
 
     \textit{Model Predictive Controller (MPC):}
     We implemented a constrained linear-quadratic MPC using the OSQP solver~\cite{stellato18OSQP}.
-    MPC exhibits relatively stable execution times, ranging from 5 ms to 9 ms.
+    MPC exhibits relatively stable execution times.
 
-	\subsection{Experiment configurations}
+	To enhance the system's predictability, input data is pre-loaded into memory whenever possible without violating the experiments' authenticity, reducing potential I/O contention and variations in execution-time distribution.
+	
+	\subsection{Real-World Experiment Parameters}
         
-    We implemented the proposed scheduler on Ubuntu 18 and tested it on an embedded system, the NVIDIA Jetson AGX Xavier. While the system features an eight-core high-performance CPU, we restricted our experiments to only two CPU cores for executing all computation tasks to simulate a more realistic resource-constrained platform. This setting also artificially simulates a system with more computation loads that do not have much flexibility in scheduling, such as computer vision tasks that require delicate collaboration between CPU and GPU.
-    An additional core was dedicated to running the scheduler, enabling precise measurement of overhead. However, please note that this is not necessary as the computation required for the scheduler is light in real experiments. All experiment results are reproducible with our released code\footnote{\githubLink{}}. 
-    % \todo{Update the repository name later.}
+\todo{Update the repository name later.}
+
+    We tested the scheduler on an NVIDIA Jetson AGX Xavier (Ubuntu 18), restricting all computation tasks to two of its eight cores to simulate a resource-constrained platform with heavier computation loads.
+    % This setting also artificially simulates a system with more computation loads that do not have much flexibility in scheduling, such as computer vision tasks that require delicate collaboration between CPU and GPU.
+    A third core was dedicated to the scheduler for precise overhead measurement, though this is unnecessary in practice given the scheduler's light computation.
+    All results are reproducible with our released code\footnote{\githubLink{}}.
+
+    The runtime configuration parameters, summarized in Table~\ref{table_exp_config}, are mainly adopted from Sifat~\etal~\cite{Ash23RAL} with adjustments based on the tasks' semantics.
+    Safety-critical tasks (MPC, SLAM) receive higher deadline-miss thresholds and weights than TSP and RRT, with SLAM weighted highest as accurate localization is safety-critical.
+    % Such a setting also simulates a realistic task set with a mix of critical and non-critical tasks.
+    Only TSP uses an anytime algorithm, so it is the only task with a non-constant performance metric;
+    Periods are higher than each task's worst-case execution time and are rounded to convenient values, with some (e.g., SLAM) larger than common choices due to the high execution time in current implementation, 
+	and engineering highly efficient implementations is not this paper's focus.
+    % Original Period detail: periods were rounded to convenient, "nice" values (e.g., integers), as is common in real-world systems. Since developing highly efficient application algorithms and implementation is not the focus of this paper, some applications, such as SLAM, may have a larger period compared with real-world applications.
+    The MPC task is considered as the safety-critical task in experiments.
     
-	Conducting comprehensive experiments to cover all possible scenarios is infeasible in practice. Therefore, we designed the runtime configuration parameters based on Sifat~\etal~\cite{Ash23RAL} and the semantic meanings of the tasks, ensuring diverse scenarios are represented. The runtime configuration parameters are summarized in Table~\ref{table_exp_config}. These configurations are representative of various real-world scenarios. Below, we explain each parameter in detail:
-    \begin{itemize}
-        \item Tasks. The experiments include four common robotic tasks: SLAM, RRT, MPC, and TSP. These tasks are further described in Section~\ref{section_computation_tasks}.
-    
-        \item Deadline miss ratio. Safety-critical tasks like MPC and SLAM are assigned higher deadline miss thresholds to reflect their importance. Non-safety-critical tasks, such as TSP and RRT, are modeled to simulate scenarios with more diverse requirements.
-    
-        \item Weight. Weight reflects the importance of individual tasks within the overall system. SLAM is assigned the highest weight, as accurate localization is critical for physical safety. Such a setting also simulates a realistic task set with a mix of critical and non-critical tasks.
-        \item Performance function. Among the tasks, only TSP uses an anytime algorithm, resulting in a non-constant performance metric. While RRT could also adopt an anytime implementation, we let RRT run to completion to model tasks with highly variable execution times.
-        \item Period. Task periods are set longer than their worst-case execution times and rounded to convenient, “nice” values (e.g., integers), as is common in real-world systems. 
-        Since developing highly efficient application algorithms and implementation is not the focus of this paper, some applications, such as SLAM, may have a larger period compared with real-world applications.
-        \item CPU ID. Safety-critical tasks (MPC and SLAM) are assigned to separate CPU cores to avoid resource contention. Additionally, each core is assigned multiple tasks to simulate realistic scheduling conditions.
-    \end{itemize}
-    
-	\begin{table}[]
+	\begin{table}[htbp]
     \centering
     \caption{Experiment Configurations}
     \label{table_exp_config}
@@ -81,20 +86,30 @@ MPC  & 0.99                                                               & 1   
 \end{table}
 	
 	\subsection{Scheduling algorithms in experiments}
-    We tested five scheduling algorithms in our experiments:
+    \label{section: exp_methods}
+    We evaluate five scheduling algorithms, used consistently in both the real-world
+    experiments here and the simulation experiments (Section~\ref{section: simulation}):
 	\begin{itemize}
-		\item Complete Fair Scheduling (CFS). CFS is the default scheduling algorithm in most Linux systems. It balances CPU utilization among all running tasks based on their importance and aims to achieve fair resource sharing. However, CFS is not a real-time scheduling algorithm and cannot provide performance guarantees.
-		\agent{implmentation, CFS tracks virtual runtime at the level of task rather than jobs (threads) to improve CFS's performance in real-time systems.}
-        \Sen{To Prof. Zeng: in my opinion, we should emphasize to the robotics community that RM is the optimal scheduling algorithm under static environments, despite its simplicity. Therefore, RM is indeed a good baseline algorithm from the existing literature. Do you agree with this argument?}
-		\item Rate Monotonic (RM). RM is a widely used real-time scheduling algorithm that prioritizes tasks based on their periods. Tasks with shorter periods are scheduled before those with longer periods. RM is provably \textbf{optimal} for single-core, preemptive platforms when tasks’ deadlines equal their periods.  
-    In our experiments, we evaluated two variants of RM:     \begin{itemize}
-        \item RM-Fast: The TSP task's execution time is set to its shortest duration, corresponding to the minimum performance metric value.
-        \item RM-Slow: The TSP task's execution time is set to its longest duration, corresponding to the maximum performance metric value.
-    \end{itemize}
-		\item Brute-Force scheduler. 
-        This scheduler uses the brute-force optimization algorithms introduced in Section~\ref{section_bf_pa} and Section~\ref{section_config_opt} as a baseline method.
-		\item Incremental scheduler. 
-        This scheduler applies the incremental optimization algorithms described in Section~\ref{section_increment_pa} and Section~\ref{section_config_opt}, optimizing both priority assignments and task configurations.
+		\item CFS (Complete Fair Scheduling). CFS is the default scheduling algorithm in most
+        Linux systems. It balances CPU utilization among all running tasks based on their
+        importance and aims to achieve fair resource sharing. However, CFS is not a
+        real-time scheduling algorithm and cannot provide performance guarantees.
+		\item DM\_FAST and DM\_SLOW (Deadline-Monotonic, min/max QoS budget).
+        These fixed-priority schedulers order tasks by Deadline-Monotonic (DM) priorities
+        (shorter relative deadlines first) and fix each QoS-configurable task's budget to an
+        extreme of its grid, as in Definition~\ref{def_dm_fast}:
+        DM\_FAST uses the shortest budget, DM\_SLOW the longest.
+        Under the implicit-deadline model $D_i = T_i$ used in our experiments, DM coincides
+        with Rate-Monotonic (period-based) ordering.
+        In the real-world system TSP is the sole QoS-configurable task, so its budget is set
+        to the shortest (DM\_FAST) or longest (DM\_SLOW) execution time.
+		\item BF (Brute-Force scheduler).
+        This scheduler uses the brute-force optimization algorithms introduced in
+        Section~\ref{section_bf_pa} and Section~\ref{section_config_opt} as a baseline method.
+		\item INCR (Incremental scheduler).
+        This scheduler applies the incremental optimization algorithms described in
+        Section~\ref{section_increment_pa} and Section~\ref{section_config_opt}, optimizing
+        both priority assignments and QoS budgets; it is the proposed method.
 	\end{itemize}
 	
     
@@ -109,8 +124,8 @@ MPC  & 0.99                                                               & 1   
     
     The experimental results are shown in Fig.~\ref{fig_et_all} and Fig.~\ref{figs_exp_results_all_cps}. In Fig.~\ref{fig_box_et_TSP}, some TSP tasks are not run, so there are some data points with 0 execution time. 
 
-    % \todo consider why CFS and RM-Slow miss a few data points at the end
-    % In Fig.~\ref{fig_cfs_perf} and \ref{fig_rm_slow}, at the end of experiments (around 830s), some data points are missing due to the high system utilization and uneven distribution of work loads, so some applications 
+    % \todo consider why CFS and DM-Slow miss a few data points at the end
+    % In Fig.~\ref{fig_cfs_perf} and \ref{fig_dm_slow}, at the end of experiments (around 830s), some data points are missing due to the high system utilization and uneven distribution of work loads, so some applications
 	\begin{figure*}[ht!]
 		\centering 
 		
@@ -167,14 +182,14 @@ MPC  & 0.99                                                               & 1   
 		\begin{subfigure}[t]{0.32\textwidth}
 			\centering
 			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_RM_Fast.pdf}
-			\caption{RM\_Fast}
-			\label{fig_rm_fast}
+			\caption{DM\_Fast}
+			\label{fig_dm_fast}
 		\end{subfigure}
 		\begin{subfigure}[t]{0.32\textwidth} 
 			\centering
 			\includegraphics[width=\textwidth]{pictures/box_plot_of_all_data_RM_Slow.pdf}
-			\caption{RM\_Slow}
-			\label{fig_rm_slow}
+			\caption{DM\_Slow}
+			\label{fig_dm_slow}
 		\end{subfigure}
 		
 		\begin{subfigure}[c]{0.32\textwidth}
@@ -215,7 +230,7 @@ MPC  & 0.99                                                               & 1   
     As the experiments progress, SLAM's overall execution time gradually increases and then decreases. This reflects the changing computational demands of SLAM. For example, if the system needs to run loop closure, it will add some extra computation cost. Another possible reason is that performing optimization on a larger set of frames requires more computation resources, resulting in longer execution times. This trend continues until the system reaches a different state where the computation demand may decrease.
 
     \item TSP Execution Time:
-    TSP's execution time is determined by its runtime parameters and shows stable probability distributions under CFS, RM-Slow, and RM-Fast schedulers. These algorithms do not optimize TSP's runtime configurations (\eg execution time limits).
+    TSP's execution time is determined by its runtime parameters and shows stable probability distributions under CFS, DM\_SLOW, and DM\_FAST schedulers. These algorithms do not optimize TSP's runtime configurations (\eg execution time limits).
     However, when scheduled by the brute-force or incremental optimizers, TSP's execution time distribution is decided by the proposed scheduler and varies over time. These variations are closely linked to the changing computational demands of other tasks, particularly SLAM. For example, at around 650 seconds, as SLAM's resource requirements increase, TSP sacrifices its execution time to accommodate SLAM's higher priority.
 \end{itemize}
 
@@ -223,13 +238,13 @@ MPC  & 0.99                                                               & 1   
 	\subsection{What happened during the scheduling of each scheduler}
 	\textbf{CFS.} The Completely Fair Scheduler (CFS) is not designed for real-time scheduling. Its primary goal is to allocate CPU time fairly among all tasks. When overall CPU utilization is low, CFS achieves a good balance in system performance. However, as SLAM's execution time increases and overall CPU utilization rises, CFS does not adapt to the tasks' differing importance or resource requirements. Instead, it continues to distribute resources evenly across tasks. Consequently, SLAM frequently misses its deadlines, leading to a gradual degradation of overall system performance.
 
-	\textbf{RM-Fast, RM-Slow.} Rate Monotonic (RM) scheduling is a real-time algorithm that prioritizes tasks with shorter periods. In this case, TSP is assigned a higher priority than SLAM because of its shorter period.
+	\textbf{DM\_FAST, DM\_SLOW.} Deadline-Monotonic (DM) scheduling is a real-time algorithm that prioritizes tasks with shorter relative deadlines. In this case, TSP is assigned a higher priority than SLAM because of its shorter period.
 
-    In RM-Fast, TSP is allocated the shortest possible running time limit, increasing the likelihood that all tasks meet their deadlines. However, this comes at the cost of TSP's performance metric, which is the lowest among the tested configurations.
+    In DM\_FAST, TSP is allocated the shortest possible running time limit, increasing the likelihood that all tasks meet their deadlines. However, this comes at the cost of TSP's performance metric, which is the lowest among the tested configurations.
 
-    In contrast, in RM-Slow, TSP is allocated a longer running time limit, improving its performance metric but making the overall system harder to schedule. While this initially leads to better performance for RM-Slow compared to RM-Fast, due to SLAM's shorter initial running time, it becomes less effective as SLAM's execution time increases.
+    In contrast, in DM\_SLOW, TSP is allocated a longer running time limit, improving its performance metric but making the overall system harder to schedule. While this initially leads to better performance for DM\_SLOW compared to DM\_FAST, due to SLAM's shorter initial running time, it becomes less effective as SLAM's execution time increases.
 
-    Both RM-Fast and RM-Slow fail to adapt to the changes in the environments or the computation tasks, and therefore cannot exploit the full computation capabilities provided by the computing system.
+    Both DM\_FAST and DM\_SLOW fail to adapt to the changes in the environments or the computation tasks, and therefore cannot exploit the full computation capabilities provided by the computing system.
 
 	\textbf{Optimizer-BF, incremental.}
     The proposed optimizer addresses the limitations of the baseline schedulers by dynamically adjusting task priorities and running time limits in response to changes in resource requirements.
@@ -249,18 +264,18 @@ MPC  & 0.99                                                               & 1   
 
     The incremental optimizer, on the other hand, delivers better and more robust performance because it dynamically adjusts task scheduling decisions in real-time, maintaining adaptability across a wide range of scenarios. This dynamic capability enables the incremental optimizer to outperform baseline schedulers, which are designed for static environments and are only effective under limited conditions.
 
-As shown in Fig.~\ref{figs_exp_results_all_cps}, standard schedulers like CFS and RM fail to achieve optimal or stable performance in dynamic environments without significant modifications or system-level enhancements. Such static scheduling algorithms typically only work the best under specific situations.
+As shown in Fig.~\ref{figs_exp_results_all_cps}, standard schedulers like CFS and DM fail to achieve optimal or stable performance in dynamic environments without significant modifications or system-level enhancements. Such static scheduling algorithms typically only work the best under specific situations.
 The proposed optimization-based scheduler, by contrast, demonstrates both improved performance and greater robustness, offering a practical solution for achieving near-optimal system performance in dynamic conditions.
 
 
-	% \todo show RM/CFS overhead?
+	% \todo show DM/CFS overhead?
 
 	\subsection{Scalability Analysis}
 
     Fig.~\ref{fig_et_all} and \ref{figs_exp_results_all_cps} show that the incremental scheduler runs 10x faster than the brute-force scheduler while maintaining similar or better performance, except when running for the first time.
     In practice, due to the very low running frequency, the overhead brought by running the Constrained Audsley Beam Search could be negligible.
     The results successfully validated the good performance of the proposed incremental scheduler.
-    % Section~\ref{section_complexity_analysis} shows that the incremental optimization algorithm has linear runtime complexity relative to the number of tasks, comparable to standard scheduling algorithms like RM and CFS. This ensures excellent scalability.
+    % Section~\ref{section_complexity_analysis} shows that the incremental optimization algorithm has linear runtime complexity relative to the number of tasks, comparable to standard scheduling algorithms like DM and CFS. This ensures excellent scalability.
 
 While our experiments involve a limited number of tasks, we expect greater performance improvements between the incremental and the brute-force schedulers in systems with more tasks because:
 (1) Higher scheduling complexity: Larger systems offer more opportunities for optimization.
@@ -278,7 +293,7 @@ This makes the incremental algorithm highly suitable for complex scheduling scen
     Although this assumption is in some conflict with our original proposal about working in an unknown environment, there are no way to provide any performance guarantee if such worst-case information cannot be obtained offline.
     However, the proposed optimization framework will still be useful in soft real-time systems where strict performance guarantee is not required.
 
-    While existing scheduling methods like Completely Fair Scheduling (CFS) or Rate Monotonic (RM) can also provide guarantees within this framework, the proposed optimization framework achieves significantly higher SP metric values. This improvement underscores one of the key contributions of this work: a new, and stronger safety-performance guarantee that surpasses traditional methods in both safety and performance dimensions.
+    While existing scheduling methods like Completely Fair Scheduling (CFS) or Deadline-Monotonic (DM) can also provide guarantees within this framework, the proposed optimization framework achieves significantly higher SP metric values. This improvement underscores one of the key contributions of this work: a new, and stronger safety-performance guarantee that surpasses traditional methods in both safety and performance dimensions.
 
     Furthermore, the framework offers flexibility by allowing additional constraints to be incorporated for individual tasks. This enables the creation of fine-grained guarantees tailored to specific safety or performance requirements, making the approach adaptable to diverse real-time system needs.
 
