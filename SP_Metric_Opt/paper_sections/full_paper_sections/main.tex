@@ -27,6 +27,17 @@
 \DeclarePairedDelimiter\ceil{\lceil}{\rceil}
 \DeclarePairedDelimiter\floor{\lfloor}{\rfloor}
 
+% --- Float placement: keep figures in the body, not deferred to the references ---
+\renewcommand{\topfraction}{0.9}        % max page fraction for top floats
+\renewcommand{\bottomfraction}{0.9}     % max page fraction for bottom floats
+\renewcommand{\textfraction}{0.07}      % min text fraction on a float page
+\renewcommand{\floatpagefraction}{0.75} % min fill before a float-only page
+\renewcommand{\dbltopfraction}{0.9}     % same for two-column (figure*) floats
+\renewcommand{\dblfloatpagefraction}{0.75}
+\setcounter{totalnumber}{4}             % allow up to 4 floats per page
+\setcounter{topnumber}{4}
+\setcounter{dbltopnumber}{4}
+
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}{Lemma}
@@ -36,7 +47,9 @@
 \newtheorem{Example}{Example}
 \newtheorem{definition}{Definition}[section]
 
-\newenvironment{proof}[1][Proof]{\par\noindent\textit{#1.}\hspace*{1em}\ignorespaces}{\hfill$\square$\par\medskip}
+\newenvironment{proof}[1][Proof]%
+{\par\noindent\textit{#1.}\hspace*{1em}\ignorespaces}%
+{\hfill$\square$\par\medskip}
 
 \newcommand {\haibo}[1]{{\color{red}\textbf{Haibo: }#1}\normalfont}
 \newcommand {\Sen}[1]{{\color{green}\textbf{Sen: }#1}\normalfont}
@@ -52,45 +65,75 @@
 
 \begin{document}
 	\input{symbols}
-	
-	\title{Optimizing 2 Robot Computation for Safety and Performance in Dynamic Environments}
-	
+
+	\title{Optimizing Robot Computation for Safety and Performance in Dynamic Environments}
+
 	% \author{IEEE Publication Technology,~\IEEEmembership{Staff,~IEEE,}
 	% 	% <-this % stops a space
-	% 	% \thanks{This paper was produced by the IEEE Publication Technology Group. They are in Piscataway, NJ.}% <-this % stops a space
+	% 	% \thanks{This paper was produced by the IEEE Publication Technology Group.
+	% 	% They are in Piscataway, NJ.}% <-this % stops a space
 	% 	% \thanks{Manuscript received April 19, 2021; revised August 16, 2021.}
 	% }
-    
-% \author{%
-%  \IEEEauthorblockN{Sen Wang\thanks{This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version may no longer be accessible. The authors are with Virginia Tech, and Seven Lakes High School. Emails: $\{$swang666, dongli, ashrar7, hbzeng, rywilli1, $\}$@vt.edu, heyuanboryan814@gmail.com.}, 
-%       Dong Li,
-%       Ryan He,
-%       Ashrarul H. Sifat,
-%       Haibo Zeng,
-%       Ryan Williams }
-% }
-	
+
+\author{%
+ \IEEEauthorblockN{Sen Wang\thanks{This work has been submitted to the IEEE for possible
+   publication. Copyright may be transferred without notice, after which this version
+   may no longer be accessible. The authors are with Virginia Tech, and Seven Lakes
+   High School. Emails: $\{$swang666, dongli, ashrar7, hbzeng, rywilli1, $\}$@vt.edu,
+   $\{$huan1464, chjung$\}$ @purdue.edu,
+   heyuanboryan814@gmail.com.},
+      Dong Li,
+      Ashrarul H. Sifat,
+      Ryan He,
+	  Shao-Yu Huang,
+	  Changhee Jung,
+      Haibo Zeng,
+      Ryan Williams }
+}
+
 	% The paper headers
 	\markboth{Journal of \LaTeX\ Class Files,~Vol.~14, No.~8, August~2021}%
-	{Shell \MakeLowercase{\textit{et al.}}: A Sample Article Using IEEEtran.cls for IEEE Journals}
-	
+	{Shell \MakeLowercase{\textit{al.}}: A Sample Article Using IEEEtran.cls for IEEE Journals}
+
 	% \IEEEpubid{0000--0000/00\$00.00~\copyright~2021 IEEE}
 	% Remember, if you use this you must call \IEEEpubidadjcol in the second
 	% column for its text to clear the IEEEpubid mark.
-	
+
 	\maketitle
-	
+
 	\begin{abstract}
-		As robotic systems continue to advance, their reliance on resource-constrained embedded systems for mission-critical tasks presents unique challenges in ensuring safety and performance guarantees. This paper addresses the coupling between computational resource allocation and safety-performance (SP) metrics, especially in dynamic environments where task execution demands change temporally and spatially. We improve the SP metric proposed in prior work to enhance interpretability and extend theoretical results using Gaussian processes and probabilistic models to analyze safety and performance guarantees. Building on these insights, we propose an online optimization framework to dynamically adjust computational task priorities and runtime configurations, minimizing resource waste while maintaining robust safety guarantees. To mitigate the overhead of online optimization, we introduce an incremental optimization strategy that achieves significant performance gains with low computational cost. 
-        
-        We built an autonomous driving system on an Nvidia Jetson embedded computing board. The system mainly runs 4 popular robotic tasks: control, path planning, SLAM, and TSP. 
-        We implemented the scheduler in a Linux operating system and compared the proposed scheduler with widely-used scheduling algorithms such as Complete Fairness Scheduling (CFS) and Rate Monotonic (RM).
-        Both real-world and large-scale simulated experiments demonstrated that the proposed methods improve the SP metric by 15–50\% compared to the baseline scheduling algorithms. This work contributes to the fields of robotics and real-time systems by integrating safety and performance considerations for resource-constrained robots operating in dynamic environments.
+		As robotic systems continue to advance, their reliance on resource-constrained
+		embedded systems for mission-critical tasks presents unique challenges in ensuring
+		safety and performance guarantees.
+		This paper addresses the coupling between computational resource allocation
+		and safety-performance (SP) metrics, especially in dynamic environments
+		where task execution demands change temporally and spatially.
+		We first improve the SP metric proposed in Sifat~\etal~\cite{Ash23RAL} to enhance interpretability
+		and extend theoretical results using Gaussian processes and probabilistic models
+		to analyze safety and performance guarantees.
+		Building on these insights, we propose an online optimization framework
+		to dynamically adjust computational task priorities and runtime configurations,
+		minimizing resource waste while maintaining robust safety guarantees.
+		To mitigate the overhead of online optimization, we introduce
+		an incremental optimization strategy that achieves significant performance gains
+		with low computational cost.
+
+		We built an autonomous driving system on an Nvidia Jetson embedded computing board.
+		The system mainly runs 4 popular robotic tasks: control, path planning, SLAM, and TSP.
+		We implemented the scheduler in a Linux operating system and compared
+		the proposed scheduler with widely-used scheduling algorithms such as
+		Complete Fairness Scheduling (CFS) and Rate Monotonic (RM).
+		Both real-world and large-scale simulated experiments demonstrated
+		that the proposed methods improve the SP metric by 15--50\%
+		compared to the baseline scheduling algorithms.
+		This work contributes to the fields of robotics and real-time systems
+		by integrating safety and performance considerations for resource-constrained
+		robots operating in dynamic environments.
 	\end{abstract}
-	
+
 	\begin{IEEEkeywords} Scheduling, Safety, Online Optimization, Real-Time Systems.
 	\end{IEEEkeywords}
-	
+
 	\input{sections/section1_introduction}
     \input{sections/section2_related_work}
     \input{sections/section3_background}
@@ -104,21 +147,10 @@
     \input{sections/section11_real_exp}
     \input{sections/section12_simu_exp}
     \input{sections/section13_conclusion}
-    
 
-
-
-
-
-
-
-    	
-	
 	\FloatBarrier
 	\bibliographystyle{ieeetr}
 	\bibliography{scheduling}
-	
-	
+
+
 \end{document}
-
-

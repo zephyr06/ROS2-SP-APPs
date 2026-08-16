@@ -15,3 +15,7 @@ Break a sentence across lines at natural clause boundaries if it would exceed th
 This makes edits and reviews separable line-by-line.
 
 ## 3. Save textbf for what matters the most, rather than as a simple bullet point
+
+## 4. One paragraph delivers one and only one major point
+- Don't mix multiple pieces of observation / conclusion / goals into one paragraph. Each paragraph has one clear point
+- 

@@ -1,28 +1,69 @@
 	\section{Related Work}
-    
-	Functionality and safety are two central requirements for ensuring that robotic systems operate effectively. Functionality and physical safety refers to a robot's ability to complete its assigned tasks successfully without damaging itself and its environments, such as collision prevention during movement~\cite{PARIGIPOLVERINI201725, safety20, Vicentini19TRO_Safety, Terra20ICCAR}. 
-    Providing physical safety is critical in many applications~\cite{Vasic2013SafetyII,Ames2016ControlBF, Fisac2017AGS, Xiong2022MultiLayeredSC, Singletary2020SafetyCriticalKC}, such as industrial robots~\cite{Bi2021SafetyAM, RodrguezGuerra2021HumanRobotIR}, surgical robots~\cite{Haidegger2022RobotAssistedMI}, aircrafts~\cite{Zipay2016TheUF, Molnr2021ModelFreeSC}, 
-    and autonomous vehicles~\cite{Zheng2023LearningBasedSC, Wang2023PosterEA}. 
-    However, most of these works fail to consider the computation aspects of the underlying system. 
-    Actually, even with a perfect algorithm that provides perfect safety guarantee but takes a prohibitively long time to run, safety is oftentimes not guaranteed anymore.
-    For instance, if a safety-critical task, such as object detection in an autonomous driving system, fails to complete its execution before its deadline, it could lead to severe safety risks.
 
-    While functionality and safety are critical, most existing research addresses them in isolation.  Indeed, little work has been done to address the combined problem of guaranteeing both functionality and safety in resource-constrained robotic systems, not to mention under dynamic environments. Sifat~\etal~\cite{Ash23RAL} introduced a safety-performance (SP) metric to provide a quantitative measure of performance (functionality) and safety. Building on this, our work improves the SP metric and proposes a novel framework to optimize it efficiently under dynamic environmental conditions.
-    
-    
-	Designing scheduling algorithms with schedulability guarantees (\ie ensuring all tasks meet their deadlines) has been extensively studied in the real-time systems community. Fixed-priority scheduling is one of the most widely used approaches in such systems. A rich body of literature has developed schedulability analysis techniques~\cite{Liu1973SchedulingAF, Zhao2017AnES, Maxim2013ResponseTA, Maxim2022ProbabilisticA, zhao2017virtual, Ueter2021ResponseTimeAA, Gnzel2021SuspensionAwareFS} for a variety of scheduling algorithms, focusing on whether tasks can complete execution before their deadlines. These methods typically determine task priorities during the system design phase, using the worst-case execution time of each task as a key factor. Although such static approaches provide strong safety guarantees, they often lead to underutilized computational resources and increased hardware costs due to their overly pessimistic nature.
+	Functionality and safety are two central requirements for ensuring that robotic systems operate
+	effectively. Functionality and physical safety refers to a robot's ability to complete its assigned
+	tasks successfully without damaging itself and its environments, such as collision prevention during
+	movement~\cite{PARIGIPOLVERINI201725, safety20, Vicentini19TRO_Safety, Terra20ICCAR}.
+    Providing physical safety is critical in many
+	applications~\cite{Vasic2013SafetyII,Ames2016ControlBF, Fisac2017AGS, Xiong2022MultiLayeredSC,
+	Singletary2020SafetyCriticalKC}, such as industrial robots~\cite{Bi2021SafetyAM,
+	RodrguezGuerra2021HumanRobotIR}, surgical robots~\cite{Haidegger2022RobotAssistedMI},
+	aircrafts~\cite{Zipay2016TheUF, Molnr2021ModelFreeSC},
+    and autonomous vehicles~\cite{Zheng2023LearningBasedSC, Wang2023PosterEA}.
+    However, most of these works fail to consider the computation aspects of the underlying system.
+    Actually, even with a perfect algorithm that provides perfect safety guarantee but takes a
+    prohibitively long time to run, safety is oftentimes not guaranteed anymore.
+    For instance, if a safety-critical task, such as object detection in an autonomous driving system,
+    fails to complete its execution before its deadline, it could lead to severe safety risks.
+
+    While functionality and safety are critical, most existing research addresses them in isolation.
+    Indeed, little work has been done to address the combined problem of guaranteeing both
+    functionality and safety in resource-constrained robotic systems, not to mention under dynamic
+    environments. Sifat~\etal~\cite{Ash23RAL} introduced a safety-performance (SP) metric to provide a
+    quantitative measure of performance (functionality) and safety. Building on this, our work improves
+    the SP metric and proposes a novel framework to optimize it efficiently under dynamic environmental
+    conditions.
 
 
-    When it comes to working with dynamic environments, multi-mode systems (MMS)~\cite{Huang2015TechniquesFS, Toma2018ImplementationAE} and rate-adaptive systems~\cite{Buttazzo2014RateadaptiveTM} are oftentimes a popular choice. In MMS, the system is operated under different modes at different physical environments, and the tasks could have different configurations (such as different periods or different selection of tasks). However, the modes in multi-mode systems are typically designed during the offline stages to handle \textit{known} environments. In contrast, this paper focuses on exploring in an \textit{unknown} environment, and therefore the ``modes'' in multi-mode systems cannot be pre-determined offline. Besides, MMS typically only considers limited mode choices, while this paper models the environment from a continuous view.
+	Designing scheduling algorithms with schedulability guarantees (\ie ensuring all tasks meet their
+	deadlines) has been extensively studied in the real-time systems community. Fixed-priority
+	scheduling is one of the most widely used approaches in such systems. A rich body of literature has
+	developed schedulability analysis
+	techniques~\cite{Liu1973SchedulingAF, Zhao2017AnES, Maxim2013ResponseTA, Maxim2022ProbabilisticA,
+	zhao2017virtual, Ueter2021ResponseTimeAA, Gnzel2021SuspensionAwareFS} for a variety of scheduling
+	algorithms, focusing on whether tasks can complete execution before their deadlines. These methods
+	typically determine task priorities during the system design phase, using the worst-case execution
+	time of each task as a key factor. Although such static approaches provide strong safety guarantees,
+	they often lead to underutilized computational resources and increased hardware costs due to their
+	overly pessimistic nature.
+
+
+    When it comes to working with dynamic environments, multi-mode systems
+	(MMS)~\cite{Huang2015TechniquesFS, Toma2018ImplementationAE} and rate-adaptive
+	systems~\cite{Buttazzo2014RateadaptiveTM} are oftentimes a popular choice. In MMS, the system is
+	operated under different modes at different physical environments, and the tasks could have different
+	configurations (such as different periods or different selection of tasks). However, the modes in
+	multi-mode systems are typically designed during the offline stages to handle \textit{known}
+	environments. In contrast, this paper focuses on exploring in an \textit{unknown} environment, and
+	therefore the ``modes'' in multi-mode systems cannot be pre-determined offline. Besides, MMS
+	typically only considers limited mode choices, while this paper models the environment from a
+	continuous view.
 
     % The problem considered in this paper can potentially be modeled using mixed-criticality systems (MCS)~\cite{Baruah2011ResponseTimeAF, Burns2015MixedCS}. MCS typically have different levels of criticality, where higher criticality generally implies that all the tasks' execution time could not be shorter than when the system is at the low criticality. A system transitions from a lower to a higher criticality level when a task's execution time exceeds expectations. Since higher-criticality tasks often have stringent timing requirements, this transition may necessitate discarding lower-criticality tasks to ensure system stability.
     % However, the system model proposed in this paper offers several advantages over traditional MCS:
-    % (1) Fine-Grained Optimization Through a Continuous Model. 
+    % (1) Fine-Grained Optimization Through a Continuous Model.
     % Instead of relying on a limited set of criticality levels, our approach employs a continuous model to represent computational requirements. This enables more precise and fine-grained optimization, allowing the system to adapt in scenarios where MCS frameworks lack sufficient flexibility.
     % (2) Proactive Adaptation via Execution Time Distribution Prediction. We introduce a novel execution time distribution prediction module that dynamically adjusts based on environmental conditions. Unlike MCS, which only reacts after tasks exceed their worst-case execution times, our system proactively anticipates variations, leading to faster and more reliable adjustments.
     % (3) Comprehensive Optimization Beyond Criticality Switching. While MCS primarily focuses on schedulability by switching criticality levels and dropping low-criticality tasks when necessary, our approach expands the optimization space. We incorporate novel algorithms for priority assignment and task configuration, allowing for more sophisticated and effective resource management. By considering multiple optimization variables beyond simple criticality levels, our system has the potential to achieve significant performance improvements.
 
-    Different from most of the available works, which typically focus on only one aspect of robotics and real-time systems, this paper advocates an integrated view to analyze and optimize the robotic system design due to the coupled nature of computation, safety, and performance.
-    Specifically, this paper investigates the use of dynamic, online adjustments to task priorities, enabling more flexible and resource-efficient scheduling. To the best of our knowledge, this is the first work to address environment-aware robotic system optimization through the combined use of task priority adjustment and runtime configuration optimization. While some prior works, such as Farrukh~\etal~\cite{Farrukh2020}, have explored similar ideas in specific contexts like flight control management, our work extends these concepts to a broader range of robotic systems and introduces novel problem formulations and optimization techniques to tackle new issues with dynamic environments.
-	
-	
+    Different from most of the available works, which typically focus on only one aspect of robotics and
+	real-time systems, this paper advocates an integrated view to analyze and optimize the robotic system
+	design due to the coupled nature of computation, safety, and performance.
+    Specifically, this paper investigates the use of dynamic, online adjustments to task priorities,
+    enabling more flexible and resource-efficient scheduling. To the best of our knowledge, this is the
+    first work to address environment-aware robotic system optimization through the combined use of task
+    priority adjustment and runtime configuration optimization. While some prior works, such as
+    Farrukh~\etal~\cite{Farrukh2020}, have explored similar ideas in specific contexts like flight
+    control management, our work extends these concepts to a broader range of robotic systems and
+    introduces novel problem formulations and optimization techniques to tackle new issues with dynamic
+    environments.
