@@ -214,12 +214,17 @@ std::vector<DiffObj> FindTaskWithDifferentEt(const TaskSet& tasks_base,
     // P1.30: tight tolerance, NOT FiniteDist::operator!= (loose 1e-1 relative).
     // A TL-baked ET is a point mass at the TL; two close TLs (1100 vs 1200)
     // compare EQUAL under the loose operator== → change missed → stale cache RTA.
+    // 1e-6 is effectively exact for TL magnitudes (1100/1200/1500...): it sits
+    // ~10 orders above float epsilon (no drift false-positives) and ~3 orders
+    // below the coarsest realistic TL-grid step (1100→1101 = 9.1e-4 ≫ 1e-6, so
+    // no real TL change is ever merged). Global Value_Proba::operator== 1e-1
+    // left untouched (may be load-bearing elsewhere); fix is LOCALIZED here.
     std::vector<DiffObj> seq;
     seq.reserve(tasks_base.size());
     for (int i = 0; i < tasks_base.size(); i++) {
         const FiniteDist& et_base = tasks_base[i].execution_time_dist;
         const FiniteDist& et_updated = tasks_updated[i].execution_time_dist;
-        if (!et_base.approx_equal(et_updated, 1e-9)) {
+        if (!et_base.approx_equal(et_updated, 1e-6)) {
             seq.push_back(DiffObj{
                 i, et_base.GetAvgValue() < et_updated.GetAvgValue()});
         }
