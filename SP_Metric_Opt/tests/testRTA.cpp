@@ -472,6 +472,64 @@ TEST_F(TaskSetForTest_4tasks_2cores_cache,
     }
 }
 
+// P1.30 — a TL change whose RELATIVE magnitude is small (< 10%) must still be
+// detected as an ET change so the cache recomputes the changed task's RTA. The
+// cache's ET-diff detector (FindTaskWithDifferentEt) compares execution_time_dist
+// via FiniteDist::operator!=, whose underlying FiniteDist::operator== uses a
+// LOOSE 1e-1 RELATIVE tolerance. A TL-baked ET is a point mass at the TL value;
+// two close TLs therefore compare EQUAL → the change is MISSED → the changed
+// task is wrongly FullReuse → the cache returns the STALE champion RTA (at the
+// old TL) instead of recomputing at the candidate TL → cache node-RTA !=
+// oracle node-RTA → SP inflation. This is the P1.30 root cause (INCR wrongly
+// beating BF on the mid config, where TSP TL 1100→1200, rel diff 0.091 < 0.1).
+//
+// The shared 4-task fixture saturates task 1's miss-prob at 1.0 for TLs near its
+// deadline (HP task 0 has a short period → heavy interference → RTA always > ddl),
+// so a stale-vs-fresh difference cannot be observed there. This test builds a
+// minimal 1-core, 2-task set engineered so the TL change straddles the deadline:
+// HP task 0 is a deterministic point mass ET=1 with a LONG period (exactly one
+// release → interference = 1), and LP task 1 has deadline 12. TL 11 → RTA 12
+// (no miss); TL 12 → RTA 13 (miss). Rel diff |1|/|11| = 0.091 < 0.1 → the loose
+// compare MISSES the change → the cache must still recompute task 1 (NoReuse).
+TEST_F(TaskSetForTest_4tasks_2cores_cache,
+       Evaluate_TLChange_SmallRelativeMagnitude_RecomputesChangedTask) {
+    GlobalVariables::Granularity = 10;
+    TaskSet tasks;
+    // HP task: deterministic ET=1, long period so it releases exactly once in
+    // any window near the deadline → interference is the point mass {1: 1.0}.
+    tasks.push_back(Task(0, FiniteDist({Value_Proba(1, 1.0)}), 1000, 1000, 0));
+    // LP task: TL-baked point mass; deadline 12 sits between TL 11 and TL 12.
+    tasks.push_back(Task(1, FiniteDist({Value_Proba(4, 1.0)}), 100, 12, 1));
+    tasks[0].processorId = 0;
+    tasks[1].processorId = 0;
+    PriorityVec pa = {0, 1};
+    DAG_Model dag(tasks, {}, {});
+
+    // Champion: task 1 TL-baked at 11 (point mass {11: 1.0}).
+    std::vector<double> tl_champ = {-1, 11};
+    RTACache cache;
+    cache.Initialize(dag, pa, tl_champ);
+
+    // Candidate: task 1's TL moves 11 -> 12 (rel diff 0.091 < 0.1, so the loose
+    // operator== calls the point masses EQUAL). The oracle recomputes task 1's
+    // RTA at TL 12 (point mass {13: 1.0} → miss-prob 1.0); the cache MUST match.
+    std::vector<double> tl_cand = {-1, 12};
+    std::vector<FiniteDist> rtas_oracle = OracleRtas(dag, pa, tl_cand);
+    const std::vector<FiniteDist>& rtas_eval = cache.Evaluate(dag, pa, tl_cand);
+
+    // Assert with a TIGHT tolerance, NOT FiniteDist::operator== (whose 1e-1
+    // relative tolerance is the very defect under test): a stale TL-11 RTA
+    // {12:1.0} and a fresh TL-12 RTA {13:1.0} differ by only 0.083 relative, so
+    // the loose operator== would call them EQUAL and mask the divergence. The
+    // cache's bit-identity contract requires exact reproduction of the oracle.
+    ASSERT_EQ(rtas_oracle.size(), rtas_eval.size());
+    for (size_t i = 0; i < rtas_oracle.size(); i++) {
+        EXPECT_TRUE(rtas_oracle[i].approx_equal(rtas_eval[i], 1e-9))
+            << "rtas[" << i << "] diverged on a small-relative TL change "
+            << "(cache reused the stale champion RTA instead of recomputing)";
+    }
+}
+
 // P1.17 task 1a remainder — pin that champ_tasks_baked_ (the cached champion
 // TL-bake IsSingleTaskChange reads instead of re-baking) is REFRESHED on
 // AdoptChampion. The hazard this cache introduces: if champ_tasks_baked_ were

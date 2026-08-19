@@ -211,16 +211,17 @@ std::vector<DiffObj> FindTaskWithDifferentEt(
 
 std::vector<DiffObj> FindTaskWithDifferentEt(const TaskSet& tasks_base,
                                              const TaskSet& tasks_updated) {
+    // P1.30: tight tolerance, NOT FiniteDist::operator!= (loose 1e-1 relative).
+    // A TL-baked ET is a point mass at the TL; two close TLs (1100 vs 1200)
+    // compare EQUAL under the loose operator== → change missed → stale cache RTA.
     std::vector<DiffObj> seq;
     seq.reserve(tasks_base.size());
     for (int i = 0; i < tasks_base.size(); i++) {
-        if (tasks_base[i].execution_time_dist !=
-            tasks_updated[i].execution_time_dist) {
-            if (tasks_base[i].execution_time_dist.GetAvgValue() <
-                tasks_updated[i].execution_time_dist.GetAvgValue()) {
-                seq.push_back(DiffObj{i, true});
-            } else
-                seq.push_back(DiffObj{i, false});
+        const FiniteDist& et_base = tasks_base[i].execution_time_dist;
+        const FiniteDist& et_updated = tasks_updated[i].execution_time_dist;
+        if (!et_base.approx_equal(et_updated, 1e-9)) {
+            seq.push_back(DiffObj{
+                i, et_base.GetAvgValue() < et_updated.GetAvgValue()});
         }
     }
     return seq;

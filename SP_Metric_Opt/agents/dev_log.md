@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-08-17
+
+- **P0.11 — Evaluate real-world exp config: DONE.** EVALUATION (not bug-finding).
+  Real-world 4-task yaml `all_time_records/task_characteristics.yaml`: TSP+SLAM
+  share processorId=0 (competing pair); SLAM sp_weight=2 (important task).
+  Tightened sp thresholds 0.9→0.1 (lower=stricter gate) + 3 SLAM-ET regimes
+  (low mu=100 / mid mu=361 / high mu=1200); scratch copies, original NOT mutated.
+  **BF exhibits the predicted PA swap** (low→TSP=6>SLAM=5; high→SLAM=5>TSP=4).
+  **SP measured** (one-line `Adopted SP` print added to both drivers; no new .cpp):
+  low → BF=INCR=4.98673 (IDENTICAL — both orderings SP-optimal when SLAM cheap;
+  INCR NOT suboptimal); mid → BF=4.97052, INCR=4.98389 (INCR higher — P1.27 BF
+  in-search gate rejects BF's SP-max plan for important-task schedulability);
+  high → BF=INCR=4.80810 (identical). **CORRECTION**: an earlier PA-only verdict
+  claimed "INCR fails the low regime / suboptimal" — withdrawn; SP-equal in low.
+  New per-task-threshold config (TSP=.5/MPC=.01/RRT=.05/SLAM=.1, baseline ET):
+  both pick TSP>SLAM, BF=4.96487, INCR=4.98181. Open: is INCR's higher-SP mid/
+  pertask plan actually gate-satisfying or did it skirt the important-task gate?
+  New clean single-config INCR driver `tests/AnalyzePriorityAssignmentIncremental.cpp`
+  (completes a commented-out CMake target; the example binary's demo loop
+  overwrites its output with v25's PA). NOT committed; user commits. Folder:
+  [`active_tasks/P0_11_debug_real_world_exp_config/`](active_tasks/P0_11_debug_real_world_exp_config/).
+
 ## 2026-08-09
 
 - **P1.28 — R1–R5 follow-up COMPLETE (git add-only, pending user commit; 17/17 ctest;
@@ -360,3 +382,44 @@
   TDD `ObtainSP_TaskSet_BudgetCancelIsUnschedulable` (tests/testSP.cpp; RED→GREEN).
   Release RunSpeedTest PASS (INCR_Reopt_1 0.030423 s/int, INCR_Reopt_10 0.021301 s/int;
   no regression). Staged: SP_Metric.h, SP_Metric.cpp, OptimizeSP_Base.cpp, testSP.cpp.
+
+- **P1.30 filed — INCR "beats" BF is an RTA-cache SP-inflation bug (BF correct).**
+  Spawned from P0.11 real-world-config eval. On the mid config INCR reported
+  SP=4.98389 (TSP TL=1200) vs BF's 4.97052 (TL=1100) — appeared INCR>B F. User
+  insisted this is impossible. Debug: BF per-leaf trace (debugMode=1) shows all 12
+  TSP TLs evaluated; TL=1200 true max SP=4.96962 < TL=1100's 4.97052 → BF correctly
+  adopted 1100 (no skip, no budget timeout — run was 0.81 s << 10 s). INCR's 4.98389
+  is IMPOSSIBLE under the canonical `EvaluateSPWithPriorityVec` (caps TL=1200 at
+  4.96962; INCR's adopted PA is one of the 24 PAs BF enumerated). Root cause: INCR's
+  TL-walk challenger SP is scored by the RTA-cache path
+  `ObtainSP_Full_From_NodeRTAs` (fed by `rta_cache_.Evaluate`), NOT the canonical
+  `EvaluateSPWithPriorityVec`→`ProbabilisticRTA_TaskSet`. The cache returns node RTAs
+  that inflate SP. The from-scratch SEED (OptimizeFromScratch:171) uses the canonical
+  path and is correct; the inflation happens only in the armed-cache TL walk
+  (SeedBaselineAndArmCache arms `rta_cache_active_`, then WalkSerializedTaskQueue
+  evals challengers via the cache). Baking is NOT the cause (both paths use
+  `GetUnitExecutionTimeDist`; cache called with no_tl on an already-baked dag).
+  Eliminates the prior P1.27-gate explanation (mid/pertask have NO important task →
+  gate vacuous). All prior INCR>BF P0.11 observations (mid +0.0134, pertask +0.0169)
+  are this inflation. Potentially affects prod/sim INCR SPs (PW impact). NOT yet
+  fixed; NOT yet empirically confirmed at the RTA level. Folder
+  `active_tasks/P1_30_bf_skips_higher_sp_tsp_tl/`.
+
+## 2026-08-18 — P1.30 FIX APPLIED + VERIFIED (INCR ≤ BF everywhere)
+Root cause was a LOOSE 1e-1 RELATIVE ET-equality tolerance in
+`FindTaskWithDifferentEt` (OptimizeSP_Incre.cpp): a TL-baked ET is a point mass
+at the TL value, so two close TLs (1100 vs 1200, rel 0.091 < 0.1) compared EQUAL
+→ the TL change was MISSED → the changed task was wrongly classified FullReuse
+→ the RTA cache returned the STALE champion-TL RTA instead of recomputing at the
+candidate TL → cache node-RTA != fresh `ProbabilisticRTA_TaskSet` → SP inflation
+(INCR wrongly beating BF). Fix: tight tolerance `!et.approx_equal(other, 1e-9)`
+in `FindTaskWithDifferentEt`, LOCALIZED to the diff detector (global
+`Value_Proba::operator==` 1e-1 left untouched). TDD:
+`Evaluate_TLChange_SmallRelativeMagnitude_RecomputesChangedTask` (testRTA.cpp)
+RED→GREEN; `BF_NotWorseThan_INCR` (testBF_w_TL.cpp) GREEN. 17/17 check.SP_OPT;
+release RunSpeedTest PASS (0.056 s/int). P0.11 re-run post-fix: mid
+BF=INCR=4.97052, pertask BF=INCR=4.96487, mpc_important BF=INCR=4.97052.
+Inflation gone. Removed the temporary debug self-check from SP_Metric.cpp;
+restored debugMode=0. NOT committed (git add only). DEFERRED: verify whether
+prod/sim INCR SPs were inflated (PW impact) — sample a synthetic sim taskset.
+Folder `active_tasks/P1_30_bf_skips_higher_sp_tsp_tl/`.

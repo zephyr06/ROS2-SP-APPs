@@ -184,6 +184,40 @@ TEST_F(TaskSetForTest_p127_taskset2_i0, BF_NotWorseThan_INCR_Reopt) {
         << "BF " << res_bf.sp_opt << " < INCR " << res_incr.sp_opt;
 }
 
+// P1.30 — BF must never score below INCR on the same taskset (canonical SP
+// invariant: INCR <= BF). The mid real-world config reproduces the inflation:
+// INCR's TL-walk SP is scored by the RTA-cache path, which on wide-ET cores
+// returns node-RTAs that under-estimate miss-prob -> INCR SP 4.98389 > BF's
+// canonical 4.97052 (TSP TL=1200 vs 1100). BF is exhaustive over the SAME TL
+// grid, so it is the ground truth; an INCR win here is impossible and flags the
+// cache-path inflation. RED on HEAD; GREEN once the cache path is bit-identical.
+class TaskSetForTest_p130_rw_mid : public ::testing::Test {
+   public:
+    void SetUp() override {
+        std::string path = GlobalVariables::PROJECT_PATH +
+                           "TaskData/p0_11_variants/rw_baseline_tightened.yaml";
+        dag_tasks = ReadDAG_Tasks(path, 5);
+        sp_parameters = ReadSP_Parameters(path);
+    }
+    DAG_Model dag_tasks;
+    SP_Parameters sp_parameters;
+};
+
+TEST_F(TaskSetForTest_p130_rw_mid, BF_NotWorseThan_INCR) {
+    ResourceOptResult res_bf =
+        EnumeratePA_with_TimeLimits(dag_tasks, sp_parameters);
+
+    OptimizePA_Incre_with_TimeLimits opt_incr(dag_tasks, sp_parameters);
+    opt_incr.ReOptimizePeriodic(dag_tasks, 2);
+    ResourceOptResult res_incr = opt_incr.CollectResults();
+
+    std::cout << "P1.30 mid: BF sp=" << res_bf.sp_opt
+              << " INCR sp=" << res_incr.sp_opt << "\n";
+    EXPECT_GE(res_bf.sp_opt, res_incr.sp_opt)
+        << "INCR (" << res_incr.sp_opt << ") beat BF (" << res_bf.sp_opt
+        << ") — impossible under the canonical SP metric (P1.30 cache inflation)";
+}
+
 int main(int argc, char** argv) {
     // ::testing::InitGoogleTest(&argc, argv);
     ::testing::InitGoogleMock(&argc, argv);
