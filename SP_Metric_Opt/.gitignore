@@ -21,6 +21,11 @@ obj/
 TaskData/*/
 TaskData/*.txt
 TaskData/*.json
+# Unit-test fixtures must be tracked (test_real_world_robot_config scenarios).
+# Negations MUST come after TaskData/*/ (git is last-match-wins) and re-include
+# the directory itself so git descends into it.
+!TaskData/test_real_world_robot_config/
+!TaskData/test_real_world_robot_config/**
 temp_experiment_configs/
 temp_experiment_configs_*/
 temp/
