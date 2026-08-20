@@ -152,7 +152,8 @@ void SchedulerApp::run(int release_index) {
                 incremental_optimizer_w_TL_ =
                     OptimizePA_Incre_with_TimeLimits(dag_tasks, sp_parameters);
 
-                incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(
+                incremental_optimizer_w_TL_.ReOptimizePeriodic(
+                    dag_tasks,
                     GlobalVariables::
                         Layer_Node_During_Incremental_Optimization);
             }

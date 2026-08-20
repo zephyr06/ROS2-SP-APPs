@@ -75,6 +75,7 @@
 | **P2.13** Important-task DDL vs SP metric study | [`active_tasks/P2_13_important_task_ddl_vs_sp_metric/`](active_tasks/P2_13_important_task_ddl_vs_sp_metric/) | Analysis study on `Important_Miss_Rate` vs `Mean_SP_Metric` sensitivity. |
 | **P2.14** Remove `SP_THRESHOLDS_SET` | [`finished_tasks/P2_14_sp_threshold_set_removal/`](finished_tasks/P2_14_sp_threshold_set_removal/) | ~~CLOSED 2026-07-25~~ (code-complete, committed `5c782bad`; Step 5 empirical analysis deferred to P2.13). Standardized on `SP_THRESHOLD_RANGE: [0.001, 0.9]`. |
 | **P2.15** Randomize `sp_weight` per task | [`finished_tasks/P2_15_sp_weight_randomization/`](finished_tasks/P2_15_sp_weight_randomization/) | ~~CLOSED 2026-07-25~~ (committed `771be079`; `SP_WEIGHT_RANGE: [0.1, 1.0]` sampling). 372/372 tests green. |
+| **P2.21** Fix application API incompatibilities and build setup | [`active_tasks/P2_21_fix_applications_api_issues/`](active_tasks/P2_21_fix_applications_api_issues/) | IN PROGRESS 2026-08-19. Fixed `scheduler_wrapper.h` (`ReOptimizePeriodic`), `update_priority_assignment_in_memory.h`, `tsp_osm_main_utils.h`, and `applications/CMakeLists.txt` conditional builds. 17/17 ctest + release speed test PASS. |
 
 ---
 

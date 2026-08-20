@@ -489,4 +489,5 @@ double run_tsp(InputDataForTSP& input_tsp, double max_time_input = 0.0) {
             return -1;
         }
     }
+    return -1;
 }

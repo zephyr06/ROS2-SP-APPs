@@ -69,4 +69,4 @@ target_link_libraries(${CONVENIENCE_LIB_NAME}  gmock)
 
 add_subdirectory(sources)
 add_subdirectory(tests)
-# add_subdirectory(applications)
+add_subdirectory(applications)

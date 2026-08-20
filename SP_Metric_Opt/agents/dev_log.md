@@ -4,7 +4,15 @@
 > Per-task detail (design, TDD, verification) lives in each task's folder under
 > `agents/active_tasks/` or `agents/finished_tasks/`; the status index is `MEMORY.md`.
 
----
+## 2026-08-19
+
+- **P2.21 — Fix Application API Incompatibilities and Build Setup: DONE.**
+  Fixed compilation and API issues in `SP_Metric_Opt/applications/` resulting from optimizer refactorings:
+  - `applications/real_time_manager/include/real_time_manager/scheduler_wrapper.h`: Updated `incremental_optimizer_w_TL_.OptimizeFromScratch_w_TL(...)` to `ReOptimizePeriodic(...)`.
+  - `applications/real_time_manager/include/real_time_manager/update_priority_assignment_in_memory.h`: Fixed misspelled include path to `real_time_manager/update_priority_assignment.h` and added `sources/Utils/testMy.h`.
+  - `applications/tsp_solver_osm/tsp_osm_main_utils.h`: Added `return -1;` to resolve `-Wreturn-type` warning in `run_tsp`.
+  - `applications/CMakeLists.txt` & `CMakeLists.txt`: Added conditional discovery guards for external dependencies (`OsqpEigen`, `SFML`, `Pangolin`/`ORB_SLAM2`) and enabled `add_subdirectory(applications)`.
+  - Verification: 17/17 ctest PASS, `RunSpeedTest` PASS (0.026–0.027s/int vs 0.10s threshold). Folder: [`active_tasks/P2_21_fix_applications_api_issues/`](active_tasks/P2_21_fix_applications_api_issues/).
 
 ## 2026-08-18
 
