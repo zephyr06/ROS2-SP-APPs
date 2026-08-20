@@ -61,7 +61,7 @@
     % This setting also artificially simulates a system with more computation loads that do not have much flexibility in scheduling, such as computer vision tasks that require delicate collaboration between CPU and GPU.
     A third core was dedicated to the scheduler for precise overhead measurement, though this is unnecessary in practice given the scheduler's light computation.
     All results are reproducible with our released code\footnote{\githubLink{}}.
-
+    \todo{update this table and config based on new exp config}
     The runtime configuration parameters, summarized in Table~\ref{table_exp_config}, are mainly adopted from Sifat~\etal~\cite{Ash23RAL} with adjustments based on the tasks' semantics.
     Safety-critical tasks (MPC, SLAM) receive higher deadline-miss thresholds and weights than TSP and RRT, with SLAM weighted highest as accurate localization is safety-critical.
     % Such a setting also simulates a realistic task set with a mix of critical and non-critical tasks.

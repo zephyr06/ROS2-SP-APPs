@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-08-18
+
+- **P0.11 — Codified the real-world-config evaluation as a gtest regression.**
+  New `tests/test_real_world_robot_config.cpp` (auto-discovered by the DEBUG
+  `check.SP_OPT` glob) + self-contained scenario yamls in
+  `TaskData/test_real_world_robot_config/` (low/high SLAM-ET × thr 0.1/0.01; 0.9
+  excluded — not a realistic real-world case). BF asserts the priority-swap
+  hypothesis (low→TSP>SLAM, high→TSP<SLAM) at every realistic threshold; INCR
+  asserts the high regime matches + near-optimal SP (≤ BF + tol, ≥ BF − tol) on
+  all 4 — also a P1.30 RTA-cache SP-inflation regression guard. 18/18
+  `check.SP_OPT` (new test ~74s, 4 cases PASSED).
+
 ## 2026-08-17
 
 - **P0.11 — Evaluate real-world exp config: DONE.** EVALUATION (not bug-finding).
@@ -423,3 +435,17 @@ Inflation gone. Removed the temporary debug self-check from SP_Metric.cpp;
 restored debugMode=0. NOT committed (git add only). DEFERRED: verify whether
 prod/sim INCR SPs were inflated (PW impact) — sample a synthetic sim taskset.
 Folder `active_tasks/P1_30_bf_skips_higher_sp_tsp_tl/`.
+
+## 2026-08-18 — P0.11 threshold sweep (0.9/0.1/0.01 × low/high SLAM-ET), BF
+Extended P0.11 with a uniform sp_threshold sweep on the real-world 4-task config.
+BF (`release/tests/AnalyzePriorityAssignment`) global optimum, bigger int = higher pri.
+- LOW SLAM-ET (mu=100): TSP>SLAM at ALL thresholds (0.9/0.1/0.01). Hypothesis robust.
+- HIGH SLAM-ET (mu=1200): swap (SLAM>TSP) only at strict thresholds (0.1, 0.01). At the
+  lenient 0.9 BF picks TSP>SLAM (OPPOSITE of hypothesis) — proves "thresholds too high"
+  misaligns the SP metric with the safety-critical ordering (BF is SP-max, not skipping).
+- SP values NOT comparable across thresholds: SP_Func's PenaltyFunc floor
+  (-0.01·exp(10·|1-thr|) → ≈-199 at thr=0.01) makes near-schedulable tasks saturate to
+  ≈1.0 as thr tightens — normalisation artifact, not a better plan. PA ordering is the signal.
+New variants: `TaskData/p0_11_variants/rw_slam_et_{low,high}_thr{0p9,0p01}.yaml`.
+Results table in `active_tasks/P0_11_debug_real_world_exp_config/tasks.md`.
+NEXT: run INCR (1e-6-fixed release build) on the same 0.9/0.01 sweep for comparison.
