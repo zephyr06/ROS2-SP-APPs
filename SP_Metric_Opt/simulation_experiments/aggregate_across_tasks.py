@@ -47,6 +47,11 @@ Ablation group (BF, INCR_Reopt_10, INCR_NO_TL, INCR_WCET, ...):
 Same raw-vs-normalized toggle as the main group: only the normalized ablation
 SP figure is emitted when normalize_sp is on.
 
+Important-task miss rate (one line per task count $N$ over the main schedulers:
+the scheduler is the categorical x-axis, each $N$ draws one line):
+    fig3_important_task_miss_rate.{png,pdf}
+    fig3b_non_important_task_miss_rate.{png,pdf}    (debug)
+
 Standalone distribution (single fixed task count):
     fig1f_sp_distribution_boxplot.{png,pdf}             (raw, fallback)
     fig1f_sp_distribution_boxplot_normalized.{png,pdf}  (when normalize_sp on)
@@ -81,6 +86,7 @@ from simulation_experiments.plotting_config import (
     setup_publication_style,
     save_figure,
     get_scheduler_color_map,
+    FIGSIZE_SINGLE,
     FIGSIZE_GROUPED,
 )
 from simulation_experiments.experiment_config_loader import (
@@ -759,68 +765,103 @@ def generate_main_group_figures(records, cfg, figures_dir=None):
     )
 
 
-def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
-    """Generate Fig 3: Important-task miss rate by scheduler.
+def _group_metric_by_n(records, scheduler_list, metric_key):
+    """Group a per-scheduler metric by task count, restricted to main schedulers.
 
-    Uses the data collected at a single representative task count (default: the
-    largest available or the one configured as ``num_tasks_for_single_task_figures``).
+    Returns ``(ns, by_n)`` where ``ns`` lists (ascending) the task counts that
+    have a reading for *every* scheduler in ``scheduler_list`` (so each per-N
+    line has all its anchors), and ``by_n`` maps each such N to
+    ``{scheduler: metric_value}``. Task counts with any scheduler missing are
+    dropped so no line has a dangling gap.
+    """
+    sched_set = set(scheduler_list)
+    by_n = {}
+    for r in records:
+        if r["scheduler"] not in sched_set or metric_key not in r:
+            continue
+        by_n.setdefault(r["num_tasks"], {})[r["scheduler"]] = r[metric_key]
+    ns = [n for n in sorted(by_n) if all(s in by_n[n] for s in scheduler_list)]
+    return ns, by_n
+
+
+def _draw_per_n_miss_figure(ns, by_n, scheduler_list, ylabel, title, output_stem):
+    """Draw one line per task count $N$ over the scheduler x-axis and save it.
+
+    Styling follows the approved exploratory variant: a viridis sequential
+    colormap keys the lines by N, the legend reads "Task count", and each line
+    carries connected markers. The contribution from a missing scheduler point
+    is treated as 0.
+    """
+    cmap = plt.get_cmap("viridis")
+    fig, ax = plt.subplots(figsize=FIGSIZE_SINGLE)
+    x = np.arange(len(scheduler_list))
+    for i, n in enumerate(ns):
+        color = cmap(i / max(len(ns) - 1, 1))
+        rates = [by_n[n].get(s, 0.0) for s in scheduler_list]
+        ax.plot(
+            x, rates, marker="o", markersize=6, linewidth=1.8,
+            color=color, label=f"N={n}",
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(scheduler_list, rotation=15, ha="right")
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.grid(axis="y", linestyle="--", alpha=0.5)
+    ax.legend(title="Task count", ncol=2)
+    fig.tight_layout()
+    save_figure(fig, output_stem)
+    plt.close(fig)
+
+
+def generate_important_task_miss_rate_figure(records, cfg, figures_dir=None):
+    """Generate Fig 3: Important-task miss rate by scheduler, one line per N.
+
+    Plots the important-task miss rate across ALL task counts present in
+    *records* (not a single representative N), with each task count drawing
+    one line over the main-scheduler x-axis. Showing the full $N$ range matches
+    the "across all N" claim of the paper's simulation section and exposes
+    where overload starts pushing important-task misses up for the baselines.
+
+    Gating: honors the documented ``num_tasks_for_single_task_figures``
+    opt-out (the key covering Fig 2/3/1F) -- 0 skips the figure entirely; any
+    non-zero value draws, since the figure no longer depends on one
+    representative N.
     """
     if not MATPLOTLIB_AVAILABLE:
         print("matplotlib not available; skipping Fig 3.")
         return
 
-    target_tasks = cfg.get("num_tasks_for_single_task_figures", 6)
-    # 0 = opt out of the single-task figures (paired with the sweep skip).
-    if target_tasks == 0:
+    # 0 = opt out of the single-task figures (documented with Fig 2/3/1F).
+    if cfg.get("num_tasks_for_single_task_figures", 6) == 0:
         print("num_tasks_for_single_task_figures=0; skipping Fig 3.")
         return
     scheduler_list = cfg.get("main_scheduler_list", ["INCR_Reopt_10", "BF", "DM_FAST", "DM_SLOW", "CFS"])
     figures_dir = figures_dir if figures_dir is not None else FIGURES_OUTPUT_DIR
 
-    # Filter to target task count, sort schedulers in consistent order
-    filtered = [r for r in records if r["num_tasks"] == target_tasks
-                and r["scheduler"] in scheduler_list]
-    if not filtered:
-        print(f"No important-miss-rate data for {target_tasks} tasks; skipping Fig 3.")
+    ns, by_n = _group_metric_by_n(records, scheduler_list, "important_miss_rate")
+    if not ns:
+        print("No important-miss-rate data covering all main schedulers; "
+              "skipping Fig 3.")
         return
-
-    fig, ax = plt.subplots(figsize=FIGSIZE_GROUPED)
-    color_map = get_scheduler_color_map(scheduler_list)
-
-    means = [next((r["important_miss_rate"] for r in filtered if r["scheduler"] == s), 0.0)
-             for s in scheduler_list]
-
-    # Line plot over scheduler index (categorical x-axis, connected markers).
-    x = np.arange(len(scheduler_list))
-    ax.plot(
-        x, means, marker="o", markersize=8, linewidth=2,
-        zorder=3, color=color_map.get(scheduler_list[0], "gray"),
+    _draw_per_n_miss_figure(
+        ns, by_n, scheduler_list,
+        "Important-Task Miss Rate",
+        "Important-Task Miss Rate by Scheduler (one line per N)",
+        os.path.join(figures_dir, "fig3_important_task_miss_rate"),
     )
-    ax.set_xticks(x)
-    ax.set_xticklabels(scheduler_list)
-    ax.set_ylabel("Important-Task Miss Rate")
-    ax.set_title(f"Important-Task Miss Rate ({target_tasks} Tasks)")
-    ax.grid(axis="y", linestyle="--", alpha=0.5)
-    plt.tight_layout()
-    save_figure(fig, os.path.join(figures_dir, "fig3_important_task_miss_rate"))
-    plt.close(fig)
 
-    # Fig 3b: non-important-task miss rate (debug)
-    fig, ax = plt.subplots(figsize=FIGSIZE_GROUPED)
-    means_non = [next((r["non_important_miss_rate"] for r in filtered if r["scheduler"] == s), 0.0)
-                 for s in scheduler_list]
-    ax.plot(
-        x, means_non, marker="o", markersize=8, linewidth=2,
-        zorder=3, color=color_map.get(scheduler_list[0], "gray"),
+    # Fig 3b: non-important-task miss rate (debug), same per-N layout.
+    ns_non, by_n_non = _group_metric_by_n(records, scheduler_list, "non_important_miss_rate")
+    if not ns_non:
+        print("No non-important-miss-rate data covering all main schedulers; "
+              "skipping Fig 3b.")
+        return
+    _draw_per_n_miss_figure(
+        ns_non, by_n_non, scheduler_list,
+        "Non-Important-Task Miss Rate",
+        "Non-Important-Task Miss Rate by Scheduler (one line per N, Debug)",
+        os.path.join(figures_dir, "fig3b_non_important_task_miss_rate"),
     )
-    ax.set_xticks(x)
-    ax.set_xticklabels(scheduler_list)
-    ax.set_ylabel("Non-Important-Task Miss Rate")
-    ax.set_title(f"Non-Important-Task Miss Rate ({target_tasks} Tasks, Debug)")
-    ax.grid(axis="y", linestyle="--", alpha=0.5)
-    plt.tight_layout()
-    save_figure(fig, os.path.join(figures_dir, "fig3b_non_important_task_miss_rate"))
-    plt.close(fig)
 
 
 def generate_fig_fallback_rejection_ratio(records, cfg, figures_dir=None):
