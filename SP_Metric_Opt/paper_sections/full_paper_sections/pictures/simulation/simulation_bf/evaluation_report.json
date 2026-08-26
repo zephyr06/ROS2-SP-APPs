@@ -1,0 +1,183 @@
+{
+  "run_id": "compare_against_bf_run_prod_dur100_interval100_seed1000_tasks4x6x8",
+  "timestamp_utc": "2026-08-24T06:51:45+00:00",
+  "overall": "FAIL",
+  "gates": [
+    {
+      "gate": "Q1",
+      "status": "PASS",
+      "measured": "worst: N=4 PASS",
+      "threshold": "gap <= 30%",
+      "detail": "N=4: INCR=0.9315 vs BF=0.9332 (gap=0.2%, ok)",
+      "per_n": [
+        {
+          "n": 4,
+          "status": "PASS",
+          "measured": "gap=0.2%",
+          "detail": "INCR=0.9315 vs BF=0.9332 (gap=0.2%, ok)"
+        }
+      ]
+    },
+    {
+      "gate": "Q2",
+      "status": "FAIL",
+      "measured": "worst: N=6 FAIL",
+      "threshold": "INCR >= BF",
+      "detail": "N=6: INCR=0.7786 vs BF=0.7924 (BELOW); N=8: INCR=0.7422 vs BF=0.7580 (BELOW)",
+      "per_n": [
+        {
+          "n": 6,
+          "status": "FAIL",
+          "measured": "INCR=0.7786 vs BF=0.7924",
+          "detail": "INCR=0.7786 vs BF=0.7924 (BELOW)"
+        },
+        {
+          "n": 8,
+          "status": "FAIL",
+          "measured": "INCR=0.7422 vs BF=0.7580",
+          "detail": "INCR=0.7422 vs BF=0.7580 (BELOW)"
+        }
+      ]
+    },
+    {
+      "gate": "Q3",
+      "status": "PASS",
+      "measured": "worst: N=8 PASS",
+      "threshold": "INCR >= max(baselines)",
+      "detail": "N=6: INCR=0.7786 vs []; missing baselines: CFS, DM_FAST, DM_SLOW, INCR_NO_TL, INCR_WCET; N=8: INCR=0.7422 vs []; missing baselines: CFS, DM_FAST, DM_SLOW, INCR_NO_TL, INCR_WCET",
+      "per_n": [
+        {
+          "n": 6,
+          "status": "PASS",
+          "measured": "INCR=0.7786",
+          "detail": "INCR=0.7786 vs []; missing baselines: CFS, DM_FAST, DM_SLOW, INCR_NO_TL, INCR_WCET"
+        },
+        {
+          "n": 8,
+          "status": "PASS",
+          "measured": "INCR=0.7422",
+          "detail": "INCR=0.7422 vs []; missing baselines: CFS, DM_FAST, DM_SLOW, INCR_NO_TL, INCR_WCET"
+        }
+      ]
+    },
+    {
+      "gate": "E1",
+      "status": "PASS",
+      "measured": "worst: N=8 PASS",
+      "threshold": "<= 5% (ideal 1%)",
+      "detail": "N=4: INCR: overhead=0.00% (red 5% ok, ideal 1% ok); N=6: INCR: overhead=0.00% (red 5% ok, ideal 1% ok); N=8: INCR: overhead=0.01% (red 5% ok, ideal 1% ok)",
+      "per_n": [
+        {
+          "n": 4,
+          "status": "PASS",
+          "measured": "overhead=0.00%",
+          "detail": "INCR: overhead=0.00% (red 5% ok, ideal 1% ok)"
+        },
+        {
+          "n": 6,
+          "status": "PASS",
+          "measured": "overhead=0.00%",
+          "detail": "INCR: overhead=0.00% (red 5% ok, ideal 1% ok)"
+        },
+        {
+          "n": 8,
+          "status": "PASS",
+          "measured": "overhead=0.01%",
+          "detail": "INCR: overhead=0.01% (red 5% ok, ideal 1% ok)"
+        }
+      ]
+    },
+    {
+      "gate": "E3",
+      "status": "FAIL",
+      "measured": "INCR_Reopt_10 >= INCR_Reopt_30 >= INCR_Reopt_60 (tol +/-2%)",
+      "threshold": "period-monotonicity per N",
+      "detail": "N=4: missing arms ['INCR_Reopt_30', 'INCR_Reopt_60'] at N=4; cannot verify; N=6: missing arms ['INCR_Reopt_30', 'INCR_Reopt_60'] at N=6; cannot verify; N=8: missing arms ['INCR_Reopt_30', 'INCR_Reopt_60'] at N=8; cannot verify",
+      "per_n": [
+        {
+          "n": 4,
+          "status": "MISSING",
+          "measured": null,
+          "detail": "missing arms ['INCR_Reopt_30', 'INCR_Reopt_60'] at N=4; cannot verify",
+          "pairs": []
+        },
+        {
+          "n": 6,
+          "status": "MISSING",
+          "measured": null,
+          "detail": "missing arms ['INCR_Reopt_30', 'INCR_Reopt_60'] at N=6; cannot verify",
+          "pairs": []
+        },
+        {
+          "n": 8,
+          "status": "MISSING",
+          "measured": null,
+          "detail": "missing arms ['INCR_Reopt_30', 'INCR_Reopt_60'] at N=8; cannot verify",
+          "pairs": []
+        }
+      ]
+    }
+  ],
+  "metrics": {
+    "N4_BF": {
+      "mean_sp_norm": 0.9332340000000002,
+      "std_sp_norm": 0.10014800000000003,
+      "mean_sched_time": 0.119649,
+      "overhead": 0.0011964900000000001
+    },
+    "N4_INCR_Reopt_1": {
+      "mean_sp_norm": 0.9315320000000002,
+      "std_sp_norm": 0.10489800000000003,
+      "mean_sched_time": 0.003791,
+      "overhead": 3.791e-05
+    },
+    "N4_INCR_Reopt_10": {
+      "mean_sp_norm": 0.9315320000000002,
+      "std_sp_norm": 0.10489800000000003,
+      "mean_sched_time": 0.003565,
+      "overhead": 3.565e-05
+    },
+    "N6_BF": {
+      "mean_sp_norm": 0.792446,
+      "std_sp_norm": 0.096482,
+      "mean_sched_time": 35.216116,
+      "overhead": 0.35216116
+    },
+    "N6_INCR_Reopt_1": {
+      "mean_sp_norm": 0.778561,
+      "std_sp_norm": 0.092743,
+      "mean_sched_time": 0.005283,
+      "overhead": 5.283e-05
+    },
+    "N6_INCR_Reopt_10": {
+      "mean_sp_norm": 0.778561,
+      "std_sp_norm": 0.092743,
+      "mean_sched_time": 0.00473,
+      "overhead": 4.73e-05
+    },
+    "N8_BF": {
+      "mean_sp_norm": 0.7580079999999998,
+      "std_sp_norm": 0.13154899999999997,
+      "mean_sched_time": 424.5436,
+      "overhead": 4.245436000000001
+    },
+    "N8_INCR_Reopt_1": {
+      "mean_sp_norm": 0.7422009999999999,
+      "std_sp_norm": 0.12429399999999997,
+      "mean_sched_time": 0.010919,
+      "overhead": 0.00010919
+    },
+    "N8_INCR_Reopt_10": {
+      "mean_sp_norm": 0.7422009999999999,
+      "std_sp_norm": 0.12429399999999997,
+      "mean_sched_time": 0.010971,
+      "overhead": 0.00010971
+    }
+  },
+  "thresholds": {
+    "Q1_max_gap": 0.3,
+    "E1_red_line": 0.05,
+    "E1_ideal": 0.01,
+    "E3_tolerance": 0.02
+  }
+}

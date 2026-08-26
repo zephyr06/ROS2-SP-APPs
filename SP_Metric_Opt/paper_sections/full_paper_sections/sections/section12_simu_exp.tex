@@ -110,8 +110,8 @@ Table~\ref{tab_sim_vs_optimal} reports the normalized SP, the SP gap to BF, the 
 execution time, and the speedup of INCR over BF.
 INCR tracks BF closely: the SP gap is $0.2\%$ at $N{=}4$, $1.7\%$ at $N{=}6$, and $2.1\%$ at
 $N{=}8$, never exceeding $2.1\%$.
-The price BF pays for this near-optimality is steep: its optimization time grows from $0.09$~s
-($N{=}4$) to $32$~s ($N{=}6$) and $423$~s ($N{=}8$), while INCR stays at $0.003$--$0.012$~s,
+The price BF pays for this near-optimality is steep: its optimization time grows from $0.12$~s
+($N{=}4$) to $35$~s ($N{=}6$) and $424$~s ($N{=}8$), while INCR stays at $0.004$--$0.011$~s,
 three to four orders of magnitude faster.
 Beyond $N{=}8$ BF becomes intractable, which is why the large-scale study below uses the baseline
 schedulers rather than BF as the reference.
@@ -126,9 +126,9 @@ INCR reaches within $2.1\%$ of BF's SP at three to four orders of magnitude lowe
 \toprule
 $N$ & BF SP & INCR SP & SP Gap & BF Time (s) & INCR Time (s) & Speedup \\
 \midrule
-4 & 0.933 & 0.932 & 0.2\% & 0.094 & 0.0028 & $3.4\times10^{1}$ \\
-6 & 0.792 & 0.779 & 1.7\% & 32.28 & 0.0048 & $6.7\times10^{3}$ \\
-8 & 0.758 & 0.742 & 2.1\% & 423.5 & 0.0117 & $3.6\times10^{4}$ \\
+4 & 0.933 & 0.932 & 0.2\% & 0.120 & 0.0036 & $3.4\times10^{1}$ \\
+6 & 0.792 & 0.779 & 1.7\% & 35.22 & 0.0047 & $7.4\times10^{3}$ \\
+8 & 0.758 & 0.742 & 2.1\% & 424.5 & 0.0110 & $3.9\times10^{4}$ \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -154,7 +154,7 @@ Section~\ref{section: sim_vs_optimal}.
 
 \begin{figure}[!htbp]
     \centering
-    \includegraphics[width=\columnwidth]{pictures/simulation/sim_sp_vs_baselines.pdf}
+    \includegraphics[width=\columnwidth]{pictures/simulation/simulation_scale/fig1a_mean_sp_normalized_vs_tasks_main.pdf}
     \caption{Normalized SP of INCR versus baselines across task count ($N\in\{4,\dots,16\}$).
     INCR dominates all baselines and degrades gracefully under overload.}
     \label{fig_sim_sp_baselines}
@@ -169,7 +169,7 @@ and DM\_SLOW, whose fixed priorities cannot shield safety-critical work.
 
 \begin{figure}[!htbp]
     \centering
-    \includegraphics[width=\columnwidth]{pictures/simulation/sim_important_task_miss_rate.pdf}
+    \includegraphics[width=\columnwidth]{pictures/simulation/simulation_scale/fig3_important_task_miss_rate.pdf}
     \caption{Important-task deadline-miss rate.
     INCR holds the rate below $\Theta_i$ via the in-search feasibility gate; baselines do not.}
     \label{fig_sim_important_miss}
@@ -187,13 +187,13 @@ misses bounded, while its online overhead stays below $1.3\%$.
     \centering
     \begin{subfigure}[c]{0.48\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{pictures/simulation/sim_ablation_sp.pdf}
+        \includegraphics[width=\textwidth]{pictures/simulation/simulation_scale/fig_ablation_mean_sp_normalized_vs_tasks.pdf}
         \caption{Normalized SP of ablation arms.}
         \label{fig_sim_ablation_sp}
     \end{subfigure}\hfill
     \begin{subfigure}[c]{0.48\textwidth}
         \centering
-        \includegraphics[width=\textwidth]{pictures/simulation/sim_ablation_exec_time.pdf}
+        \includegraphics[width=\textwidth]{pictures/simulation/simulation_scale/fig_ablation_mean_exec_time_vs_tasks.pdf}
         \caption{Optimizer execution time of ablation arms.}
         \label{fig_sim_ablation_exec}
     \end{subfigure}
@@ -230,7 +230,7 @@ periodic re-optimization yields a modest but consistent gain at modest cost.
 
 \begin{figure}[!htbp]
     \centering
-    \includegraphics[width=\columnwidth]{pictures/simulation/sim_fallback_rejection.pdf}
+    \includegraphics[width=\columnwidth]{pictures/simulation/simulation_scale/fig_fallback_rejection_ratio.pdf}
     \caption{Fraction of scheduler invocations adopting the safe fallback.
     It remains low, engaging only when the inherited configuration becomes unschedulable.}
     \label{fig_sim_fallback}

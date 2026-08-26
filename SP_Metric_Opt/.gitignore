@@ -66,7 +66,8 @@ sources/.parameters.yaml.*.bak
 *.pyc
 
 # Paper simulation figures (new refresh set): track despite *.pdf ignore above
-!paper_sections/full_paper_sections/pictures/simulation/sim_*.pdf
+!paper_sections/full_paper_sections/pictures/simulation/simulation_scale/*.pdf
+!paper_sections/full_paper_sections/pictures/simulation/simulation_bf/*.pdf
 
 agents/gemini.md
 agents/kimi.md
