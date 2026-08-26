@@ -161,17 +161,22 @@ Section~\ref{section: sim_vs_optimal}.
 \end{figure}
 
 Fig.~\ref{fig_sim_important_miss} reports the deadline-miss rate of the important tasks
-$\boldsymbol{\tau}^{safe}$.
-INCR keeps this rate below each task's threshold $\Theta_i$ across all $N$, the direct effect of the
-in-search important-task feasibility gate (Section~\ref{section_config_opt}).
-The baselines, lacking this gate, let important-task misses climb under overload---most steeply for CFS
-and DM\_SLOW, whose fixed priorities cannot shield safety-critical work.
+$\boldsymbol{\tau}^{safe}$, one line per task count $N \in \{4,\dots,16\}$.
+INCR holds the rate essentially at zero---below each task's threshold $\Theta_i$---at every $N$, the
+direct effect of the in-search important-task feasibility gate (Section~\ref{section_config_opt});
+its only nonzero reading is $0.0004$ at $N{=}12$.
+The baselines without the gate let important-task misses climb under overload: CFS peaks at $0.145$
+($N{=}12$), BF at $0.098$ ($N{=}12$), and DM\_SLOW at $0.044$ ($N{=}14$).
+DM\_FAST also stays at zero, but only because its small QoS budgets spare enough utilization for its
+fixed priority order to meet important deadlines---at the large SP cost already shown in
+Fig.~\ref{fig_sim_sp_baselines}.
 
 \begin{figure}[!htbp]
     \centering
     \includegraphics[width=\columnwidth]{pictures/simulation/simulation_scale/fig3_important_task_miss_rate.pdf}
-    \caption{Important-task deadline-miss rate.
-    INCR holds the rate below $\Theta_i$ via the in-search feasibility gate; baselines do not.}
+    \caption{Important-task deadline-miss rate (one line per task count $N$).
+    INCR suppresses important-task misses at every $N$ via the in-search feasibility gate; baselines
+    without the gate let them climb under overload.}
     \label{fig_sim_important_miss}
 \end{figure}
 
