@@ -1,5 +1,11 @@
-import matplotlib.pyplot as plt
 import os
+import matplotlib
+# Headless-safe backend: on the dev board (no DISPLAY) force the non-interactive
+# Agg backend so plt.show()/plt.pause() cannot block in a GUI event loop. The PDF
+# is still written via plt.savefig(); only the interactive popup is suppressed.
+if not os.environ.get("DISPLAY"):
+    matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import yaml
 import subprocess
 from datetime import datetime
@@ -211,12 +217,19 @@ def write_data_list_to_file(data_list, file_name, data_scale):
             file.write(str(data*data_scale) + "\n")
     file.close()
 
+# Per-call timeout (seconds) for the AnalyzeSP_Metric subprocess. Each call should
+# finish in a few seconds (Granularity is small and no optimizer runs here); this
+# only turns a genuinely-hung child into a visible skip instead of a silent
+# forever-block. Raise it if your board is consistently slower.
+ANALYZE_SP_TIMEOUT_S = 120
+
 def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_granularity, discard_early_time, task_set_abs_path):
     
     sp_value_list=[]
+    n_windows = max(0, (horizon - discard_early_time) // horizon_granularity)
+    print(f"[draw_SP] analyzing {n_windows} windows "
+          f"({discard_early_time}..{horizon}s, step {horizon_granularity}s)", flush=True)
     for start_time in range(discard_early_time, horizon, horizon_granularity):
-        if start_time >70:
-            a=1
         end_time = start_time + horizon_granularity
         if end_time>horizon:
             break
@@ -239,15 +252,46 @@ def get_sp_value_list(tasks_name_list, tasks_name_to_info, horizon, horizon_gran
         write_data_list_to_file(execution_time_within_range, file_name, 1e3)
         command_in_terminal_to_analyze_taskset_sp += " --" + task_name.lower() + "_ext_path " + file_name
         if no_data_count>=0.75*len(tasks_name_list):
+            print(f"[draw_SP]   window {start_time}-{end_time}s: >=75% of tasks have no data — stopping early", flush=True)
             break
+        if len(execution_time_within_range) == 0:
+            # TSP execution-time data is a REQUIRED AnalyzeSP_Metric input (the binary
+            # builds TSP's execution-time distribution from it). When a window has no
+            # TSP ext data (data exhausted late in the run), feeding an empty file
+            # makes AnalyzeSP_Metric abort: "FiniteDist constructor: sum of
+            # probabilities is 0.000000". Skip such windows cleanly instead of
+            # crashing the subprocess. The >=75% check above stops the loop once most
+            # tasks are also exhausted, so this only bridges the gap to that stop.
+            print(f"[draw_SP]   window {start_time}-{end_time}s: no TSP execution-time "
+                  f"data in this window — skipping", flush=True)
+            continue
         command_in_terminal_to_analyze_taskset_sp += " " + get_args_for_task_set_config(task_set_abs_path)
-        # print(command_in_terminal_to_analyze_taskset_sp)
-        result = subprocess.run(command_in_terminal_to_analyze_taskset_sp, shell=True, capture_output=True, text=True)
-        # print(result.stdout)
-        sp_value = get_sp_value(result.stdout)
-        if sp_value > -4.5:
-            a=1
+        print(f"[draw_SP]   window {start_time}-{end_time}s: running AnalyzeSP_Metric ...", flush=True)
+        try:
+            result = subprocess.run(command_in_terminal_to_analyze_taskset_sp, shell=True,
+                                    capture_output=True, text=True,
+                                    timeout=ANALYZE_SP_TIMEOUT_S)
+        except subprocess.TimeoutExpired:
+            print(f"[draw_SP]   window {start_time}-{end_time}s: AnalyzeSP_Metric timed out "
+                  f"(>{ANALYZE_SP_TIMEOUT_S}s) — skipping", flush=True)
+            continue
+        if result.returncode != 0:
+            # CoutError writes its reason to STDOUT (stderr only carries glibc's
+            # "Aborted"); show both so a failing window is diagnosable, not silent.
+            print(f"[draw_SP]   window {start_time}-{end_time}s: AnalyzeSP_Metric exited "
+                  f"{result.returncode} — skipping"
+                  f"\n    stderr: {result.stderr.strip()[:500]}"
+                  f"\n    stdout: {result.stdout.strip()[:500]}", flush=True)
+            continue
+        try:
+            sp_value = get_sp_value(result.stdout)
+        except Exception as e:
+            print(f"[draw_SP]   window {start_time}-{end_time}s: could not parse SP ({e})\n"
+                  f"    stdout: {result.stdout.strip()[:200]}", flush=True)
+            continue
         sp_value_list.append(sp_value)
+        print(f"[draw_SP]   window {start_time}-{end_time}s -> SP={sp_value:.4f}", flush=True)
+    print(f"[draw_SP] done: {len(sp_value_list)}/{n_windows} windows produced SP values", flush=True)
     return sp_value_list
 
 

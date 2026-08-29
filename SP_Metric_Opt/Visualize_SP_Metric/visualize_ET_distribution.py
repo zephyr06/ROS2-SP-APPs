@@ -5,7 +5,6 @@ import tempfile
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
-from dask.sizeof import sizeof
 
 from SP_draw_fig_utils import OPT_SP_PROJECT_PATH
 from draw_SP_current_scheduler import *
@@ -17,6 +16,9 @@ from SP_Metric_Opt.Visualize_SP_Metric.box_plot_utils import get_subfolder_path,
 
 
 def read_ET_data_from_file( file_path, sample_threshold=10000, sample_rate=0.01):
+
+    if not os.path.exists(file_path):
+        return np.array([])
 
     times = []
     line_count = 0

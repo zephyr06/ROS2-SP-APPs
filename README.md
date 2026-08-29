@@ -14,7 +14,7 @@ Firstly, the repo is not properly named because ROS2 is actually not needed.
     - To stop the system, wait till the end or it would be better to reboot for performance profiling.
 
 # Check experiment results
-All results will be automatically backup inside the `/Experiments` folder with timestamp.
+All results will be automatically backup inside the `/Experiments` folder with timestamp. To draw the result figures from a produced `.tar.gz` or `all_time_records` folder, use `scripts/visualize_experiment_results.py` (see [Visualize experiment results](#visualize-experiment-results-recommended) below).
 
 # Experiment configurations
 Configurations of the tasks (such as SLAM and RRT) are stored inside two YAML files: `/all_time_records/task_characteristics.yaml` and `/SP_Metric_Opt/applications/real_time_manager/configs/local_cpu_and_priority.yaml`. All real-time nodes should acquire task set info from these two files. 
@@ -52,6 +52,35 @@ Configurations of the tasks (such as SLAM and RRT) are stored inside two YAML fi
 
 
 # Reproduce the overall statistics results and draw figure results
+## Visualize experiment results (recommended)
+`scripts/visualize_experiment_results.py` is the single entry point for drawing all result figures. It is kept separate from `scripts/start_system.sh`, which only generates the data records and packs them into a `.tar.gz`. Pass one or more inputs:
+
+- a `.tar.gz` / `.tar.xz` archive produced by `start_system.sh`, or
+- an already-unpacked `all_time_records` folder (containing `task_characteristics.yaml` + the `*_execution_time.txt` / `*_publisher.txt` files), or
+- a folder containing several `.tar.gz` archives, one per run (the `Experiments/{method}/` convention).
+
+How many runs it resolves decides the output:
+
+- **one run** → single-run **line plots**: SP-metric over time, per-application execution time over time, and average scheduler overhead.
+- **multiple runs** → multi-run **box plots** (paper `fig_et_all` / `figs_exp_results_all_cps`): SP-metric box plot over time (one box per time-window across runs) and a per-application execution-time box plot over time.
+
+```bash
+# single run -> line plots
+python3 scripts/visualize_experiment_results.py all_time_records
+python3 scripts/visualize_experiment_results.py Experiments/RM/run1.tar.gz
+
+# multiple runs -> box plots (several archives, or one folder of .tar.gz runs)
+python3 scripts/visualize_experiment_results.py Experiments/RM/run1.tar.gz Experiments/RM/run2.tar.gz
+python3 scripts/visualize_experiment_results.py Experiments/RM/
+```
+
+Options:
+- `--output-dir DIR` — where to write the PDFs (default: alongside the first input — into the folder for folder inputs, or next to the archive for `.tar.gz` inputs; never a temp extraction dir).
+- `--scheduler-name NAME` — label for the SP plot legend (default `Scheduler`).
+- `--apps APP ...` — which apps to plot ET for (default: `TSP RRT SLAM MPC SCHEDULER SCHEDULER_PUER_OPT`).
+
+The script always forces the non-interactive Agg matplotlib backend, so it runs headless on the board without a display and never blocks on a GUI window. It reuses the existing analysis modules (`SP_draw_fig_utils`, `visualize_SP_distribution`, `visualize_ET_distribution`, `report_avg_scheduler_overhead`) rather than reimplementing them; the legacy scripts below remain available for direct use. Note that the SP box-plot y-axis is normalized to SP/5 (paper convention, `ylim [0.1, 1.05]`), not raw SP.
+
 ## Convenient scripts for data analysis preparation
 Assume you use a host desktop to remotely run the experiments on a remote platform, and you obtained some results after running `scripts\run_multiple_times.sh`. In this case, you can use `Experiments\command_to_transmit_files.sh` to download the data from your remote platform to your local host. If the data is downloaded successfully by this script, you can then use `Experiments\load_exp_data.sh` to extract the data and put them into the `Experiments` folder. After it, you can use the visualization python scripts, `visualize_SP_distribution.py` and `visualize_ET_distribution.py` to draw the figures.
 
